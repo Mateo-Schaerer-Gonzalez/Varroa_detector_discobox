@@ -28,6 +28,10 @@ class Rect:
         return (self.x1 <= other.x1 <= other.x2 <= self.x2 and
                 self.y1 <= other.y1 <= other.y2 <= self.y2)
 
+    def contains_point(self, px, py):
+        """Return True if the point (px, py) falls within this rect's bounds."""
+        return self.x1 <= px <= self.x2 and self.y1 <= py <= self.y2
+
     def __repr__(self):
         return f"Rect({self.x1}, {self.y1}, {self.x2}, {self.y2})"
     

@@ -2,8 +2,10 @@ import cv2
 import numpy as np
 import pytest
 
-from classes.app_config import AppConfig, DetectorConfig
+from classes.app_config import AppConfig, DetectorConfig, get_default_config
 from classes.detector import Detector
+from classes.mite import Mite
+from classes.zones import Zone
 
 
 class FakeConfig:
@@ -19,6 +21,19 @@ class FakeBlobDetector:
     def detect(self, image):
         self.received_image = image
         return self.return_value
+
+
+class FakeZoneManager:
+    def __init__(self, zones, mask_return=None):
+        self.zones = zones
+        self.mask_return = mask_return
+        self.received_image = None
+        self.received_fill_color = None
+
+    def mask_image_to_valid_rois(self, image, fill_color=255):
+        self.received_image = image
+        self.received_fill_color = fill_color
+        return self.mask_return if self.mask_return is not None else image
 
 
 @pytest.fixture
@@ -64,11 +79,14 @@ class TestBuildParams:
 class TestInit:
     def test_default_config_matches_yaml(self):
         detector = Detector()
-        assert detector.config == AppConfig().detector
+        assert detector.config is get_default_config()
+        assert detector.config.detector == AppConfig().detector
 
     def test_custom_config_overrides_default(self, custom_detector_config):
-        detector = Detector(config=FakeConfig(detector=custom_detector_config))
-        assert detector.config == custom_detector_config
+        config = FakeConfig(detector=custom_detector_config)
+        detector = Detector(config=config)
+        assert detector.config is config
+        assert detector.config.detector == custom_detector_config
 
     def test_builds_blob_detector_instance(self):
         detector = Detector()
@@ -134,3 +152,109 @@ class TestDetect:
         keypoints = detector.detect(image)
 
         assert len(keypoints) == 0
+
+
+class TestProcessFrame:
+    def test_runs_detection_on_masked_image_not_original(self):
+        detector = Detector()
+        zone = Zone(0, 0, 100, 100, type="brood")
+        masked_image = np.full((50, 50, 3), 128, dtype=np.uint8)
+        zone_manager = FakeZoneManager([zone], mask_return=masked_image)
+        fake_blob = FakeBlobDetector(return_value=())
+        detector.blob_detector = fake_blob
+        original_image = np.zeros((50, 50, 3), dtype=np.uint8)
+
+        detector.process_frame(original_image, zone_manager)
+
+        assert zone_manager.received_image is original_image
+        assert zone_manager.received_fill_color == 255
+        assert fake_blob.received_image is masked_image
+
+    def test_no_keypoints_returns_empty_list_and_zones_untouched(self):
+        detector = Detector()
+        zone = Zone(0, 0, 100, 100, type="brood")
+        zone_manager = FakeZoneManager([zone])
+        detector.blob_detector = FakeBlobDetector(return_value=())
+
+        result = detector.process_frame(np.zeros((10, 10, 3), dtype=np.uint8), zone_manager)
+
+        assert result == []
+        assert zone.mites == []
+
+    def test_keypoint_inside_zone_is_assigned_as_mite(self):
+        detector = Detector()
+        zone = Zone(0, 0, 100, 100, type="brood")
+        zone_manager = FakeZoneManager([zone])
+        kp = cv2.KeyPoint(50, 50, 10)
+        detector.blob_detector = FakeBlobDetector(return_value=[kp])
+
+        result = detector.process_frame(np.zeros((100, 100, 3), dtype=np.uint8), zone_manager)
+
+        assert len(result) == 1
+        assert isinstance(result[0], Mite)
+        assert zone.mites == result
+
+    def test_mite_bounding_box_centered_on_keypoint(self):
+        detector = Detector()
+        zone = Zone(0, 0, 100, 100, type="brood")
+        zone_manager = FakeZoneManager([zone])
+        kp = cv2.KeyPoint(50, 50, 10)
+        detector.blob_detector = FakeBlobDetector(return_value=[kp])
+
+        result = detector.process_frame(np.zeros((100, 100, 3), dtype=np.uint8), zone_manager)
+
+        mite = result[0]
+        assert (mite.x1, mite.y1, mite.x2, mite.y2) == (45, 45, 55, 55)
+
+    def test_keypoint_outside_all_zones_is_ignored(self):
+        detector = Detector()
+        zone = Zone(0, 0, 10, 10, type="brood")
+        zone_manager = FakeZoneManager([zone])
+        kp = cv2.KeyPoint(50, 50, 4)
+        detector.blob_detector = FakeBlobDetector(return_value=[kp])
+
+        result = detector.process_frame(np.zeros((100, 100, 3), dtype=np.uint8), zone_manager)
+
+        assert result == []
+        assert zone.mites == []
+
+    def test_assigns_to_first_matching_zone_only(self):
+        detector = Detector()
+        first_zone = Zone(0, 0, 100, 100, type="brood")
+        second_zone = Zone(0, 0, 100, 100, type="entrance")
+        zone_manager = FakeZoneManager([first_zone, second_zone])
+        kp = cv2.KeyPoint(50, 50, 10)
+        detector.blob_detector = FakeBlobDetector(return_value=[kp])
+
+        detector.process_frame(np.zeros((100, 100, 3), dtype=np.uint8), zone_manager)
+
+        assert len(first_zone.mites) == 1
+        assert second_zone.mites == []
+
+    def test_multiple_keypoints_create_distinct_mites(self):
+        detector = Detector()
+        zone = Zone(0, 0, 100, 100, type="brood")
+        zone_manager = FakeZoneManager([zone])
+        kp1 = cv2.KeyPoint(20, 20, 6)
+        kp2 = cv2.KeyPoint(80, 80, 6)
+        detector.blob_detector = FakeBlobDetector(return_value=[kp1, kp2])
+
+        result = detector.process_frame(np.zeros((100, 100, 3), dtype=np.uint8), zone_manager)
+
+        assert len(result) == 2
+        assert result[0] is not result[1]
+        assert zone.mites == result
+
+    def test_created_mite_uses_detector_config(self):
+        detector = Detector()
+        zone = Zone(0, 0, 100, 100, type="brood")
+        zone_manager = FakeZoneManager([zone])
+        kp = cv2.KeyPoint(50, 50, 10)
+        detector.blob_detector = FakeBlobDetector(return_value=[kp])
+
+        result = detector.process_frame(np.zeros((100, 100, 3), dtype=np.uint8), zone_manager)
+
+        mite = result[0]
+        assert mite.radius == detector.config.mite.radius
+        assert mite.motion_threshold == detector.config.mite.motion_threshold
+        assert mite.color == detector.config.mite.alive_color
