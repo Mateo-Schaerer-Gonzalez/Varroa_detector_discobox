@@ -3,13 +3,24 @@ import cv2
 
 
 class Rect:
-    def __init__(self, x1, y1, x2, y2, color=(0, 255, 0)):
+    def __init__(self, x1, y1, x2, y2, color=(0, 255, 0), thickness=2, **kwargs):
         # Ensure coordinates are in correct order (x1,y1) top-left, (x2,y2) bottom-right
         self.x1, self.y1 = min(x1, x2), min(y1, y2)
         self.x2, self.y2 = max(x1, x2), max(y1, y2)
         self.color = color
-       
-    def draw(self, image, thickness=2):
+        self.thickness = thickness
+
+        # set any additional dynamically injected attributes
+        for key, value in kwargs.items():
+            setattr(self, key, value)
+
+    @classmethod
+    def from_config(cls, x1, y1, x2, y2, config):
+        style = config.rect_style
+        return cls(x1, y1, x2, y2, color=style.color, thickness=style.thickness)
+
+    def draw(self, image, thickness=None):
+        thickness = self.thickness if thickness is None else thickness
         cv2.rectangle(image, (self.x1, self.y1), (self.x2, self.y2), self.color, thickness)
 
     def __contains__(self, other):
@@ -41,20 +52,31 @@ class Rect:
 
 
 class TextZone(Rect):
-    def __init__(self, x1, y1, x2, y2, text="EMPTY", color=(255, 0, 0)):
-        super().__init__(x1, y1, x2, y2)
+    def __init__(self, x1, y1, x2, y2, text="EMPTY", color=(255, 0, 0), text_color=(0, 0, 255),
+                 thickness=2, font_scale=1.0, text_offset_y=10):
+        super().__init__(x1, y1, x2, y2, color=color, thickness=thickness)
         self.text = text
-        self.color = color
+        self.text_color = text_color
+        self.font_scale = font_scale
+        self.text_offset_y = text_offset_y
 
+    @classmethod
+    def from_config(cls, x1, y1, x2, y2, config, text="EMPTY"):
+        style = config.text_zone_style
+        return cls(x1, y1, x2, y2, text=text, color=style.box_color, text_color=style.text_color,
+                    thickness=style.thickness, font_scale=style.font_scale,
+                    text_offset_y=style.text_offset_y)
 
-    def draw(self, image, thickness=2, font_scale=1, font=cv2.FONT_HERSHEY_SIMPLEX):
+    def draw(self, image, thickness=None, font_scale=None, font=cv2.FONT_HERSHEY_SIMPLEX):
+        thickness = self.thickness if thickness is None else thickness
+        font_scale = self.font_scale if font_scale is None else font_scale
+
         # Draw rectangle using Rect's method
         super().draw(image, thickness=thickness)
 
-
         # Add text
-        cv2.putText(image, self.text, (self.x1, max(self.y1 - 10, 0)),
-                    font, font_scale, (0,0,255), thickness)
-        
+        cv2.putText(image, self.text, (self.x1, max(self.y1 - self.text_offset_y, 0)),
+                    font, font_scale, self.text_color, thickness)
+
     def __repr__(self):
         return f"TextZone({self.x1}, {self.y1}, {self.x2}, {self.y2}, text='{self.text}')"

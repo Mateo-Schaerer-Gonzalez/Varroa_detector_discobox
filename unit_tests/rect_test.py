@@ -1,7 +1,13 @@
 import numpy as np
 import pytest
 
+from classes.app_config import RectStyle
 from classes.rect import Rect
+
+
+class FakeConfig:
+    def __init__(self, rect_style):
+        self.rect_style = rect_style
 
 
 class TestInit:
@@ -32,6 +38,16 @@ class TestInit:
     def test_zero_area_rect(self):
         r = Rect(5, 5, 5, 5)
         assert (r.x1, r.y1, r.x2, r.y2) == (5, 5, 5, 5)
+
+
+class TestFromConfig:
+    def test_uses_style_from_config(self):
+        style = RectStyle(color=(9, 8, 7), thickness=6)
+        config = FakeConfig(rect_style=style)
+        r = Rect.from_config(1, 2, 10, 20, config)
+        assert (r.x1, r.y1, r.x2, r.y2) == (1, 2, 10, 20)
+        assert r.color == (9, 8, 7)
+        assert r.thickness == 6
 
 
 class TestDraw:

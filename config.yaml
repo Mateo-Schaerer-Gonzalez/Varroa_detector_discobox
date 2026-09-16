@@ -1,7 +1,9 @@
 mite:
-  radius: 12
+  radius: 8
   motion_threshold: 15.654   
   metric: "max_diff"
+  alive_color: [0, 255, 0]          # BGR: Green for alive mites
+  dead_color: [0, 0, 255]          # BGR: Red for dead mites
 
 visual_styles:
   rect:
@@ -9,8 +11,23 @@ visual_styles:
     thickness: 2
 
   text_zone:
-    box_color: [255, 0, 0]      # BGR: Blue for zone perimeter
+    box_color: [0, 255, 0]      # BGR: Blue for zone perimeter
     text_color: [0, 0, 255]     # BGR: Red for label text
     thickness: 2
     font_scale: 1.0
     text_offset_y: 10           # Pixels above the top-left corner
+
+
+  Zones:
+    label_zone:
+      box_color: [0, 255, 255]      # BGR: Blue for zone perimeter
+      text_color: [0, 255, 255]   # BGR: Yellow for label text
+      thickness: 2
+      font_scale: 1.0
+      text_offset_y: 10           # Pixels above the top-left corner
+    mite_zone:
+      box_color: [0, 255, 0]      # BGR: Green for zone perimeter
+      text_color: [0, 255, 0]     # BGR: Green for label text
+      thickness: 2
+      font_scale: 1.0
+      text_offset_y: 30           # Pixels above the top-left corner
