@@ -16,7 +16,7 @@ image = cv2.imread(str(IMAGE_PATH))
 detector = Detector()  # Assuming mite_Zones is not needed for this test
 
 
-keypoints = detector.detector(image)
+keypoints = detector.detect(image)
 
 #overlay on image
 image_with_keypoints = cv2.drawKeypoints(image, keypoints, None, (0, 255, 0), cv2.DRAW_MATCHES_FLAGS_DRAW_RICH_KEYPOINTS)

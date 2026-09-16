@@ -36,7 +36,7 @@ class Detector:
 
         return params
 
-    def detector(self, image):
+    def detect(self, image):
         """Returns the keypoints detected in the image using the configured blob detector."""
         return self.blob_detector.detect(image) 
 
