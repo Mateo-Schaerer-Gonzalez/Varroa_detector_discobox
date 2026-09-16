@@ -10,7 +10,7 @@ from classes.zones import Zone
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 IMAGE_PATH = SCRIPT_DIR / "sample_image.bmp"
-COORDINATES_PATH = SCRIPT_DIR.parent / "coordinates1.txt"
+COORDINATES_PATH = SCRIPT_DIR.parent / "coords_pixel.txt"
 
 # Maps the leading class id in coordinates1.txt to a Zone type name.
 # 1 = full chamber (dot-counting area), 0 = the handwritten Alive/Dead label strip.

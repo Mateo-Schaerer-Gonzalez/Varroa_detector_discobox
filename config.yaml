@@ -31,3 +31,19 @@ visual_styles:
       thickness: 2
       font_scale: 1.0
       text_offset_y: 30           # Pixels above the top-left corner
+
+detector:
+  min_threshold: 30
+  max_threshold: 200
+  threshold_step: 10
+  filter_by_color: true
+  blob_color: 0            # 0 detects dark blobs on light background
+  filter_by_area: true
+  min_area: 40              
+  max_area: 1200            
+  filter_by_circularity: true
+  min_circularity: 0.55
+  filter_by_convexity: true
+  min_convexity: 0.80
+  filter_by_inertia: true
+  min_inertia_ratio: 0.45

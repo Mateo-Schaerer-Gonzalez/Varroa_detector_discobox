@@ -45,6 +45,24 @@ class MiteConfig:
     dead_color: tuple
 
 
+@dataclass
+class DetectorConfig:
+    min_threshold: float
+    max_threshold: float
+    threshold_step: float
+    filter_by_color: bool
+    blob_color: int
+    filter_by_area: bool
+    min_area: float
+    max_area: float
+    filter_by_circularity: bool
+    min_circularity: float
+    filter_by_convexity: bool
+    min_convexity: float
+    filter_by_inertia: bool
+    min_inertia_ratio: float
+
+
 class AppConfig:
     """Loads configuration and exposes strongly-typed style/domain sections."""
 
@@ -56,6 +74,7 @@ class AppConfig:
         self.rect_style = RectStyle(**_tuplify(visual_styles.get("rect", {})))
         self.text_zone_style = TextZoneStyle(**_tuplify(visual_styles.get("text_zone", {})))
         self.mite = MiteConfig(**_tuplify(self._raw_config.get("mite", {})))
+        self.detector = DetectorConfig(**self._raw_config.get("detector", {}))
         self.zone_styles = {
             name: TextZoneStyle(**_tuplify(style))
             for name, style in visual_styles.get("Zones", {}).items()
