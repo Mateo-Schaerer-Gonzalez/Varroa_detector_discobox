@@ -22,8 +22,7 @@ mites = [
 for mite in mites:
     mite.draw(image)
 
-cv2.imwrite(OUTPUT_PATH, image)
-print(f"Saved result to {OUTPUT_PATH}")
+
 
 cv2.imshow("Mites", image)
 cv2.waitKey(0)

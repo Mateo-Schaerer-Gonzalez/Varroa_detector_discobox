@@ -4,7 +4,7 @@ from classes.rect import TextZone
 from classes.app_config import AppConfig, get_default_config
 import cv2
 import numpy as np
-
+from pathlib import Path
 
 class Zone(TextZone):
     def __init__(self, x1, y1, x2, y2, type, config: Optional[AppConfig] = None):
@@ -25,6 +25,9 @@ class Zone(TextZone):
         super().__init__(x1, y1, x2, y2, text=text, **style_kwargs)
         self.type = type
         self.mites = []  # List to hold Mite instances within this zone
+
+
+    
 
     def add_mite(self, mite):
         """Add a Mite instance to the zone"""
@@ -55,6 +58,38 @@ class ZoneManager:
         self.zones = zones
         # Types of zones where mites should be eliminated / ignored
         self.excluded_types = set(zone_type.lower() for zone_type in excluded_types or [])
+
+
+    @classmethod
+    def from_coords_file(cls, filepath: str | Path, zone_types: dict[str, str],  excluded_types=None) -> "ZoneManager":
+        """Factory method: parses a coordinate file and returns a ready-to-use ZoneManager."""
+        mapping = zone_types
+        path = Path(filepath)
+
+        if not path.is_file():
+            raise FileNotFoundError(f"Zone coordinates file not found: {path}")
+
+        zones = []
+        with open(path, "r") as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+
+                type_id, x1, y1, x2, y2 = line.split()
+                zone_type = mapping.get(type_id, type_id)
+
+                zones.append(
+                    Zone(
+                        int(float(x1)),
+                        int(float(y1)),
+                        int(float(x2)),
+                        int(float(y2)),
+                        type=zone_type,
+                    )
+                )
+
+        return cls(zones=zones, excluded_types=excluded_types)
 
     def add_zone(self, zone):
         self.zones.append(zone)
@@ -94,6 +129,8 @@ class ZoneManager:
         """Draws all zones on the image."""
         for zone in self.zones:
             zone.draw(image)
+
+        return image
 
 
     def assign_mites(self, mites):

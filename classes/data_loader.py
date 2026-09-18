@@ -114,3 +114,9 @@ class DataLoader:
             bursts.append((self.frames[start:end], self.times[start:end]))
             start = end
         return bursts
+
+    def get_first_frame(self):
+        """Returns the first frame of the first recording burst."""
+        if not hasattr(self, "frames"):
+            self.load_folder()
+        return self.frames[0]
