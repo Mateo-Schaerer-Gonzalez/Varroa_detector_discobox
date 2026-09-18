@@ -5,8 +5,8 @@ import cv2
 class Rect:
     def __init__(self, x1, y1, x2, y2, color=(0, 255, 0), thickness=2, **kwargs):
         # Ensure coordinates are in correct order (x1,y1) top-left, (x2,y2) bottom-right
-        self.x1, self.y1 = min(x1, x2), min(y1, y2)
-        self.x2, self.y2 = max(x1, x2), max(y1, y2)
+        self.x1, self.y1 = int(min(x1, x2)), int(min(y1, y2))
+        self.x2, self.y2 = int(max(x1, x2)), int(max(y1, y2))
         self.color = color
         self.thickness = thickness
 

@@ -40,6 +40,15 @@ class Zone(TextZone):
             -1
         )
 
+    def draw(self, image):
+        """Draws the zone rectangle and label on the image."""
+        super().draw(image)
+
+        # also draw mites within this zone
+        for mite in self.mites:
+            mite.draw(image)
+
+
 
 class ZoneManager:
     def __init__(self, zones, excluded_types=None):
@@ -81,12 +90,9 @@ class ZoneManager:
 
         return output_img
 
-    """def filter_mites(self, mites_or_boxes):
-       
-        return [
-            m for m in mites_or_boxes 
-            if not self.is_excluded(
-                getattr(m, "x", (m.x1 + m.x2) / 2.0),
-                getattr(m, "y", (m.y1 + m.y2) / 2.0)
-            )
-        ]"""
+    def draw(self, image):
+        """Draws all zones on the image."""
+        for zone in self.zones:
+            zone.draw(image)
+
+    

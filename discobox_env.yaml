@@ -1,0 +1,12 @@
+name: discobox_env
+channels:
+  - conda-forge
+  - defaults
+dependencies:
+  - python >=3.11
+  - numpy>=1.24
+  - opencv>=4.7
+  - pip
+  - pip:
+      - python-dotenv
+      - fastapi

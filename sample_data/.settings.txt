@@ -1,0 +1,10 @@
+recording_count=6
+recording_timeout=5
+vent_time=20
+led1_time=20
+led2_time=20
+frame_count=30
+fps=30
+vent=255
+led1=255
+led2=255

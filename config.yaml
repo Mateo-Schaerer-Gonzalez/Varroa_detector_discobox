@@ -29,7 +29,7 @@ visual_styles:
       box_color: [0, 255, 0]      # BGR: Green for zone perimeter
       text_color: [0, 255, 0]     # BGR: Green for label text
       thickness: 2
-      font_scale: 1.0
+      font_scale: 0.8
       text_offset_y: 30           # Pixels above the top-left corner
 
 detector:

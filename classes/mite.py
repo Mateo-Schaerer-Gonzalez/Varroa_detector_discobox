@@ -15,7 +15,7 @@ class Mite(TextZone):
         style = config.text_zone_style
 
         color = mite_cfg.alive_color if alive else mite_cfg.dead_color
-        text = f"mite_{Mite.id_counter:04d}"
+        text = f"{Mite.id_counter}"
         Mite.id_counter += 1
 
         super().__init__(
