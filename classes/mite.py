@@ -20,8 +20,6 @@ class Mite(TextZone):
         super().__init__(
             x1, y1, x2, y2,
             text=text,
-            color=self.mite_cfg.alive_color if alive else self.mite_cfg.dead_color,
-            text_color=self.mite_cfg.alive_color ,
             thickness=style.thickness,
             font_scale=style.font_scale,
             text_offset_y=style.text_offset_y,
@@ -31,6 +29,8 @@ class Mite(TextZone):
         self.motion_threshold = self.mite_cfg.motion_threshold
         self.metric = self.mite_cfg.metric
         self.alive = alive
+
+        
 
     @property
     def alive(self):

@@ -32,7 +32,9 @@ mites = detector.detect(masked)
 # add mites to zones
 zone_manager.assign_mites(mites)
 
-
+for zone in zone_manager.zones:
+    for mite in zone.mites:
+        mite.kill()
 
 
 output = zone_manager.draw(masked)
