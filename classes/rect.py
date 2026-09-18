@@ -60,6 +60,7 @@ class TextZone(Rect):
                  thickness=2, font_scale=1.0, text_offset_y=10):
         super().__init__(x1, y1, x2, y2, color=color, thickness=thickness)
         self.text = text
+        self.color = color
         self.text_color = text_color
         self.font_scale = font_scale
         self.text_offset_y = text_offset_y

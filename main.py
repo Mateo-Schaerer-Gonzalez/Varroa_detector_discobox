@@ -5,7 +5,7 @@ import cv2
 
 
 # initialize objects
-data_manager = DataLoader("sample_data")
+data_manager = DataLoader("sample_data", grayscale=False)
 zone_manager = ZoneManager.from_coords_file(filepath= "coords_pixel.txt",
                                             zone_types= {
                                                 "0": "label",
@@ -30,10 +30,12 @@ masked = zone_manager.mask_image_to_valid_rois(first_frame)
 mites = detector.detect(masked)
 
 # add mites to zones
-
 zone_manager.assign_mites(mites)
-output = zone_manager.draw(masked)
 
+
+
+
+output = zone_manager.draw(masked)
 
 #resize the output image
 DISPLAY_WIDTH = 1000
@@ -44,3 +46,4 @@ display_image = cv2.resize(output, None, fx=0.5, fy=0.5, interpolation=cv2.INTER
 cv2.imshow("pipeline result", display_image)
 cv2.waitKey(0)
 cv2.destroyAllWindows()
+
