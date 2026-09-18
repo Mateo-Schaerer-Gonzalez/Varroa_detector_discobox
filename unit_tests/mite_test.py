@@ -85,16 +85,16 @@ class TestInit:
 class TestIdCounter:
     def test_first_mite_id_is_zero(self):
         m = Mite(0, 0, 10, 10)
-        assert m.text == "mite_0000"
+        assert m.text == "0"
 
     def test_ids_increment_across_instances(self):
         first = Mite(0, 0, 10, 10)
         second = Mite(0, 0, 10, 10)
         third = Mite(0, 0, 10, 10)
         assert (first.text, second.text, third.text) == (
-            "mite_0000",
-            "mite_0001",
-            "mite_0002",
+            "0",
+            "1",
+            "2",
         )
 
     def test_ids_are_unique_even_with_custom_config(self, use_custom_config):

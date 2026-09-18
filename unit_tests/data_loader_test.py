@@ -158,3 +158,80 @@ class TestLoadFolder:
         loader = DataLoader(tmp_path)
         with pytest.raises(FileNotFoundError):
             loader.load_folder()
+
+
+class TestLoadBursts:
+    def test_returns_one_tuple_per_recording(self, tmp_path):
+        names = ("2025-09-04_15-25-04_fps-30", "2025-09-04_15-30-04_fps-30")
+        root = make_session(tmp_path, recording_names=names, frame_count=3, size=(4, 4))
+        loader = DataLoader(root, grayscale=True)
+        bursts = loader.load_bursts()
+        assert len(bursts) == 2
+        for frames, times in bursts:
+            assert frames.shape == (3, 4, 4)
+            assert times.shape == (3,)
+
+    def test_splits_frame_counts_correctly_when_recordings_differ_in_length(self, tmp_path):
+        (tmp_path / ".settings.txt").write_text(SETTINGS_TEXT)
+        short_name = "2025-09-04_15-25-04_fps-30"
+        long_name = "2025-09-04_15-30-04_fps-30"
+        for name, count in ((short_name, 2), (long_name, 5)):
+            recording_dir = tmp_path / name
+            recording_dir.mkdir()
+            for i in range(count):
+                cv2.imwrite(str(recording_dir / f"frame_{i:04d}.bmp"), np.full((2, 2, 3), i, dtype=np.uint8))
+        loader = DataLoader(tmp_path, grayscale=True)
+        bursts = loader.load_bursts()
+        (short_frames, short_times), (long_frames, long_times) = bursts
+        assert short_frames.shape == (2, 2, 2)
+        assert long_frames.shape == (5, 2, 2)
+        assert short_times.shape == (2,)
+        assert long_times.shape == (5,)
+
+    def test_times_match_load_folder_offsets(self, tmp_path):
+        names = ("2025-09-04_15-25-04_fps-30", "2025-09-04_15-30-04_fps-30")
+        root = make_session(tmp_path, recording_names=names, frame_count=3, size=(2, 2))
+        loader = DataLoader(root, grayscale=True)
+        (first_frames, first_times), (second_frames, second_times) = loader.load_bursts()
+        assert first_times[0] == 0
+        assert first_times[1] == pytest.approx(1 / 30)
+        # Second recording starts 5 minutes (300s) after the first.
+        assert second_times[0] == pytest.approx(300.0)
+        assert second_times[1] == pytest.approx(300.0 + 1 / 30)
+
+    def test_frame_content_matches_recording(self, tmp_path):
+        names = ("2025-09-04_15-25-04_fps-30", "2025-09-04_15-30-04_fps-30")
+        root = make_session(tmp_path, recording_names=names, frame_count=3, size=(2, 2))
+        loader = DataLoader(root, grayscale=True)
+        bursts = loader.load_bursts()
+        for (frames, _), name in zip(bursts, names):
+            expected = loader.load_recording(name)
+            assert np.array_equal(frames, expected)
+
+    def test_does_not_reload_images_already_loaded(self, tmp_path, monkeypatch):
+        names = ("2025-09-04_15-25-04_fps-30", "2025-09-04_15-30-04_fps-30")
+        root = make_session(tmp_path, recording_names=names, frame_count=3, size=(2, 2))
+        loader = DataLoader(root, grayscale=True)
+        loader.load_folder()
+
+        original_load_recording = DataLoader.load_recording
+        calls = []
+        monkeypatch.setattr(DataLoader, "load_recording",
+                             lambda self, name: calls.append(name) or original_load_recording(self, name))
+
+        loader.load_bursts()
+        assert calls == []
+
+    def test_loads_automatically_when_not_already_loaded(self, tmp_path):
+        names = ("2025-09-04_15-25-04_fps-30", "2025-09-04_15-30-04_fps-30")
+        root = make_session(tmp_path, recording_names=names, frame_count=3, size=(2, 2))
+        loader = DataLoader(root, grayscale=True)
+        assert not hasattr(loader, "frames")
+        bursts = loader.load_bursts()
+        assert len(bursts) == 2
+
+    def test_raises_when_no_recordings_found(self, tmp_path):
+        (tmp_path / ".settings.txt").write_text(SETTINGS_TEXT)
+        loader = DataLoader(tmp_path)
+        with pytest.raises(FileNotFoundError):
+            loader.load_bursts()

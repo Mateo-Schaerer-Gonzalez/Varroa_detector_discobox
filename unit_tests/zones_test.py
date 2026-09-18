@@ -1,8 +1,9 @@
+import numpy as np
 import pytest
 
 from classes.app_config import TextZoneStyle
 from classes.mite import Mite
-from classes.zones import Zone
+from classes.zones import Zone, ZoneManager
 
 
 class FakeConfig:
@@ -87,22 +88,123 @@ class TestAddMite:
         assert b.mites == []
 
 
-    def mite_inside_zone(self):
+    def test_mite_inside_zone(self):
         z = Zone(0, 0, 10, 10, type="brood")
         mite = Mite(1, 1, 2, 2)
-       
-        assert mite in z == True
 
-    def mite_outside_zone(self):
+        assert mite in z
+
+    def test_mite_outside_zone(self):
         z = Zone(0, 0, 10, 10, type="brood")
         mite = Mite(11, 11, 12, 12)
-       
-        assert mite in z == False
+
+        assert mite not in z
 
 
 class TestRepr:
     def test_repr_uses_generated_text(self):
         z = Zone(1, 2, 3, 4, type="brood")
         assert repr(z) == "TextZone(1, 2, 3, 4, text='brood_zone')"
+
+
+class TestZoneManagerExclusionAndValidZones:
+    def test_exclusion_zones_matches_excluded_types(self):
+        label = Zone(0, 0, 10, 10, type="label")
+        mite = Zone(0, 0, 10, 10, type="mite")
+        manager = ZoneManager([label, mite], excluded_types=["label"])
+
+        assert manager.exclusion_zones == [label]
+        assert manager.valid_zones == [mite]
+
+    def test_excluded_types_are_case_insensitive(self):
+        label = Zone(0, 0, 10, 10, type="label")
+        manager = ZoneManager([label], excluded_types=["LABEL"])
+
+        assert manager.exclusion_zones == [label]
+
+    def test_no_excluded_types_means_all_zones_are_valid(self):
+        a = Zone(0, 0, 10, 10, type="brood")
+        b = Zone(0, 0, 10, 10, type="entrance")
+        manager = ZoneManager([a, b], excluded_types=[])
+
+        assert manager.exclusion_zones == []
+        assert manager.valid_zones == [a, b]
+
+
+class TestZoneManagerIsExcluded:
+    def test_point_inside_exclusion_zone_is_excluded(self):
+        label = Zone(0, 0, 10, 10, type="label")
+        manager = ZoneManager([label], excluded_types=["label"])
+
+        assert manager.is_excluded(5, 5) is True
+
+    def test_point_outside_exclusion_zones_is_not_excluded(self):
+        label = Zone(0, 0, 10, 10, type="label")
+        manager = ZoneManager([label], excluded_types=["label"])
+
+        assert manager.is_excluded(50, 50) is False
+
+    def test_point_inside_a_non_excluded_zone_is_not_excluded(self):
+        mite_zone = Zone(0, 0, 10, 10, type="mite")
+        manager = ZoneManager([mite_zone], excluded_types=[])
+
+        assert manager.is_excluded(5, 5) is False
+
+
+class TestZoneManagerMaskImageToValidRois:
+    def test_keeps_only_valid_zone_pixels(self):
+        label = Zone(0, 0, 5, 10, type="label")
+        mite_zone = Zone(5, 0, 10, 10, type="mite")
+        manager = ZoneManager([label, mite_zone], excluded_types=["label"])
+        image = np.full((10, 10), 7, dtype=np.uint8)
+
+        masked = manager.mask_image_to_valid_rois(image, fill_color=255)
+
+        assert (masked[:, :5] == 255).all()
+        assert (masked[:, 5:] == 7).all()
+
+
+class TestZoneManagerAssignMites:
+    def test_mite_inside_a_zone_is_assigned_and_returned(self):
+        zone = Zone(0, 0, 100, 100, type="brood")
+        manager = ZoneManager([zone])
+        mite = Mite(10, 10, 20, 20)
+
+        assigned = manager.assign_mites([mite])
+
+        assert assigned == [mite]
+        assert zone.mites == [mite]
+
+    def test_mite_outside_all_zones_is_dropped(self):
+        zone = Zone(0, 0, 10, 10, type="brood")
+        manager = ZoneManager([zone])
+        mite = Mite(50, 50, 60, 60)
+
+        assigned = manager.assign_mites([mite])
+
+        assert assigned == []
+        assert zone.mites == []
+
+    def test_mite_assigned_to_first_matching_zone_only(self):
+        first = Zone(0, 0, 100, 100, type="brood")
+        second = Zone(0, 0, 100, 100, type="entrance")
+        manager = ZoneManager([first, second])
+        mite = Mite(10, 10, 20, 20)
+
+        manager.assign_mites([mite])
+
+        assert first.mites == [mite]
+        assert second.mites == []
+
+    def test_multiple_mites_are_each_assigned_independently(self):
+        zone = Zone(0, 0, 100, 100, type="brood")
+        manager = ZoneManager([zone])
+        first_mite = Mite(1, 1, 2, 2)
+        second_mite = Mite(3, 3, 4, 4)
+
+        assigned = manager.assign_mites([first_mite, second_mite])
+
+        assert assigned == [first_mite, second_mite]
+        assert zone.mites == [first_mite, second_mite]
 
 

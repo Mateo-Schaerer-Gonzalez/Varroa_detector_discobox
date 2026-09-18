@@ -45,8 +45,9 @@ zones = load_zones(COORDINATES_PATH)
 zone_manager = ZoneManager(zones, excluded_types=EXCLUDED_TYPES)
 
 detector = Detector()  # Assuming mite_Zones is not needed for this test
-mites = detector.process_frame(image, zone_manager) # addes mites to the zones and returns a list of detected mites
-
+masked_image = zone_manager.mask_image_to_valid_rois(image, fill_color=255)
+mites = detector.detect(masked_image)  # detect mites in the masked image
+zone_manager.assign_mites(mites)  # assign each mite to its containing zone
 
 
 zone_manager.draw(image)  # Draw all zones on the image

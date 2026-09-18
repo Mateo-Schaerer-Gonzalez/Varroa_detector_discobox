@@ -48,12 +48,10 @@ masked_image = zone_manager.mask_image_to_valid_rois(image, fill_color=255)
 
 # run through detector
 detector = Detector()  # Assuming mite_Zones is not needed for this test
-keypoints = detector.detect(masked_image)
-image_with_keypoints = cv2.drawKeypoints(masked_image, keypoints, None, (0, 255, 0), cv2.DRAW_MATCHES_FLAGS_DRAW_RICH_KEYPOINTS)
-
-
-
-
+mites = detector.detect(masked_image)
+image_with_keypoints = masked_image.copy()
+for mite in mites:
+    mite.draw(image_with_keypoints)
 # Draw the valid (inclusion) zone outlines on top so the kept regions are obvious.
 for zone in zone_manager.valid_zones:
     zone.draw(image_with_keypoints)

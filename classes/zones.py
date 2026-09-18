@@ -54,7 +54,7 @@ class ZoneManager:
     def __init__(self, zones, excluded_types=None):
         self.zones = zones
         # Types of zones where mites should be eliminated / ignored
-        self.excluded_types = set(zone_type.lower() for zone_type in excluded_types)
+        self.excluded_types = set(zone_type.lower() for zone_type in excluded_types or [])
 
     def add_zone(self, zone):
         self.zones.append(zone)
@@ -94,5 +94,22 @@ class ZoneManager:
         """Draws all zones on the image."""
         for zone in self.zones:
             zone.draw(image)
+
+
+    def assign_mites(self, mites):
+        """Assigns mites to their respective zones.
+
+        Returns the list of mites that successfully landed inside a valid zone.
+        """
+        assigned_mites = []
+
+        for mite in mites:
+            for zone in self.zones:
+                if mite in zone:
+                    zone.add_mite(mite)
+                    assigned_mites.append(mite)
+                    break  # Stop checking once the first matching zone claims it
+
+        return assigned_mites
 
     

@@ -1,4 +1,5 @@
 import re
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 from pathlib import Path
 
@@ -70,7 +71,8 @@ class DataLoader:
         if not image_paths:
             raise FileNotFoundError(f"No .bmp images found in {recording_dir}")
         flag = cv2.IMREAD_GRAYSCALE if self.grayscale else cv2.IMREAD_COLOR
-        frames = [cv2.imread(str(p), flag) for p in image_paths]
+        with ThreadPoolExecutor() as executor:
+            frames = list(executor.map(lambda p: cv2.imread(str(p), flag), image_paths))
         return np.stack(frames, axis=0)
 
     def load_all(self):
@@ -92,8 +94,23 @@ class DataLoader:
             offset = (self.get_start_time(d.name) - base_time).total_seconds()
             time_chunks.append(offset + np.arange(frames.shape[0]) / fps)
             frame_chunks.append(frames)
-            self.frames = np.concatenate(frame_chunks, axis=0)
-            self.times = np.concatenate(time_chunks, axis=0)
 
-            
+        self.frames = np.concatenate(frame_chunks, axis=0)
+        self.times = np.concatenate(time_chunks, axis=0)
+
         return self.frames, self.times
+
+    def load_bursts(self):
+        """Split the concatenated frames/times from load_folder back into a list of
+        (frames, times) tuples, one per recording burst, in recording order."""
+        if not hasattr(self, "frames"):
+            self.load_folder()
+
+        bursts = []
+        start = 0
+        for d in self.recording_dirs:
+            n = len(list(d.glob("*.bmp")))
+            end = start + n
+            bursts.append((self.frames[start:end], self.times[start:end]))
+            start = end
+        return bursts
