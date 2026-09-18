@@ -43,7 +43,9 @@ class DataLoader:
         """Session-level settings, overridden by the recording's own .settings.txt if present."""
         merged = dict(self.settings)
         recording_settings_path = self.data_dir / name / ".settings.txt"
-        merged.update(self._parse_settings_file(recording_settings_path))
+        if recording_settings_path.exists():
+            merged.update(self._parse_settings_file(recording_settings_path))
+        return merged
 
     def get_fps(self, name):
         settings = self.get_settings(name)
@@ -78,7 +80,8 @@ class DataLoader:
         """Stack every recording's frames and compute each frame's wall-clock time
         (in seconds, relative to the first frame of the first recording)."""
         dirs = self.recording_dirs
-     
+        if not dirs:
+            raise FileNotFoundError(f"No recordings found in {self.data_dir}")
 
         base_time = self.get_start_time(dirs[0].name)
         frame_chunks = []
@@ -89,5 +92,8 @@ class DataLoader:
             offset = (self.get_start_time(d.name) - base_time).total_seconds()
             time_chunks.append(offset + np.arange(frames.shape[0]) / fps)
             frame_chunks.append(frames)
+            self.frames = np.concatenate(frame_chunks, axis=0)
+            self.times = np.concatenate(time_chunks, axis=0)
 
-        return np.concatenate(frame_chunks, axis=0), np.concatenate(time_chunks, axis=0)
+            
+        return self.frames, self.times
