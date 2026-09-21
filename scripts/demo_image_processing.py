@@ -4,7 +4,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from classes.data_loader import DataLoader
-from classes.detector import Detector
+from classes.analyzer import Analyzer
 from classes.zones import ZoneManager, Zone
 import cv2
 from pathlib import Path
@@ -23,7 +23,7 @@ zone_manager = ZoneManager.from_coords_file(filepath= COORDS_dir,
                                             },
                                             excluded_types=["label"])
 
-detector = Detector()
+analyzer = Analyzer()
 
 
 # load the data
@@ -37,7 +37,7 @@ first_frame = data_manager.get_first_frame()
 masked = zone_manager.mask_image_to_valid_rois(first_frame)
 
 #detect mites
-mites = detector.detect(masked)
+mites = analyzer.detect(masked)
 
 # add mites to zones
 

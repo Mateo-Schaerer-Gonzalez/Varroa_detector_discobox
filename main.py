@@ -1,5 +1,5 @@
 from classes.data_loader import DataLoader
-from classes.detector import Detector
+from classes.analyzer import Analyzer
 from classes.zones import ZoneManager, Zone
 import cv2
 
@@ -13,7 +13,7 @@ zone_manager = ZoneManager.from_coords_file(filepath= "coords_pixel.txt",
                                             },
                                             excluded_types=["label"])
 
-detector = Detector()
+analyzer = Analyzer()
 
 
 # load the data
@@ -23,21 +23,20 @@ recording_bursts = data_manager.load_bursts()
 first_frame = data_manager.get_first_frame()
 
 # mask the frame
-
 masked = zone_manager.mask_image_to_valid_rois(first_frame)
 
 #detect mites
-mites = detector.detect(masked)
+mites = analyzer.detect(masked)
 
 # add mites to zones
 zone_manager.assign_mites(mites)
 
-for zone in zone_manager.zones:
-    for mite in zone.mites:
-        mite.kill()
-
 
 output = zone_manager.draw(masked)
+
+
+# get the mite variance
+
 
 #resize the output image
 DISPLAY_WIDTH = 1000

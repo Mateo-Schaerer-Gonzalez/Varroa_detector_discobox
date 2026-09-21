@@ -4,7 +4,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from classes.data_loader import DataLoader
-from classes.detector import Detector
+from classes.analyzer import Analyzer
 from classes.zones import ZoneManager, Zone
 import cv2
 from pathlib import Path

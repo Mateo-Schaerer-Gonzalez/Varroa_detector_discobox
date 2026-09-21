@@ -4,7 +4,7 @@ from classes.app_config import AppConfig, get_default_config
 from classes.mite import Mite
 
 
-class Detector:
+class Analyzer:
 
     def __init__(self, config: Optional[AppConfig] = None):
         config = config or get_default_config()
