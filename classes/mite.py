@@ -28,9 +28,9 @@ class Mite(TextZone):
         self.radius = self.mite_cfg.radius
         self.motion_threshold = self.mite_cfg.motion_threshold
         self.metric = self.mite_cfg.metric
+        self.motion_scores = []
         self.alive = alive
 
-        
 
     @property
     def alive(self):
@@ -46,3 +46,8 @@ class Mite(TextZone):
     def kill(self):
         """Mark the mite as dead, switching its color to the dead-mite color."""
         self.alive = False
+
+    def record_motion(self, score):
+        """Append a per-recording motion score; alive reflects this latest recording only."""
+        self.motion_scores.append(score)
+        self.alive = score >= self.motion_threshold

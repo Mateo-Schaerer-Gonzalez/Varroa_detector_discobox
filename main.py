@@ -2,6 +2,8 @@ from classes.data_loader import DataLoader
 from classes.analyzer import Analyzer
 from classes.zones import ZoneManager, Zone
 import cv2
+import matplotlib.pyplot as plt
+import numpy as np
 
 
 # initialize objects
@@ -29,13 +31,40 @@ masked = zone_manager.mask_image_to_valid_rois(first_frame)
 mites = analyzer.detect(masked)
 
 # add mites to zones
-zone_manager.assign_mites(mites)
+valid_mites = zone_manager.assign_mites(mites)
+
+
+# get the mite variability (one score per mite per recording burst)
+analyzer.classify_motility(valid_mites, recording_bursts)
 
 
 output = zone_manager.draw(masked)
 
 
-# get the mite variance
+
+
+# plot the distribution of the variability scores
+variabilities = [score for mite in valid_mites for score in mite.motion_scores]
+
+plt.figure()
+plt.hist(variabilities, bins=30, edgecolor="black")
+plt.xlabel("Mite variability (mean per-pixel std over frames)")
+plt.ylabel("Count (mite x recording)")
+plt.title(f"Mite variability distribution (n={len(variabilities)})")
+
+# plot the variability of each mite over time (x = start time of each burst)
+burst_minutes = np.array([times[0] for _frames, times in recording_bursts]) / 60
+scores = np.array([mite.motion_scores for mite in valid_mites])  # (n_mites, n_bursts)
+
+plt.figure()
+for mite_scores in scores:
+    plt.plot(burst_minutes, mite_scores, color="tab:blue", alpha=0.25, linewidth=1)
+plt.plot(burst_minutes, scores.mean(axis=0), color="black", linewidth=2.5, marker="o", label="mean over mites")
+plt.xlabel("Time (min)")
+plt.ylabel("Mite variability (mean per-pixel std over frames)")
+plt.title(f"Mite variability over time (n={len(valid_mites)} mites)")
+plt.legend()
+plt.show()
 
 
 #resize the output image

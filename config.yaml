@@ -1,7 +1,7 @@
 mite:
   radius: 8
   motion_threshold: 15.654   
-  metric: "max_diff"
+  metric: "variability"
   alive_color: [0, 255, 0]          # BGR: Green for alive mites
   dead_color: [0, 0, 255]          # BGR: Red for dead mites
 
