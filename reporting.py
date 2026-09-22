@@ -185,3 +185,50 @@ def write_outputs(mite_data, annotated_image, out_dir):
             "groups": summary.round(3).to_dict(orient="records"),
         },
     }
+
+
+CALIBRATION_EXCEL_NAME = "calibration.xlsx"
+
+
+def write_calibration_excel(result, out_dir):
+    """Write a calibration's summary, every labelled (mite, recording) observation,
+    the survival curves and, when there is one, the ROC curve."""
+    path = Path(out_dir) / CALIBRATION_EXCEL_NAME
+
+    summary = pd.DataFrame(
+        [{"threshold": "in use", **result["current"]}]
+        + ([{"threshold": "suggested", **result["best"]}] if result["best"] else [])
+    )
+    summary["auc"] = result["auc"]
+    summary["metric"] = result["metric"]
+
+    observations = pd.DataFrame(result["observations"]).rename(
+        columns={"score": "score_from_here_on", "recording_score": "score_this_recording"}
+    )
+
+    def survival_rows(level, name, curves):
+        return pd.DataFrame(
+            {
+                "level": level,
+                "name": name,
+                "time": result["times"],
+                "n_labelled": curves["n"],
+                "alive_ground_truth": curves["truth"],
+                "alive_called_in_use": curves["current"],
+                **({"alive_called_suggested": curves["suggested"]} if "suggested" in curves else {}),
+            }
+        )
+
+    survival = pd.concat(
+        [survival_rows("all", "all", result["survival"])]
+        + [survival_rows("group", group["group"], group) for group in result["group_survival"]],
+        ignore_index=True,
+    )
+
+    with pd.ExcelWriter(path, engine="openpyxl") as writer:
+        summary.to_excel(writer, sheet_name="summary", index=False)
+        observations.to_excel(writer, sheet_name="observations", index=False)
+        survival.to_excel(writer, sheet_name="survival", index=False)
+        if result["roc"]:
+            pd.DataFrame(result["roc"]).to_excel(writer, sheet_name="roc", index=False)
+    return path.name

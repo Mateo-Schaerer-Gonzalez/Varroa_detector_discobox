@@ -35,6 +35,37 @@ recording is not marked dead. As a result, survival curves never go back up. The
 limit of this rule is the last recording: a mite that is still at the end cannot
 be told apart from a dead one.
 
+### Calibration
+
+*Calibration ↗* in the header opens a second window for recordings in which you
+know which mites are alive and which are dead:
+
+1. **Calibration data**: pick *Calibrate the threshold* or *Test the threshold*,
+   then drop the folder. Every frame is decoded and each mite is scored.
+2. **Ground truth**: zone by zone and recording by recording, the zone's frames
+   of that recording play in a loop; click each mite to cycle it through
+   *alive*, *dead*, *not a mite* (a false detection) and back to unlabelled.
+   Marking a mite dead also marks it dead in the later recordings not yet
+   labelled, and alive marks the earlier ones alive. <kbd>↑</kbd> <kbd>↓</kbd>
+   change recording, <kbd>←</kbd> <kbd>→</kbd> change zone. The detector's own
+   call is hidden so it cannot bias you. The answers are saved by position in
+   `ground_truth.json` next to the recordings, so they survive a change in
+   detector settings.
+3. **Report**: every labelled (mite, recording) is compared with the detector's
+   call there: alive while the mite still moves above the threshold in that or a
+   later recording, the same rule as the survival curves. *Calibration* suggests
+   the threshold that maximises sensitivity + specificity and can save it to
+   `config.yaml`. *Test* shows survival by the ground truth against survival as
+   called by the detector (overall and per group), accuracy, a confusion matrix,
+   the ROC curve with AUC, and where on the plate the errors are. Everything is
+   also written to `calibration.xlsx`.
+
+Test a threshold on a different recording from the one it was calibrated on.
+
+A detection marked *not a mite* is removed from every later analysis of that
+folder: `run_analysis` drops it before scoring, so it appears in no count,
+survival curve or figure.
+
 Everything runs on `127.0.0.1` and no asset is fetched from the internet, so the
 app works with no network connection.
 

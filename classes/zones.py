@@ -236,6 +236,18 @@ class ZoneManager:
         return assigned_mites
 
 
+    def remove_mites(self, rejected):
+        """Drop detections that are not mites from their zones.
+
+        `rejected` is a collection of Mite instances. Returns the mites that remain.
+        """
+        rejected = set(map(id, rejected))
+        remaining = []
+        for zone in self.zones:
+            zone.mites = [mite for mite in zone.mites if id(mite) not in rejected]
+            remaining.extend(zone.mites)
+        return remaining
+
     def get_mite_scores(self, times):
         """Return a long-form timeseries of mite motion scores.
 

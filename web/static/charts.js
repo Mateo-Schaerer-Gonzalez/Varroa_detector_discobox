@@ -1,6 +1,7 @@
 // Small hand-written SVG charts, so the page needs no charting library and works
-// offline. Two kinds: Charts.line (axes, legend, hover tooltip) and Charts.spark
-// (a bare mini line for the zone cards).
+// offline. Charts.line (time series with axes, legend, hover tooltip),
+// Charts.scatter (x-y points and lines, for the calibration report) and
+// Charts.spark (a bare mini line for the zone cards).
 
 const Charts = (() => {
   const SVG = "http://www.w3.org/2000/svg";
@@ -75,12 +76,17 @@ const Charts = (() => {
    *   threshold   { value, label } drawn as a dashed reference line
    */
   function line(container, options) {
+    keepLive(container, () => draw(container, options));
+  }
+
+  // Draw now, and again on every resize for as long as the container is on the page.
+  function keepLive(container, render) {
     const redraw = () => {
       if (!container.isConnected) { live.delete(redraw); return; }
-      draw(container, options);
+      render();
     };
     live.add(redraw);
-    draw(container, options);
+    render();
   }
 
   function draw(container, options) {
@@ -226,6 +232,169 @@ const Charts = (() => {
     container.appendChild(svg);
   }
 
+  // A point glyph. Shapes carry the meaning together with colour, never colour alone.
+  function glyph(parent, shape, cx, cy, r, color) {
+    if (shape === "cross") {
+      const g = el("g", { stroke: color, "stroke-width": 2, "stroke-linecap": "round", class: "glyph" }, parent);
+      el("line", { x1: cx - r, y1: cy - r, x2: cx + r, y2: cy + r }, g);
+      el("line", { x1: cx - r, y1: cy + r, x2: cx + r, y2: cy - r }, g);
+      return g;
+    }
+    if (shape === "square") {
+      return el("rect", { x: cx - r, y: cy - r, width: 2 * r, height: 2 * r, fill: color, class: "marker" }, parent);
+    }
+    if (shape === "ring") {
+      return el("circle", { cx, cy, r, fill: "none", stroke: color, "stroke-width": 1.75, class: "glyph" }, parent);
+    }
+    return el("circle", { cx, cy, r, fill: color, class: "marker" }, parent);
+  }
+
+  function legendHtml(items) {
+    return items.map((item) => {
+      const svg = item.dashed
+        ? `<svg width="18" height="10" aria-hidden="true"><line x1="0" x2="18" y1="5" y2="5" stroke="${item.color}" stroke-width="2" stroke-dasharray="4 3"/></svg>`
+        : item.shape === "line"
+          ? `<svg width="18" height="10" aria-hidden="true"><line x1="0" x2="18" y1="5" y2="5" stroke="${item.color}" stroke-width="2"/></svg>`
+          : `<svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true">${glyphMarkup(item.shape, item.color)}</svg>`;
+      return `<span class="legend-item">${svg}${escape(item.name)}</span>`;
+    }).join("");
+  }
+
+  function glyphMarkup(shape, color) {
+    const holder = el("g");
+    glyph(holder, shape, 6, 6, 4, color);
+    return holder.innerHTML;
+  }
+
+  /**
+   * An x-y chart with numeric axes: points, lines and dashed reference lines.
+   *
+   * options:
+   *   points      [{ x, y, color, shape ("circle" | "cross" | "square" | "ring"),
+   *                  r, tip (tooltip html), label, labelDy, onClick, hidden (hover target only) }]
+   *   lines       [{ points: [[x, y], ...], color, width, dashed }]
+   *   refX, refY  [{ value, label }] vertical / horizontal dashed reference lines
+   *   xLabel, yLabel, xMin, xMax, yMin, yMax, height
+   *   square      height follows the width (up to `height`), for ROC curves
+   *   xFormat, yFormat   value -> tick text
+   *   yCategories [{ value, label }] named rows instead of numeric y ticks
+   *   legend      [{ name, color, shape }] (shape "line" for a line key)
+   */
+  function scatter(container, options) {
+    keepLive(container, () => drawScatter(container, options));
+  }
+
+  function drawScatter(container, options) {
+    const {
+      points = [], lines = [], refX = [], refY = [], xLabel = "", yLabel = "",
+      xFormat = (v) => `${+v.toFixed(2)}`, yFormat = (v) => `${+v.toFixed(2)}`,
+    } = options;
+
+    container.innerHTML = "";
+    container.classList.add("chart");
+    if (options.legend && options.legend.length) {
+      const legend = document.createElement("div");
+      legend.className = "legend";
+      legend.innerHTML = legendHtml(options.legend);
+      container.appendChild(legend);
+    }
+
+    const width = Math.max(260, container.clientWidth || 640);
+    const pad = { left: options.yCategories ? 70 : 56, right: 16, top: 14, bottom: 42 };
+    const height = options.square
+      ? Math.min(options.height ?? 380, width - pad.left - pad.right + pad.top + pad.bottom)
+      : options.height ?? 280;
+    const plotW = width - pad.left - pad.right;
+    const plotH = height - pad.top - pad.bottom;
+
+    // A free end of an axis gets a little room so no point sits on the frame.
+    const extent = (values, fixedMin, fixedMax) => {
+      let lo = Math.min(...values);
+      let hi = Math.max(...values);
+      if (!(hi > lo)) { lo -= 1; hi += 1; }
+      const margin = (hi - lo) * 0.05;
+      return [fixedMin ?? lo - margin, fixedMax ?? hi + margin];
+    };
+    const [xMin, xMax] = extent(
+      [...points.map((p) => p.x), ...lines.flatMap((l) => l.points.map((p) => p[0])), ...refX.map((r) => r.value)],
+      options.xMin, options.xMax);
+    const [yMin, yMax] = extent(
+      [...points.map((p) => p.y), ...lines.flatMap((l) => l.points.map((p) => p[1])), ...refY.map((r) => r.value)],
+      options.yMin, options.yMax);
+    const sx = (v) => pad.left + ((v - xMin) / (xMax - xMin)) * plotW;
+    const sy = (v) => pad.top + plotH - ((v - yMin) / (yMax - yMin)) * plotH;
+    const inside = (t, lo, hi) => t >= lo - 1e-9 && t <= hi + 1e-9;
+
+    const svg = el("svg", { viewBox: `0 0 ${width} ${height}`, width: "100%", height, role: "img" });
+    if (options.title) el("title", {}, svg).textContent = options.title;
+
+    const grid = el("g", { class: "grid" }, svg);
+    const axes = el("g", {}, svg);
+    const bottom = pad.top + plotH;
+    const yTicks = options.yCategories || niceTicks(yMin, yMax).filter((t) => inside(t, yMin, yMax)).map((value) => ({ value, label: yFormat(value) }));
+    for (const { value, label } of yTicks) {
+      el("line", { x1: pad.left, x2: pad.left + plotW, y1: sy(value), y2: sy(value) }, grid);
+      el("line", { x1: pad.left - 4, x2: pad.left, y1: sy(value), y2: sy(value), class: "tick-mark" }, axes);
+      el("text", { x: pad.left - 7, y: sy(value) + 4, "text-anchor": "end", class: "tick" }, axes).textContent = label;
+    }
+    for (const t of niceTicks(xMin, xMax, 6).filter((t) => inside(t, xMin, xMax))) {
+      el("line", { x1: sx(t), x2: sx(t), y1: pad.top, y2: bottom }, grid);
+      el("line", { x1: sx(t), x2: sx(t), y1: bottom, y2: bottom + 4, class: "tick-mark" }, axes);
+      el("text", { x: sx(t), y: bottom + 17, "text-anchor": "middle", class: "tick" }, axes).textContent = xFormat(t);
+    }
+    el("line", { x1: pad.left, x2: pad.left + plotW, y1: bottom, y2: bottom, class: "axis" }, axes);
+    el("line", { x1: pad.left, x2: pad.left, y1: pad.top, y2: bottom, class: "axis" }, axes);
+    el("text", { x: pad.left + plotW / 2, y: height - 6, "text-anchor": "middle", class: "axis-label" }, svg).textContent = xLabel;
+    el("text", { x: 14, y: pad.top + plotH / 2, "text-anchor": "middle", class: "axis-label", transform: `rotate(-90 14 ${pad.top + plotH / 2})` }, svg).textContent = yLabel;
+
+    // Reference lines; labels of vertical ones stack down so they never overlap.
+    refY.forEach(({ value, label }) => {
+      el("line", { x1: pad.left, x2: pad.left + plotW, y1: sy(value), y2: sy(value), class: "threshold" }, svg);
+      if (label) el("text", { x: pad.left + plotW - 4, y: sy(value) - 6, "text-anchor": "end", class: "threshold-label" }, svg).textContent = label;
+    });
+    [...refX].sort((a, b) => a.value - b.value).forEach(({ value, label }, i) => {
+      el("line", { x1: sx(value), x2: sx(value), y1: pad.top, y2: bottom, class: "threshold" }, svg);
+      if (!label) return;
+      const right = sx(value) < pad.left + plotW * 0.7;
+      el("text", {
+        x: sx(value) + (right ? 5 : -5), y: pad.top + 11 + i * 14,
+        "text-anchor": right ? "start" : "end", class: "threshold-label",
+      }, svg).textContent = label;
+    });
+
+    for (const l of lines) {
+      const d = l.points.map(([x, y], i) => `${i ? "L" : "M"}${sx(x)},${sy(y)}`).join("");
+      el("path", {
+        d, fill: "none", stroke: l.color, "stroke-width": l.width ?? 2,
+        "stroke-linejoin": "round", "stroke-linecap": "round",
+        ...(l.dashed ? { "stroke-dasharray": "5 4" } : {}),
+      }, svg);
+    }
+
+    for (const p of points) {
+      const cx = sx(p.x);
+      const cy = sy(p.y);
+      const r = p.r ?? 4;
+      const g = el("g", { class: "point" }, svg);
+      if (!p.hidden) glyph(g, p.shape, cx, cy, r, p.color);
+      if (p.label) {
+        el("text", { x: cx + r + 5, y: cy + 4 + (p.labelDy || 0), class: "point-label" }, g).textContent = p.label;
+      }
+      if (p.tip || p.onClick) {
+        // The hit area is larger than the mark, so small points are easy to hover.
+        const hit = el("circle", { cx, cy, r: r + 5, fill: "transparent", class: "hit" }, g);
+        hit.addEventListener("mousemove", (event) => { g.classList.add("hover"); if (p.tip) showTooltip(event, p.tip); });
+        hit.addEventListener("mouseleave", () => { g.classList.remove("hover"); hideTooltip(); });
+        if (p.onClick) {
+          hit.style.cursor = "pointer";
+          hit.addEventListener("click", p.onClick);
+        }
+      }
+    }
+
+    container.appendChild(svg);
+  }
+
   /** A bare mini line in a hairline frame, 0..1 on y, for the zone cards. */
   function spark(container, { values, color, step = true, height = 40 }) {
     const width = 160;
@@ -237,5 +406,5 @@ const Charts = (() => {
     container.appendChild(svg);
   }
 
-  return { line, spark, showTooltip, hideTooltip, escape };
+  return { line, scatter, spark, legendHtml, showTooltip, hideTooltip, escape };
 })();

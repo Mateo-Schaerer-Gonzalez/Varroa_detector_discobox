@@ -75,6 +75,29 @@ class DataLoader:
             frames = list(executor.map(lambda p: cv2.imread(str(p), flag), image_paths))
         return np.stack(frames, axis=0)
 
+    def count_frames(self, name):
+        """Number of frames in one recording."""
+        return len(list((self.data_dir / name).glob("*.bmp")))
+
+    def load_recording_region(self, name, x1, y1, x2, y2, step=1):
+        """Every `step`-th frame of one recording, cropped to (x1, y1)-(x2, y2).
+
+        Crops each frame as soon as it is read, so looking at one plate of one
+        recording never holds a whole recording of full frames in memory.
+        """
+        image_paths = sorted((self.data_dir / name).glob("*.bmp"))[::step]
+        if not image_paths:
+            raise FileNotFoundError(f"No .bmp images found in {self.data_dir / name}")
+        flag = cv2.IMREAD_GRAYSCALE if self.grayscale else cv2.IMREAD_COLOR
+
+        def read(path):
+            frame = cv2.imread(str(path), flag)
+            height, width = frame.shape[:2]
+            return frame[max(0, y1):min(height, y2), max(0, x1):min(width, x2)].copy()
+
+        with ThreadPoolExecutor() as executor:
+            return np.stack(list(executor.map(read, image_paths)), axis=0)
+
     def load_all(self):
         return {d.name: self.load_recording(d.name) for d in self.recording_dirs}
 

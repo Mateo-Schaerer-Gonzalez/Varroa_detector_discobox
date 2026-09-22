@@ -3,6 +3,8 @@
 //
 // Navigation is hash-based so the browser's back/forward buttons work:
 //   #/open  #/label  #/results  #/zone/<id>  #/mite/<id>
+// and, in the calibration window (calibration.js):
+//   #/cal/open  #/cal/truth/<zone id>/<recording>  #/cal/report
 
 let sessionId = null;
 let session = null;      // what opening a folder returned: preview, zones, labels
@@ -63,8 +65,24 @@ function go(hash) {
   else location.hash = hash;
 }
 
+// Show one <section class="view"> and hide the others.
+function showView(name) {
+  document.querySelectorAll("main > .view").forEach((view) => { view.hidden = view.id !== `view-${name}`; });
+}
+
+// The calibration window uses its own steps in the header.
+function setMode(calibrating) {
+  $("steps-analysis").hidden = calibrating;
+  $("steps-cal").hidden = !calibrating;
+  $("mode-link").hidden = calibrating;
+  $("brand-mode").hidden = !calibrating;
+  document.title = calibrating ? "Calibration · Varroa discobox" : "Varroa discobox";
+}
+
 function route() {
-  const [, view = "open", id] = location.hash.split("/");
+  const [, view = "open", id, ...rest] = location.hash.split("/");
+  setMode(view === "cal");
+  if (view === "cal") { routeCalibration(id, ...rest); return; }
   const wanted = { open: "open", label: "label", results: "results", zone: "results", mite: "results" }[view] || "open";
 
   // Fall back to the furthest stage that has data.
@@ -73,8 +91,8 @@ function route() {
   if (step === "label" && !session) step = "open";
   if (step !== wanted) { location.replace("#/" + step); return; }
 
-  for (const name of ["open", "label", "results"]) $(`view-${name}`).hidden = name !== step;
-  document.querySelectorAll(".steps a").forEach((link) => {
+  showView(step);
+  document.querySelectorAll("#steps-analysis a[data-step]").forEach((link) => {
     link.classList.toggle("active", link.dataset.step === step);
     const available = link.dataset.step === "open" || (link.dataset.step === "label" && session) || (link.dataset.step === "results" && results);
     link.classList.toggle("disabled", !available);
@@ -115,7 +133,8 @@ async function openFolder(dataDir) {
 }
 
 // Only these files matter to the analysis; everything else stays on disk.
-const wanted = (path) => /\.bmp$/i.test(path) || /(^|\/)\.settings\.txt$/.test(path) || /(^|\/)labels\.json$/.test(path);
+const wanted = (path) =>
+  /\.bmp$/i.test(path) || /(^|\/)\.settings\.txt$/.test(path) || /(^|\/)(labels|ground_truth)\.json$/.test(path);
 
 // Walk a dropped folder into a flat list of { path, file }, paths relative to it.
 async function filesFromDrop(dataTransfer) {
@@ -147,7 +166,9 @@ function filesFromPicker(fileList) {
   return { name, files: all.map((file) => ({ path: file.webkitRelativePath.split("/").slice(1).join("/"), file })) };
 }
 
-async function uploadFolder({ name, files }) {
+// `prefix` picks the drop zone's elements ("" here, "cal-" in the calibration
+// window) and `open` is called with the server-side folder once it is copied.
+async function uploadFolder({ name, files }, prefix, open) {
   // A single recording folder dropped on its own becomes a one-recording session.
   if (/_fps-\d+/.test(name)) {
     files = files.map((f) => ({ ...f, path: `${name}/${f.path}` }));
@@ -158,9 +179,9 @@ async function uploadFolder({ name, files }) {
     throw new Error(`No .bmp images found in “${name}”. Drop the folder that holds the ..._fps-30 folders.`);
   }
 
-  const progress = $("upload-progress");
-  const bar = $("upload-bar");
-  const text = $("upload-text");
+  const progress = $(`${prefix}upload-progress`);
+  const bar = $(`${prefix}upload-bar`);
+  const text = $(`${prefix}upload-text`);
   progress.hidden = false;
   bar.style.width = "0%";
   text.textContent = `Checking ${files.length} files…`;
@@ -200,60 +221,68 @@ async function uploadFolder({ name, files }) {
   };
   await Promise.all([worker(), worker(), worker(), worker()]);
   text.textContent = `Copied “${name}”. Opening…`;
-  await openFolder(manifest.data_dir);
+  await open(manifest.data_dir);
   progress.hidden = true;
 }
 
-async function handleFolder(getFolder) {
-  $("open-status").className = "hint";
-  $("open-status").textContent = "";
-  try {
-    await uploadFolder(await getFolder());
-  } catch (error) {
-    $("upload-progress").hidden = true;
-    $("open-status").className = "hint error";
-    $("open-status").textContent = error.message;
-  }
+// Wire up a drop zone, its "Choose folder" button and its typed-path box.
+function wireFolderPicker(prefix, open) {
+  const status = $(`${prefix}open-status`);
+  const handleFolder = async (getFolder) => {
+    status.className = "hint";
+    status.textContent = "";
+    try {
+      await uploadFolder(await getFolder(), prefix, open);
+    } catch (error) {
+      $(`${prefix}upload-progress`).hidden = true;
+      status.className = "hint error";
+      status.textContent = error.message;
+    }
+  };
+
+  const dropZone = $(`${prefix}drop-zone`);
+  const input = $(`${prefix}folder-input`);
+  const path = $(`${prefix}data-dir`);
+  ["dragenter", "dragover"].forEach((type) =>
+    dropZone.addEventListener(type, (event) => { event.preventDefault(); dropZone.classList.add("dragging"); }));
+  ["dragleave", "drop"].forEach((type) =>
+    dropZone.addEventListener(type, (event) => {
+      if (type === "dragleave" && dropZone.contains(event.relatedTarget)) return;
+      dropZone.classList.remove("dragging");
+    }));
+  dropZone.addEventListener("drop", (event) => {
+    event.preventDefault();
+    const transfer = event.dataTransfer;
+    handleFolder(() => filesFromDrop(transfer));
+  });
+
+  $(`${prefix}browse-btn`).addEventListener("click", () => input.click());
+  dropZone.addEventListener("keydown", (event) => {
+    if (event.key === "Enter" && event.target === dropZone) input.click();
+  });
+  input.addEventListener("change", (event) => {
+    const list = event.target.files;
+    handleFolder(async () => filesFromPicker(list));
+    event.target.value = "";
+  });
+  $(`${prefix}open-btn`).addEventListener("click", () => open(path.value.trim()));
+  path.addEventListener("keydown", (event) => {
+    if (event.key === "Enter") open(path.value.trim());
+  });
 }
 
-const dropZone = $("drop-zone");
-["dragenter", "dragover"].forEach((type) =>
-  dropZone.addEventListener(type, (event) => { event.preventDefault(); dropZone.classList.add("dragging"); }));
-["dragleave", "drop"].forEach((type) =>
-  dropZone.addEventListener(type, (event) => {
-    if (type === "dragleave" && dropZone.contains(event.relatedTarget)) return;
-    dropZone.classList.remove("dragging");
-  }));
-dropZone.addEventListener("drop", (event) => {
-  event.preventDefault();
-  const transfer = event.dataTransfer;
-  handleFolder(() => filesFromDrop(transfer));
-});
+wireFolderPicker("", openFolder);
 // Dropping a folder anywhere else on the page should not navigate away to it.
 window.addEventListener("dragover", (event) => event.preventDefault());
 window.addEventListener("drop", (event) => event.preventDefault());
 
-$("browse-btn").addEventListener("click", () => $("folder-input").click());
-dropZone.addEventListener("keydown", (event) => {
-  if (event.key === "Enter" && event.target === dropZone) $("folder-input").click();
-});
-$("folder-input").addEventListener("change", (event) => {
-  const list = event.target.files;
-  handleFolder(async () => filesFromPicker(list));
-  event.target.value = "";
-});
-$("open-btn").addEventListener("click", () => openFolder($("data-dir").value.trim()));
-$("data-dir").addEventListener("keydown", (event) => {
-  if (event.key === "Enter") openFolder($("data-dir").value.trim());
-});
-
 // --- 2 · labelling the plates -----------------------------------------------
 
 // Plates are laid over the preview image in percent, so they track it as it scales.
-function plateOverlay(container, imageName, image) {
+function plateOverlay(container, src, image) {
   container.innerHTML = "";
   const img = document.createElement("img");
-  img.src = fileUrl(imageName);
+  img.src = src;
   img.alt = "First frame of the recording";
   container.appendChild(img);
   return (x1, y1, x2, y2) => ({
@@ -284,7 +313,7 @@ function linkHover(elements) {
 
 function drawLabelView() {
   const plate = $("label-plate");
-  const place = plateOverlay(plate, session.preview, session.image);
+  const place = plateOverlay(plate, fileUrl(session.preview), session.image);
   const groups = labelGroups();
 
   session.zones.forEach((zone) => {
@@ -582,7 +611,7 @@ function showOverview() {
 
 function drawResultPlate(groups) {
   const plate = $("result-plate");
-  const place = plateOverlay(plate, results.preview, results.image);
+  const place = plateOverlay(plate, fileUrl(results.preview), results.image);
 
   results.zones.forEach((zone) => {
     const color = groupColor(zone.label || "unlabeled", groups);
@@ -661,14 +690,14 @@ function drawGroupTable(groups) {
 // --- zone and mite pages -------------------------------------------------------
 
 // A crop of the first frame, drawn as SVG so the viewBox does the cropping.
-function cropSvg(x, y, w, h) {
+function cropSvg(x, y, w, h, src = fileUrl(results.preview), size = results.image) {
   const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
   svg.setAttribute("viewBox", `${x} ${y} ${w} ${h}`);
   svg.setAttribute("class", "crop");
   const image = document.createElementNS("http://www.w3.org/2000/svg", "image");
-  image.setAttribute("href", fileUrl(results.preview));
-  image.setAttribute("width", results.image.width);
-  image.setAttribute("height", results.image.height);
+  image.setAttribute("href", src);
+  image.setAttribute("width", size.width);
+  image.setAttribute("height", size.height);
   svg.appendChild(image);
   return svg;
 }
@@ -901,4 +930,4 @@ function showMite(miteId) {
   });
 }
 
-route();
+// route() is first called from calibration.js, which loads last.

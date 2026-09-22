@@ -8,6 +8,7 @@ Run it with start.bat, or:  python -m uvicorn web.server:app --port 8000
 """
 
 import uuid
+from typing import Optional
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, Request
@@ -45,6 +46,15 @@ class ManifestRequest(BaseModel):
     files: list[UploadedFile]
 
 
+class TruthRequest(BaseModel):
+    # mite id -> one status per recording: "alive", "dead", "not_a_mite" or null
+    truth: dict[str, list[Optional[str]]] = {}
+
+
+class ThresholdRequest(BaseModel):
+    value: float
+
+
 def safe_join(root: Path, relative: str) -> Path:
     """Resolve a browser-supplied relative path, refusing anything that escapes root."""
     parts = [part for part in relative.replace("\\", "/").split("/") if part not in ("", ".")]
@@ -80,12 +90,14 @@ def upload_manifest(name: str, request: ManifestRequest):
     A file already here with the same size is skipped, so dropping the same folder
     twice is instant. A labels.json already here is never replaced: it holds the
     labels typed in this app, which are newer than the copy in the dropped folder.
+    The same holds for a ground_truth.json entered during calibration.
     """
     folder = safe_join(UPLOAD_ROOT, name)
     missing = []
     for file in request.files:
         target = safe_join(folder, file.path)
-        if target.name == pipeline.LABELS_FILENAME and target.is_file():
+        kept = (pipeline.LABELS_FILENAME, pipeline.GROUND_TRUTH_FILENAME)
+        if target.name in kept and target.is_file():
             continue
         if not target.is_file() or target.stat().st_size != file.size:
             missing.append(file.path)
@@ -121,6 +133,57 @@ def run_analysis(session_id: str, request: LabelsRequest):
     try:
         return pipeline.run_analysis(session["data_dir"], session["out_dir"], request.labels)
     except (FileNotFoundError, ValueError) as error:
+        raise HTTPException(status_code=400, detail=str(error))
+
+
+@app.post("/api/calibration")
+def open_calibration(request: OpenRequest):
+    """Detect and score the mites of a calibration recording. Slow: decodes every frame."""
+    session_id = uuid.uuid4().hex[:8]
+    out_dir = OUTPUT_ROOT / f"calibration_{session_id}"
+    try:
+        calibration = pipeline.open_calibration(request.data_dir, out_dir)
+    except (FileNotFoundError, ValueError) as error:
+        raise HTTPException(status_code=400, detail=str(error))
+
+    sessions[session_id] = {"data_dir": calibration["data_dir"], "out_dir": out_dir}
+    return {"session_id": session_id, **calibration}
+
+
+@app.get("/api/calibration/{session_id}/clip/{recording}/{zone_id}")
+def calibration_clip(session_id: str, recording: int, zone_id: int):
+    """Frames of one zone during one recording, cropped and cached on first request."""
+    session = get_session(session_id)
+    try:
+        return pipeline.calibration_clip(session["out_dir"], recording, zone_id)
+    except (FileNotFoundError, ValueError) as error:
+        raise HTTPException(status_code=400, detail=str(error))
+
+
+@app.post("/api/calibration/{session_id}/truth")
+def save_ground_truth(session_id: str, request: TruthRequest):
+    """Persist the ground truth next to the recordings so it survives a restart."""
+    session = get_session(session_id)
+    return {"saved": pipeline.save_ground_truth(session["out_dir"], request.truth)}
+
+
+@app.post("/api/calibration/{session_id}/evaluate")
+def evaluate_calibration(session_id: str, request: TruthRequest):
+    """Compare the detector's calls with the ground truth."""
+    session = get_session(session_id)
+    try:
+        pipeline.save_ground_truth(session["out_dir"], request.truth)
+        return pipeline.evaluate_calibration(session["out_dir"], request.truth)
+    except (FileNotFoundError, ValueError) as error:
+        raise HTTPException(status_code=400, detail=str(error))
+
+
+@app.post("/api/threshold")
+def save_threshold(request: ThresholdRequest):
+    """Make a new movement threshold the default for every later analysis."""
+    try:
+        return {"threshold": pipeline.save_threshold(request.value)}
+    except ValueError as error:
         raise HTTPException(status_code=400, detail=str(error))
 
 

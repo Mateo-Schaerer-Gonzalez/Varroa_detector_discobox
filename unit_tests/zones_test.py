@@ -164,6 +164,21 @@ class TestZoneManagerMaskImageToValidRois:
         assert (masked[:, 5:] == 7).all()
 
 
+class TestZoneManagerRemoveMites:
+    def test_rejected_mites_leave_their_zones(self):
+        left = Zone(0, 0, 100, 100, type="brood")
+        right = Zone(200, 0, 300, 100, type="brood")
+        manager = ZoneManager([left, right])
+        keep, drop, other = Mite(10, 10, 20, 20), Mite(30, 30, 40, 40), Mite(210, 10, 220, 20)
+        manager.assign_mites([keep, drop, other])
+
+        remaining = manager.remove_mites([drop])
+
+        assert remaining == [keep, other]
+        assert left.mites == [keep]
+        assert right.mites == [other]
+
+
 class TestZoneManagerAssignMites:
     def test_mite_inside_a_zone_is_assigned_and_returned(self):
         zone = Zone(0, 0, 100, 100, type="brood")

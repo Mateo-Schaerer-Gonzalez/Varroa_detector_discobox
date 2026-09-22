@@ -1,3 +1,4 @@
+import re
 from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
@@ -99,3 +100,26 @@ def get_default_config() -> "AppConfig":
     if _default_config is None:
         _default_config = AppConfig()
     return _default_config
+
+
+
+def save_motion_threshold(value: float, config_path: Optional[str | Path] = None) -> float:
+    """Write a new `mite.motion_threshold` into the config file and reload it.
+
+    Only that one line is rewritten, so the comments and layout of the file are
+    kept. Every AppConfig built afterwards, including the shared default one,
+    sees the new value.
+    """
+    global _default_config
+    path = Path(config_path) if config_path is not None else DEFAULT_CONFIG_PATH
+    text = path.read_text(encoding="utf-8")
+
+    pattern = re.compile(r"^(\s+motion_threshold:\s*)[-+0-9.eE]+", re.MULTILINE)
+    if not pattern.search(text):
+        raise ValueError(f"No mite.motion_threshold line found in {path}")
+    value = round(float(value), 3)
+    path.write_text(pattern.sub(lambda match: f"{match.group(1)}{value}", text, count=1), encoding="utf-8")
+
+    _load_yaml_cached.cache_clear()
+    _default_config = None
+    return value
