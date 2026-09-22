@@ -4,6 +4,7 @@ from classes.rect import TextZone
 from classes.app_config import AppConfig, get_default_config
 import cv2
 import numpy as np
+import pandas as pd
 from pathlib import Path
 
 class Zone(TextZone):
@@ -148,5 +149,34 @@ class ZoneManager:
                     break  # Stop checking once the first matching zone claims it
 
         return assigned_mites
+
+
+    def get_mite_scores(self, times):
+        """Return a long-form timeseries of mite motion scores.
+
+        `times` holds one timestamp per recording burst and is shared by
+        every mite (e.g. `burst_minutes` in main.py). Each mite's
+        `motion_scores` list must line up with `times` one-to-one, so the
+        result has one row per (mite, time) pair.
+        """
+        rows = []
+        for zone in self.zones:
+            for mite in zone.mites:
+                mite_id = mite.text
+                for time, motion_score in zip(times, mite.motion_scores):
+                    rows.append(
+                        {
+                            "mite_ID": mite_id,
+                            "time": time,
+                            "motion_score": motion_score,
+                            "Zone assigned": zone.type,
+                        }
+                    )
+
+        return pd.DataFrame(
+            rows,
+            columns=["mite_ID", "time", "motion_score", "Zone assigned"],
+        )
+        
 
     

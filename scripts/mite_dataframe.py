@@ -1,22 +1,22 @@
-"""Manual smoke test: load a session with DataLoader and inspect recordings/timing."""
 import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-import cv2
-
 from classes.data_loader import DataLoader
-from classes.zones import ZoneManager
 from classes.analyzer import Analyzer
+from classes.zones import ZoneManager, Zone
+import cv2
+from pathlib import Path
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 DATA_DIR = SCRIPT_DIR.parent / "sample_data"
+COORDS_dir = SCRIPT_DIR.parent / "coords_pixel.txt"
 
 
 # initialize objects
-data_manager = DataLoader("sample_data", grayscale=False)
-zone_manager = ZoneManager.from_coords_file(filepath= "coords_pixel.txt",
+data_manager = DataLoader(DATA_DIR)
+zone_manager = ZoneManager.from_coords_file(filepath= COORDS_dir,
                                             zone_types= {
                                                 "0": "label",
                                                 "1": "mite",
@@ -33,20 +33,10 @@ recording_bursts = data_manager.load_bursts()
 first_frame = data_manager.get_first_frame()
 
 # mask the frame
+
 masked = zone_manager.mask_image_to_valid_rois(first_frame)
 
 #detect mites
 mites = analyzer.detect(masked)
 
-# add mites to zones
-valid_mites = zone_manager.assign_mites(mites)
-
-
-# get the mite variability (one score per mite per recording burst)
-analyzer.classify_motility(valid_mites, recording_bursts)
-
-
-output = zone_manager.draw(masked)
-
-burst_minutes = [times[0] for _frames, times in recording_bursts]
-df = zone_manager.get_mite_scores(burst_minutes)
+zone_manager.assign_mites(mites)

@@ -120,3 +120,6 @@ class DataLoader:
         if not hasattr(self, "frames"):
             self.load_folder()
         return self.frames[0]
+
+    def get_times(self):
+        return self.times
