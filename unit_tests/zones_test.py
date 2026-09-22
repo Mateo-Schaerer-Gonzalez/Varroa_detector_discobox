@@ -208,3 +208,26 @@ class TestZoneManagerAssignMites:
         assert zone.mites == [first_mite, second_mite]
 
 
+
+
+class TestZoneManagerTextZoneFor:
+    def test_picks_the_label_area_beside_the_plate(self):
+        plate = Zone(100, 0, 200, 50, type="mite")
+        own_label = Zone(60, 0, 98, 50, type="label")
+        next_plates_label = Zone(215, 0, 260, 50, type="label")
+        manager = ZoneManager([plate, own_label, next_plates_label], excluded_types=["label"])
+
+        assert manager.text_zone_for(plate) is own_label
+
+    def test_ignores_label_areas_in_other_rows(self):
+        plate = Zone(100, 0, 200, 50, type="mite")
+        row_below = Zone(60, 60, 98, 110, type="label")
+        manager = ZoneManager([plate, row_below], excluded_types=["label"])
+
+        assert manager.text_zone_for(plate) is None
+
+    def test_none_without_label_areas(self):
+        plate = Zone(100, 0, 200, 50, type="mite")
+        manager = ZoneManager([plate], excluded_types=["label"])
+
+        assert manager.text_zone_for(plate) is None

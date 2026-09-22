@@ -6,7 +6,13 @@ dependencies:
   - python >=3.11
   - numpy>=1.24
   - opencv>=4.7
+  - pandas>=2.0
+  - matplotlib>=3.7
+  - openpyxl>=3.1       # pandas needs it to write .xlsx
+  - pyyaml>=6.0
+  - fastapi>=0.110
+  - uvicorn>=0.27
+  - pytest>=8.0
   - pip
   - pip:
       - python-dotenv
-      - fastapi

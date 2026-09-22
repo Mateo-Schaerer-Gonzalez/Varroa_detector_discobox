@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Varroa discobox</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<header class="topbar">
+  <div class="brand">
+    <span class="brand-name">Varroa discobox</span>
+    <span id="folder-name" class="folder-name"></span>
+  </div>
+  <!-- The three stages. Each is a link, so the browser's back button works. -->
+  <nav class="steps" aria-label="Stages">
+    <a href="#/open" data-step="open"><span class="step-num">1</span> Recordings</a>
+    <a href="#/label" data-step="label" class="disabled"><span class="step-num">2</span> Plate labels</a>
+    <a href="#/results" data-step="results" class="disabled"><span class="step-num">3</span> Results</a>
+  </nav>
+</header>
+
+<main>
+
+<!-- 1 · choose the recordings ------------------------------------------------ -->
+<section id="view-open" class="view" hidden>
+  <div id="drop-zone" class="drop-zone" tabindex="0">
+    <svg class="drop-icon" viewBox="0 0 24 24" aria-hidden="true">
+      <path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>
+      <path d="M12 16v-6m-3 3 3-3 3 3"/>
+    </svg>
+    <p class="drop-title">Drop the recording folder here</p>
+    <p class="hint">The folder that holds the <code>..._fps-30</code> recording folders.</p>
+    <button id="browse-btn" type="button" class="secondary">Choose folder&hellip;</button>
+    <input id="folder-input" type="file" webkitdirectory multiple hidden>
+
+    <div id="upload-progress" class="progress" hidden>
+      <div class="progress-bar"><div id="upload-bar"></div></div>
+      <p id="upload-text" class="hint"></p>
+    </div>
+  </div>
+
+  <details class="path-option">
+    <summary>Or type a folder path on this computer</summary>
+    <p class="hint">Labels are then saved as <code>labels.json</code> right next to the recordings.</p>
+    <div class="row">
+      <input id="data-dir" type="text" value="sample_data" spellcheck="false"
+             placeholder="e.g. C:\recordings\2025-09-04">
+      <button id="open-btn" type="button">Open</button>
+    </div>
+  </details>
+  <p id="open-status" class="hint"></p>
+</section>
+
+<!-- 2 · label the plates ------------------------------------------------------ -->
+<section id="view-label" class="view" hidden>
+  <div class="split">
+    <div class="split-main">
+      <div id="label-plate" class="plate"></div>
+    </div>
+    <aside class="split-side panel">
+      <h2>Plate labels</h2>
+      <p class="hint">
+        Click a plate to name its group, e.g. the venom extract.
+        <kbd>Enter</kbd> saves, <kbd>Tab</kbd> saves and moves to the next plate,
+        <kbd>Esc</kbd> cancels. Labels are saved automatically.
+      </p>
+      <ul id="group-list" class="group-list"></ul>
+      <button id="run-btn" type="button" class="wide">Run analysis</button>
+      <p id="run-status" class="hint"></p>
+    </aside>
+  </div>
+  <datalist id="known-labels"></datalist>
+</section>
+
+<!-- 3 · results: overview, one zone, one mite ------------------------------- -->
+<section id="view-results" class="view" hidden>
+  <nav id="breadcrumb" class="breadcrumb" aria-label="Breadcrumb"></nav>
+  <div id="results-body"></div>
+</section>
+
+</main>
+
+<div id="tooltip" class="tooltip" hidden></div>
+
+<script src="charts.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

@@ -1,62 +1,30 @@
-from classes.data_loader import DataLoader
-from classes.analyzer import Analyzer
-from classes.zones import ZoneManager, Zone
-import cv2
-import numpy as np
-from classes.plotter import Plotter
+"""Command-line entry point: run the analysis on a folder of recordings.
 
+    python main.py                       # sample_data, labels from its labels.json
+    python main.py my_recordings out/run1
 
-# initialize objects
-data_manager = DataLoader("sample_data", grayscale=False)
-zone_manager = ZoneManager.from_coords_file(filepath= "coords_pixel.txt",
-                                            zone_types= {
-                                                "0": "label",
-                                                "1": "mite",
-                                            },
-                                            excluded_types=["label"])
+This calls exactly the same two functions the web app calls. If the CLI ever stops
+working, analysis logic has leaked into the user interface.
+"""
 
-analyzer = Analyzer()
+import sys
 
+import pipeline
 
-# load the data
-recording_bursts = data_manager.load_bursts()
+data_dir = sys.argv[1] if len(sys.argv) > 1 else "sample_data"
+out_dir = sys.argv[2] if len(sys.argv) > 2 else "outputs/cli"
 
-# get the first frame
-first_frame = data_manager.get_first_frame()
+labels = pipeline.load_labels(data_dir)
+if not labels:
+    print(f"No {pipeline.LABELS_FILENAME} in {data_dir}; every zone will be 'unlabeled'.")
 
-# mask the frame
-masked = zone_manager.mask_image_to_valid_rois(first_frame)
+results = pipeline.run_analysis(data_dir, out_dir, labels)
 
-#detect mites
-mites = analyzer.detect(masked)
+print(f"\n{results['summary']['n_mites']} mites across {results['n_recordings']} recordings")
+print(f"{results['summary']['n_groups']} group(s):")
+for row in results["summary"]["groups"]:
+    print(f"  {row['group']:<20} {row['n_mites']:>3} mites   mean {row['mean_score']:.1f}")
 
-# add mites to zones
-valid_mites = zone_manager.assign_mites(mites)
-
-
-# get the mite variability (one score per mite per recording burst)
-analyzer.classify_motility(valid_mites, recording_bursts)
-
-
-output = zone_manager.draw(masked)
-
-
-# plot the variability of each mite over time (x = start time of each burst)
-burst_minutes = np.array([times[0] for _frames, times in recording_bursts]) / 60
-mite_data = zone_manager.get_mite_scores(burst_minutes)
-
-plotter = Plotter(mite_data)
-plotter.plot_score_distribution()
-plotter.plot_score_over_time()
-plotter.show()
-
-#resize the output image
-DISPLAY_WIDTH = 1000
-scale = DISPLAY_WIDTH / output.shape[1]
-display_image = cv2.resize(output, None, fx=0.5, fy=0.5, interpolation=cv2.INTER_AREA)
-
-
-cv2.imshow("pipeline result", display_image)
-cv2.waitKey(0)
-cv2.destroyAllWindows()
-
+print(f"\nWritten to {out_dir}:")
+for name in [results["excel"], results["detections"], *results["figures"]]:
+    print(f"  {name}")

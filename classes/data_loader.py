@@ -115,6 +115,27 @@ class DataLoader:
             start = end
         return bursts
 
+    def load_preview_frame(self):
+        """Decode only the first image of the first recording.
+
+        `get_first_frame` decodes every frame in the session to return one of them,
+        which is far too expensive just to draw a preview for zone labelling.
+        """
+        dirs = self.recording_dirs
+        if not dirs:
+            raise FileNotFoundError(f"No recordings found in {self.data_dir}")
+
+        image_paths = sorted(dirs[0].glob("*.bmp"))
+        if not image_paths:
+            raise FileNotFoundError(f"No .bmp images found in {dirs[0]}")
+
+        flag = cv2.IMREAD_GRAYSCALE if self.grayscale else cv2.IMREAD_COLOR
+        return cv2.imread(str(image_paths[0]), flag)
+
+    def count_recordings(self):
+        """Number of recording bursts in this session."""
+        return len(self.recording_dirs)
+
     def get_first_frame(self):
         """Returns the first frame of the first recording burst."""
         if not hasattr(self, "frames"):

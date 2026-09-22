@@ -7,8 +7,18 @@ import numpy as np
 import pandas as pd
 from pathlib import Path
 
+UNLABELED = "unlabeled"
+
+# One row per (mite, recording). `moving` is that recording alone; `alive` also
+# looks ahead (see Mite.survival). x, y is the mite's centre in image pixels.
+MITE_SCORE_COLUMNS = [
+    "mite_ID", "time", "motion_score", "moving", "alive",
+    "zone_id", "group", "zone_type", "x", "y",
+]
+
+
 class Zone(TextZone):
-    def __init__(self, x1, y1, x2, y2, type, config: Optional[AppConfig] = None):
+    def __init__(self, x1, y1, x2, y2, type, id=None, label=None, config: Optional[AppConfig] = None):
         config = config or get_default_config()
         text = f"{type}_zone"
         style = config.zone_styles.get(text)
@@ -25,10 +35,25 @@ class Zone(TextZone):
 
         super().__init__(x1, y1, x2, y2, text=text, **style_kwargs)
         self.type = type
+        self.id = id
         self.mites = []  # List to hold Mite instances within this zone
+        self.label = label
 
+    @property
+    def label(self):
+        """The user-supplied group name for this zone (e.g. a venom extract)."""
+        return self._label
 
-    
+    @label.setter
+    def label(self, value):
+        """Setting a label also changes the text drawn above the zone."""
+        self._label = value or None
+        self.text = self._label if self._label else f"{self.type}_zone"
+
+    @property
+    def group(self):
+        """The name this zone's mites are grouped under when summarising."""
+        return self._label or UNLABELED
 
     def add_mite(self, mite):
         """Add a Mite instance to the zone"""
@@ -37,10 +62,10 @@ class Zone(TextZone):
     def draw_mask(self, image, fill_color=255):
         """Paints over this zone with fill_color to neutralize blobs."""
         cv2.rectangle(
-            image, 
-            (int(self.x1), int(self.y1)), 
-            (int(self.x2), int(self.y2)), 
-            fill_color, 
+            image,
+            (int(self.x1), int(self.y1)),
+            (int(self.x2), int(self.y2)),
+            fill_color,
             -1
         )
 
@@ -53,6 +78,27 @@ class Zone(TextZone):
             mite.draw(image)
 
 
+def sort_reading_order(zones):
+    """Order zones left-to-right, top-to-bottom, the way you would read the plate.
+
+    Zones in the same physical row have slightly different y1 values, so rows are
+    grouped by proximity rather than by an exact coordinate match.
+    """
+    if not zones:
+        return []
+
+    row_tolerance = float(np.median([zone.y2 - zone.y1 for zone in zones])) / 2
+    by_height = sorted(zones, key=lambda zone: zone.y1)
+
+    rows = [[by_height[0]]]
+    for zone in by_height[1:]:
+        if zone.y1 - rows[-1][0].y1 > row_tolerance:
+            rows.append([zone])
+        else:
+            rows[-1].append(zone)
+
+    return [zone for row in rows for zone in sorted(row, key=lambda zone: zone.x1)]
+
 
 class ZoneManager:
     def __init__(self, zones, excluded_types=None):
@@ -60,6 +106,10 @@ class ZoneManager:
         # Types of zones where mites should be eliminated / ignored
         self.excluded_types = set(zone_type.lower() for zone_type in excluded_types or [])
 
+        # Number the zones the user labels, in reading order, so that an id always
+        # points at the same physical plate.
+        for index, zone in enumerate(sort_reading_order(self.valid_zones)):
+            zone.id = index
 
     @classmethod
     def from_coords_file(cls, filepath: str | Path, zone_types: dict[str, str],  excluded_types=None) -> "ZoneManager":
@@ -105,13 +155,48 @@ class ZoneManager:
         """Returns only the zones meant to be kept (i.e. not excluded)."""
         return [zone for zone in self.zones if zone.type not in self.excluded_types]
 
+    @property
+    def labelled_zones(self):
+        """Valid zones in reading order: the ones the user assigns group names to."""
+        return sort_reading_order(self.valid_zones)
+
+    def text_zone_for(self, zone):
+        """The printed-label area that belongs to a plate, or None.
+
+        On the discobox each plate's label area sits beside it in the same row, so
+        this is the exclusion zone that shares most of the plate's height and whose
+        nearest edge is closest to the plate.
+        """
+        best, best_gap = None, None
+        for candidate in self.exclusion_zones:
+            overlap = min(zone.y2, candidate.y2) - max(zone.y1, candidate.y1)
+            shorter = min(zone.y2 - zone.y1, candidate.y2 - candidate.y1)
+            if shorter <= 0 or overlap < shorter / 2:
+                continue  # not in the same row
+            gap = max(candidate.x1 - zone.x2, zone.x1 - candidate.x2, 0)
+            if best_gap is None or gap < best_gap:
+                best, best_gap = candidate, gap
+        return best
+
+    def apply_labels(self, labels):
+        """Assign user-supplied group names to zones, keyed by zone id.
+
+        Keys may be ints or strings, since JSON object keys arrive as strings.
+        """
+        if not labels:
+            return
+        by_id = {str(key): value for key, value in labels.items()}
+        for zone in self.valid_zones:
+            if str(zone.id) in by_id:
+                zone.label = by_id[str(zone.id)]
+
     def is_excluded(self, px, py):
         """Returns True if (px, py) falls inside any exclusion zone."""
         return any(zone.contains_point(px, py) for zone in self.exclusion_zones)
 
     def mask_image_to_valid_rois(self, image, fill_color: int = 255):
         """
-        Creates a clean canvas with `fill_color` and only pastes 
+        Creates a clean canvas with `fill_color` and only pastes
         the image pixels from valid zones.
         """
         # 1. Blank canvas (neutral background)
@@ -121,7 +206,7 @@ class ZoneManager:
         for z in self.valid_zones:
             x1, y1 = max(0, int(z.x1)), max(0, int(z.y1))
             x2, y2 = min(image.shape[1], int(z.x2)), min(image.shape[0], int(z.y2))
-            
+
             output_img[y1:y2, x1:x2] = image[y1:y2, x1:x2]
 
         return output_img
@@ -163,20 +248,24 @@ class ZoneManager:
         for zone in self.zones:
             for mite in zone.mites:
                 mite_id = mite.text
-                for time, motion_score in zip(times, mite.motion_scores):
+                x = (mite.x1 + mite.x2) / 2
+                y = (mite.y1 + mite.y2) / 2
+                for time, motion_score, moving, alive in zip(
+                    times, mite.motion_scores, mite.moving, mite.survival
+                ):
                     rows.append(
                         {
                             "mite_ID": mite_id,
                             "time": time,
                             "motion_score": motion_score,
-                            "Zone assigned": zone.type,
+                            "moving": moving,
+                            "alive": alive,
+                            "zone_id": zone.id,
+                            "group": zone.group,
+                            "zone_type": zone.type,
+                            "x": x,
+                            "y": y,
                         }
                     )
 
-        return pd.DataFrame(
-            rows,
-            columns=["mite_ID", "time", "motion_score", "Zone assigned"],
-        )
-        
-
-    
+        return pd.DataFrame(rows, columns=MITE_SCORE_COLUMNS)

@@ -1,3 +1,5 @@
-
 __pycache__/
 ground_truth_30min/
+outputs/
+.pytest_cache/
+uploads/

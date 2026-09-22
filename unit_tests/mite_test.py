@@ -101,3 +101,32 @@ class TestIdCounter:
         first = Mite(0, 0, 10, 10, config=use_custom_config)
         second = Mite(0, 0, 10, 10, config=use_custom_config)
         assert first.text != second.text
+
+
+class TestSurvival:
+    """custom_config has motion_threshold 1.23."""
+
+    def record(self, config, scores):
+        mite = Mite(0, 0, 10, 10, config=config)
+        for score in scores:
+            mite.record_motion(score)
+        return mite
+
+    def test_moving_compares_each_score_to_the_threshold(self, custom_config):
+        mite = self.record(custom_config, [5, 0.1, 1.23])
+        assert mite.moving == [True, False, True]
+
+    def test_resting_mite_that_moves_again_stays_alive(self, custom_config):
+        mite = self.record(custom_config, [5, 0.1, 0.1, 5])
+        assert mite.survival == [True, True, True, True]
+
+    def test_dead_from_the_recording_after_its_last_movement(self, custom_config):
+        mite = self.record(custom_config, [5, 5, 0.1, 0.1])
+        assert mite.survival == [True, True, False, False]
+
+    def test_mite_that_never_moves_is_dead_throughout(self, custom_config):
+        mite = self.record(custom_config, [0.1, 0.1])
+        assert mite.survival == [False, False]
+
+    def test_no_recordings_means_no_survival_data(self, custom_config):
+        assert self.record(custom_config, []).survival == []
