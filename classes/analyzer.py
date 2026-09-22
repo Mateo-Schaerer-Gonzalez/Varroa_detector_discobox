@@ -84,12 +84,12 @@ class Analyzer:
     @staticmethod
     def _variability(roi):
         """Per-pixel standard deviation over the frames, averaged over the ROI."""
-        return float(roi.std(axis=0).mean())
+        return float(roi.var(axis=0).mean())
 
     @staticmethod
     def _topN_variability(roi, n=10):
         """Mean of the n highest per-pixel standard deviations over the frames."""
-        pixel_std = roi.std(axis=0).ravel()
+        pixel_std = roi.var(axis=0).ravel()
         return float(np.sort(pixel_std)[-n:].mean())
 
 
