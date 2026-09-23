@@ -3,7 +3,7 @@
 //
 // Navigation is hash-based so the browser's back/forward buttons work:
 //   #/open  #/label  #/results  #/zone/<id>  #/mite/<id>
-// and, in the calibration window (calibration.js):
+// and, in calibration (calibration.js), in the same window:
 //   #/cal/open  #/cal/truth/<zone id>/<recording>  #/cal/report
 
 let sessionId = null;
@@ -64,8 +64,23 @@ function movingBadge(moving) {
 
 // --- routing ---------------------------------------------------------------
 
+// The analysis and calibration share this window. Each keeps its own folder in
+// the header and the page it was left on, which the link over to it goes back to.
+const modes = {
+  analysis: { page: "#/open", folder: "", path: "" },
+  cal: { page: "#/cal/open", folder: "", path: "" },
+};
+let shownMode = null;
+const modeOf = (hash) => (hash.startsWith("#/cal") ? "cal" : "analysis");
+
+// A page of the mode not on screen, e.g. the results of a run that finished
+// while calibrating, waits until the user goes back to it.
 function go(hash) {
-  if (location.hash === hash) route();
+  const mode = modeOf(hash);
+  if (shownMode && mode !== shownMode) {
+    modes[mode].page = hash;
+    drawModeLinks();
+  } else if (location.hash === hash) route();
   else location.hash = hash;
 }
 
@@ -74,19 +89,42 @@ function showView(name) {
   document.querySelectorAll("main > .view").forEach((view) => { view.hidden = view.id !== `view-${name}`; });
 }
 
-// The calibration window uses its own steps in the header.
-function setMode(calibrating) {
+// The folder a mode has open; the header shows the one of the mode on screen.
+function setFolder(mode, name, path = "") {
+  Object.assign(modes[mode], { folder: name, path });
+  if (mode === shownMode) {
+    $("folder-name").textContent = name;
+    $("folder-name").title = path;
+  }
+}
+
+function drawModeLinks() {
+  $("mode-link").href = modes.cal.page;
+  $("exit-cal-link").href = modes.analysis.page;
+}
+
+// Calibration uses its own steps in the header.
+function setMode(mode) {
+  const calibrating = mode === "cal";
+  const switched = mode !== shownMode;
+  shownMode = mode;
   $("steps-analysis").hidden = calibrating;
   $("steps-cal").hidden = !calibrating;
   $("mode-link").hidden = calibrating;
   $("brand-mode").hidden = !calibrating;
   document.title = calibrating ? "Calibration · Varroa discobox" : "Varroa discobox";
+  setFolder(mode, modes[mode].folder, modes[mode].path);
+  // The analysis may have marked a detection "not a mite" meanwhile.
+  if (calibrating && switched) reloadTruth();
 }
 
 function route() {
   const [, view = "open", id, ...rest] = location.hash.split("/");
+  const mode = view === "cal" ? "cal" : "analysis";
   stopPlayer();
-  setMode(view === "cal");
+  modes[mode].page = location.hash || modes[mode].page;
+  drawModeLinks();
+  setMode(mode);
   if (view === "cal") { routeCalibration(id, ...rest); return; }
   const wanted = { open: "open", label: "label", results: "results", zone: "results", mite: "results" }[view] || "open";
 
@@ -132,8 +170,7 @@ async function openFolder(dataDir) {
     results = null;
     labelsChanged = false;
     session.zones.forEach((zone) => { zone.label = zone.label || ""; });
-    $("folder-name").textContent = session.data_dir.split(/[\\/]/).filter(Boolean).pop();
-    $("folder-name").title = session.data_dir;
+    setFolder("analysis", session.data_dir.split(/[\\/]/).filter(Boolean).pop(), session.data_dir);
     $("open-status").textContent = "";
     showLoadedStatus();
     go("#/label");
@@ -591,7 +628,7 @@ $("run-btn").addEventListener("click", run);
 //
 // One clip plays at a time, in a loop, on any page: the frames of one recording,
 // of one zone or of the whole plate. Used by the result pages and by the
-// ground-truth page of the calibration window.
+// ground-truth page of calibration.
 
 const player = { timer: null, token: 0, frames: [], index: 0, show: null, interval: 100, playing: true };
 

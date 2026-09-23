@@ -48,8 +48,10 @@ is judged on its own; the app makes no call about a mite being alive or dead.
 
 ### Calibration
 
-*Calibration ↗* in the header opens a second window, where you mark by eye which
-mites move in each recording and compare that with the detector:
+*Calibration ↗* in the header switches to calibration in the same window, where
+you mark by eye which mites move in each recording and compare that with the
+detector. *← Exit calibration* goes back to the analysis where you left it; both
+keep their state while you switch:
 
 1. **Calibration data**: pick *Calibrate the threshold* or *Test the threshold*,
    then drop the folder. Every frame is decoded and each mite is scored.
@@ -68,7 +70,7 @@ mites move in each recording and compare that with the detector:
    between the suggested threshold and the one in use. *Test* shows the
    confusion matrix at the threshold in use, the ROC curve with AUC, and where on
    the plate the errors are. Both show the fraction of mites moving per recording
-   by the ground truth against the detector's (overall and per group). Everything is
+   by the ground truth against the detector's; *Test* also shows it per group. Everything is
    also written to `calibration.xlsx`. Under *Data used*, switch on *Pool with
    saved ground truth* to add other labelled recordings, and untick any you
    want left out. Every point, map dot and zone row names the folder and

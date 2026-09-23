@@ -1,5 +1,5 @@
-// The calibration window. The user marks, for each detected mite and each recording,
-// whether it moves, and the detector's calls are compared with theirs.
+// Calibration, in the same window as the analysis. The user marks, for each detected
+// mite and each recording, whether it moves, and the detector's calls are compared with theirs.
 //
 //   #/cal/open                              choose calibrate or test, then the recordings
 //   #/cal/truth/<zone id>/<recording>       enter the ground truth, zone by zone
@@ -103,8 +103,7 @@ function showDataset(data) {
     zoneId: null, recording: 0, stamp: Date.now(),
   });
   forgetTruthChanges();
-  $("folder-name").textContent = folderOf(data.data_dir);
-  $("folder-name").title = data.data_dir;
+  setFolder("cal", folderOf(data.data_dir), data.data_dir);
 }
 
 // Go to one mite in one recording of any saved dataset, e.g. a point of a pooled
@@ -258,8 +257,7 @@ $("pool-btn").addEventListener("click", () => openWithTruthSaved($("pool-status"
     });
     forgetTruthChanges();
     cal.report = await requestReport();
-    $("folder-name").textContent = `${ids.length} saved dataset${ids.length === 1 ? "" : "s"}`;
-    $("folder-name").title = "";
+    setFolder("cal", `${ids.length} saved dataset${ids.length === 1 ? "" : "s"}`);
     status.textContent = "";
     go("#/cal/report");
   } catch (error) {
@@ -565,8 +563,9 @@ window.addEventListener("beforeunload", (event) => {
   event.returnValue = "";
 });
 
-// Coming back to this window: show the ground truth as saved, which another
-// window, e.g. marking a detection "not a mite" before a run, may have changed.
+// Coming back to this window, or to calibration from the analysis (app.js's
+// setMode): show the ground truth as saved, which the analysis or another window,
+// e.g. marking a detection "not a mite" before a run, may have changed.
 async function reloadTruth() {
   if (!cal.data || !cal.id || document.visibilityState !== "visible") return;
   // A reply is up to date only if no save lands while it is on its way.
@@ -814,8 +813,8 @@ function drawReport() {
       <code>${esc(scoreText(r.metric, r.metric_params))}</code>, on another scale, so figures "in use" say little:
       look at the suggested threshold, and save it with this movement score to use it.</div>`}
     ${testing ? testReport(r) : calibrateReport(r)}
-    ${section("Mites moving per group", `<div id="group-legend" class="legend"></div><div id="group-moving" class="group-cards"></div>
-      <p class="caption">Each group's fraction of mites moving in each recording, by the ground truth and as called by the detector, on the same mites. Groups are the plate labels.${poolNote(r)}</p>`)}
+    ${testing ? section("Mites moving per group", `<div id="group-legend" class="legend"></div><div id="group-moving" class="group-cards"></div>
+      <p class="caption">Each group's fraction of mites moving in each recording, by the ground truth and as called by the detector, on the same mites. Groups are the plate labels.${poolNote(r)}</p>`) : ""}
     ${section("Files", `<ul class="files">
       <li><a href="${calFileUrl(r.excel)}" download>${esc(r.excel)}</a>
         <span class="muted">every labelled mite-recording with its score and outcome, the fraction moving per recording, the ROC curve and the summary</span></li></ul>`)}`;
@@ -828,9 +827,13 @@ function drawReport() {
   wireDatasetPicker();
   wireScorePicker(r);
 
-  if (testing) drawTestFigures(r);
-  else drawCalibrateFigures(r);
-  drawGroupMoving(r, testing ? thresholdMarks(r).slice(0, 1) : thresholdMarks(r));
+  // Groups matter to a test of the threshold, not to finding one.
+  if (testing) {
+    drawTestFigures(r);
+    drawGroupMoving(r, thresholdMarks(r).slice(0, 1));
+  } else {
+    drawCalibrateFigures(r);
+  }
 }
 
 // The datasets that can be pooled: those whose recordings can still be scored.

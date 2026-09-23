@@ -19,8 +19,8 @@
     <a href="#/open" data-step="open"><span class="step-num">1</span> Recordings</a>
     <a href="#/label" data-step="label" class="disabled"><span class="step-num">2</span> Plate labels</a>
     <a href="#/results" data-step="results" class="disabled"><span class="step-num">3</span> Results</a>
-    <!-- Calibration opens in a window of its own, so an analysis stays open beside it. -->
-    <a id="mode-link" class="mode-link" href="#/cal/open" target="_blank" rel="noopener">Calibration&nbsp;↗</a>
+    <!-- Calibration opens in this window; the analysis waits in memory until you come back. -->
+    <a id="mode-link" class="mode-link" href="#/cal/open">Calibration&nbsp;↗</a>
   </nav>
   <nav id="steps-cal" class="steps" aria-label="Calibration stages" hidden>
     <a href="#/cal/open" data-step="open"><span class="step-num">1</span> Calibration data</a>
@@ -223,7 +223,7 @@
 <div id="tooltip" class="tooltip" hidden></div>
 
 <script src="charts.js?v=9"></script>
-<script src="app.js?v=11"></script>
-<script src="calibration.js?v=11"></script>
+<script src="app.js?v=12"></script>
+<script src="calibration.js?v=13"></script>
 </body>
 </html>
