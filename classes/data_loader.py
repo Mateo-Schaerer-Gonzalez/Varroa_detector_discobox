@@ -59,7 +59,12 @@ class DataLoader:
 
     def get_start_time(self, name):
         """Wall-clock time the recording started, parsed from its folder name."""
-        match = self.TIMESTAMP_RE.match(name)
+        return self.parse_start_time(name)
+
+    @classmethod
+    def parse_start_time(cls, name):
+        """Wall-clock time a recording started, parsed from its folder name."""
+        match = cls.TIMESTAMP_RE.match(name)
         if not match:
             raise ValueError(f"Could not parse timestamp from recording name: {name}")
         date_str, time_str, _ = match.groups()
@@ -79,13 +84,17 @@ class DataLoader:
         """Number of frames in one recording."""
         return len(list((self.data_dir / name).glob("*.bmp")))
 
-    def load_recording_region(self, name, x1, y1, x2, y2, step=1):
+    def load_recording_region(self, name, x1, y1, x2, y2, step=1, first=0, count=None):
         """Every `step`-th frame of one recording, cropped to (x1, y1)-(x2, y2).
+        With `count`, only the `count` frames from index `first` on (one pool).
 
         Crops each frame as soon as it is read, so looking at one plate of one
         recording never holds a whole recording of full frames in memory.
         """
-        image_paths = sorted((self.data_dir / name).glob("*.bmp"))[::step]
+        image_paths = sorted((self.data_dir / name).glob("*.bmp"))
+        if count is not None:
+            image_paths = image_paths[first:first + count]
+        image_paths = image_paths[::step]
         if not image_paths:
             raise FileNotFoundError(f"No .bmp images found in {self.data_dir / name}")
         flag = cv2.IMREAD_GRAYSCALE if self.grayscale else cv2.IMREAD_COLOR

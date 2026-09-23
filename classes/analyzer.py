@@ -59,6 +59,17 @@ class Analyzer:
                 mite_roi = mite.get_ROI(recording)
                 mite.record_motion(self._motion_score(mite_roi, mite.metric, mite.metric_params))
 
+    def score_pool(self, mites, frames):
+        """Records one motion score on each mite for one pool of frames: `frames`
+        is a list of (H, W, C) frames, in order.
+
+        Each mite's ROI is cut from each frame and the cuts stacked, which gives
+        the same (N, h, w, C) array classify_motility() cuts from a stack of the
+        frames, without ever holding a second copy of the frames."""
+        for mite in mites:
+            mite_roi = np.stack([mite.get_ROI(frame) for frame in frames])
+            mite.record_motion(self._motion_score(mite_roi, mite.metric, mite.metric_params))
+
     @staticmethod
     def _metrics():
         return {

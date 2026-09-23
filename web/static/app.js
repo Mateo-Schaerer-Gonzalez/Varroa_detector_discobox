@@ -3,8 +3,10 @@
 //
 // Navigation is hash-based so the browser's back/forward buttons work:
 //   #/open  #/label  #/results  #/zone/<id>  #/mite/<id>
-// and, in calibration (calibration.js), in the same window:
+// in calibration (calibration.js), in the same window:
 //   #/cal/open  #/cal/truth/<zone id>/<recording>  #/cal/report
+// and live from the Discobox camera (live.js), with the same label and result pages:
+//   #/live/open  #/live/label  #/live/results  #/live/zone/<id>  #/live/mite/<id>
 
 let sessionId = null;
 let session = null;      // what opening a folder returned: preview, zones, labels
@@ -12,6 +14,45 @@ let results = null;      // what the last analysis run returned
 let runStamp = 0;        // cache-buster so a re-run never shows old images
 let shown = 0;           // the recording the result pages show; the last after a run
 let labelsChanged = false;
+
+// The analysis of a folder and a live run each have their own session and results.
+// The label and result pages read them from the globals above, which hold those of
+// the mode shown last; the other mode's wait here. The status line under the
+// label page's button goes with them, since both modes use that page.
+const contexts = {
+  analysis: {},
+  live: { sessionId: null, session: null, results: null, runStamp: 0, shown: 0, labelsChanged: false, runStatus: null },
+};
+let loadedContext = "analysis";
+
+function useContext(mode) {
+  if (loadedContext === mode) return;
+  const status = $("run-status");
+  contexts[loadedContext] = {
+    sessionId, session, results, runStamp, shown, labelsChanged,
+    runStatus: { className: status.className, html: status.innerHTML },
+  };
+  ({ sessionId, session, results, runStamp, shown, labelsChanged } = contexts[mode]);
+  const saved = contexts[mode].runStatus || { className: "hint", html: "" };
+  status.className = saved.className;
+  status.innerHTML = saved.html;
+  loadedContext = mode;
+}
+
+// Change a mode's session or results, whether or not it is the mode shown.
+function setContext(mode, values) {
+  if (loadedContext !== mode) { Object.assign(contexts[mode], values); return; }
+  if ("sessionId" in values) sessionId = values.sessionId;
+  if ("session" in values) session = values.session;
+  if ("results" in values) results = values.results;
+  if ("runStamp" in values) runStamp = values.runStamp;
+  if ("shown" in values) shown = values.shown;
+  if ("labelsChanged" in values) labelsChanged = values.labelsChanged;
+}
+
+// A label or result page of the mode whose results are shown: "results" -> "#/results"
+// in the analysis, "#/live/results" live.
+const R = (path) => (loadedContext === "live" ? "#/live/" : "#/") + path;
 
 const $ = (id) => document.getElementById(id);
 const esc = (text) => Charts.escape(text ?? "");
@@ -69,9 +110,10 @@ function movingBadge(moving) {
 const modes = {
   analysis: { page: "#/open", folder: "", path: "" },
   cal: { page: "#/cal/open", folder: "", path: "" },
+  live: { page: "#/live/open", folder: "", path: "" },
 };
 let shownMode = null;
-const modeOf = (hash) => (hash.startsWith("#/cal") ? "cal" : "analysis");
+const modeOf = (hash) => (hash.startsWith("#/cal") ? "cal" : hash.startsWith("#/live") ? "live" : "analysis");
 
 // A page of the mode not on screen, e.g. the results of a run that finished
 // while calibrating, waits until the user goes back to it.
@@ -101,6 +143,8 @@ function setFolder(mode, name, path = "") {
 function drawModeLinks() {
   $("mode-link").href = modes.cal.page;
   $("exit-cal-link").href = modes.analysis.page;
+  $("live-link").href = modes.live.page;
+  $("exit-live-link").href = modes.analysis.page;
 }
 
 // Calibration uses its own steps in the header.
@@ -108,11 +152,14 @@ function setMode(mode) {
   const calibrating = mode === "cal";
   const switched = mode !== shownMode;
   shownMode = mode;
-  $("steps-analysis").hidden = calibrating;
+  $("steps-analysis").hidden = mode !== "analysis";
   $("steps-cal").hidden = !calibrating;
+  $("steps-live").hidden = mode !== "live";
+  $("live-panel").hidden = true;  // live.js shows it over the live result pages
   $("mode-link").hidden = calibrating;
-  $("brand-mode").hidden = !calibrating;
-  document.title = calibrating ? "Calibration · Varroa discobox" : "Varroa discobox";
+  $("brand-mode").hidden = mode === "analysis";
+  $("brand-mode").textContent = calibrating ? "Calibration" : "Live";
+  document.title = calibrating ? "Calibration · Varroa discobox" : mode === "live" ? "Live · Varroa discobox" : "Varroa discobox";
   setFolder(mode, modes[mode].folder, modes[mode].path);
   // The analysis may have marked a detection "not a mite" meanwhile.
   if (calibrating && switched) reloadTruth();
@@ -120,12 +167,14 @@ function setMode(mode) {
 
 function route() {
   const [, view = "open", id, ...rest] = location.hash.split("/");
-  const mode = view === "cal" ? "cal" : "analysis";
+  const mode = view === "cal" ? "cal" : view === "live" ? "live" : "analysis";
   stopPlayer();
   modes[mode].page = location.hash || modes[mode].page;
   drawModeLinks();
   setMode(mode);
   if (view === "cal") { routeCalibration(id, ...rest); return; }
+  useContext(mode);
+  if (view === "live") { routeLive(id, ...rest); return; }
   const wanted = { open: "open", label: "label", results: "results", zone: "results", mite: "results" }[view] || "open";
 
   // Fall back to the furthest stage that has data.
@@ -149,7 +198,7 @@ function route() {
 
 // The results page in the address bar: the overview, a zone or a mite.
 function drawResults() {
-  const [, view, id] = location.hash.split("/");
+  const [view, id] = location.hash.replace(/^#\/(live\/)?/, "").split("/");
   stopPlayer();
   Charts.hideTooltip();
   if (view === "zone") showZone(Number(id));
@@ -165,14 +214,12 @@ async function openFolder(dataDir) {
   $("open-status").className = "hint";
   $("open-status").textContent = "Opening…";
   try {
-    session = await post("/api/session", { data_dir: dataDir });
-    sessionId = session.session_id;
-    results = null;
-    labelsChanged = false;
-    session.zones.forEach((zone) => { zone.label = zone.label || ""; });
-    setFolder("analysis", session.data_dir.split(/[\\/]/).filter(Boolean).pop(), session.data_dir);
+    const opened = await post("/api/session", { data_dir: dataDir });
+    opened.zones.forEach((zone) => { zone.label = zone.label || ""; });
+    setContext("analysis", { session: opened, sessionId: opened.session_id, results: null, labelsChanged: false });
+    setFolder("analysis", opened.data_dir.split(/[\\/]/).filter(Boolean).pop(), opened.data_dir);
     $("open-status").textContent = "";
-    showLoadedStatus();
+    if (loadedContext === "analysis") showLoadedStatus();
     go("#/label");
   } catch (error) {
     $("open-status").className = "hint error";
@@ -329,7 +376,9 @@ window.addEventListener("drop", (event) => event.preventDefault());
 function showLoadedStatus() {
   const withMites = labelZones().length;
   $("run-status").className = "hint";
-  $("run-status").textContent = `${session.n_recordings} recordings loaded · mites detected in ${withMites} of ${session.zones.length} zones.`;
+  $("run-status").textContent = loadedContext === "live"
+    ? `Mites detected in ${withMites} of ${session.zones.length} zones on ${session.n_recordings ? "the first recording" : "the camera's newest frame"}.`
+    : `${session.n_recordings} recordings loaded · mites detected in ${withMites} of ${session.zones.length} zones.`;
 }
 
 // Plates are laid over the preview image in percent, so they track it as it scales.
@@ -460,7 +509,19 @@ function drawLabelView() {
 
   drawGroupList();
   refreshSuggestions();
+  drawRunButton();
   if (editingZoneId != null) startEdit(editingZoneId);
+}
+
+// The label page's button runs the analysis of a folder, or starts a live test run.
+function drawRunButton() {
+  const living = loadedContext === "live";
+  $("pool-option").hidden = living;
+  if (living) drawLiveRunButton();
+  else {
+    $("run-btn").textContent = "Run analysis";
+    $("run-btn").disabled = analysisRunning;
+  }
 }
 
 function startEdit(zoneId) {
@@ -536,7 +597,7 @@ function toggleMite(mite, refocus = false) {
   const rejected = !mite.rejected;
   const id = sessionId;
   mite.rejected = rejected;
-  if (results) labelsChanged = true;
+  if (results && loadedContext === "analysis") labelsChanged = true;
   recount();
   mite.saving = (mite.saving || Promise.resolve()).then(async () => {
     try {
@@ -558,7 +619,7 @@ function setLabel(zone, value) {
   const label = value.trim();
   if (label === zone.label) return;
   zone.label = label;
-  if (results) labelsChanged = true;
+  if (results && loadedContext === "analysis") labelsChanged = true;
   saveLabels();
 }
 
@@ -599,30 +660,47 @@ async function saveLabels() {
   }
 }
 
+let analysisRunning = false;
+
+// The status line under the label page's button, of the analysis even while
+// another mode is shown.
+function analysisStatus(className, html) {
+  if (loadedContext === "analysis") {
+    $("run-status").className = className;
+    $("run-status").innerHTML = html;
+  } else contexts.analysis.runStatus = { className, html };
+}
+
+// Frames scored together, from the label page's option; null for a whole recording.
+function poolSize() {
+  const value = $("pool-size").value.trim();
+  return value ? Number(value) : null;
+}
+
 async function run() {
   const buttons = document.querySelectorAll(".run-trigger, #run-btn");
-  const status = $("run-status");
   buttons.forEach((b) => { b.disabled = true; });
-  status.className = "hint";
-  status.innerHTML = `<span class="spinner"></span> Running… the frames are being decoded, this takes a while.`;
+  analysisRunning = true;
+  analysisStatus("hint", `<span class="spinner"></span> Running… the frames are being decoded, this takes a while.`);
 
   try {
-    results = await post(`/api/session/${sessionId}/run`, { labels: collectLabels() });
-    runStamp = Date.now();
-    shown = results.times.length - 1;
-    labelsChanged = false;
-    status.textContent = "Done.";
+    const request = { labels: collectLabels() };
+    if (poolSize() != null) request.pool_size = poolSize();
+    const ran = await post(`/api/session/${sessionId}/run`, request);
+    setContext("analysis", { results: ran, runStamp: Date.now(), shown: ran.times.length - 1, labelsChanged: false });
+    analysisStatus("hint", "Done.");
     go("#/results");
   } catch (error) {
-    status.className = "hint error";
-    status.textContent = error.message;
+    analysisStatus("hint error", esc(error.message));
     if (!location.hash.startsWith("#/label")) go("#/label");
   } finally {
+    analysisRunning = false;
     buttons.forEach((b) => { b.disabled = false; });
+    if (loadedContext === "live") drawLiveRunButton();  // the button is the live run's meanwhile
   }
 }
 
-$("run-btn").addEventListener("click", run);
+$("run-btn").addEventListener("click", () => (loadedContext === "live" ? startLiveRun() : run()));
 
 // --- playing a recording ------------------------------------------------------
 //
@@ -821,6 +899,7 @@ function wireRecordingBar(body) {
 function showRecording(index) {
   if (index === shown || !(index >= 0 && index < results.times.length)) return;
   shown = index;
+  if (loadedContext === "live") liveFollow(index === results.times.length - 1);
   drawResults();
 }
 
@@ -854,7 +933,7 @@ function movementGlyphs(mite) {
 // --- overview ------------------------------------------------------------------
 
 function showOverview() {
-  breadcrumb([["Results", "#/results"]]);
+  breadcrumb([["Results", R("results")]]);
   const { summary, times } = results;
   const groups = resultGroups();
   const body = $("results-body");
@@ -981,7 +1060,11 @@ function drawGroupScores(groups) {
           <div class="tip-note">${esc(group)} · zones ${zones.map((z) => z.id).join(", ")}</div>
           <div>${movingBadge(moving)} · score ${score(value)}</div>${movementGlyphs(mite)}
           <div class="tip-hint">Click to open this mite in this recording</div>`,
-        onClick: () => { shown = recording; go(`#/mite/${encodeURIComponent(mite.id)}`); },
+        onClick: () => {
+          shown = recording;
+          if (loadedContext === "live") liveFollow(recording === results.times.length - 1);
+          go(R(`mite/${encodeURIComponent(mite.id)}`));
+        },
       });
     }));
   });
@@ -1023,7 +1106,7 @@ function drawResultPlate(groups) {
     const color = groupColor(zone.label || "unlabeled", groups);
     const link = document.createElement("a");
     link.className = "zone result";
-    link.href = `#/zone/${zone.id}`;
+    link.href = R(`zone/${zone.id}`);
     link.setAttribute("aria-label", `Zone ${zone.id}, ${zone.label || "unlabeled"}, ${zone.n_mites ? `${nMovingShown(zone)} of ${zone.n_mites} mites moving at ${shownTime()}` : "no mites"}`);
     Object.assign(link.style, place(zone.x1, zone.y1, zone.x2, zone.y2));
     link.style.setProperty("--zone-color", color);
@@ -1067,7 +1150,7 @@ function drawZoneCards(groups) {
     const color = groupColor(zone.label || "unlabeled", groups);
     const card = document.createElement("a");
     card.className = "zone-card";
-    card.href = `#/zone/${zone.id}`;
+    card.href = R(`zone/${zone.id}`);
     card.innerHTML = `
       <div class="zone-card-head">
         <span class="zone-card-id">Zone ${zone.id}</span>
@@ -1153,13 +1236,13 @@ function pager(items, index, hrefOf, labelOf) {
 
 function showZone(zoneId) {
   const zone = zoneById(zoneId);
-  if (!zone) { location.replace("#/results"); return; }
+  if (!zone) { location.replace(R("results")); return; }
   const groups = resultGroups();
   const group = zone.label || "unlabeled";
   const color = groupColor(group, groups);
   const mites = mitesIn(zone.id);
   const { times } = results;
-  breadcrumb([["Results", "#/results"], [zoneName(zone), `#/zone/${zone.id}`]]);
+  breadcrumb([["Results", R("results")], [zoneName(zone), R(`zone/${zone.id}`)]]);
 
   const movingObservations = mites.reduce((sum, mite) => sum + nMoving(mite), 0);
   const neverMoved = mites.filter((mite) => nMoving(mite) === 0).length;
@@ -1175,7 +1258,7 @@ function showZone(zoneId) {
         <h1>Zone ${zone.id}</h1>
         <p class="meta">${groupTag(group, color)}</p>
       </div>
-      ${pager(siblings, siblings.indexOf(zone), (z) => `#/zone/${z.id}`, (z) => `Zone ${z.id}`)}
+      ${pager(siblings, siblings.indexOf(zone), (z) => R(`zone/${z.id}`), (z) => `Zone ${z.id}`)}
     </header>
 
     <div class="stats">
@@ -1211,7 +1294,7 @@ function showZone(zoneId) {
   outline.style.stroke = color;
   crop.appendChild(outline);
   const radius = Math.max(10, (zone.x2 - zone.x1) / 28);
-  mites.forEach((mite) => miteMarker(crop, mite, radius, { onClick: () => go(`#/mite/${encodeURIComponent(mite.id)}`) }));
+  mites.forEach((mite) => miteMarker(crop, mite, radius, { onClick: () => go(R(`mite/${encodeURIComponent(mite.id)}`)) }));
   $("zone-crop").appendChild(crop);
   playResultClip(`/api/session/${sessionId}/clip/${shown}/${zone.id}`, $("zone-crop"), $("zone-crop").nextElementSibling,
     (clip) => clipOnSvg(crop, clip));
@@ -1254,7 +1337,7 @@ function showZone(zoneId) {
         faint: true,
         legend: false,
         tooltip: false,
-        onClick: () => go(`#/mite/${encodeURIComponent(mite.id)}`),
+        onClick: () => go(R(`mite/${encodeURIComponent(mite.id)}`)),
       })),
       { name: "mean", values: zone.mean_score, color: token("--ink"), width: 2 },
     ],
@@ -1264,8 +1347,8 @@ function showZone(zoneId) {
   table.innerHTML = `
     <thead><tr><th>Mite</th><th>At ${shownTime()}</th><th class="num">Last movement</th><th class="num">Moving</th><th class="num">Mean</th><th class="num">Max</th></tr></thead>
     <tbody>${mites.map((mite) => `
-      <tr data-href="#/mite/${encodeURIComponent(mite.id)}" tabindex="0">
-        <td><a href="#/mite/${encodeURIComponent(mite.id)}">${esc(mite.id)}</a></td>
+      <tr data-href="${R(`mite/${encodeURIComponent(mite.id)}`)}" tabindex="0">
+        <td><a href="${R(`mite/${encodeURIComponent(mite.id)}`)}">${esc(mite.id)}</a></td>
         <td>${movingBadge(movingShown(mite))}</td>
         <td class="num">${lastMovementText(mite)}</td>
         <td class="num">${nMoving(mite)}/${times.length}</td>
@@ -1280,13 +1363,13 @@ function showZone(zoneId) {
 
 function showMite(miteId) {
   const mite = results.mites.find((m) => m.id === miteId);
-  if (!mite) { location.replace("#/results"); return; }
+  if (!mite) { location.replace(R("results")); return; }
   const zone = zoneById(mite.zone_id);
   const siblings = mitesIn(zone.id);
   const { times } = results;
   const groups = resultGroups();
   const color = groupColor(zone.label || "unlabeled", groups);
-  breadcrumb([["Results", "#/results"], [zoneName(zone), `#/zone/${zone.id}`], [`Mite ${mite.id}`, ""]]);
+  breadcrumb([["Results", R("results")], [zoneName(zone), R(`zone/${zone.id}`)], [`Mite ${mite.id}`, ""]]);
 
   const body = $("results-body");
   body.innerHTML = `
@@ -1294,9 +1377,9 @@ function showMite(miteId) {
     <header class="page-head">
       <div>
         <h1>Mite ${esc(mite.id)}</h1>
-        <p class="meta">${movingBadge(movingLast(mite))} in the last recording · <a href="#/zone/${zone.id}">Zone ${zone.id}</a> · ${groupTag(zone.label || "unlabeled", color)}</p>
+        <p class="meta">${movingBadge(movingLast(mite))} in the last recording · <a href="${R(`zone/${zone.id}`)}">Zone ${zone.id}</a> · ${groupTag(zone.label || "unlabeled", color)}</p>
       </div>
-      ${pager(siblings, siblings.indexOf(mite), (m) => `#/mite/${encodeURIComponent(m.id)}`, (m) => `Mite ${m.id}`)}
+      ${pager(siblings, siblings.indexOf(mite), (m) => R(`mite/${encodeURIComponent(m.id)}`), (m) => `Mite ${m.id}`)}
     </header>
 
     <div class="stats">
@@ -1367,4 +1450,4 @@ window.addEventListener("pagehide", () => navigator.sendBeacon(`/api/page/${page
 // A page restored from the back/forward cache comes back without reloading.
 window.addEventListener("pageshow", (event) => { if (event.persisted) checkIn(); });
 
-// route() is first called from calibration.js, which loads last.
+// route() is first called from calibration.js, which loads last (after live.js).

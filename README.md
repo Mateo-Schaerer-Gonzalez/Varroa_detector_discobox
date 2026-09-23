@@ -103,12 +103,82 @@ curve or figure.
 Everything runs on `127.0.0.1` and no asset is fetched from the internet, so the
 app works with no network connection.
 
+### Live from the Discobox
+
+*Live ↗* in the header runs a Discobox test run from this app, as the Discobox app
+(github.com/Abilium-GmbH/varroa-discobox) does: every *time between recordings*
+the fan and LEDs come on and the camera records a burst of frames. Each recording
+is analysed as soon as it is in, and the usual result pages fill in as the run goes.
+
+1. **Camera**: choose the camera and the fan/LED controller (the Discobox's
+   Arduino is found by itself), name the run, and *Connect*. The camera's image
+   shows at once. The test run's settings are the Discobox app's (number of
+   recordings, time between them, fan and LED durations and intensities, frames
+   per recording, frames per second); they are saved to `settings.txt` as you
+   change them. *On/Off* switches the fan or an LED to check it.
+2. **Plate labels**: the same page as for a folder, on the camera's newest frame.
+   *Start test run* starts recording.
+3. **Live results**: the result pages of a folder, with a panel above them:
+   what is recording, the frame rate, dropped frames, the fan and LEDs, and
+   *Pause* / *Stop*. *Follow the latest recording* shows each new recording as it
+   comes; choose an older one and the page stays on it. Labels and *not a mite*
+   marks can still change; the results follow them.
+
+Each recording is saved, as the Discobox app saves it, to
+`output/<run name>/<YYYY-MM-DD-HH-MM-SS>_fps-<fps>/<recording>_<frame id>.bmp`
+(8-bit grey), with the settings, labels and marks next to them. Only the bursts are
+saved, never the camera image in between. That folder is a session like any
+other: opened as a folder, it gives exactly the results the live run gave.
+Untick *Save the recordings* for long runs; the results are the same, but there
+is then no clip to play and nothing to open again.
+
+*Stop* ends the recording being captured with the frames already in, analyses it
+and writes the results; so does Ctrl+C on the server. Closing the page does not
+stop a run: open the page again to get back to it. Started from `start.bat` or
+`start.sh`, the server waits for a run to end before stopping by itself.
+
+With no camera, *Replay a recorded folder* plays a folder's recordings as if they
+came from the camera, to try all this; its results are the folder's.
+
+**Frames per pool** sets how many consecutive frames are scored together. Left
+empty, a pool is a whole recording, as it has always been. With a number N, each
+recording is split into pools of N frames; the frames left at the end of a
+recording are not scored. The same option is under *Plate labels* for a folder,
+and live and folder runs pool the same way.
+
+**One difference from the Discobox app.** The app switches on only one of the
+devices due at the same moment: with equal fan and LED durations (20 s each for
+`sample_data`) only LED 2 ever came on, never the fan or LED 1. Here every device
+comes on as set. Mites stirred by the fan may move more than in recordings made
+with the app, so check the movement threshold on a live recording (Calibration)
+before comparing the two.
+
+**Setting up the camera.** Install Vimba X as the Discobox readme describes, then
+`bash install_linux.sh <VimbaX SDK path>` (the path given to the app's
+`setup-python-env.sh`), and add yourself to the `dialout` group for the fan and
+LEDs (`sudo adduser $USER dialout`, then log in again). Folder mode needs none of
+this.
+
 ## Running from the command line
 
 ```
 python main.py                       # sample_data, labels from its labels.json
 python main.py my_recordings out/run1
+python main.py my_recordings out/run1 --pool-size 10
 ```
+
+A live test run, with the settings in `settings.txt`; Ctrl+C stops it cleanly:
+
+```
+python main.py --list-cameras
+python main.py --live                       # the only camera connected
+python main.py --live --camera-id DEV_000F31 --fps 30 --run-name hive3 --labels labels.json
+python main.py --live --no-save-frames      # long runs: analyse, save nothing
+python main.py --replay sample_data         # a recorded folder, as if from the camera
+```
+
+It prints a line per recording analysed, and the results go to
+`outputs/<run name>/` (`--out-dir` to change that).
 
 ## Results
 
@@ -128,13 +198,22 @@ Each run writes to `outputs/<session>/`:
 Dependencies point one way: `web/` → `pipeline.py` → `classes/`.
 
 ```
-classes/      detection, zones, motion scoring, plotting
-pipeline.py   the only two functions the interface may call
+classes/      detection, zones, motion scoring, plotting; the analysis core
+              (motion_analysis.py) and where its frames come from
+              (frame_source.py, pooling.py)
+classes/live/ the camera, fan and LEDs, test run, replay and live session
+classes/discobox/  camera_utils.py from the Discobox app, unchanged
+pipeline.py   the only module the interface may call
 reporting.py  score table -> Excel + figures
 main.py       command-line entry point
 web/          FastAPI server + static page (no framework, no build step)
 unit_tests/   includes test_layering.py, which enforces the boundary above
 ```
+
+Folder and live runs go through one analysis core, `MotionAnalysis`: it finds the
+mites on the first frame, then scores each pool of frames as it comes, from a
+folder (`FolderSource`), the camera (`CameraSource`) or a replay (`ReplaySource`),
+without knowing which. vmbpy and pyserial are only imported for a live run.
 
 `pipeline.open_session()` and `pipeline.run_analysis()` exchange only plain dicts,
 lists, strings and numbers with the web layer -- never a `Zone`, `Mite`,
@@ -153,4 +232,14 @@ id is what a typed label attaches to.
 
 ```
 python -m pytest
+python -m pytest -m "not slow"     # without the runs on the whole of sample_data
 ```
+
+`folder_regression_test.py` compares folder mode with a reference made before live
+input was added (`unit_tests/reference/`): the results, every sheet of the
+workbook, what each figure draws, the images' pixels and what the command line
+prints. `live_acceptance_test.py` replays folders through the live pipeline and
+checks that folder mode on the frames it saved gives exactly the same. Rewrite the
+reference (`python unit_tests/make_reference.py`) only for a deliberate change to
+what folder mode produces. The camera and the fan and LEDs are tested with
+stand-ins; the first run on the real Discobox is the test of the hardware itself.

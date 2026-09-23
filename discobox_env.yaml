@@ -13,6 +13,8 @@ dependencies:
   - fastapi>=0.110
   - uvicorn>=0.27
   - pytest>=8.0
+  - pyserial>=3.5      # the Discobox fan and LEDs (live runs only)
   - pip
   - pip:
       - python-dotenv
+# vmbpy, for the camera, comes with the Vimba X SDK: bash install_linux.sh <VimbaX SDK path>

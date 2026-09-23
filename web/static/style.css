@@ -552,3 +552,55 @@ td.num.error { color: var(--critical); font-weight: 600; }
 .score-picker input[type="number"] { width: 80px; }
 .score-picker .param { display: inline-flex; align-items: center; gap: 6px; color: var(--muted); }
 #zone-errors tbody tr { cursor: pointer; }
+
+/* --- live from the Discobox ---------------------------------------------------------- */
+
+.live-form { display: grid; gap: 4px; margin-bottom: 12px; }
+.live-form label, .live-settings label, .light-row label { font-size: 12.5px; color: var(--ink); font-weight: 500; }
+.live-form label:not(.live-choice):not(.live-check) { margin-top: 8px; }
+.live-form input[type="text"] { min-width: 0; width: 100%; }
+.live-choice, .live-check { display: flex; align-items: baseline; gap: 6px; flex-wrap: wrap; cursor: pointer; font-weight: 400 !important; }
+.live-choice input, .live-check input { margin: 0; accent-color: var(--ink); }
+.live-choice .hint, .live-check .hint { flex-basis: 100%; margin: 0 0 0 19px; font-size: 12px; }
+.live-form select, .number-input {
+  width: 100%; font: inherit; font-size: 13px; color: var(--ink); background: var(--paper);
+  padding: 6px 8px; border: 1px solid var(--rule); border-radius: 2px;
+}
+.live-form select:focus, .number-input:focus { outline: none; border-color: var(--ink); }
+#pool-option .number-input { margin-top: 4px; }
+.live-connect { margin-top: 4px; }
+.live-heading { margin-top: 22px; padding-top: 14px; border-top: 1px solid var(--rule); }
+.live-settings { display: grid; grid-template-columns: minmax(0, 1fr) 84px; gap: 6px 10px; align-items: center; }
+.live-lights { display: grid; gap: 6px; margin-top: 8px; }
+.light-row { display: grid; grid-template-columns: 44px minmax(0, 1fr) 28px 44px; gap: 8px; align-items: center; }
+.light-row input[type="range"] { width: 100%; accent-color: var(--ink); }
+.light-row output { font-size: 12px; text-align: right; color: var(--muted); }
+.light-toggle.on { color: #fff; background: var(--moving); border-color: var(--moving); }
+
+.live-feed { background: #000; line-height: 0; min-height: 120px; }
+.live-feed:has(img[hidden]) { background: var(--wash); }
+.live-feed img { width: 100%; height: auto; display: block; }
+
+/* How the test run is going: a strip over the result pages, apart from the charts. */
+.live-panel {
+  display: grid; grid-template-columns: 180px minmax(0, 1fr) auto; gap: 18px; align-items: start;
+  padding: 12px 0 14px; margin-bottom: 22px;
+  border-top: 1px solid var(--rule-strong); border-bottom: 1px solid var(--rule);
+  font-size: 13px;
+}
+.live-thumb-wrap { background: #000; line-height: 0; min-height: 60px; }
+.live-thumb-wrap img { width: 100%; height: auto; display: block; }
+.live-facts { display: grid; gap: 2px; color: var(--text); min-width: 0; }
+.live-facts > div:empty { display: none; }
+.live-title { color: var(--ink); font-weight: 500; }
+.live-state { display: inline-block; margin-right: 6px; padding: 0 6px; font-size: 12px; font-weight: 600; color: #fff; background: var(--muted); border-radius: 2px; }
+.live-state.running { background: var(--critical); }
+.live-state.paused, .live-state.stopping { background: var(--still); }
+.live-state.finished { background: var(--ink); }
+.live-actions { display: grid; gap: 8px; justify-items: end; }
+.live-waiting { max-width: 640px; margin-top: 16px; color: var(--muted); }
+
+@media (max-width: 900px) {
+  .live-panel { grid-template-columns: minmax(0, 1fr); }
+  .live-actions { justify-items: start; }
+}

@@ -7,6 +7,8 @@ someone reaches across the boundary -- which is the point.
 """
 
 import ast
+import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -46,8 +48,8 @@ def test_web_layer_does_no_analysis():
 
 @pytest.mark.parametrize(
     "path",
-    [ROOT / "pipeline.py", ROOT / "reporting.py", ROOT / "main.py", *(ROOT / "classes").glob("*.py")],
-    ids=lambda p: p.name,
+    [ROOT / "pipeline.py", ROOT / "reporting.py", ROOT / "main.py", *(ROOT / "classes").rglob("*.py")],
+    ids=lambda p: p.relative_to(ROOT).as_posix(),
 )
 def test_analysis_knows_nothing_about_http(path):
     """The analysis must stay runnable with no server involved."""
@@ -75,3 +77,11 @@ def test_no_remote_resources_in_the_page():
             assert "https://" not in text and "http://" not in text, (
                 f"{path.name} refers to a remote resource; it would break offline."
             )
+
+
+def test_folder_mode_needs_no_camera_or_serial_library():
+    """vmbpy (Vimba X) and pyserial are imported only when a live run uses the
+    camera or the fan and LEDs, so folder mode and the server run without them."""
+    code = "import sys, pipeline, main, web.server; print(sorted({'vmbpy', 'serial'} & set(sys.modules)))"
+    result = subprocess.run([sys.executable, "-c", code], cwd=ROOT, capture_output=True, text=True, check=True)
+    assert result.stdout.strip() == "[]"

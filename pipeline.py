@@ -23,6 +23,17 @@ can never reach into the analysis internals.
                                threshold against the labels, pooled over any saved datasets
     save_threshold(...)        write a new movement threshold into config.yaml
     save_movement_score(...)   write a metric, its parameters and its threshold into config.yaml
+
+    live_options()             the cameras, serial ports and saved test-run settings
+    save_live_settings(...)    change the test-run settings (and the camera's frame rate)
+    open_live(...)             open the camera (or a replay of a folder) for a live run
+    live_preview(...)          detect the mites on the newest frame, to label the plates
+    set_live_light(...)        switch the fan or an LED, to check the settings
+    start_live(...)            start the test run; it is analysed as it is captured
+    live_status(...)           how capture and analysis are going
+    live_results(...)          the results so far, as run_analysis() gives them
+    live_frame(...)            the newest frame as a JPEG, for the live feed
+    pause_live / resume_live / stop_live / close_live
 """
 
 import hashlib
@@ -31,7 +42,8 @@ import json
 import os
 import re
 import shutil
-from datetime import datetime
+import threading
+from datetime import date, datetime
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -44,7 +56,15 @@ from classes.analyzer import Analyzer
 from classes import app_config
 from classes.app_config import get_default_config, save_motion_threshold
 from classes.data_loader import DataLoader
-from classes.mite import Mite
+from classes.frame_source import FolderSource, as_analysis_image
+from classes.live import camera as live_camera
+from classes.live.lights import DEVICES, open_lights, serial_ports
+from classes.live.recorder import Recorder
+from classes.live.session import LiveSession
+from classes.live.settings import RANGES as SETTING_RANGES, Settings
+from classes.live.sources import CameraSource, ReplaySource
+from classes.motion_analysis import MotionAnalysis, detect_mites
+from classes.pooling import check_pool_size, describe_pool_size, pools
 from classes.zones import UNLABELED, ZoneManager
 
 # Zone type ids as they appear in the coordinates file.
@@ -136,8 +156,13 @@ def open_session(data_dir, out_dir, coords_file=DEFAULT_COORDS_FILE, library_dir
 
     zone_manager = _build_zone_manager(coords_file)
     # The same detection as an analysis run, on the same first frame.
-    Mite.reset_ids()
-    zone_manager.assign_mites(Analyzer().detect(zone_manager.mask_image_to_valid_rois(frame)))
+    detect_mites(zone_manager, frame, Analyzer())
+    return _session_view(zone_manager, frame, data_dir, n_recordings, library_dir)
+
+
+def _session_view(zone_manager, frame, data_dir, n_recordings, library_dir):
+    """What the labelling page needs: the zones, with their labels and number of
+    mites, and every detection, those marked "not a mite" included."""
     # Rejected detections are listed too, marked, so the user can take a mark back.
     rejected = set(map(id, _rejected_detections(zone_manager, _folder_truth(data_dir, library_dir))))
     mites = [
@@ -207,44 +232,38 @@ def set_rejected(data_dir, x, y, rejected, restore=None, tolerance=10.0, library
     return replaced
 
 
-def _detect_and_score(data_dir, coords_file, labels=None, reject=True, score=True, library_dir=CALIBRATION_LIBRARY):
+def _detect_and_score(data_dir, coords_file, labels=None, reject=True, score=True, library_dir=CALIBRATION_LIBRARY,
+                      pool_size=None):
     """Decode every recording, find the mites and, with `score`, score their motion.
 
-    The expensive part shared by an analysis run and a calibration. With `reject`,
-    detections marked "not a mite" in the session's ground truth are dropped
-    before scoring, so they appear nowhere in the results.
+    The expensive part shared by an analysis run and a calibration: the analysis
+    core (classes/motion_analysis.py) fed from the folder, one recording at a time.
+    With `reject`, detections marked "not a mite" in the session's ground truth
+    are dropped, so they appear nowhere in the results.
     """
-    # The mite id counter is shared process-wide; restart it so each run numbers
-    # its mites from zero.
-    Mite.reset_ids()
+    analysis = MotionAnalysis(_build_zone_manager(coords_file), score=score)
+    analysis.run(FolderSource(data_dir).events(), pool_size)
+    _arrange(analysis, data_dir, labels, reject, library_dir)
+    return _run_view(analysis)
 
-    loader = DataLoader(data_dir, grayscale=False)
-    zone_manager = _build_zone_manager(coords_file)
-    zone_manager.apply_labels(labels)
-    analyzer = Analyzer()
 
-    recording_bursts = loader.load_bursts()
-    first_frame = loader.get_first_frame()
+def _arrange(analysis, data_dir, labels, reject, library_dir):
+    """Name the zones by `labels` and, with `reject`, leave out the detections
+    marked "not a mite" in the ground truth saved for `data_dir`. Folder and live
+    runs both go through here, so the same marks give the same results."""
+    truth = _folder_truth(data_dir, library_dir) if reject else []
+    analysis.arrange(labels, lambda zone_manager: _rejected_detections(zone_manager, truth))
 
-    masked = zone_manager.mask_image_to_valid_rois(first_frame)
-    mites = analyzer.detect(masked)
-    valid_mites = zone_manager.assign_mites(mites)
-    if reject:
-        rejected = _rejected_detections(zone_manager, _folder_truth(data_dir, library_dir))
-        valid_mites = zone_manager.remove_mites(rejected)
-    if score:
-        analyzer.classify_motility(valid_mites, recording_bursts)
 
-    # One timestamp per burst, in minutes from the start of the session.
-    burst_minutes = np.array([times[0] for _frames, times in recording_bursts]) / 60
-
+def _run_view(analysis):
     return SimpleNamespace(
-        zone_manager=zone_manager,
-        analyzer=analyzer,
-        first_frame=first_frame,
-        masked=masked,
-        n_recordings=len(recording_bursts),
-        burst_minutes=burst_minutes,
+        zone_manager=analysis.zone_manager,
+        analyzer=analysis.analyzer,
+        first_frame=analysis.first_frame,
+        masked=analysis.masked,
+        n_recordings=len(analysis.pool_times),
+        # One timestamp per pool, in minutes from the start of the session.
+        burst_minutes=np.array(analysis.pool_times) / 60,
     )
 
 
@@ -258,20 +277,34 @@ def _write_preview(frame, out_dir):
     cv2.imwrite(str(out_dir / PREVIEW_NAME), frame, [cv2.IMWRITE_JPEG_QUALITY, 85])
 
 
-def run_analysis(data_dir, out_dir, labels=None, coords_file=DEFAULT_COORDS_FILE, library_dir=CALIBRATION_LIBRARY):
+def run_analysis(data_dir, out_dir, labels=None, coords_file=DEFAULT_COORDS_FILE, library_dir=CALIBRATION_LIBRARY,
+                 pool_size=None):
     """Run the whole pipeline and write its results to `out_dir`.
 
     `labels` maps zone id (as a string) to the group name the user typed, e.g.
-    {"0": "venom 2x", "1": "control"}. Returns the output filenames, a summary, and
-    the per-zone and per-mite results the UI browses.
+    {"0": "venom 2x", "1": "control"}. `pool_size` is the number of consecutive
+    frames scored together; by default a whole recording (see classes/pooling.py).
+    Returns the output filenames, a summary, and the per-zone and per-mite results
+    the UI browses.
     """
-    run = _detect_and_score(data_dir, coords_file, labels, library_dir=library_dir)
+    run = _detect_and_score(data_dir, coords_file, labels, library_dir=library_dir, pool_size=pool_size)
+    return _results(run, out_dir, labels)
+
+
+def _results(run, out_dir, labels, write_files=True):
+    """The results of a run as the UI browses them. With `write_files`, the
+    workbook, the figures, the annotated first frame and the preview are written
+    to `out_dir` too. A live run describes its results this same way after every
+    pool, so its pages are drawn from exactly what a folder run returns."""
     burst_minutes = run.burst_minutes
     mite_data = run.zone_manager.get_mite_scores(burst_minutes)
 
-    _write_preview(run.first_frame, out_dir)
-    annotated = run.zone_manager.draw(run.masked)
-    results = reporting.write_outputs(mite_data, annotated, out_dir)
+    if write_files:
+        _write_preview(run.first_frame, out_dir)
+        annotated = run.zone_manager.draw(run.masked.copy())
+        results = reporting.write_outputs(mite_data, annotated, out_dir)
+    else:
+        results = reporting.describe_outputs(mite_data)
 
     results.update(
         {
@@ -435,9 +468,10 @@ def calibration_clip(out_dir, recording, zone_id, library_dir=CALIBRATION_LIBRAR
     return _write_clip(DataLoader(recordings_dir, grayscale=False), source["name"], source["fps"], box, out_dir, name)
 
 
-def _write_clip(loader, recording_name, fps, box, out_dir, name, max_width=None):
+def _write_clip(loader, recording_name, fps, box, out_dir, name, max_width=None, first=0, count=None):
     """Write up to CLIP_MAX_FRAMES JPEGs of the region `box` = (x1, y1, x2, y2) of
-    one recording, and a manifest `name`.json that later calls reuse.
+    one recording (with `count`, of its `count` frames from index `first` on),
+    and a manifest `name`.json that later calls reuse.
 
     Returns the frame filenames, where the region sits in the full image (in full
     image pixels, even when `max_width` scales the frames down), and the delay
@@ -447,9 +481,11 @@ def _write_clip(loader, recording_name, fps, box, out_dir, name, max_width=None)
     if manifest.is_file():
         return json.loads(manifest.read_text(encoding="utf-8"))
 
-    step = max(1, int(np.ceil(loader.count_frames(recording_name) / CLIP_MAX_FRAMES)))
+    n_frames = loader.count_frames(recording_name) if count is None else count
+    step = max(1, int(np.ceil(n_frames / CLIP_MAX_FRAMES)))
     x1, y1 = max(0, int(box[0])), max(0, int(box[1]))
-    frames = loader.load_recording_region(recording_name, x1, y1, int(box[2]), int(box[3]), step=step)
+    frames = loader.load_recording_region(recording_name, x1, y1, int(box[2]), int(box[3]), step=step,
+                                          first=first, count=count)
     height, width = frames.shape[1:3]
     scale = min(1.0, max_width / width) if max_width else 1.0
 
@@ -474,25 +510,36 @@ def _write_clip(loader, recording_name, fps, box, out_dir, name, max_width=None)
 PLATE_CLIP_WIDTH = 1400  # the whole plate is scaled down to this width in its clip
 
 
-def analysis_clip(data_dir, out_dir, recording, zone_id=None, coords_file=DEFAULT_COORDS_FILE):
+def analysis_clip(data_dir, out_dir, recording, zone_id=None, coords_file=DEFAULT_COORDS_FILE, pool_size=None):
     """Frames of one recording of an analysis session: of one zone, or with no
     `zone_id` of the whole plate, scaled down. Like calibration_clip(), written
-    to `out_dir` once and reused after."""
+    to `out_dir` once and reused after.
+
+    `recording` is the index of a time point of the results, i.e. of a pool: with
+    a `pool_size`, the clip holds that pool's frames only."""
     loader = DataLoader(data_dir, grayscale=False)
-    recordings = loader.recording_dirs
-    if not 0 <= recording < len(recordings):
-        raise ValueError(f"No recording {recording} in this session.")
-    source = recordings[recording].name
+    pool_size = check_pool_size(pool_size)
+    if pool_size is None:
+        recordings = loader.recording_dirs
+        if not 0 <= recording < len(recordings):
+            raise ValueError(f"No recording {recording} in this session.")
+        source, first, count, tag = recordings[recording].name, 0, None, ""
+    else:
+        pooled = [(pool.recording.name, pool.first_index, len(pool.frames))
+                  for pool in pools(FolderSource(data_dir).events(decode=False), pool_size)]
+        if not 0 <= recording < len(pooled):
+            raise ValueError(f"No pool {recording} in this session.")
+        (source, first, count), tag = pooled[recording], f"_p{pool_size}"
 
     if zone_id is None:
-        box, name, max_width = (0, 0, 10**6, 10**6), f"clip_r{recording}_plate", PLATE_CLIP_WIDTH
+        box, name, max_width = (0, 0, 10**6, 10**6), f"clip_r{recording}{tag}_plate", PLATE_CLIP_WIDTH
     else:
         zone = next((z for z in _build_zone_manager(coords_file).labelled_zones if z.id == zone_id), None)
         if zone is None:
             raise ValueError(f"No zone {zone_id} in this session.")
         box = (zone.x1 - CLIP_MARGIN, zone.y1 - CLIP_MARGIN, zone.x2 + CLIP_MARGIN, zone.y2 + CLIP_MARGIN)
-        name, max_width = f"clip_r{recording}_z{zone_id}", None
-    return _write_clip(loader, source, loader.get_fps(source), box, out_dir, name, max_width)
+        name, max_width = f"clip_r{recording}{tag}_z{zone_id}", None
+    return _write_clip(loader, source, loader.get_fps(source), box, out_dir, name, max_width, first, count)
 
 
 def save_ground_truth(out_dir, truth, library_dir=CALIBRATION_LIBRARY):
@@ -1051,3 +1098,330 @@ def save_movement_score(metric, params, threshold):
     if not float(threshold) > 0:
         raise ValueError("The threshold must be positive.")
     return app_config.save_movement_score(metric, params, threshold)
+
+
+# --- live runs ----------------------------------------------------------------------
+#
+# A live run is a Discobox test run: the camera streams all the time for the live
+# feed, and every `recording_timeout` minutes the fan and LEDs come on and a burst
+# of frames is recorded. Each burst is analysed as soon as it is complete, by the
+# same core as a folder (MotionAnalysis), and its results are described by the same
+# _arrange() and _results() as run_analysis() uses, so the live pages are the
+# folder pages, filling in. The bursts are saved, as the Discobox app saves them, to
+# output/<run name>/, which is then a folder like any other: folder mode reads it
+# back and gets exactly the same results. A folder can also be replayed as if it
+# came from the camera, to try all this without one.
+#
+# The plate labels and "not a mite" marks of a run live in its folder, as for any
+# folder, so the label page works on a live run unchanged.
+
+CameraError = live_camera.CameraError  # the camera or Vimba X cannot be used
+LIVE_OUTPUT = Path(__file__).resolve().parent / "output"
+LIVE_SETTINGS_FILE = Path(__file__).resolve().parent / "settings.txt"
+SETTINGS_FILENAME = ".settings.txt"
+LIVE_FEED_WIDTH = 960
+LIVE_STATES = ("running", "paused", "stopping")
+
+_live = {}  # live id -> the run's parts
+_live_lock = threading.Lock()
+
+
+def live_options(settings_path=LIVE_SETTINGS_FILE, output_root=LIVE_OUTPUT):
+    """What the live page offers before a run: the cameras (or why there are none),
+    the serial ports, the saved test-run settings with their ranges, and a run
+    name not taken yet."""
+    cameras, camera_error = [], None
+    try:
+        cameras = live_camera.list_cameras()
+    except live_camera.CameraError as error:
+        camera_error = str(error)
+    return {
+        "cameras": cameras,
+        "camera_error": camera_error,
+        "serial_ports": serial_ports(),
+        "settings": Settings.from_file(settings_path).as_dict(),
+        "ranges": {name: {"label": label, "unit": unit, "min": low, "max": high}
+                   for name, (label, unit, low, high) in SETTING_RANGES.items()},
+        "run_name": default_run_name(output_root),
+        "output_root": str(output_root),
+        "open": [live_status(live_id) for live_id in list(_live)],
+    }
+
+
+def print_cameras():
+    """Print every camera Vimba X sees, as the Discobox app's --list does."""
+    live_camera.print_cameras()
+
+
+def default_run_name(output_root=LIVE_OUTPUT):
+    """test_run_<today>, as the Discobox app names a run, with a number added if
+    that name is taken."""
+    base = f"test_run_{date.today():%Y-%m-%d}"
+    name, number = base, 1
+    while (Path(output_root) / name).exists():
+        number += 1
+        name = f"{base}_{number}"
+    return name
+
+
+def _new_run_dir(run_name, output_root):
+    run_name = (run_name or "").strip()
+    if not run_name:
+        raise ValueError("Enter a name for the test run.")
+    if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9 ._-]*", run_name) or run_name.endswith("."):
+        raise ValueError("A test run name may only hold letters, digits, spaces, dots, dashes and underscores.")
+    run_dir = Path(output_root) / run_name
+    if run_dir.exists():
+        raise ValueError(f"A test run called {run_name} already exists in {output_root}.")
+    run_dir.mkdir(parents=True)
+    return run_dir
+
+
+def save_live_settings(values, live_id=None, settings_path=LIVE_SETTINGS_FILE):
+    """Change the saved test-run settings (only the names in `values`), checked
+    against their ranges; with an open live run not started yet, it uses them
+    too, and the camera takes the new frame rate at once."""
+    settings = Settings.from_dict({**Settings.from_file(settings_path).as_dict(), **values})
+    run = _live.get(live_id) if live_id else None
+    if run is not None and run.session.state != "ready":
+        raise ValueError("The settings cannot change while the test run is going on.")
+    settings.save(settings_path)
+    if run is not None and isinstance(run.source, CameraSource):
+        fps_changed = settings.fps != run.source.settings.fps
+        run.source.settings = settings
+        if fps_changed:
+            run.source.set_fps(settings.fps)
+    return settings.as_dict()
+
+
+def open_live(live_id, out_dir, run_name, source="camera", camera_id=None, replay_dir=None, replay_fps=None,
+              replay_gap=2.0, serial_port="auto", save_frames=True, pool_size=None, settings_path=LIVE_SETTINGS_FILE,
+              settings=None, output_root=LIVE_OUTPUT, coords_file=DEFAULT_COORDS_FILE, library_dir=CALIBRATION_LIBRARY):
+    """Open the camera, with the fan and LEDs (or a replay of `replay_dir`), for a
+    live run called `run_name`, whose recordings go to output_root/run_name and
+    whose results go to `out_dir`. The live feed starts; nothing is recorded
+    until start_live(). Only one live run can be open: opening another closes
+    the one that is open, unless that one is running.
+
+    The test run's settings are those saved in `settings_path`, with `settings`
+    (name -> value, e.g. {"fps": 30}) overriding them for this run only."""
+    pool_size = check_pool_size(pool_size)
+    with _live_lock:
+        for other_id, other in list(_live.items()):
+            if other.session.state in LIVE_STATES:
+                raise ValueError(f"The test run {other.run_dir.name} is still going on; stop it first.")
+            _close_live(other_id)
+
+        lights = None
+        if source == "camera":
+            settings = Settings.from_dict({**Settings.from_file(settings_path).as_dict(), **(settings or {})})
+            camera_id = live_camera.choose_camera(camera_id)
+            lights = open_lights(serial_port)
+            live_source = CameraSource(camera_id, settings, lights)
+        elif source == "replay":
+            if not replay_dir or not Path(replay_dir).is_dir():
+                raise FileNotFoundError(f"Recording folder not found: {replay_dir}")
+            live_source = ReplaySource(replay_dir, fps=replay_fps, gap=replay_gap)
+        else:
+            raise ValueError(f"Unknown live source {source!r}.")
+
+        run_dir = None
+        try:
+            run_dir = _new_run_dir(run_name, output_root)
+            live_source.open()
+        except Exception:
+            if lights is not None:
+                lights.close()
+            if run_dir is not None:
+                shutil.rmtree(run_dir, ignore_errors=True)
+            raise
+        if source == "replay":
+            # A replay keeps the folder's labels and "not a mite" marks, so it gives its results.
+            for name in (LABELS_FILENAME, GROUND_TRUTH_FILENAME):
+                if (Path(replay_dir) / name).is_file():
+                    shutil.copy2(Path(replay_dir) / name, run_dir / name)
+
+        analysis = MotionAnalysis(_build_zone_manager(coords_file))
+        run = SimpleNamespace(
+            live_id=live_id, source=live_source, lights=lights, analysis=analysis, run_dir=run_dir,
+            out_dir=Path(out_dir), pool_size=pool_size, save_frames=bool(save_frames), library_dir=library_dir,
+            coords_file=coords_file, feed=(None, None), feed_lock=threading.Lock(),
+        )
+        run.session = LiveSession(live_source, analysis, pool_size, publish=lambda session, write: _publish_live(run, write))
+        _live[live_id] = run
+    return live_status(live_id)
+
+
+def _get_live(live_id):
+    run = _live.get(live_id)
+    if run is None:
+        raise ValueError("This live run is not open any more.")
+    return run
+
+
+def _publish_live(run, write_files):
+    """The results of a live run so far, exactly as run_analysis() describes a
+    folder: the same labels and "not a mite" marks, read from the run's folder."""
+    labels = load_labels(run.run_dir)
+    _arrange(run.analysis, run.run_dir, labels, True, run.library_dir)
+    return _results(_run_view(run.analysis), run.out_dir, labels, write_files)
+
+
+def live_preview(live_id, out_dir=None):
+    """Detect the mites on a frame so the plates can be labelled, as
+    open_session() does for a folder: on the newest frame before the run, and on
+    the frame the run's results come from once it has one."""
+    run = _get_live(live_id)
+    with run.session.lock:
+        frame = run.analysis.first_frame
+    if frame is None:
+        _count, frame = run.source.latest.get()
+        if frame is None:
+            raise ValueError("No frame has come from the camera yet.")
+        frame = as_analysis_image(frame)
+    out_dir = Path(out_dir or run.out_dir)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    cv2.imwrite(str(out_dir / PREVIEW_NAME), frame, [cv2.IMWRITE_JPEG_QUALITY, 85])
+    zone_manager = _build_zone_manager(run.coords_file)
+    detect_mites(zone_manager, frame, Analyzer())
+    return _session_view(zone_manager, frame, run.run_dir, run.source.completed, run.library_dir)
+
+
+def set_live_light(live_id, device, on=None, level=None):
+    """Switch the fan or an LED on or off, or set its intensity, to check the
+    settings before the run (the Discobox settings window's on/off buttons)."""
+    run = _get_live(live_id)
+    if device not in DEVICES:
+        raise ValueError(f"Unknown device {device!r}; it is one of {', '.join(DEVICES)}.")
+    if run.lights is None:
+        raise ValueError("A replay has no fan or LEDs.")
+    if run.session.state != "ready":
+        raise ValueError("The fan and LEDs are the test run's to switch while it is going on.")
+    if on is None:
+        run.lights.set_level(device, level)
+    elif on:
+        run.lights.switch(device, True, level)
+    else:
+        run.lights.switch_off(device)
+    return run.lights.state()
+
+
+def start_live(live_id, labels=None):
+    """Start the test run: record, analyse and publish results as it goes.
+    `labels`, when given, are saved as the run's plate labels first."""
+    run = _get_live(live_id)
+    if run.session.state != "ready":
+        raise ValueError("This test run has already been started.")
+    if labels is not None:
+        save_labels(run.run_dir, labels)
+    if run.lights is not None:
+        run.lights.all_off()  # whatever was switched on to check the settings
+    text = run.source.settings_text
+    if text:
+        (run.run_dir / SETTINGS_FILENAME).write_text(text, encoding="utf-8")
+    run.session.recorder = Recorder(run.run_dir) if run.save_frames else None
+    try:
+        run.session.start()
+    except Exception:
+        if run.session.recorder is not None:
+            run.session.recorder.close()
+            run.session.recorder = None
+        raise
+    return live_status(live_id)
+
+
+def live_status(live_id):
+    run = _get_live(live_id)
+    return {
+        **run.session.status(),
+        "live_id": live_id,
+        "run_name": run.run_dir.name,
+        "run_dir": str(run.run_dir),
+        "out_dir": str(run.out_dir),
+        "pool_size": run.pool_size,
+        "pool_size_text": describe_pool_size(run.pool_size),
+        "save_frames": run.save_frames,
+    }
+
+
+def live_results(live_id):
+    """The results published last (None before the first recording is
+    analysed), and their version, which changes with every update."""
+    run = _get_live(live_id)
+    return {"version": run.session.version, "results": run.session.results}
+
+
+def live_refresh(live_id):
+    """Describe the results again, e.g. after the plate labels changed."""
+    run = _live.get(live_id)
+    if run is not None:
+        run.session.publish(write_files=False)
+
+
+def live_frame(live_id, width=LIVE_FEED_WIDTH):
+    """The newest frame as JPEG bytes, at most `width` pixels wide (None before
+    the first frame). Encoded once per frame and width, whoever asks."""
+    run = _get_live(live_id)
+    count, image = run.source.latest.get()
+    if image is None:
+        return None
+    width = max(64, min(int(width), 4096))
+    with run.feed_lock:
+        key, data = run.feed
+        if key == (count, width):
+            return data
+        if image.shape[1] > width:
+            height = round(image.shape[0] * width / image.shape[1])
+            image = cv2.resize(image, (width, height), interpolation=cv2.INTER_AREA)
+        ok, encoded = cv2.imencode(".jpg", image, [cv2.IMWRITE_JPEG_QUALITY, 80])
+        data = encoded.tobytes() if ok else None
+        run.feed = ((count, width), data)
+        return data
+
+
+def pause_live(live_id):
+    _get_live(live_id).session.pause()
+    return live_status(live_id)
+
+
+def resume_live(live_id):
+    _get_live(live_id).session.resume()
+    return live_status(live_id)
+
+
+def stop_live(live_id, wait=False, timeout=None):
+    """Stop the test run: capture stops, the frames already captured are analysed
+    and saved, and the final results written. With `wait`, returns when done."""
+    _get_live(live_id).session.stop(wait=wait, timeout=timeout)
+    return live_status(live_id)
+
+
+def close_live(live_id):
+    """Stop the run if it is going on, release the camera and the fan and LEDs,
+    and forget the run. A run folder with nothing recorded in it is removed."""
+    with _live_lock:
+        _close_live(live_id)
+
+
+def _close_live(live_id):
+    run = _live.pop(live_id, None)
+    if run is None:
+        return
+    run.session.stop(wait=True, timeout=60)
+    run.source.wait_closed(30)
+    if run.lights is not None:
+        run.lights.close()
+    if run.run_dir.is_dir() and not DataLoader(run.run_dir).recording_dirs:
+        shutil.rmtree(run.run_dir, ignore_errors=True)
+
+
+def live_running():
+    """Whether a live run is recording, paused or finishing."""
+    return any(run.session.state in LIVE_STATES for run in list(_live.values()))
+
+
+def close_all_live():
+    """Stop every live run cleanly and release the camera: on shutdown."""
+    with _live_lock:
+        for live_id in list(_live):
+            _close_live(live_id)

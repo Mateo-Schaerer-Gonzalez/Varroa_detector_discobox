@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Varroa discobox</title>
-<link rel="stylesheet" href="style.css?v=9">
+<link rel="stylesheet" href="style.css?v=10">
 </head>
 <body>
 
@@ -21,6 +21,8 @@
     <a href="#/results" data-step="results" class="disabled"><span class="step-num">3</span> Results</a>
     <!-- Calibration opens in this window; the analysis waits in memory until you come back. -->
     <a id="mode-link" class="mode-link" href="#/cal/open">Calibration&nbsp;↗</a>
+    <!-- So does a live run from the Discobox camera. -->
+    <a id="live-link" class="mode-link" href="#/live/open">Live&nbsp;↗</a>
   </nav>
   <nav id="steps-cal" class="steps" aria-label="Calibration stages" hidden>
     <a href="#/cal/open" data-step="open"><span class="step-num">1</span> Calibration data</a>
@@ -28,6 +30,13 @@
     <a href="#/cal/report" data-step="report" class="disabled"><span class="step-num">3</span> Report</a>
     <!-- The way back out of calibration, to the analysis stages. -->
     <a id="exit-cal-link" class="mode-link" href="#/open">←&nbsp;Exit calibration</a>
+  </nav>
+  <nav id="steps-live" class="steps" aria-label="Live stages" hidden>
+    <a href="#/live/open" data-step="open"><span class="step-num">1</span> Camera</a>
+    <a href="#/live/label" data-step="label" class="disabled"><span class="step-num">2</span> Plate labels</a>
+    <a href="#/live/results" data-step="results" class="disabled"><span class="step-num">3</span> Live results</a>
+    <!-- A test run goes on while you look at the analysis; come back here to follow it. -->
+    <a id="exit-live-link" class="mode-link" href="#/open">←&nbsp;Exit live</a>
   </nav>
 </header>
 
@@ -81,6 +90,11 @@
         leave it out of the analysis; click it again to keep it.
       </p>
       <ul id="group-list" class="group-list"></ul>
+      <details id="pool-option" class="path-option">
+        <summary>Frames per pool</summary>
+        <p class="hint">How many consecutive frames are scored together. Left empty, a whole recording, as always.</p>
+        <input id="pool-size" type="number" min="2" step="1" placeholder="whole recording" class="number-input">
+      </details>
       <button id="run-btn" type="button" class="wide">Run analysis</button>
       <p id="run-status" class="hint"></p>
     </aside>
@@ -90,8 +104,76 @@
 
 <!-- 3 · results: overview, one zone, one mite ------------------------------- -->
 <section id="view-results" class="view" hidden>
+  <!-- Live only: how the test run is going. The result pages below are the same as for a folder. -->
+  <div id="live-panel" class="live-panel" hidden></div>
   <nav id="breadcrumb" class="breadcrumb" aria-label="Breadcrumb"></nav>
   <div id="results-body"></div>
+</section>
+
+<!-- Live from the Discobox ==================================================== -->
+
+<!-- 1 · the camera, the fan and LEDs, and the test run's settings --------------------- -->
+<section id="view-live-open" class="view" hidden>
+  <div class="split">
+    <div class="split-main">
+      <header class="page-head">
+        <div>
+          <h1>Live from the Discobox</h1>
+          <p class="meta">A test run as the Discobox app runs it: every few minutes the fan and LEDs come on and the
+            camera records a burst of frames. Each recording is analysed as soon as it is in, and the result pages fill in as the run goes.</p>
+        </div>
+      </header>
+      <figure class="fig">
+        <div class="fig-title">Camera</div>
+        <div class="live-feed"><img id="live-feed" alt="The camera's newest frame" hidden></div>
+        <p id="live-feed-note" class="hint">Connect to see the camera.</p>
+      </figure>
+    </div>
+    <aside class="split-side panel">
+      <h2>Source</h2>
+      <div class="live-form">
+        <label class="live-choice"><input type="radio" name="live-source" value="camera" checked> Discobox camera</label>
+        <label class="live-choice"><input type="radio" name="live-source" value="replay"> Replay a recorded folder
+          <span class="hint">as if it came from the camera, to try all this without one</span></label>
+
+        <div id="live-camera-fields">
+          <label for="live-camera">Camera</label>
+          <select id="live-camera"></select>
+          <label for="live-serial">Fan and LEDs</label>
+          <select id="live-serial"></select>
+        </div>
+        <div id="live-replay-fields" hidden>
+          <label for="live-replay-dir">Recording folder</label>
+          <input id="live-replay-dir" type="text" value="sample_data" spellcheck="false">
+          <label for="live-replay-gap">Seconds between recordings</label>
+          <input id="live-replay-gap" type="number" min="0" step="0.5" value="2" class="number-input">
+        </div>
+
+        <label for="live-run-name">Test run name</label>
+        <input id="live-run-name" type="text" spellcheck="false">
+        <label for="live-pool-size">Frames per pool</label>
+        <input id="live-pool-size" type="number" min="2" step="1" placeholder="whole recording" class="number-input">
+        <label class="live-check"><input id="live-save" type="checkbox" checked> Save the recordings
+          <span class="hint">to output/&lt;run name&gt;/, to analyse them again as a folder later</span></label>
+      </div>
+      <div class="row live-connect">
+        <button id="live-connect-btn" type="button">Connect</button>
+        <button id="live-close-btn" type="button" class="secondary" hidden>Disconnect</button>
+      </div>
+      <p id="live-open-status" class="hint"></p>
+
+      <div id="live-settings-block">
+        <h2 class="live-heading">Test run settings</h2>
+        <div id="live-settings" class="live-settings"></div>
+        <p id="live-recording-time" class="hint"></p>
+        <h2 class="live-heading">Fan and LEDs</h2>
+        <p class="hint">Their intensity during the run. Switch each on to check it while connected.</p>
+        <div id="live-lights" class="live-lights"></div>
+        <p id="live-settings-status" class="hint"></p>
+      </div>
+      <button id="live-label-btn" type="button" class="wide" disabled>Next: label the plates</button>
+    </aside>
+  </div>
 </section>
 
 <!-- Calibration window ======================================================= -->
@@ -223,7 +305,8 @@
 <div id="tooltip" class="tooltip" hidden></div>
 
 <script src="charts.js?v=9"></script>
-<script src="app.js?v=12"></script>
-<script src="calibration.js?v=13"></script>
+<script src="app.js?v=13"></script>
+<script src="live.js?v=1"></script>
+<script src="calibration.js?v=14"></script>
 </body>
 </html>

@@ -6,3 +6,8 @@ uploads/
 calibration_data/
 server.log
 server.pid
+
+# live runs: recordings (Discobox layout) and the saved test-run settings
+output/
+settings.txt
+vimbax.config

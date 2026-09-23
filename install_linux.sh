@@ -2,7 +2,13 @@
 # Sets up the app on Linux: conda (Miniforge) if missing, the discobox_env
 # environment, and a desktop icon that runs start.sh.
 #
-#   bash install_linux.sh
+#   bash install_linux.sh                      # folder mode only
+#   bash install_linux.sh <VimbaX SDK path>    # and the camera, for live runs
+#
+# With the path of the Vimba X SDK (e.g. ../VimbaX_Setup-2025-1-Linux64, as for the
+# Discobox app's setup-python-env.sh), vmbpy is installed from it and start.sh
+# points Vimba X at its cameras. For the fan and LEDs the user must be in the
+# dialout group: sudo adduser $USER dialout, then log in again.
 #
 # Safe to run again: it updates the environment and rewrites the icon.
 set -e
@@ -30,6 +36,17 @@ if "$conda" env list | grep -q "^discobox_env "; then
     "$conda" env update -n discobox_env -f discobox_env.yaml --prune
 else
     "$conda" env create -f discobox_env.yaml
+fi
+
+# 2b. the camera: vmbpy from the Vimba X SDK, and where its transport layers are
+if [ -n "$1" ]; then
+    sdk=${1%/}
+    [ -d "$sdk" ] || { echo "\"$sdk\" is not a folder"; exit 1; }
+    wheel=$(find "$sdk" -path "*/api/python/*" -name "vmbpy-*.whl" | head -n 1)
+    [ -n "$wheel" ] || { echo "No vmbpy wheel found in $sdk"; exit 1; }
+    "$conda" run -n discobox_env pip install "$wheel"
+    echo "path=$(cd "$sdk" && pwd)" > vimbax.config
+    echo "vmbpy installed from $wheel"
 fi
 
 # 3. desktop icon (app menu + desktop)

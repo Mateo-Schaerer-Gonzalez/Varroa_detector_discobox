@@ -79,15 +79,19 @@ def write_excel(mite_data, out_dir):
     return path.name
 
 
+# Every figure: its file name and the Plotter method that draws it, most useful first.
+FIGURES = [
+    ("moving_by_group.png", "plot_moving_by_group"),
+    ("distribution_by_group.png", "plot_distribution_by_group"),
+    ("score_over_time.png", "plot_score_over_time"),
+    ("score_distribution.png", "plot_score_distribution"),
+]
+
+
 def write_figures(mite_data, out_dir):
     """Save every figure as a PNG and return their filenames, most useful first."""
     plotter = Plotter(mite_data)
-    figures = {
-        "moving_by_group.png": plotter.plot_moving_by_group(),
-        "distribution_by_group.png": plotter.plot_distribution_by_group(),
-        "score_over_time.png": plotter.plot_score_over_time(),
-        "score_distribution.png": plotter.plot_score_distribution(),
-    }
+    figures = {name: getattr(plotter, method)() for name, method in FIGURES}
 
     names = []
     for name, figure in figures.items():
@@ -167,23 +171,44 @@ def write_outputs(mite_data, annotated_image, out_dir):
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    if mite_data.empty:
-        raise ValueError("No mites were detected, so there is nothing to report.")
+    _check_not_empty(mite_data)
 
     cv2.imwrite(str(out_dir / DETECTIONS_NAME), annotated_image)
 
-    summary = summarise_by_group(mite_data)
     return {
         "excel": write_excel(mite_data, out_dir),
         "figures": write_figures(mite_data, out_dir),
         "detections": DETECTIONS_NAME,
-        "summary": {
-            "n_mites": int(mite_data["mite_ID"].nunique()),
-            "n_moving_last": int(_last_recording(mite_data)["moving"].sum()),
-            "n_observations": int(len(mite_data)),
-            "n_groups": int(mite_data["group"].nunique()),
-            "groups": summary.round(3).to_dict(orient="records"),
-        },
+        "summary": _summary(mite_data),
+    }
+
+
+def describe_outputs(mite_data):
+    """What write_outputs() returns, without writing anything: the file names it
+    writes, and the summary. For a live run, which writes the files only now and
+    then but describes its results after every pool."""
+    _check_not_empty(mite_data)
+    return {
+        "excel": EXCEL_NAME,
+        "figures": [name for name, _method in FIGURES],
+        "detections": DETECTIONS_NAME,
+        "summary": _summary(mite_data),
+    }
+
+
+def _check_not_empty(mite_data):
+    if mite_data.empty:
+        raise ValueError("No mites were detected, so there is nothing to report.")
+
+
+def _summary(mite_data):
+    summary = summarise_by_group(mite_data)
+    return {
+        "n_mites": int(mite_data["mite_ID"].nunique()),
+        "n_moving_last": int(_last_recording(mite_data)["moving"].sum()),
+        "n_observations": int(len(mite_data)),
+        "n_groups": int(mite_data["group"].nunique()),
+        "groups": summary.round(3).to_dict(orient="records"),
     }
 
 

@@ -16,7 +16,7 @@ from typing import Optional, Union
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
@@ -60,10 +60,15 @@ def watch_pages():
         for page, seen in list(pages.items()):
             if now - seen > PAGE_TIMEOUT:
                 pages.pop(page, None)
+        # A live test run goes on with no page open; the server waits for its end.
+        if pipeline.live_running():
+            last_activity = now
+            continue
         # Before the first page loads, allow time for the browser to start.
         grace = CLOSE_GRACE if any_page_seen else PAGE_TIMEOUT
         if not pages and now - last_activity > grace:
             print("No page open any more - stopping the server.", flush=True)
+            pipeline.close_all_live()  # release the camera, switch the fan and LEDs off
             os._exit(0)
 
 
@@ -72,6 +77,8 @@ async def lifespan(app):
     if AUTO_STOP:
         threading.Thread(target=watch_pages, daemon=True).start()
     yield
+    # Ctrl+C on the server: a live run stops cleanly and writes its results.
+    pipeline.close_all_live()
 
 
 app = FastAPI(title="Varroa discobox", lifespan=lifespan)
@@ -89,6 +96,8 @@ class OpenRequest(BaseModel):
 
 class LabelsRequest(BaseModel):
     labels: dict[str, str] = {}
+    # frames scored together; by default a whole recording
+    pool_size: Optional[int] = None
 
 
 class RejectRequest(BaseModel):
@@ -202,9 +211,12 @@ async def upload_file(name: str, path: str, request: Request):
 
 @app.post("/api/session/{session_id}/labels")
 def save_labels(session_id: str, request: LabelsRequest):
-    """Persist the typed labels next to the recordings so they survive a restart."""
+    """Persist the typed labels next to the recordings so they survive a restart.
+    A live run's results take them at once."""
     session = get_session(session_id)
     pipeline.save_labels(session["data_dir"], request.labels)
+    if session.get("live"):
+        pipeline.live_refresh(session_id)
     return {"saved": len(request.labels)}
 
 
@@ -215,6 +227,8 @@ def reject_detection(session_id: str, request: RejectRequest):
     session = get_session(session_id)
     with truth_lock:
         replaced = pipeline.set_rejected(session["data_dir"], request.x, request.y, request.rejected, request.restore)
+    if session.get("live"):
+        pipeline.live_refresh(session_id)
     return {"rejected": request.rejected, "replaced": replaced}
 
 
@@ -224,9 +238,11 @@ def run_analysis(session_id: str, request: LabelsRequest):
     session = get_session(session_id)
     pipeline.save_labels(session["data_dir"], request.labels)
     try:
-        return pipeline.run_analysis(session["data_dir"], session["out_dir"], request.labels)
+        results = pipeline.run_analysis(session["data_dir"], session["out_dir"], request.labels, pool_size=request.pool_size)
     except (FileNotFoundError, ValueError) as error:
         raise HTTPException(status_code=400, detail=str(error))
+    session["pool_size"] = request.pool_size  # the clips of the results are of its pools
+    return results
 
 
 @app.get("/api/session/{session_id}/clip/{recording}")
@@ -234,8 +250,11 @@ def run_analysis(session_id: str, request: LabelsRequest):
 def analysis_clip(session_id: str, recording: int, zone_id: Optional[int] = None):
     """Frames of one recording, of one zone or the whole plate, cached on first request."""
     session = get_session(session_id)
+    if session.get("live") and not session.get("save_frames"):
+        raise HTTPException(status_code=400, detail="This test run does not save its recordings, so there is no clip to play.")
     try:
-        return pipeline.analysis_clip(session["data_dir"], session["out_dir"], recording, zone_id)
+        return pipeline.analysis_clip(session["data_dir"], session["out_dir"], recording, zone_id,
+                                      pool_size=session.get("pool_size"))
     except (FileNotFoundError, ValueError) as error:
         raise HTTPException(status_code=400, detail=str(error))
 
@@ -381,6 +400,146 @@ def save_movement_score(request: MovementScoreRequest):
         return pipeline.save_movement_score(request.metric, request.params, request.threshold)
     except ValueError as error:
         raise HTTPException(status_code=400, detail=str(error))
+
+
+# --- live runs -------------------------------------------------------------------
+#
+# A live run is a session like one opened from a folder: its folder is the run's
+# folder in output/, where its recordings, labels and "not a mite" marks go, so
+# the label and result pages and their clips work on it unchanged.
+
+LIVE_ERRORS = (FileNotFoundError, ValueError, pipeline.CameraError)
+
+
+class LiveOpenRequest(BaseModel):
+    run_name: str
+    source: str = "camera"  # or "replay": a recorded folder, as if from the camera
+    camera_id: Optional[str] = None
+    serial_port: str = "auto"
+    replay_dir: Optional[str] = None
+    replay_fps: Optional[float] = None
+    replay_gap: float = 2.0
+    save_frames: bool = True
+    pool_size: Optional[int] = None
+
+
+class LiveSettingsRequest(BaseModel):
+    settings: dict[str, float]
+    session_id: Optional[str] = None
+
+
+class LightRequest(BaseModel):
+    device: str
+    on: Optional[bool] = None
+    level: Optional[int] = None
+
+
+def live_call(call, *args, **kwargs):
+    try:
+        return call(*args, **kwargs)
+    except LIVE_ERRORS as error:
+        raise HTTPException(status_code=400, detail=str(error))
+
+
+@app.get("/api/live/options")
+def live_options():
+    """The cameras, serial ports and saved test-run settings, and any run still open."""
+    return pipeline.live_options()
+
+
+@app.post("/api/live")
+def open_live(request: LiveOpenRequest):
+    """Open the camera (or a replay) and start the live feed; nothing is recorded yet."""
+    session_id = uuid.uuid4().hex[:8]
+    out_dir = OUTPUT_ROOT / session_id
+    status = live_call(pipeline.open_live, session_id, out_dir, request.run_name, source=request.source,
+                       camera_id=request.camera_id, replay_dir=request.replay_dir, replay_fps=request.replay_fps,
+                       replay_gap=request.replay_gap, serial_port=request.serial_port,
+                       save_frames=request.save_frames, pool_size=request.pool_size)
+    sessions[session_id] = {"data_dir": status["run_dir"], "out_dir": out_dir, "live": True,
+                            "pool_size": request.pool_size, "save_frames": request.save_frames}
+    return {"session_id": session_id, **status}
+
+
+def live_session(session_id):
+    session = get_session(session_id)
+    if not session.get("live"):
+        raise HTTPException(status_code=404, detail="Not a live run.")
+    return session
+
+
+def attach_live(session_id, status):
+    """A run left open by a page that was closed or reloaded, as a session again."""
+    if session_id not in sessions:
+        sessions[session_id] = {"data_dir": status["run_dir"], "out_dir": Path(status["out_dir"]), "live": True,
+                                "pool_size": status["pool_size"], "save_frames": status["save_frames"]}
+
+
+@app.post("/api/live/settings")
+def save_live_settings(request: LiveSettingsRequest):
+    """Change the test-run settings; an open camera takes a new frame rate at once."""
+    return {"settings": live_call(pipeline.save_live_settings, request.settings, request.session_id)}
+
+
+@app.post("/api/live/{session_id}/attach")
+def reattach_live(session_id: str):
+    status = live_call(pipeline.live_status, session_id)
+    attach_live(session_id, status)
+    return {"session_id": session_id, **status}
+
+
+@app.post("/api/live/{session_id}/light")
+def set_live_light(session_id: str, request: LightRequest):
+    """Switch the fan or an LED to check the settings, as the Discobox settings window does."""
+    live_session(session_id)
+    return {"lights": live_call(pipeline.set_live_light, session_id, request.device, request.on, request.level)}
+
+
+@app.post("/api/live/{session_id}/preview")
+def live_preview(session_id: str):
+    """Detect the mites on the newest frame, to label the plates."""
+    session = live_session(session_id)
+    return {"session_id": session_id, **live_call(pipeline.live_preview, session_id, session["out_dir"])}
+
+
+@app.post("/api/live/{session_id}/start")
+def start_live(session_id: str, request: LabelsRequest):
+    live_session(session_id)
+    return live_call(pipeline.start_live, session_id, request.labels)
+
+
+@app.post("/api/live/{session_id}/{action}")
+def control_live(session_id: str, action: str):
+    """Pause, resume or stop the test run, or close the camera."""
+    live_session(session_id)
+    calls = {"pause": pipeline.pause_live, "resume": pipeline.resume_live, "stop": pipeline.stop_live}
+    if action == "close":
+        live_call(pipeline.close_live, session_id)
+        return {"closed": session_id}
+    if action not in calls:
+        raise HTTPException(status_code=404, detail=f"Unknown action {action}.")
+    return live_call(calls[action], session_id)
+
+
+@app.get("/api/live/{session_id}/status")
+def live_status(session_id: str):
+    """How capture and analysis are going: polled by the page about twice a second."""
+    return live_call(pipeline.live_status, session_id)
+
+
+@app.get("/api/live/{session_id}/results")
+def live_results(session_id: str):
+    """The results so far, as a folder run returns them, with their version."""
+    return live_call(pipeline.live_results, session_id)
+
+
+@app.get("/api/live/{session_id}/frame.jpg")
+def live_frame(session_id: str, w: int = 960):
+    """The newest camera frame, for the live feed."""
+    data = live_call(pipeline.live_frame, session_id, w)
+    if data is None:
+        raise HTTPException(status_code=404, detail="No frame yet.")
+    return Response(content=data, media_type="image/jpeg", headers={"Cache-Control": "no-store"})
 
 
 @app.get("/api/session/{session_id}/file/{name}")

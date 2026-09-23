@@ -988,7 +988,7 @@ function confusionTable(c) {
   };
   return `<table class="confusion">
     <thead>
-      <tr><th rowspan="2">Your label</th><th colspan="2" class="cm-group">Called by the detector</th><th rowspan="2" class="num">Total</th></tr>
+      <tr><th rowspan="2">Ground truth</th><th colspan="2" class="cm-group">Called by the detector</th><th rowspan="2" class="num">Total</th></tr>
       <tr><th class="cm-col">moving</th><th class="cm-col">still</th></tr>
     </thead>
     <tbody>
@@ -999,7 +999,7 @@ function confusionTable(c) {
 }
 
 const confusionCaption =
-  "Your label against the detector's call, which is moving when that recording's score reaches the threshold. One count per mite-recording; percentages are of each row.";
+  "The ground truth against the detector's call, which is moving when that recording's score reaches the threshold. One count per mite-recording; percentages are of each row.";
 const rocCaption = (r) =>
   `Every possible threshold, from the highest (bottom left) to the lowest (top right). AUC ${aucText(r)}. Hover the curve for the threshold at each step.`;
 const stripCaption =

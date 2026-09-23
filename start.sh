@@ -43,7 +43,15 @@ source "$("$conda" info --base)/etc/profile.d/conda.sh"
 conda activate discobox_env 2>/dev/null \
     || fail "The discobox_env environment is missing - run install_linux.sh first."
 
-# The server stops by itself once the last browser tab is closed.
+# The camera: tell Vimba X where its transport layers are, as run-discobox.sh does.
+if [ -f vimbax.config ]; then
+    source ./vimbax.config
+    cti_path=$(find "${path%/}" -path "*/cti" -type d 2>/dev/null | head -n 1)
+    [ -n "$cti_path" ] && export GENICAM_GENTL64_PATH=":$cti_path"
+fi
+
+# The server stops by itself once the last browser tab is closed (unless a live
+# test run is still going; then once it has ended).
 DISCOBOX_AUTO_STOP=1 nohup python -m uvicorn web.server:app --host 127.0.0.1 --port 8000 > server.log 2>&1 &
 echo $! > "$PID_FILE"
 
