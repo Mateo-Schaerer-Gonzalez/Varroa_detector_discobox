@@ -642,7 +642,7 @@ function drawReport() {
       look at the suggested threshold, and save it with this movement score to use it.</div>`}
     ${testing ? testReport(r) : calibrateReport(r)}
     ${section("Mites moving per group", `<div id="group-legend" class="legend"></div><div id="group-moving" class="group-cards"></div>
-      <p class="caption">Each group's fraction of mites moving in each recording, by your labels and as called by the detector, on the same mites. Groups are the plate labels.</p>`)}
+      <p class="caption">Each group's fraction of mites moving in each recording, by the ground truth and as called by the detector, on the same mites. Groups are the plate labels.</p>`)}
     ${section("Files", `<ul class="files">
       <li><a href="${calFileUrl(r.excel)}" download>${esc(r.excel)}</a>
         <span class="muted">every labelled mite-recording with its score and outcome, the fraction moving per recording, the ROC curve and the summary</span></li></ul>`)}`;
@@ -829,7 +829,7 @@ const rocCaption = (r) =>
 const stripCaption =
   "Each labelled mite-recording at its motion score. Everything right of a line is called moving at that threshold. Select a point to see that mite.";
 const overTimeCaption =
-  "Fraction of the labelled mites moving in each recording: by your labels (black) and as called by the detector.";
+  "Fraction of the labelled mites moving in each recording: by the ground truth (black) and as called by the detector.";
 
 // --- calibrate: pick a threshold and save it
 
@@ -844,7 +844,7 @@ function calibrateReport(r) {
       </div>
       <div class="grid-2">
         ${figure("confusion", 1, "Confusion matrix at the threshold in use", confusionCaption)}
-        ${figure("chart-over-time", 2, "Mites moving: your labels and the detector", overTimeCaption)}
+        ${figure("chart-over-time", 2, "Mites moving: ground truth and the detector", overTimeCaption)}
       </div>`;
   }
   const same = Math.abs(r.suggested_threshold - r.threshold) < 0.005;
@@ -883,7 +883,7 @@ function calibrateReport(r) {
     </div>
 
     <div class="grid-2">
-      ${figure("chart-over-time", 2, "Mites moving: your labels and the detector", overTimeCaption)}
+      ${figure("chart-over-time", 2, "Mites moving: ground truth and the detector", overTimeCaption)}
       ${figure("chart-roc", 3, "ROC curve", rocCaption(r))}
     </div>
 
@@ -960,7 +960,7 @@ function testReport(r) {
 
     <div class="grid-2">
       ${figure("confusion", 1, "Confusion matrix at the threshold in use", confusionCaption)}
-      ${figure("chart-over-time", 2, "Mites moving: your labels and the detector", overTimeCaption)}
+      ${figure("chart-over-time", 2, "Mites moving: ground truth and the detector", overTimeCaption)}
     </div>
 
     <div class="grid-2">
@@ -1011,7 +1011,7 @@ function drawTestFigures(r) {
 
 // --- charts shared by both tabs
 
-// Your labels (black) against the detector's calls, one line per threshold.
+// The ground truth (black) against the detector's calls, one line per threshold.
 // The labels' line comes last so it is drawn on top where the lines coincide.
 function overTimeSeries(curves, marks, { legend = true } = {}) {
   const asPercent = (values) => values.map((v) => (v == null ? null : v * 100));
@@ -1021,7 +1021,7 @@ function overTimeSeries(curves, marks, { legend = true } = {}) {
       values: asPercent(curves[mark.key]),
       color: mark.color, dashed: true, legend,
     })),
-    { name: "your labels", values: asPercent(curves.truth), color: token("--ink"), width: 2.25, legend },
+    { name: "ground truth", values: asPercent(curves.truth), color: token("--ink"), width: 2.25, legend },
   ];
 }
 

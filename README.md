@@ -67,7 +67,7 @@ mites move in each recording and compare that with the detector:
    between the suggested threshold and the one in use. *Test* shows the
    confusion matrix at the threshold in use, the ROC curve with AUC, and where on
    the plate the errors are. Both show the fraction of mites moving per recording
-   by your labels against the detector's (overall and per group). Everything is
+   by the ground truth against the detector's (overall and per group). Everything is
    also written to `calibration.xlsx`. Under *Data used*, switch on *Pool with
    saved ground truth* to add other labelled recordings, and untick any you
    want left out. Every point, map dot and zone row names the folder and
