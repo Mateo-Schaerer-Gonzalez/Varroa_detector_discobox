@@ -5,7 +5,8 @@ about HTTP, sessions or browsers. Everything crossing this boundary is a plain d
 list, string or number -- never a Zone, Mite, DataFrame or image array -- so the UI
 can never reach into the analysis internals.
 
-    open_session(...)          cheap: the zones to label and a preview image
+    open_session(...)          cheap: the zones to label, their mites and a preview image
+    set_rejected(...)          mark a detection as not a mite, or take the mark back
     run_analysis(...)          the full pipeline, writing Excel and figures to out_dir
     analysis_clip(...)         frames of one recording, of one zone or the whole plate
 
@@ -137,19 +138,63 @@ def open_session(data_dir, out_dir, coords_file=DEFAULT_COORDS_FILE):
     # The same detection as an analysis run, on the same first frame.
     Mite.reset_ids()
     zone_manager.assign_mites(Analyzer().detect(zone_manager.mask_image_to_valid_rois(frame)))
-    zone_manager.remove_mites(_rejected_detections(zone_manager, load_ground_truth(data_dir)))
-    n_mites = {zone.id: len(zone.mites) for zone in zone_manager.zones}
+    # Rejected detections are listed too, marked, so the user can take a mark back.
+    rejected = set(map(id, _rejected_detections(zone_manager, load_ground_truth(data_dir))))
+    mites = [
+        {
+            "id": mite.text,
+            "zone_id": zone.id,
+            "x": round(float((mite.x1 + mite.x2) / 2), 1),
+            "y": round(float((mite.y1 + mite.y2) / 2), 1),
+            "r": round(float((mite.x2 - mite.x1) / 2), 1),
+            "rejected": id(mite) in rejected,
+        }
+        for zone in zone_manager.zones
+        for mite in zone.mites
+    ]
 
     zones = _describe_zones(zone_manager, load_labels(data_dir))
     for zone in zones:
-        zone["n_mites"] = n_mites.get(zone["id"], 0)
+        zone["n_mites"] = sum(1 for m in mites if m["zone_id"] == zone["id"] and not m["rejected"])
     return {
         "data_dir": str(data_dir),
         "preview": PREVIEW_NAME,
         "image": {"width": int(frame.shape[1]), "height": int(frame.shape[0])},
         "n_recordings": n_recordings,
         "zones": zones,
+        "mites": mites,
     }
+
+
+def set_rejected(data_dir, x, y, rejected, tolerance=10.0):
+    """Mark the detection at (x, y) as not a mite, or take that mark back.
+
+    The mark goes into the session's ground truth, where an analysis run and a
+    calibration both read it. Marking replaces any movement labels a calibration
+    gave the detection; taking the mark back leaves it unlabelled.
+    """
+    data_dir = Path(data_dir)
+    saved = load_ground_truth(data_dir) or _library_positions(data_dir, CALIBRATION_LIBRARY)
+    near = [entry for entry in saved if np.hypot(entry["x"] - x, entry["y"] - y) <= tolerance]
+
+    if rejected:
+        # One entry per detection: a position already in the ground truth is overwritten,
+        # since a detection matches only the nearest saved entry.
+        if near:
+            min(near, key=lambda entry: np.hypot(entry["x"] - x, entry["y"] - y))["truth"] = calibration.NOT_A_MITE
+        else:
+            saved.append({"x": x, "y": y, "truth": calibration.NOT_A_MITE})
+    else:
+        for entry in near:
+            truth = entry.get("truth")
+            if isinstance(truth, list):
+                entry["truth"] = [None if state == calibration.NOT_A_MITE else state for state in truth]
+            elif truth == calibration.NOT_A_MITE:
+                entry["truth"] = None
+        saved = [entry for entry in saved if any(entry["truth"] if isinstance(entry.get("truth"), list) else [entry.get("truth")])]
+
+    (data_dir / GROUND_TRUTH_FILENAME).write_text(json.dumps(saved), encoding="utf-8")
+    return rejected
 
 
 def _detect_and_score(data_dir, coords_file, labels=None, reject=True, score=True):

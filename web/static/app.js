@@ -135,8 +135,7 @@ async function openFolder(dataDir) {
     $("folder-name").textContent = session.data_dir.split(/[\\/]/).filter(Boolean).pop();
     $("folder-name").title = session.data_dir;
     $("open-status").textContent = "";
-    const withMites = labelZones().length;
-    $("run-status").textContent = `${session.n_recordings} recordings loaded · mites detected in ${withMites} of ${session.zones.length} zones.`;
+    showLoadedStatus();
     go("#/label");
   } catch (error) {
     $("open-status").className = "hint error";
@@ -290,6 +289,12 @@ window.addEventListener("drop", (event) => event.preventDefault());
 
 // --- 2 · labelling the plates -----------------------------------------------
 
+function showLoadedStatus() {
+  const withMites = labelZones().length;
+  $("run-status").className = "hint";
+  $("run-status").textContent = `${session.n_recordings} recordings loaded · mites detected in ${withMites} of ${session.zones.length} zones.`;
+}
+
 // Plates are laid over the preview image in percent, so they track it as it scales.
 function plateOverlay(container, src, image) {
   container.innerHTML = "";
@@ -384,6 +389,36 @@ function drawLabelView() {
     plate.append(box, text);
   });
 
+  // Every detection, on top of the plates, so a false one can be clicked away.
+  session.mites.forEach((mite) => {
+    const marker = document.createElement("div");
+    marker.className = "label-mite";
+    marker.dataset.miteId = mite.id;
+    marker.classList.toggle("rejected", mite.rejected);
+    marker.tabIndex = 0;
+    marker.setAttribute("role", "button");
+    marker.setAttribute("aria-pressed", String(mite.rejected));
+    marker.title = mite.rejected
+      ? `Mite ${mite.id}: marked as not a mite, left out of the analysis. Click to keep it.`
+      : `Mite ${mite.id}: click if this is not a mite, to leave it out of the analysis.`;
+    marker.setAttribute("aria-label", marker.title);
+    const r = Math.max(mite.r, 6);
+    Object.assign(marker.style, place(mite.x - r, mite.y - r, mite.x + r, mite.y + r));
+    marker.addEventListener("mousedown", (event) => {
+      if (event.button !== 0) return;
+      event.preventDefault();
+      event.stopPropagation();
+      toggleMite(mite);
+    });
+    marker.addEventListener("keydown", (event) => {
+      if (event.key === "Enter" || event.key === " ") {
+        event.preventDefault();
+        toggleMite(mite, true);
+      }
+    });
+    plate.appendChild(marker);
+  });
+
   drawGroupList();
   refreshSuggestions();
   if (editingZoneId != null) startEdit(editingZoneId);
@@ -444,6 +479,30 @@ function startEdit(zoneId) {
     // Clicking a datalist suggestion blurs briefly; let the value land first.
     setTimeout(() => { if (document.activeElement !== input) finish(true); }, 0);
   });
+}
+
+// A false detection is marked "not a mite" in the session's ground truth, which
+// every later run leaves out; clicking it again takes the mark back.
+async function toggleMite(mite, refocus = false) {
+  if (finishEditing) finishEditing();
+  const recount = () => {
+    const zone = session.zones.find((z) => z.id === mite.zone_id);
+    if (zone) zone.n_mites = session.mites.filter((m) => m.zone_id === zone.id && !m.rejected).length;
+    drawLabelView();
+    showLoadedStatus();
+    if (refocus) document.querySelector(`.label-mite[data-mite-id="${mite.id}"]`)?.focus();
+  };
+  mite.rejected = !mite.rejected;
+  if (results) labelsChanged = true;
+  recount();
+  try {
+    await post(`/api/session/${sessionId}/reject`, { x: mite.x, y: mite.y, rejected: mite.rejected });
+  } catch (error) {
+    mite.rejected = !mite.rejected;
+    recount();
+    $("run-status").className = "hint error";
+    $("run-status").textContent = `Could not save that detection: ${error.message}`;
+  }
 }
 
 function setLabel(zone, value) {
@@ -671,7 +730,7 @@ const section = (title, inner) => `<section class="block"><h2>${title}</h2>${inn
 
 function staleBanner() {
   if (!labelsChanged) return "";
-  return `<div class="banner">Labels changed since this run, so the groups below are out of date.
+  return `<div class="banner">Labels or detections changed since this run, so the results below are out of date.
     <button type="button" class="run-trigger small">Run again</button></div>`;
 }
 

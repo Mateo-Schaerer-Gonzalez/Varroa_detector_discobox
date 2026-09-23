@@ -37,6 +37,12 @@ class LabelsRequest(BaseModel):
     labels: dict[str, str] = {}
 
 
+class RejectRequest(BaseModel):
+    x: float
+    y: float
+    rejected: bool
+
+
 class UploadedFile(BaseModel):
     path: str
     size: int
@@ -140,6 +146,13 @@ def save_labels(session_id: str, request: LabelsRequest):
     session = get_session(session_id)
     pipeline.save_labels(session["data_dir"], request.labels)
     return {"saved": len(request.labels)}
+
+
+@app.post("/api/session/{session_id}/reject")
+def reject_detection(session_id: str, request: RejectRequest):
+    """Mark a detection as not a mite, or take the mark back, before a run."""
+    session = get_session(session_id)
+    return {"rejected": pipeline.set_rejected(session["data_dir"], request.x, request.y, request.rejected)}
 
 
 @app.post("/api/session/{session_id}/run")
