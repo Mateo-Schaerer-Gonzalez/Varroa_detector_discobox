@@ -26,6 +26,8 @@
     <a href="#/cal/open" data-step="open"><span class="step-num">1</span> Calibration data</a>
     <a href="#/cal/truth" data-step="truth" class="disabled"><span class="step-num">2</span> Ground truth</a>
     <a href="#/cal/report" data-step="report" class="disabled"><span class="step-num">3</span> Report</a>
+    <!-- The way back out of calibration, to the analysis stages. -->
+    <a id="exit-cal-link" class="mode-link" href="#/open">←&nbsp;Exit calibration</a>
   </nav>
 </header>
 
@@ -94,8 +96,8 @@
 <section id="view-cal-open" class="view" hidden>
   <h1>Calibration</h1>
   <p class="hint">
-    Use a recording in which you know which mites are alive and which are dead.
-    You mark each detected mite by hand in every recording, then the detector's calls are compared with yours.
+    For each detected mite and each recording, you watch the clip and mark whether the mite moves.
+    The detector's calls are then compared with yours, one mite-recording at a time.
   </p>
 
   <fieldset class="mode-choice">
@@ -103,12 +105,12 @@
     <label class="mode-option">
       <input type="radio" name="cal-mode" value="calibrate" checked>
       <span class="mode-title">Calibrate the threshold</span>
-      <span class="hint">Find the movement threshold that best separates your alive and dead mites, and save it for every later analysis.</span>
+      <span class="hint">Find the movement threshold that best separates the mites you saw moving from the still ones, and save it for every later analysis.</span>
     </label>
     <label class="mode-option">
       <input type="radio" name="cal-mode" value="test">
       <span class="mode-title">Test the threshold</span>
-      <span class="hint">Check the threshold in use against a different recording: survival by ground truth and by the detector, confusion matrix, ROC curve, and where on the plate the errors are.</span>
+      <span class="hint">Check the threshold in use against a different recording: confusion matrix, mites moving per recording by your labels and by the detector, ROC curve, and where on the plate the errors are.</span>
     </label>
   </fieldset>
 
@@ -138,6 +140,20 @@
     </div>
   </details>
   <p id="cal-open-status" class="hint"></p>
+
+  <section class="block saved-datasets">
+    <h2>Saved ground truth</h2>
+    <p class="hint">
+      Every recording you label is kept here: its ground truth and a copy of its recordings, never its scores.
+      Go on labelling it later, or pool several into one report for more data; each report scores them again
+      with the movement score you choose. Tick the datasets to pool.
+    </p>
+    <div class="table-wrap"><table id="dataset-table"></table></div>
+    <div class="row pool-row">
+      <button id="pool-btn" type="button" disabled>Report on the ticked datasets</button>
+      <p id="pool-status" class="hint"></p>
+    </div>
+  </section>
 </section>
 
 <!-- 2 · enter the ground truth, zone by zone ------------------------------------ -->
@@ -158,11 +174,9 @@
       <div id="truth-crop" class="crop-wrap truth-crop"></div>
       <p id="clip-status" class="hint"></p>
       <p class="caption">
-        Mark every mite in every recording. Click a mite to cycle it through <b>alive</b>, <b>dead</b>,
-        <b>not a mite</b> and back to unlabelled; <kbd>Shift</kbd>-click goes backwards.
-        Marking a mite dead also marks it dead in the later recordings you have not labelled yet, and alive marks the
-        earlier ones alive; nothing you entered is overwritten. <b>Not a mite</b> applies to every recording and removes the
-        detection from later analyses of this folder.
+        Watch the clip and mark, for every mite in every recording, whether it moves. Click a mite to cycle it through
+        <b>moving</b>, <b>still</b>, <b>not a mite</b> and back to unlabelled; <kbd>Shift</kbd>-click goes backwards.
+        <b>Not a mite</b> applies to every recording and removes the detection from later analyses of this folder.
         <kbd>↑</kbd> <kbd>↓</kbd> change recording, <kbd>←</kbd> <kbd>→</kbd> change zone, <kbd>P</kbd> plays or pauses.
       </p>
     </div>
@@ -170,7 +184,7 @@
       <h2>Ground truth</h2>
       <p class="hint">
         The detector's own call is hidden until the report, so it cannot sway you.
-        Saved automatically.
+        Saved automatically, also to the saved ground truth you can pool later.
       </p>
       <div class="progress truth-progress">
         <div class="progress-bar"><div id="truth-progress-bar"></div></div>
@@ -181,8 +195,8 @@
       <div class="zone-actions">
         <span class="hint">Unlabelled mites in this zone, this recording:</span>
         <div class="row">
-          <button type="button" class="secondary small" data-fill="alive">all alive</button>
-          <button type="button" class="secondary small" data-fill="dead">all dead</button>
+          <button type="button" class="secondary small" data-fill="moving">all moving</button>
+          <button type="button" class="secondary small" data-fill="still">all still</button>
           <button type="button" class="secondary small" data-fill="previous">as in previous recording</button>
           <button type="button" class="secondary small" data-fill="clear">clear this recording</button>
         </div>

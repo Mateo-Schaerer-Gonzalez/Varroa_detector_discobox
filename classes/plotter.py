@@ -66,18 +66,18 @@ class Plotter:
         fig.tight_layout()
         return fig
 
-    def plot_survival_by_group(self):
-        """Fraction of each group's mites still alive at each recording."""
-        survival = self.mite_data.groupby(["group", "time"])["alive"].mean().unstack("group")
+    def plot_moving_by_group(self):
+        """Fraction of each group's mites moving in each recording."""
+        moving = self.mite_data.groupby(["group", "time"])["moving"].mean().unstack("group")
 
         fig, ax = plt.subplots()
-        for group in sorted(survival.columns):
-            ax.step(survival.index, survival[group] * 100, where="post", marker="o", markersize=4, label=group)
+        for group in sorted(moving.columns):
+            ax.plot(moving.index, moving[group] * 100, marker="o", markersize=4, label=group)
 
         ax.set_ylim(-3, 103)
         ax.set_xlabel("Time (min)")
-        ax.set_ylabel("Mites alive (%)")
-        ax.set_title("Survival by group")
+        ax.set_ylabel("Mites moving (%)")
+        ax.set_title("Mites moving by group")
         ax.legend()
         fig.tight_layout()
         return fig

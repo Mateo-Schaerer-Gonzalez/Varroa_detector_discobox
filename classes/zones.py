@@ -9,10 +9,10 @@ from pathlib import Path
 
 UNLABELED = "unlabeled"
 
-# One row per (mite, recording). `moving` is that recording alone; `alive` also
-# looks ahead (see Mite.survival). x, y is the mite's centre in image pixels.
+# One row per (mite, recording). `moving`: the score of that recording reaches the
+# threshold. x, y is the mite's centre in image pixels.
 MITE_SCORE_COLUMNS = [
-    "mite_ID", "time", "motion_score", "moving", "alive",
+    "mite_ID", "time", "motion_score", "moving",
     "zone_id", "group", "zone_type", "x", "y",
 ]
 
@@ -262,16 +262,13 @@ class ZoneManager:
                 mite_id = mite.text
                 x = (mite.x1 + mite.x2) / 2
                 y = (mite.y1 + mite.y2) / 2
-                for time, motion_score, moving, alive in zip(
-                    times, mite.motion_scores, mite.moving, mite.survival
-                ):
+                for time, motion_score, moving in zip(times, mite.motion_scores, mite.moving):
                     rows.append(
                         {
                             "mite_ID": mite_id,
                             "time": time,
                             "motion_score": motion_score,
                             "moving": moving,
-                            "alive": alive,
                             "zone_id": zone.id,
                             "group": zone.group,
                             "zone_type": zone.type,

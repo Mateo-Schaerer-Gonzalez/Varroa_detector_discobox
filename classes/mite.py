@@ -5,7 +5,12 @@ from classes.app_config import AppConfig, get_default_config
 
 
 class Mite(TextZone):
-    """Mite detection class extending TextZone with domain-specific helpers."""
+    """Mite detection class extending TextZone with domain-specific helpers.
+
+    The camera only sees movement, so a mite records one motion score per
+    recording and whether that score reaches the threshold (`moving`). It makes
+    no claim about the mite being alive or dead.
+    """
 
     id_counter = 0
 
@@ -18,7 +23,7 @@ class Mite(TextZone):
         """
         cls.id_counter = 0
 
-    def __init__(self, x1, y1, x2, y2, alive=True, config: Optional[AppConfig] = None):
+    def __init__(self, x1, y1, x2, y2, config: Optional[AppConfig] = None):
         config = config or get_default_config()
         self.mite_cfg = config.mite
         style = config.text_zone_style
@@ -37,47 +42,22 @@ class Mite(TextZone):
         self.radius = self.mite_cfg.radius
         self.motion_threshold = self.mite_cfg.motion_threshold
         self.metric = self.mite_cfg.metric
+        self.metric_params = self.mite_cfg.params_for(self.metric)
         self.motion_scores = []
-        self.alive = alive
+        self._show_moving(False)
 
-
-    @property
-    def alive(self):
-        return self._alive
-
-    @alive.setter # auto update color when it changes state
-    def alive(self, value):
-        """Setting alive updates the mite's display color to match its state."""
-        self._alive = value
-        self.color = self.mite_cfg.alive_color if value else self.mite_cfg.dead_color
+    def _show_moving(self, moving):
+        """Draw the mite in the moving or the still color."""
+        self.color = self.mite_cfg.moving_color if moving else self.mite_cfg.still_color
         self.text_color = self.color
 
-    def kill(self):
-        """Mark the mite as dead, switching its color to the dead-mite color."""
-        self.alive = False
-
     def record_motion(self, score):
-        """Append a per-recording motion score; alive reflects this latest recording only."""
+        """Append a per-recording motion score. The drawing color follows the
+        latest recording: moving or still."""
         self.motion_scores.append(score)
-        self.alive = score >= self.motion_threshold
+        self._show_moving(score >= self.motion_threshold)
 
     @property
     def moving(self):
         """Per recording: did the mite move above the threshold in that recording?"""
         return [score >= self.motion_threshold for score in self.motion_scores]
-
-    @property
-    def survival(self):
-        """Per recording: was the mite still alive at that point in the session?
-
-        A mite that sits still for one recording and moves again later was resting,
-        not dead, so it counts as alive up to and including its last movement and
-        dead from then on. Once dead it stays dead, which makes survival curves
-        built from this never go back up.
-        """
-        survival = []
-        moved_later = False
-        for moved in reversed(self.moving):
-            moved_later = moved_later or moved
-            survival.append(moved_later)
-        return survival[::-1]

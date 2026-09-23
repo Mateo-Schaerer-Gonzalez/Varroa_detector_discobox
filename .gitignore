@@ -3,3 +3,4 @@ ground_truth_30min/
 outputs/
 .pytest_cache/
 uploads/
+calibration_data/

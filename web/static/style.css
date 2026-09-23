@@ -24,9 +24,12 @@
   --series-8: #e34948;
   --series-other: #9a9d99;
 
-  /* alive / dead: always paired with a glyph and a word, never colour alone */
-  --good: #2f8f3a;
+  /* errors in text and tables */
   --critical: #c8372d;
+
+  /* moving / still in a recording: always paired with a glyph and a word, never colour alone */
+  --moving: #1baf7a;
+  --still: #c98a00;
 
   --sans: "Segoe UI", "Helvetica Neue", Arial, system-ui, sans-serif;
   --mono: "Cascadia Mono", Consolas, "SFMono-Regular", Menlo, monospace;
@@ -112,8 +115,8 @@ button.secondary:hover, .button.secondary:hover { background: var(--wash); borde
 .grp i { width: 9px; height: 9px; flex: none; }
 
 .status { white-space: nowrap; }
-.status.alive { color: var(--good); }
-.status.dead { color: var(--critical); }
+.status.moving { color: var(--moving); }
+.status.still { color: var(--still); }
 
 .spinner {
   display: inline-block; width: 11px; height: 11px; vertical-align: -1px;
@@ -210,8 +213,6 @@ button.secondary:hover, .button.secondary:hover { background: var(--wash); borde
   position: absolute; width: 7px; height: 7px; margin: -3.5px 0 0 -3.5px;
   border-radius: 50%; border: 1px solid #fff; pointer-events: none;
 }
-.mite-dot.alive { background: var(--good); }
-.mite-dot.dead { background: var(--critical); }
 
 /* --- 2 · labels ----------------------------------------------------------------- */
 
@@ -269,8 +270,9 @@ button.secondary:hover, .button.secondary:hover { background: var(--wash); borde
 .block { margin-bottom: 36px; min-width: 0; }
 .block > h2 { padding-bottom: 8px; margin-bottom: 12px; border-bottom: 1px solid var(--rule); }
 .grid-2 > .block { margin-bottom: 0; }
+#report-body > .fig { margin-bottom: 36px; }
 
-/* Small multiples of zone survival. */
+/* Small multiples of the fraction of mites moving per zone. */
 /* Each cell draws its right and bottom rule, so a part-filled last row leaves no gaps. */
 .zone-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); border-top: 1px solid var(--rule); border-left: 1px solid var(--rule); }
 .zone-card { display: block; padding: 8px 10px 6px; color: var(--text); background: var(--paper); border-right: 1px solid var(--rule); border-bottom: 1px solid var(--rule); }
@@ -288,8 +290,8 @@ button.secondary:hover, .button.secondary:hover { background: var(--wash); borde
 .crop-wrap.square .crop { aspect-ratio: 1; max-height: none; }
 .zone-outline { fill: none; stroke-width: 2.5; }
 .mite-marker circle { fill: none; stroke-width: 2.5; }
-.mite-marker.alive circle { stroke: #4cc05a; }
-.mite-marker.dead circle { stroke: #ff5a4e; }
+.mite-marker.moving circle { stroke: #3fdc8f; }
+.mite-marker.still circle { stroke: #ffb52e; }
 .mite-marker text { fill: #fff; font-weight: 600; paint-order: stroke; stroke: #000; stroke-width: 3px; font-family: var(--sans); }
 .mite-marker:hover circle { stroke-width: 4.5; }
 
@@ -370,7 +372,7 @@ table.clickable tbody tr:hover, table.clickable tbody tr:focus-visible { backgro
 }
 .rec-tab:hover { background: var(--wash); text-decoration: none; }
 .rec-tab.done { color: var(--ink); }
-.rec-tab.done span { color: var(--good); margin-right: 4px; }
+.rec-tab.done span { color: var(--ink); margin-right: 4px; }
 .rec-tab.current { color: #fff; background: var(--ink); border-color: var(--ink); }
 .rec-tab.current span { color: #fff; }
 .truth-crop .crop { max-height: 68vh; }
@@ -383,8 +385,8 @@ table.clickable tbody tr:hover, table.clickable tbody tr:focus-visible { backgro
 .truth-marker .ring { fill: none; stroke-width: 2.5; }
 .truth-marker text { fill: #fff; font-weight: 600; paint-order: stroke; stroke: #000; stroke-width: 3px; font-family: var(--sans); pointer-events: none; }
 .truth-marker.unset .ring { stroke: #fff; stroke-dasharray: 4 3; }
-.truth-marker.alive .ring { stroke: #4cc05a; }
-.truth-marker.dead .ring { stroke: #ff5a4e; }
+.truth-marker.moving .ring { stroke: #3fdc8f; }
+.truth-marker.still .ring { stroke: #ffb52e; }
 .truth-marker.not_a_mite .ring { stroke: #b9bdc2; stroke-dasharray: 1 3; stroke-linecap: round; }
 .truth-marker:hover .ring, .truth-marker:focus-visible .ring { stroke-width: 4.5; }
 
@@ -395,11 +397,13 @@ table.clickable tbody tr:hover, table.clickable tbody tr:focus-visible { backgro
 .nav-zone.current { outline: 2px solid var(--series-1); outline-offset: 1px; }
 .truth-map .mite-dot { width: 5px; height: 5px; margin: -2.5px 0 0 -2.5px; border-width: 0.5px; }
 .mite-dot.unset { background: #fff; border-color: var(--muted); }
+.mite-dot.moving { background: var(--moving); }
+.mite-dot.still { background: var(--still); }
 .mite-dot.rejected { background: var(--series-other); }
 
 .truth-key { display: inline-block; width: 14px; text-align: center; font-size: 11px; }
-.truth-key.alive { color: var(--good); }
-.truth-key.dead { color: var(--critical); }
+.truth-key.moving { color: var(--moving); }
+.truth-key.still { color: var(--still); }
 .truth-key.not_a_mite, .truth-key.unset { color: var(--muted); }
 .zone-actions { margin-top: 14px; }
 .zone-actions .hint { display: block; margin-bottom: 6px; }
@@ -414,7 +418,7 @@ table.clickable tbody tr:hover, table.clickable tbody tr:focus-visible { backgro
 }
 .save-threshold input[type="number"]:focus { outline: none; border-color: var(--ink); }
 
-table.confusion { width: auto; min-width: 70%; }
+table.confusion { width: 100%; }
 table.confusion th.cm-group { text-align: center; border-bottom: 1px solid var(--rule); font-weight: 500; color: var(--muted); }
 table.confusion th.cm-col { text-align: center; }
 table.confusion td { padding: 10px 14px; }
@@ -425,6 +429,7 @@ td.cm {
 }
 td.cm b { display: block; font-size: 20px; font-weight: 500; color: var(--ink); }
 td.cm small { color: var(--text); font-size: 12px; }
+td.cm .cm-name { display: block; margin-top: 2px; font-size: 11px; color: var(--muted); }
 td.num.error { color: var(--critical); font-weight: 600; }
 
 .zone.passive { --zone-color: rgba(255, 255, 255, 0.55); border-width: 1px; cursor: default; }
@@ -433,11 +438,16 @@ td.num.error { color: var(--critical); font-weight: 600; }
   position: absolute; width: 7px; height: 7px; margin: -3.5px 0 0 -3.5px;
   border-radius: 50%; border: 1.25px solid rgba(255, 255, 255, 0.85); cursor: pointer;
 }
-.outcome-dot.alive_missed, .outcome-dot.dead_missed {
+/* The two kinds of error: moving called still, and still called moving. */
+.outcome-dot.missed-positive, .outcome-dot.missed-negative {
   width: 11px; height: 11px; margin: -5.5px 0 0 -5.5px; border: 1.5px solid #fff; z-index: 1;
 }
-.outcome-dot.alive_missed { background: var(--series-2); }
-.outcome-dot.dead_missed { background: var(--series-7); border-radius: 1px; }
+.outcome-dot.missed-positive { background: var(--series-2); }
+.outcome-dot.missed-negative { background: var(--series-7); border-radius: 1px; }
+
+.confusion-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 40px; }
+.confusion-grid + .table-wrap { margin-top: 28px; }
+.threshold-switch { display: flex; align-items: center; gap: 10px; margin-bottom: 14px; font-size: 13px; }
 .map-legend { margin-top: 8px; }
 
 .fig-title-row { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
@@ -446,7 +456,7 @@ td.num.error { color: var(--critical); font-weight: 600; }
   padding: 3px 6px; border: 1px solid var(--rule); border-radius: 2px; background: var(--paper);
 }
 
-/* Survival per group: small multiples, one framed chart per group. */
+/* Mites moving per group: small multiples, one framed chart per group. */
 .group-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 12px 28px; }
 .group-card-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; font-size: 13px; font-weight: 500; }
 .group-card-head .hint { margin: 0; font-size: 12px; }
@@ -464,7 +474,7 @@ td.num.error { color: var(--critical); font-weight: 600; }
   .split, .grid-2, .grid-mite { grid-template-columns: minmax(0, 1fr); gap: 28px; }
   .split-side { position: static; padding-left: 0; border-left: 0; }
   .stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .mode-choice { grid-template-columns: minmax(0, 1fr); }
+  .mode-choice, .confusion-grid { grid-template-columns: minmax(0, 1fr); }
   .stat:nth-child(3) { padding-left: 0; border-left: 0; }
   .stat:nth-child(n + 3) { border-top: 1px solid var(--rule); }
 }
@@ -473,3 +483,31 @@ td.num.error { color: var(--critical); font-weight: 600; }
   .zone-num { display: none; }
   .steps { gap: 14px; }
 }
+
+/* Saved ground truth: the list on the calibration page and the report's picker. */
+.saved-datasets { margin-top: 36px; }
+.saved-datasets td { vertical-align: middle; }
+.saved-datasets input[type="checkbox"], .dataset-option input { margin: 0; accent-color: var(--ink); }
+.row-actions { text-align: right; }
+.row-actions button + button { margin-left: 4px; }
+.pool-row { margin-top: 12px; }
+.pool-row .hint { margin: 0; }
+.dataset-list { margin-top: 0; }
+.dataset-list li { display: block; }
+.dataset-option { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; cursor: pointer; }
+.dataset-option .hint { font-family: var(--sans); }
+
+/* Calibration report: pool saved ground truth, and choose the movement score. */
+.pool-toggle { display: flex; align-items: baseline; gap: 10px; margin-bottom: 10px; cursor: pointer; }
+.pool-toggle input { margin: 0; accent-color: var(--ink); }
+.pool-toggle .hint { display: block; margin: 2px 0 0; }
+.dataset-option input:disabled + .group-name { color: var(--muted); }
+.score-picker { flex-wrap: wrap; align-items: center; gap: 10px; }
+.score-picker > label { font-weight: 500; color: var(--ink); }
+.score-picker select, .score-picker input[type="number"] {
+  font: inherit; font-size: 13px; color: var(--ink); background: var(--paper);
+  padding: 5px 8px; border: 1px solid var(--rule); border-radius: 2px;
+}
+.score-picker input[type="number"] { width: 80px; }
+.score-picker .param { display: inline-flex; align-items: center; gap: 6px; color: var(--muted); }
+#zone-errors tbody tr { cursor: pointer; }

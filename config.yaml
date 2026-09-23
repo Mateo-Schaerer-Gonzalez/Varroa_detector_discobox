@@ -1,9 +1,12 @@
 mite:
   radius: 8
-  motion_threshold: 15.654   
-  metric: "variability"
-  alive_color: [0, 255, 0]          # BGR: Green for alive mites
-  dead_color: [0, 0, 255]          # BGR: Red for dead mites
+  motion_threshold: 14.17   
+  metric: "topN_variability"
+  # Per metric, parameters that override the defaults in classes/analyzer.py.
+  # Chosen and saved from the calibration report, or edited here.
+  metric_params: {topN_variability: {n: 10}, topN_temporal_range: {n: 50}, topN_binary_flux: {threshold: 50, n: 10}, variability: {}}
+  moving_color: [0, 255, 0]         # BGR: green for a mite moving in the latest recording
+  still_color: [0, 0, 255]          # BGR: red for a mite still in the latest recording
 
 visual_styles:
   rect:

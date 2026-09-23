@@ -52,10 +52,11 @@ const labelGroups = () =>
 const resultGroups = () =>
   [...new Set([...results.groups.map((g) => g.group), ...results.zones.map((z) => z.label).filter(Boolean)])].sort();
 
-function statusBadge(alive) {
-  return alive
-    ? `<span class="status alive"><span aria-hidden="true">●</span> alive</span>`
-    : `<span class="status dead"><span aria-hidden="true">✕</span> dead</span>`;
+// Moving or still in one recording: always a glyph and a word, never colour alone.
+function movingBadge(moving) {
+  return moving
+    ? `<span class="status moving"><span aria-hidden="true">●</span> moving</span>`
+    : `<span class="status still"><span aria-hidden="true">○</span> still</span>`;
 }
 
 // --- routing ---------------------------------------------------------------
@@ -500,9 +501,13 @@ const zoneById = (id) => results.zones.find((zone) => zone.id === id);
 const mitesIn = (zoneId) => results.mites.filter((mite) => mite.zone_id === zoneId);
 const zoneName = (zone) => `Zone ${zone.id}${zone.label ? ` · ${zone.label}` : ""}`;
 const lastIndex = () => results.times.length - 1;
-const aliveAtEnd = (mite) => mite.alive[lastIndex()];
-// Dead from the first recording means it never moved above the threshold at all.
-const diedText = (mite) => (mite.died_at == null ? "–" : mite.died_at <= results.times[0] ? "never moved" : minutes(mite.died_at));
+const movingLast = (mite) => mite.moving[lastIndex()];
+const nMoving = (mite) => mite.moving.filter(Boolean).length;
+// Time of the last recording in which the mite moved.
+const lastMovementText = (mite) => {
+  const last = mite.moving.lastIndexOf(true);
+  return last < 0 ? "never" : minutes(results.times[last]);
+};
 
 function breadcrumb(parts) {
   // The overview is the top level, so it needs no trail.
@@ -545,8 +550,8 @@ function wireRunAgain(body) {
   }));
 }
 
-const survivalNote =
-  "A mite counts as alive up to its last recording with movement above the threshold, and dead from then on, so a mite that rests for one recording is not counted as dead.";
+const movingNote =
+  "A mite counts as moving in a recording when its motion score in that recording reaches the threshold.";
 
 // --- overview ------------------------------------------------------------------
 
@@ -568,39 +573,39 @@ function showOverview() {
 
     <div class="stats">
       ${stat("Mites detected", summary.n_mites)}
-      ${stat("Alive at end", `${summary.n_alive_at_end} <small>(${pct(summary.n_alive_at_end / summary.n_mites)})</small>`)}
+      ${stat("Moving in the last recording", `${summary.n_moving_last} <small>(${pct(summary.n_moving_last / summary.n_mites)})</small>`)}
       ${stat("Groups", summary.n_groups)}
       ${stat("Recordings", results.n_recordings, span)}
     </div>
 
     <div class="grid-2">
-      ${figure("chart-group-survival", 1, "Survival by group", `Fraction of mites alive at each recording. ${survivalNote}`)}
+      ${figure("chart-group-moving", 1, "Mites moving by group", `Fraction of each group's mites moving in each recording. ${movingNote}`)}
       ${figure("result-plate", 2, "Plate map",
-        `First frame with every detected mite, <span class="status alive">● alive</span> or <span class="status dead">✕ dead</span> at the end of the session. Select a zone to open it.`, "plate")}
+        `First frame with every detected mite, ${movingBadge(true)} or ${movingBadge(false)} in the last recording. Select a zone to open it.`, "plate")}
     </div>
 
-    ${section("Survival per zone", `<div id="zone-cards" class="zone-cards"></div>
-      <p class="caption">Fraction of each zone's mites alive over the session, on a 0–100% scale. Select a zone to open it.</p>`)}
+    ${section("Movement per zone", `<div id="zone-cards" class="zone-cards"></div>
+      <p class="caption">Fraction of each zone's mites moving in each recording, on a 0–100% scale; the number is how many moved in the last recording. Select a zone to open it.</p>`)}
 
-    ${section("Group summary", `<div class="table-wrap"><table id="group-table"></table></div>`)}
+    ${section("Group summary", `<div class="table-wrap"><table id="group-table"></table></div>
+      <p class="caption"><b>Moving</b> is the share of all mite-recordings in which the mite moved.</p>`)}
 
     ${section("Files", `<ul class="files">
-        <li><a href="${fileUrl(results.excel)}" download>${esc(results.excel)}</a> <span class="muted">measurements, group summary and survival</span></li>
+        <li><a href="${fileUrl(results.excel)}" download>${esc(results.excel)}</a> <span class="muted">measurements, group summary and movement over time</span></li>
         ${[...results.figures, results.detections]
           .map((name) => `<li><a href="${fileUrl(name)}" target="_blank" rel="noopener">${esc(name)}</a></li>`).join("")}
       </ul>`)}`;
   wireRunAgain(body);
 
-  Charts.line($("chart-group-survival"), {
+  Charts.line($("chart-group-moving"), {
     x: times,
-    yLabel: "Mites alive (%)",
+    yLabel: "Mites moving (%)",
     yMin: 0, yMax: 100,
     yFormat: (v) => `${Math.round(v)}`,
     series: results.groups.map((g) => ({
       name: g.group,
-      values: g.survival.map((v) => (v == null ? null : v * 100)),
+      values: g.moving.map((v) => (v == null ? null : v * 100)),
       color: groupColor(g.group, groups),
-      step: true,
     })),
   });
 
@@ -618,7 +623,7 @@ function drawResultPlate(groups) {
     const link = document.createElement("a");
     link.className = "zone result";
     link.href = `#/zone/${zone.id}`;
-    link.setAttribute("aria-label", `Zone ${zone.id}, ${zone.label || "unlabeled"}, ${zone.n_mites ? `${zone.n_alive_at_end} of ${zone.n_mites} mites alive` : "no mites"}`);
+    link.setAttribute("aria-label", `Zone ${zone.id}, ${zone.label || "unlabeled"}, ${zone.n_mites ? `${zone.n_moving_last} of ${zone.n_mites} mites moving in the last recording` : "no mites"}`);
     Object.assign(link.style, place(zone.x1, zone.y1, zone.x2, zone.y2));
     link.style.setProperty("--zone-color", color);
     link.innerHTML = `<span class="zone-num">${zone.id}</span>`;
@@ -631,26 +636,26 @@ function drawResultPlate(groups) {
     text.tabIndex = -1;
     Object.assign(text.style, place(rect.x1, rect.y1, rect.x2, rect.y2));
     text.style.setProperty("--zone-color", color);
-    const count = zone.n_mites ? `${zone.n_alive_at_end}/${zone.n_mites} alive` : "no mites";
+    const count = zone.n_mites ? `${zone.n_moving_last}/${zone.n_mites} moving in the last recording` : "no mites";
     text.title = `Zone ${zone.id} · ${zone.label || "unlabeled"} · ${count}`;
     text.innerHTML = `<span class="text-tag">${esc(zone.label || "unlabeled")}
-      <small>${zone.n_mites ? `${zone.n_alive_at_end}/${zone.n_mites}` : "–"}</small></span>`;
+      <small>${zone.n_mites ? `${zone.n_moving_last}/${zone.n_mites}` : "–"}</small></span>`;
 
     linkHover([link, text]);
     plate.append(link, text);
   });
 
-  // A dot per mite, coloured by whether it is alive at the end.
+  // A dot per mite: moving or still in the last recording.
   results.mites.forEach((mite) => {
     const dot = document.createElement("span");
-    dot.className = `mite-dot ${aliveAtEnd(mite) ? "alive" : "dead"}`;
+    dot.className = `mite-dot ${movingLast(mite) ? "moving" : "still"}`;
     dot.style.left = percent(mite.x, results.image.width);
     dot.style.top = percent(mite.y, results.image.height);
     plate.appendChild(dot);
   });
 }
 
-// Small multiples: one framed mini survival plot per zone.
+// Small multiples: one framed mini plot of the fraction moving per zone.
 function drawZoneCards(groups) {
   const container = $("zone-cards");
   results.zones.forEach((zone) => {
@@ -661,12 +666,12 @@ function drawZoneCards(groups) {
     card.innerHTML = `
       <div class="zone-card-head">
         <span class="zone-card-id">Zone ${zone.id}</span>
-        <span class="zone-card-value">${zone.n_mites ? `${zone.n_alive_at_end}/${zone.n_mites}` : "–"}</span>
+        <span class="zone-card-value" title="moving in the last recording">${zone.n_mites ? `${zone.n_moving_last}/${zone.n_mites}` : "–"}</span>
       </div>
       <div class="zone-card-group">${groupTag(zone.label || "unlabeled", color)}</div>`;
     const plot = document.createElement("div");
     plot.className = "zone-card-plot";
-    if (zone.survival) Charts.spark(plot, { values: zone.survival, color });
+    if (zone.moving) Charts.spark(plot, { values: zone.moving, color, step: false });
     else plot.innerHTML = `<span class="muted">no mites detected</span>`;
     card.appendChild(plot);
     container.appendChild(card);
@@ -675,10 +680,11 @@ function drawZoneCards(groups) {
 
 function drawGroupTable(groups) {
   const columns = [
-    ["group", "Group"], ["n_mites", "Mites"], ["n_alive_at_end", "Alive at end"],
-    ["survival_at_end", "Survival"], ["mean_score", "Mean score"], ["std_score", "SD"], ["median_score", "Median"],
+    ["group", "Group"], ["n_mites", "Mites"], ["fraction_moving", "Moving"],
+    ["n_moving_last_recording", "Moving in last recording"],
+    ["mean_score", "Mean score"], ["std_score", "SD"], ["median_score", "Median"],
   ];
-  const format = (key, value) => (key === "survival_at_end" ? pct(value) : key.endsWith("score") ? score(value) : esc(value));
+  const format = (key, value) => (key === "fraction_moving" ? pct(value) : key.endsWith("score") ? score(value) : esc(value));
   $("group-table").innerHTML = `
     <thead><tr>${columns.map(([key, name]) => `<th class="${key === "group" ? "" : "num"}">${name}</th>`).join("")}</tr></thead>
     <tbody>${results.summary.groups.map((row) => `<tr>${columns.map(([key]) =>
@@ -705,7 +711,7 @@ function cropSvg(x, y, w, h, src = fileUrl(results.preview), size = results.imag
 function miteMarker(svg, mite, radius, { withLabel = true, onClick = null } = {}) {
   const ns = "http://www.w3.org/2000/svg";
   const g = document.createElementNS(ns, "g");
-  g.setAttribute("class", `mite-marker ${aliveAtEnd(mite) ? "alive" : "dead"}`);
+  g.setAttribute("class", `mite-marker ${movingLast(mite) ? "moving" : "still"}`);
   const circle = document.createElementNS(ns, "circle");
   circle.setAttribute("cx", mite.x);
   circle.setAttribute("cy", mite.y);
@@ -723,7 +729,8 @@ function miteMarker(svg, mite, radius, { withLabel = true, onClick = null } = {}
     g.style.cursor = "pointer";
     g.addEventListener("click", onClick);
     g.addEventListener("mousemove", (event) => Charts.showTooltip(event,
-      `<div class="tip-title">Mite ${esc(mite.id)}</div>${statusBadge(aliveAtEnd(mite))} at end<div class="tip-hint">Click to open</div>`));
+      `<div class="tip-title">Mite ${esc(mite.id)}</div>${movingBadge(movingLast(mite))} in the last recording
+       <div class="tip-note">moving in ${nMoving(mite)} of ${results.times.length} recordings</div><div class="tip-hint">Click to open</div>`));
     g.addEventListener("mouseleave", Charts.hideTooltip);
   }
   svg.appendChild(g);
@@ -748,9 +755,8 @@ function showZone(zoneId) {
   const { times } = results;
   breadcrumb([["Results", "#/results"], [zoneName(zone), `#/zone/${zone.id}`]]);
 
-  // Deaths during the session; mites that never moved are counted separately.
-  const deaths = mites.map((m) => m.died_at).filter((t) => t != null && t > times[0]);
-  const neverMoved = mites.filter((m) => m.died_at != null && m.died_at <= times[0]).length;
+  const movingObservations = mites.reduce((sum, mite) => sum + nMoving(mite), 0);
+  const neverMoved = mites.filter((mite) => nMoving(mite) === 0).length;
   const meanScore = mites.length ? mites.flatMap((m) => m.scores).reduce((a, b) => a + b, 0) / (mites.length * times.length) : null;
   const zoneIndex = results.zones.indexOf(zone);
   const body = $("results-body");
@@ -767,22 +773,22 @@ function showZone(zoneId) {
 
     <div class="stats">
       ${stat("Mites", mites.length)}
-      ${stat("Alive at end", mites.length ? `${zone.n_alive_at_end} <small>(${pct(zone.n_alive_at_end / mites.length)})</small>` : "–")}
-      ${stat("First death", deaths.length ? minutes(Math.min(...deaths)) : "–",
-        [deaths.length ? `${deaths.length} died during the session` : "", neverMoved ? `${neverMoved} never moved` : ""].filter(Boolean).join(", "))}
+      ${stat("Moving in the last recording", mites.length ? `${zone.n_moving_last} <small>(${pct(zone.n_moving_last / mites.length)})</small>` : "–")}
+      ${stat("Moving mite-recordings", mites.length ? `${movingObservations} <small>of ${mites.length * times.length}</small>` : "–",
+        neverMoved ? `${neverMoved} mite${neverMoved === 1 ? "" : "s"} never seen moving` : "")}
       ${stat("Mean motion score", score(meanScore), `threshold ${score(results.threshold)}`)}
     </div>
 
     <div class="grid-2">
       ${figure("zone-crop", 1, "Plate, first frame",
-        `Detected mites, <span class="status alive">● alive</span> or <span class="status dead">✕ dead</span> at the end of the session. Select a mite to open it.`, "crop-wrap")}
-      ${mites.length ? figure("chart-zone-survival", 2, "Survival", "Fraction of this zone's mites alive at each recording, with the whole group for comparison where the group spans several zones.") : ""}
+        `Detected mites, ${movingBadge(true)} or ${movingBadge(false)} in the last recording. Select a mite to open it.`, "crop-wrap")}
+      ${mites.length ? figure("chart-zone-moving", 2, "Mites moving", "Fraction of this zone's mites moving in each recording, with the whole group for comparison where the group spans several zones.") : ""}
     </div>
 
     ${mites.length ? `
     <div class="grid-2">
       ${figure("chart-zone-scores", 3, "Motion score per mite",
-        "Thin lines are single mites, coloured by their status at the end; the black line is the mean. Hover to identify a mite, select to open it.")}
+        "Thin lines are single mites; the black line is the mean. The dashed line is the threshold. Hover to identify a mite, select to open it.")}
       ${section("Mites", `<div class="table-wrap"><table class="clickable" id="mite-table"></table></div>`)}
     </div>` : `<p class="muted">No mites were detected in this zone.</p>`}`;
   wireRunAgain(body);
@@ -802,36 +808,33 @@ function showZone(zoneId) {
   if (!mites.length) return;
 
   const groupCurve = results.groups.find((g) => g.group === group);
-  Charts.line($("chart-zone-survival"), {
+  Charts.line($("chart-zone-moving"), {
     x: times,
-    yLabel: "Mites alive (%)",
+    yLabel: "Mites moving (%)",
     yMin: 0, yMax: 100,
     yFormat: (v) => `${Math.round(v)}`,
     series: [
-      { name: `Zone ${zone.id}`, values: zone.survival.map((v) => v * 100), color, step: true },
+      { name: `Zone ${zone.id}`, values: zone.moving.map((v) => v * 100), color },
       ...(groupCurve && results.zones.filter((z) => (z.label || "unlabeled") === group && z.n_mites).length > 1
-        ? [{ name: `all “${group}”`, values: groupCurve.survival.map((v) => (v == null ? null : v * 100)), color: token("--muted"), step: true, dashed: true, markers: false }]
+        ? [{ name: `all “${group}”`, values: groupCurve.moving.map((v) => (v == null ? null : v * 100)), color: token("--muted"), dashed: true, markers: false }]
         : []),
     ],
     tooltipExtra: (i) => {
-      const alive = mites.filter((m) => m.alive[i]).length;
-      return `<div class="tip-note">${alive} of ${mites.length} mites alive</div>`;
+      const moving = mites.filter((m) => m.moving[i]).length;
+      return `<div class="tip-note">${moving} of ${mites.length} mites moving</div>`;
     },
   });
 
-  const alive = token("--good");
-  const dead = token("--critical");
   Charts.line($("chart-zone-scores"), {
     x: times,
     yLabel: "Motion score",
-    forceLegend: true,
     noDirectLabels: true,
     threshold: { value: results.threshold, label: "threshold" },
     series: [
       ...mites.map((mite) => ({
         name: `Mite ${mite.id}`,
         values: mite.scores,
-        color: aliveAtEnd(mite) ? alive : dead,
+        color: token("--series-1"),
         width: 1,
         faint: true,
         legend: false,
@@ -839,20 +842,18 @@ function showZone(zoneId) {
         onClick: () => go(`#/mite/${encodeURIComponent(mite.id)}`),
       })),
       { name: "mean", values: zone.mean_score, color: token("--ink"), width: 2 },
-      { name: "alive at end", values: times.map(() => null), color: alive },
-      { name: "dead by end", values: times.map(() => null), color: dead },
     ],
   });
 
   const table = $("mite-table");
   table.innerHTML = `
-    <thead><tr><th>Mite</th><th>At end</th><th class="num">Died at</th><th class="num">Moving</th><th class="num">Mean</th><th class="num">Max</th></tr></thead>
+    <thead><tr><th>Mite</th><th>Last recording</th><th class="num">Last movement</th><th class="num">Moving</th><th class="num">Mean</th><th class="num">Max</th></tr></thead>
     <tbody>${mites.map((mite) => `
       <tr data-href="#/mite/${encodeURIComponent(mite.id)}" tabindex="0">
         <td><a href="#/mite/${encodeURIComponent(mite.id)}">${esc(mite.id)}</a></td>
-        <td>${statusBadge(aliveAtEnd(mite))}</td>
-        <td class="num">${diedText(mite)}</td>
-        <td class="num">${mite.moving.filter(Boolean).length}/${times.length}</td>
+        <td>${movingBadge(movingLast(mite))}</td>
+        <td class="num">${lastMovementText(mite)}</td>
+        <td class="num">${nMoving(mite)}/${times.length}</td>
         <td class="num">${score(mite.scores.reduce((a, b) => a + b, 0) / mite.scores.length)}</td>
         <td class="num">${score(Math.max(...mite.scores))}</td>
       </tr>`).join("")}</tbody>`;
@@ -872,38 +873,36 @@ function showMite(miteId) {
   const color = groupColor(zone.label || "unlabeled", groups);
   breadcrumb([["Results", "#/results"], [zoneName(zone), `#/zone/${zone.id}`], [`Mite ${mite.id}`, ""]]);
 
-  const nMoving = mite.moving.filter(Boolean).length;
   const body = $("results-body");
   body.innerHTML = `
     ${staleBanner()}
     <header class="page-head">
       <div>
         <h1>Mite ${esc(mite.id)}</h1>
-        <p class="meta">${statusBadge(aliveAtEnd(mite))} at end · <a href="#/zone/${zone.id}">Zone ${zone.id}</a> · ${groupTag(zone.label || "unlabeled", color)}</p>
+        <p class="meta">${movingBadge(movingLast(mite))} in the last recording · <a href="#/zone/${zone.id}">Zone ${zone.id}</a> · ${groupTag(zone.label || "unlabeled", color)}</p>
       </div>
       ${pager(siblings, siblings.indexOf(mite), (m) => `#/mite/${encodeURIComponent(m.id)}`, (m) => `Mite ${m.id}`)}
     </header>
 
     <div class="stats">
-      ${stat("Status at end", aliveAtEnd(mite) ? "Alive" : "Dead")}
-      ${stat("Died at", diedText(mite), mite.died_at == null ? "alive throughout" : mite.died_at <= times[0] ? "no movement in any recording" : "first recording counted dead")}
-      ${stat("Moving in", `${nMoving}/${times.length}`, "recordings above threshold")}
+      ${stat("Moving in", `${nMoving(mite)}/${times.length}`, "recordings above the threshold")}
+      ${stat("Last movement", lastMovementText(mite), nMoving(mite) ? "last recording with movement" : "no movement in any recording")}
       ${stat("Max motion score", score(Math.max(...mite.scores)), `threshold ${score(results.threshold)}`)}
+      ${stat("Mean motion score", score(mite.scores.reduce((a, b) => a + b, 0) / mite.scores.length))}
     </div>
 
     <div class="grid-mite">
       ${figure("mite-crop", 1, "Close-up", "First frame, 140 × 140 px around the mite.", "crop-wrap square")}
       ${figure("chart-mite", 2, "Motion score over time",
-        `<span class="status alive">●</span> moving (at or above the threshold), <span class="status dead">●</span> still. ${survivalNote}`)}
+        `${movingBadge(true)} at or above the threshold, ${movingBadge(false)} below it. ${movingNote}`)}
     </div>
 
     ${section("Recordings", `<div class="table-wrap"><table>
-        <thead><tr><th class="num">Time</th><th class="num">Motion score</th><th>Moving</th><th>Counted as</th></tr></thead>
+        <thead><tr><th class="num">Time</th><th class="num">Motion score</th><th>Movement</th></tr></thead>
         <tbody>${times.map((t, i) => `<tr>
           <td class="num">${minutes(t)}</td>
           <td class="num">${score(mite.scores[i])}</td>
-          <td>${mite.moving[i] ? "yes" : "no"}</td>
-          <td>${statusBadge(mite.alive[i])}</td></tr>`).join("")}</tbody>
+          <td>${movingBadge(mite.moving[i])}</td></tr>`).join("")}</tbody>
       </table></div>`)}`;
   wireRunAgain(body);
 
@@ -912,8 +911,6 @@ function showMite(miteId) {
   miteMarker(crop, mite, 22, { withLabel: false });
   $("mite-crop").appendChild(crop);
 
-  const good = token("--good");
-  const critical = token("--critical");
   Charts.line($("chart-mite"), {
     x: times,
     yLabel: "Motion score",
@@ -924,9 +921,9 @@ function showMite(miteId) {
       values: mite.scores,
       color: token("--ink"),
       width: 1.5,
-      pointColors: mite.moving.map((moving) => (moving ? good : critical)),
+      pointColors: mite.moving.map((moving) => token(moving ? "--moving" : "--still")),
     }],
-    tooltipExtra: (i) => `<div class="tip-note">${mite.moving[i] ? "moving" : "still"} · counted ${mite.alive[i] ? "alive" : "dead"}</div>`,
+    tooltipExtra: (i) => `<div class="tip-note">${mite.moving[i] ? "moving" : "still"}</div>`,
   });
 }
 

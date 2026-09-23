@@ -1,31 +1,21 @@
-"""Compares the motion scores against ground truth the user entered by hand.
+"""Compares the motion scores against movement the user saw with their own eyes.
 
-The ground truth is one status per mite per recording. The detector calls a mite
-alive at a recording when it moves at that recording or at any later one -- the
-rule of `Mite.survival` -- which is the same as asking whether the highest score
-from that recording onwards reaches the threshold (see `forward_max`). Every
-threshold question below is therefore asked of that forward maximum, so a
-threshold tuned here means the same thing in a normal analysis.
-
-"alive" is the positive class throughout: the true positive rate is the fraction
-of truly alive observations called alive, the false positive rate the fraction
-of truly dead observations called alive.
+For each mite and each recording the user labels what the camera can show:
+whether the mite moves ("moving") or not ("still"). The detector calls a mite
+moving in a recording when that recording's score reaches the threshold. Every
+comparison here is between those two, one (mite, recording) at a time; moving is
+the positive class.
 """
 
 import numpy as np
 
-ALIVE = "alive"
-DEAD = "dead"
+MOVING = "moving"
+STILL = "still"
 NOT_A_MITE = "not_a_mite"  # a detection the user rejected: debris, a shadow, ...
-TRUTH_STATES = (ALIVE, DEAD, NOT_A_MITE)
+TRUTH_STATES = (MOVING, STILL, NOT_A_MITE)
 
-# Outcome of one labelled mite at a given threshold.
-OUTCOMES = {
-    (True, True): "alive_ok",      # alive, called alive
-    (False, False): "dead_ok",     # dead, called dead
-    (True, False): "alive_missed",  # alive, called dead
-    (False, True): "dead_missed",   # dead, called alive
-}
+# The first labels were saved as "alive" / "dead"; they meant moving / still.
+_OLDER_STATES = {"alive": MOVING, "dead": STILL}
 
 
 def per_recording(truth, n_recordings):
@@ -38,7 +28,8 @@ def per_recording(truth, n_recordings):
         truth = [truth] * n_recordings
     if not isinstance(truth, list):
         return [None] * n_recordings
-    truth = [state if state in TRUTH_STATES else None for state in truth[:n_recordings]]
+    truth = [_OLDER_STATES.get(state, state) for state in truth[:n_recordings]]
+    truth = [state if state in TRUTH_STATES else None for state in truth]
     return truth + [None] * (n_recordings - len(truth))
 
 
@@ -57,7 +48,7 @@ def match_ground_truth(mites, saved, n_recordings, tolerance=10.0):
     the detector settings that renumbers the mites. `mites` and `saved` are lists
     of dicts with "x" and "y"; each saved entry is used at most once, by the
     closest mite within `tolerance` pixels. Returns {mite id: [status per
-    recording]}, where a status is "alive", "dead", "not_a_mite" or None.
+    recording]}, where a status is "moving", "still", "not_a_mite" or None.
     """
     pairs = []
     for mite in mites:
@@ -78,21 +69,25 @@ def match_ground_truth(mites, saved, n_recordings, tolerance=10.0):
     return truth
 
 
-def roc_curve(scores, is_alive):
+def has_both_classes(moving):
+    moving = np.asarray(moving, dtype=bool)
+    return bool(moving.any() and not moving.all())
+
+
+def roc_curve(scores, moving):
     """False and true positive rates at every distinct threshold, highest first.
 
     Returns (fpr, tpr, thresholds). The first point is (0, 0) at an infinite
     threshold, the last (1, 1) at the lowest score.
     """
     scores = np.asarray(scores, dtype=float)
-    is_alive = np.asarray(is_alive, dtype=bool)
-    n_alive, n_dead = is_alive.sum(), (~is_alive).sum()
-    if n_alive == 0 or n_dead == 0:
-        raise ValueError("The ground truth needs at least one alive and one dead mite.")
+    moving = np.asarray(moving, dtype=bool)
+    if not has_both_classes(moving):
+        raise ValueError("A ROC curve needs both moving and still labels.")
 
     thresholds = np.unique(scores)[::-1]
-    tpr = np.array([(scores[is_alive] >= t).sum() for t in thresholds]) / n_alive
-    fpr = np.array([(scores[~is_alive] >= t).sum() for t in thresholds]) / n_dead
+    tpr = np.array([(scores[moving] >= t).sum() for t in thresholds]) / moving.sum()
+    fpr = np.array([(scores[~moving] >= t).sum() for t in thresholds]) / (~moving).sum()
     return (
         np.concatenate([[0.0], fpr]),
         np.concatenate([[0.0], tpr]),
@@ -100,45 +95,53 @@ def roc_curve(scores, is_alive):
     )
 
 
-def auc(scores, is_alive):
-    """Area under the ROC curve: the chance that a random alive mite scores higher
-    than a random dead one, ties counting half."""
+def auc(scores, moving):
+    """Area under the ROC curve: the chance that a random moving observation
+    scores higher than a random still one, ties counting half."""
     scores = np.asarray(scores, dtype=float)
-    is_alive = np.asarray(is_alive, dtype=bool)
-    alive, dead = scores[is_alive][:, None], scores[~is_alive][None, :]
-    if alive.size == 0 or dead.size == 0:
-        raise ValueError("The ground truth needs at least one alive and one dead mite.")
-    return float(((alive > dead) + 0.5 * (alive == dead)).mean())
+    moving = np.asarray(moving, dtype=bool)
+    if not has_both_classes(moving):
+        raise ValueError("AUC needs both moving and still labels.")
+    pos, neg = scores[moving][:, None], scores[~moving][None, :]
+    return float(((pos > neg) + 0.5 * (pos == neg)).mean())
 
 
-def best_threshold(scores, is_alive):
+def best_threshold(scores, moving):
     """The threshold that maximises sensitivity + specificity (Youden's J).
 
-    Any value between the lowest score called alive and the next score below it
-    gives the same predictions, so the threshold is placed halfway into that gap,
-    as far as possible from the mites on either side.
+    Any value between the lowest score called moving and the next score below it
+    gives the same calls, so the threshold is placed halfway into that gap, as
+    far as possible from the observations on either side.
     """
     scores = np.asarray(scores, dtype=float)
-    fpr, tpr, thresholds = roc_curve(scores, is_alive)
+    fpr, tpr, thresholds = roc_curve(scores, moving)
     best = int(np.argmax(tpr[1:] - fpr[1:])) + 1  # skip the infinite threshold
-    lowest_alive = thresholds[best]
-    below = scores[scores < lowest_alive]
-    return float((lowest_alive + below.max()) / 2) if below.size else float(lowest_alive)
+    lowest_moving = thresholds[best]
+    below = scores[scores < lowest_moving]
+    return float((lowest_moving + below.max()) / 2) if below.size else float(lowest_moving)
 
 
-def confusion(scores, is_alive, threshold):
-    """Counts and rates of the four outcomes at one threshold."""
+def outcome(is_moving, score, threshold):
+    """Name of the outcome of one observation, e.g. "still_called_moving"."""
+    truth = MOVING if is_moving else STILL
+    called = MOVING if score >= threshold else STILL
+    return f"{truth}_called_{called}"
+
+
+def confusion(scores, moving, threshold):
+    """Counts of the four outcomes at one threshold, plus accuracy, sensitivity
+    (moving called moving) and specificity (still called still)."""
     scores = np.asarray(scores, dtype=float)
-    is_alive = np.asarray(is_alive, dtype=bool)
-    called_alive = scores >= threshold
+    moving = np.asarray(moving, dtype=bool)
+    called = scores >= threshold
 
     counts = {
-        name: int(((is_alive == truth) & (called_alive == called)).sum())
-        for (truth, called), name in OUTCOMES.items()
+        "moving_called_moving": int((moving & called).sum()),
+        "moving_called_still": int((moving & ~called).sum()),
+        "still_called_moving": int((~moving & called).sum()),
+        "still_called_still": int((~moving & ~called).sum()),
     }
-    n_alive = counts["alive_ok"] + counts["alive_missed"]
-    n_dead = counts["dead_ok"] + counts["dead_missed"]
-    total = n_alive + n_dead
+    n_moving, n_still = int(moving.sum()), int((~moving).sum())
 
     def ratio(a, b):
         return None if b == 0 else a / b
@@ -146,49 +149,32 @@ def confusion(scores, is_alive, threshold):
     return {
         "threshold": float(threshold),
         **counts,
-        "accuracy": ratio(counts["alive_ok"] + counts["dead_ok"], total),
-        "sensitivity": ratio(counts["alive_ok"], n_alive),  # alive mites called alive
-        "specificity": ratio(counts["dead_ok"], n_dead),    # dead mites called dead
+        "n_moving": n_moving,
+        "n_still": n_still,
+        "n_wrong": counts["moving_called_still"] + counts["still_called_moving"],
+        "accuracy": ratio(counts["moving_called_moving"] + counts["still_called_still"], n_moving + n_still),
+        "sensitivity": ratio(counts["moving_called_moving"], n_moving),
+        "specificity": ratio(counts["still_called_still"], n_still),
     }
 
 
-def outcome(truth, score, threshold):
-    """The outcome name for one mite, or None if it is not labelled alive or dead."""
-    if truth not in (ALIVE, DEAD):
-        return None
-    return OUTCOMES[(truth == ALIVE, score >= threshold)]
+def moving_over_time(rows, n_recordings, thresholds):
+    """Fraction of the labelled mites moving in each recording, by the labels and
+    as called by the detector at each of `thresholds` ({name: value}).
 
-
-def forward_max(scores):
-    """For each recording, the highest score from that recording onwards.
-
-    A mite is called alive at a recording when this reaches the threshold.
-    """
-    return [float(value) for value in np.maximum.accumulate(np.asarray(scores, dtype=float)[::-1])[::-1]]
-
-
-def has_both_classes(is_alive):
-    is_alive = np.asarray(is_alive, dtype=bool)
-    return bool(is_alive.any() and not is_alive.all())
-
-
-def survival(observations, n_recordings, thresholds):
-    """Fraction of mites alive at each recording, by the ground truth and as called
-    by the detector at each of `thresholds` ({name: value}).
-
-    Only observations with a ground truth count, and the detector is judged on
-    exactly the same ones, so the curves can be compared point by point. A
-    recording with no labelled mite gives None.
+    `rows` have "recording", "movement" (the label) and "score". The detector is
+    judged on exactly the same rows, so the curves compare point by point. A
+    recording without rows gives None.
     """
     result = {"n": [], "truth": [], **{name: [] for name in thresholds}}
     for recording in range(n_recordings):
-        rows = [row for row in observations if row["recording"] == recording]
-        result["n"].append(len(rows))
-        if not rows:
+        here = [row for row in rows if row["recording"] == recording]
+        result["n"].append(len(here))
+        if not here:
             for key in ["truth", *thresholds]:
                 result[key].append(None)
             continue
-        result["truth"].append(sum(row["truth"] == ALIVE for row in rows) / len(rows))
+        result["truth"].append(sum(row["movement"] == MOVING for row in here) / len(here))
         for name, threshold in thresholds.items():
-            result[name].append(sum(row["score"] >= threshold for row in rows) / len(rows))
+            result[name].append(sum(row["score"] >= threshold for row in here) / len(here))
     return result

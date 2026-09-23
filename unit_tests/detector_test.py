@@ -177,7 +177,8 @@ class TestDetect:
         mite = mites[0]
         assert mite.radius == analyzer.config.mite.radius
         assert mite.motion_threshold == analyzer.config.mite.motion_threshold
-        assert mite.color == analyzer.config.mite.alive_color
+        # no recording scored yet, so it is drawn as still
+        assert mite.color == analyzer.config.mite.still_color
 
 
 class TestDetectAndAssignIntegration:

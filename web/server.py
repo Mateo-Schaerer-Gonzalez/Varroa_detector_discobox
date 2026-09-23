@@ -47,12 +47,29 @@ class ManifestRequest(BaseModel):
 
 
 class TruthRequest(BaseModel):
-    # mite id -> one status per recording: "alive", "dead", "not_a_mite" or null
+    # mite id -> one status per recording: "moving", "still", "not_a_mite" or null
     truth: dict[str, list[Optional[str]]] = {}
+
+
+class EvaluateRequest(BaseModel):
+    # the ground truth on screen, saved first; left out, the saved one is used as it is
+    # (an empty dict would clear it)
+    truth: Optional[dict[str, list[Optional[str]]]] = None
+    # ids of the saved datasets to pool; by default only this session's own
+    datasets: Optional[list[str]] = None
+    # the movement score to try; by default the one in config.yaml
+    metric: Optional[str] = None
+    params: Optional[dict[str, float]] = None
 
 
 class ThresholdRequest(BaseModel):
     value: float
+
+
+class MovementScoreRequest(BaseModel):
+    metric: str
+    params: dict[str, float] = {}
+    threshold: float
 
 
 def safe_join(root: Path, relative: str) -> Path:
@@ -136,17 +153,82 @@ def run_analysis(session_id: str, request: LabelsRequest):
         raise HTTPException(status_code=400, detail=str(error))
 
 
-@app.post("/api/calibration")
-def open_calibration(request: OpenRequest):
-    """Detect and score the mites of a calibration recording. Slow: decodes every frame."""
+def new_calibration_session(open_it):
+    """Run `open_it(out_dir)` in a fresh calibration session and remember it."""
     session_id = uuid.uuid4().hex[:8]
     out_dir = OUTPUT_ROOT / f"calibration_{session_id}"
     try:
-        calibration = pipeline.open_calibration(request.data_dir, out_dir)
+        calibration = open_it(out_dir)
     except (FileNotFoundError, ValueError) as error:
         raise HTTPException(status_code=400, detail=str(error))
 
-    sessions[session_id] = {"data_dir": calibration["data_dir"], "out_dir": out_dir}
+    sessions[session_id] = {
+        "data_dir": calibration["data_dir"],
+        "out_dir": out_dir,
+        "dataset_id": calibration["dataset_id"],
+    }
+    return {"session_id": session_id, **calibration}
+
+
+@app.post("/api/calibration")
+def open_calibration(request: OpenRequest):
+    """Detect and score the mites of a calibration recording. Slow: decodes every frame."""
+    return new_calibration_session(lambda out_dir: pipeline.open_calibration(request.data_dir, out_dir))
+
+
+@app.get("/api/calibration/datasets")
+def list_datasets():
+    """The ground truth saved so far, one dataset per calibration recording."""
+    return {"datasets": pipeline.list_calibration_datasets()}
+
+
+@app.post("/api/calibration/datasets/{dataset_id}/open")
+def open_dataset(dataset_id: str):
+    """Reopen a saved dataset to go on labelling it. Fast: nothing is decoded."""
+    return new_calibration_session(lambda out_dir: pipeline.open_saved_calibration(dataset_id, out_dir))
+
+
+@app.get("/api/calibration/datasets/{dataset_id}/preview")
+def dataset_preview(dataset_id: str):
+    """The first frame of a saved dataset, for the error map of a pooled report."""
+    try:
+        return FileResponse(pipeline.dataset_preview(dataset_id))
+    except (FileNotFoundError, ValueError) as error:
+        raise HTTPException(status_code=404, detail=str(error))
+
+
+@app.get("/api/calibration/metrics")
+def movement_scores():
+    """The movement scores a calibration can try, with their parameters."""
+    return pipeline.movement_scores()
+
+
+@app.delete("/api/calibration/datasets/{dataset_id}")
+def delete_dataset(dataset_id: str):
+    try:
+        return {"deleted": pipeline.delete_calibration_dataset(dataset_id)}
+    except (FileNotFoundError, ValueError) as error:
+        raise HTTPException(status_code=400, detail=str(error))
+
+
+@app.post("/api/calibration/pooled")
+def open_pooled():
+    """A session for reports on saved datasets alone, with no recording opened."""
+    session_id = uuid.uuid4().hex[:8]
+    sessions[session_id] = {"data_dir": None, "out_dir": OUTPUT_ROOT / f"calibration_{session_id}", "dataset_id": None}
+    return {"session_id": session_id}
+
+
+@app.post("/api/calibration/{session_id}/dataset/{dataset_id}")
+def switch_dataset(session_id: str, dataset_id: str):
+    """Show another saved dataset in this session, e.g. the one a mite clicked in a
+    pooled report comes from. The session's report files stay where they are."""
+    session = get_session(session_id)
+    try:
+        calibration = pipeline.open_saved_calibration(dataset_id, session["out_dir"])
+    except (FileNotFoundError, ValueError) as error:
+        raise HTTPException(status_code=400, detail=str(error))
+    session.update(data_dir=calibration["data_dir"], dataset_id=calibration["dataset_id"])
     return {"session_id": session_id, **calibration}
 
 
@@ -164,16 +246,21 @@ def calibration_clip(session_id: str, recording: int, zone_id: int):
 def save_ground_truth(session_id: str, request: TruthRequest):
     """Persist the ground truth next to the recordings so it survives a restart."""
     session = get_session(session_id)
-    return {"saved": pipeline.save_ground_truth(session["out_dir"], request.truth)}
+    try:
+        return {"saved": pipeline.save_ground_truth(session["out_dir"], request.truth)}
+    except (FileNotFoundError, ValueError) as error:
+        raise HTTPException(status_code=400, detail=str(error))
 
 
 @app.post("/api/calibration/{session_id}/evaluate")
-def evaluate_calibration(session_id: str, request: TruthRequest):
-    """Compare the detector's calls with the ground truth."""
+def evaluate_calibration(session_id: str, request: EvaluateRequest):
+    """Compare the detector's calls with the ground truth, pooled over the chosen datasets."""
     session = get_session(session_id)
+    datasets = request.datasets if request.datasets is not None else [session["dataset_id"]]
     try:
-        pipeline.save_ground_truth(session["out_dir"], request.truth)
-        return pipeline.evaluate_calibration(session["out_dir"], request.truth)
+        if session["dataset_id"] and request.truth is not None:
+            pipeline.save_ground_truth(session["out_dir"], request.truth)
+        return pipeline.evaluate_calibration(session["out_dir"], datasets, request.metric, request.params)
     except (FileNotFoundError, ValueError) as error:
         raise HTTPException(status_code=400, detail=str(error))
 
@@ -183,6 +270,15 @@ def save_threshold(request: ThresholdRequest):
     """Make a new movement threshold the default for every later analysis."""
     try:
         return {"threshold": pipeline.save_threshold(request.value)}
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error))
+
+
+@app.post("/api/movement-score")
+def save_movement_score(request: MovementScoreRequest):
+    """Make a metric, its parameters and its threshold the default for every later analysis."""
+    try:
+        return pipeline.save_movement_score(request.metric, request.params, request.threshold)
     except ValueError as error:
         raise HTTPException(status_code=400, detail=str(error))
 

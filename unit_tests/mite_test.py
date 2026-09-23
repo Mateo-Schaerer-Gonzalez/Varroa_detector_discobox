@@ -21,7 +21,7 @@ def reset_id_counter():
 def custom_config():
     return FakeConfig(
         mite=MiteConfig(radius=99, motion_threshold=1.23, metric="mean_diff",
-                         alive_color=(1, 2, 3), dead_color=(7, 8, 9)),
+                         moving_color=(1, 2, 3), still_color=(7, 8, 9)),
         text_zone_style=TextZoneStyle(
             box_color=(11, 12, 13),
             text_color=(14, 15, 16),
@@ -47,9 +47,9 @@ class TestInit:
         m = Mite(10, 20, 1, 2)
         assert (m.x1, m.y1, m.x2, m.y2) == (1, 2, 10, 20)
 
-    def test_alive_by_default(self):
+    def test_starts_with_no_scores(self):
         m = Mite(0, 0, 10, 10)
-        assert m.alive is True
+        assert m.motion_scores == [] and m.moving == []
 
     def test_defaults_come_from_yaml(self):
         config = AppConfig()
@@ -57,8 +57,8 @@ class TestInit:
         assert m.radius == config.mite.radius
         assert m.motion_threshold == config.mite.motion_threshold
         assert m.metric == config.mite.metric
-        assert m.color == config.mite.alive_color
-        assert m.text_color == config.mite.alive_color
+        assert m.color == config.mite.still_color
+        assert m.text_color == config.mite.still_color
         assert m.thickness == config.text_zone_style.thickness
         assert m.font_scale == config.text_zone_style.font_scale
         assert m.text_offset_y == config.text_zone_style.text_offset_y
@@ -68,8 +68,8 @@ class TestInit:
         assert m.radius == 99
         assert m.motion_threshold == 1.23
         assert m.metric == "mean_diff"
-        assert m.color == (1, 2, 3)
-        assert m.text_color == (1, 2, 3)
+        assert m.color == (7, 8, 9)
+        assert m.text_color == (7, 8, 9)
         assert m.thickness == 9
         assert m.font_scale == 2.5
         assert m.text_offset_y == 42
@@ -103,7 +103,7 @@ class TestIdCounter:
         assert first.text != second.text
 
 
-class TestSurvival:
+class TestMovement:
     """custom_config has motion_threshold 1.23."""
 
     def record(self, config, scores):
@@ -116,17 +116,15 @@ class TestSurvival:
         mite = self.record(custom_config, [5, 0.1, 1.23])
         assert mite.moving == [True, False, True]
 
-    def test_resting_mite_that_moves_again_stays_alive(self, custom_config):
-        mite = self.record(custom_config, [5, 0.1, 0.1, 5])
-        assert mite.survival == [True, True, True, True]
+    def test_a_still_recording_does_not_affect_the_others(self, custom_config):
+        mite = self.record(custom_config, [0.1, 5, 0.1, 5])
+        assert mite.moving == [False, True, False, True]
 
-    def test_dead_from_the_recording_after_its_last_movement(self, custom_config):
-        mite = self.record(custom_config, [5, 5, 0.1, 0.1])
-        assert mite.survival == [True, True, False, False]
+    def test_color_follows_the_latest_recording(self, custom_config):
+        mite = self.record(custom_config, [5])
+        assert mite.color == (1, 2, 3)
+        mite.record_motion(0.1)
+        assert mite.color == (7, 8, 9)
 
-    def test_mite_that_never_moves_is_dead_throughout(self, custom_config):
-        mite = self.record(custom_config, [0.1, 0.1])
-        assert mite.survival == [False, False]
-
-    def test_no_recordings_means_no_survival_data(self, custom_config):
-        assert self.record(custom_config, []).survival == []
+    def test_no_recordings_means_no_movement_data(self, custom_config):
+        assert self.record(custom_config, []).moving == []

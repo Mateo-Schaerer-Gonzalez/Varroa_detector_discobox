@@ -1,3 +1,4 @@
+import inspect
 from typing import Optional
 import cv2
 from classes.app_config import AppConfig, get_default_config
@@ -52,24 +53,74 @@ class Analyzer:
 
     def classify_motility(self, mites, image_bursts):
         """Given mites and the frames (by recording), records one motion score per
-        recording on each mite; the mite's alive state follows from those scores."""
+        recording on each mite; whether it moved follows from those scores."""
         for recording, _times in image_bursts:
             for mite in mites:
                 mite_roi = mite.get_ROI(recording)
-                mite.record_motion(self._motion_score(mite_roi, mite.metric))
+                mite.record_motion(self._motion_score(mite_roi, mite.metric, mite.metric_params))
 
     @staticmethod
-    def _motion_score(roi, metric):
-        """Reduces an (N, H, W, C) ROI stack to one scalar using the named metric."""
-        metrics = {
+    def _metrics():
+        return {
             "max_diff": Analyzer._max_diff,
             "mean_diff": Analyzer._mean_diff,
             "variability": Analyzer._variability,
             "topN_variability": Analyzer._topN_variability,
+            "optical_flow": Analyzer.dense_optical_flow,
+            "topN_temporal_range": Analyzer._topN_temporal_range,
+            "topN_binary_flux": Analyzer._topN_binary_flux,
         }
+
+    @staticmethod
+    def metric_names():
+        return list(Analyzer._metrics())
+
+    @staticmethod
+    def metric_description(metric):
+        """First sentence of the metric's docstring."""
+        doc = " ".join((inspect.getdoc(Analyzer._metrics()[metric]) or "").split())
+        return doc.split(". ")[0].rstrip(".") + "."
+
+    @staticmethod
+    def metric_defaults(metric):
+        """The tunable parameters of a metric and their default values, e.g.
+        {"n": 10} for topN_variability."""
+        if metric not in Analyzer._metrics():
+            raise ValueError(f"Unknown motility metric: {metric!r}")
+        signature = inspect.signature(Analyzer._metrics()[metric])
+        return {name: p.default for name, p in signature.parameters.items() if name != "roi"}
+
+    @staticmethod
+    def check_metric_params(metric, params):
+        """The metric's parameters: its defaults, overridden by `params`.
+
+        Each value is converted to the type of its default (so n stays an int) and
+        must be positive; a name the metric does not take is refused.
+        """
+        defaults = Analyzer.metric_defaults(metric)
+        checked = dict(defaults)
+        for name, value in (params or {}).items():
+            if name not in defaults:
+                raise ValueError(f"{metric} has no parameter {name!r}; it takes {', '.join(defaults) or 'none'}.")
+            try:
+                value = type(defaults[name])(value)
+            except (TypeError, ValueError):
+                raise ValueError(f"{metric}: {name} must be a number, not {value!r}.")
+            if isinstance(defaults[name], int) and float(params[name]) != value:
+                raise ValueError(f"{metric}: {name} must be a whole number.")
+            if not value > 0:
+                raise ValueError(f"{metric}: {name} must be positive.")
+            checked[name] = value
+        return checked
+
+    @staticmethod
+    def _motion_score(roi, metric, params=None):
+        """Reduces an (N, H, W, C) ROI stack to one scalar using the named metric,
+        with `params` overriding its default parameters."""
+        metrics = Analyzer._metrics()
         if metric not in metrics:
             raise ValueError(f"Unknown motility metric: {metric!r}")
-        return metrics[metric](roi.astype(np.float32))
+        return metrics[metric](roi.astype(np.float32), **Analyzer.check_metric_params(metric, params))
 
     @staticmethod
     def _max_diff(roi):
@@ -91,5 +142,50 @@ class Analyzer:
         """Mean of the n highest per-pixel standard deviations over the frames."""
         pixel_std = roi.var(axis=0).ravel()
         return float(np.sort(pixel_std)[-n:].mean())
+
+
+    @staticmethod
+    def dense_optical_flow(roi, window=5, n=10):
+        """Local Farneback flow strength (pixels/frame), averaged over every pair
+        of consecutive frames.
+
+        Flow vectors are summed inside a `window` x `window` neighbourhood before
+        taking their length: pixel noise points every which way and cancels, a
+        moving leg pushes its neighbourhood one way. Summing only locally keeps
+        legs moving in opposite directions from cancelling each other. The score
+        per frame pair is the mean of the `n` strongest neighbourhoods, so a small
+        leg isn't diluted by the still body and background."""
+       
+        # Farneback wants 8-bit single-channel frames
+        gray = np.clip(roi.mean(axis=-1), 0, 255).astype(np.uint8)
+        # The ROI is only a few mite-widths across, so keep the pyramid shallow
+        # and the averaging window small or the flow is smeared over the edges.
+        magnitudes = []
+        for prev, nxt in zip(gray[:-1], gray[1:]):
+            flow = cv2.calcOpticalFlowFarneback(
+                prev, nxt, None,
+                pyr_scale=0.5, levels=1, winsize=5,
+                iterations=3, poly_n=5, poly_sigma=1.1, flags=0,
+            )
+            local = cv2.blur(flow, (window, window))
+            strength = np.linalg.norm(local, axis=-1).ravel()
+            magnitudes.append(np.sort(strength)[-n:].mean())
+        return float(np.mean(magnitudes))
+
+
+    @staticmethod
+    def _topN_temporal_range(roi, n=10):
+        """Mean of the n highest per-pixel dynamic ranges (max - min) over the frames."""
+        pixel_range = (roi.max(axis=0) - roi.min(axis=0)).ravel()
+        return float(np.sort(pixel_range)[-n:].mean())
+
+    @staticmethod
+    def _topN_binary_flux(roi, threshold=110, n=10):
+        """Mean fluctuation across the n most active binary silhouette pixels."""
+        # Binary mask: 1 where pixel is dark (mite body/leg), 0 where white
+        binary_mask = (roi < threshold).astype(np.float32)
+        # Compute temporal standard deviation of the binary transitions
+        pixel_flux = binary_mask.std(axis=0).ravel()
+        return float(np.sort(pixel_flux)[-n:].mean())
 
 
