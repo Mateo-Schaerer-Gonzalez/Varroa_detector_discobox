@@ -11,6 +11,11 @@ Double-click `start.bat`, or:
 python -m uvicorn web.server:app --port 8000
 ```
 
+On Linux, run `bash install_linux.sh` once. It installs Miniforge if conda is
+missing, creates `discobox_env`, and adds a *Varroa discobox* icon to the
+desktop and the app menu. The icon runs `start.sh`, the Linux version of
+`start.bat`.
+
 Then in the browser:
 
 1. **Recordings**: drag the session folder (the one holding the `..._fps-30`
