@@ -19,7 +19,10 @@ fail() {
 }
 
 if [ "$1" = stop ]; then
-    [ -f "$PID_FILE" ] && kill "$(cat "$PID_FILE")" 2>/dev/null
+    # The server may have stopped by itself and its pid been reused, so only
+    # kill the pid if it is still our server.
+    pid=$(cat "$PID_FILE" 2>/dev/null)
+    grep -qs uvicorn "/proc/$pid/cmdline" && kill "$pid" 2>/dev/null
     rm -f "$PID_FILE"
     exit 0
 fi
@@ -40,7 +43,8 @@ source "$("$conda" info --base)/etc/profile.d/conda.sh"
 conda activate discobox_env 2>/dev/null \
     || fail "The discobox_env environment is missing - run install_linux.sh first."
 
-nohup python -m uvicorn web.server:app --host 127.0.0.1 --port 8000 > server.log 2>&1 &
+# The server stops by itself once the last browser tab is closed.
+DISCOBOX_AUTO_STOP=1 nohup python -m uvicorn web.server:app --host 127.0.0.1 --port 8000 > server.log 2>&1 &
 echo $! > "$PID_FILE"
 
 for _ in $(seq 60); do

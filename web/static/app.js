@@ -1308,4 +1308,16 @@ function showMite(miteId) {
   });
 }
 
+// --- keeping the server running ---------------------------------------------
+
+// When started from start.bat / start.sh the server stops once no page has
+// checked in for a while, so every open tab checks in and says when it closes.
+const pageId = Math.random().toString(36).slice(2);
+const checkIn = () => fetch(`/api/page/${pageId}/alive`, { method: "POST" }).catch(() => {});
+checkIn();
+setInterval(checkIn, 15000);
+window.addEventListener("pagehide", () => navigator.sendBeacon(`/api/page/${pageId}/closed`));
+// A page restored from the back/forward cache comes back without reloading.
+window.addEventListener("pageshow", (event) => { if (event.persisted) checkIn(); });
+
 // route() is first called from calibration.js, which loads last.
