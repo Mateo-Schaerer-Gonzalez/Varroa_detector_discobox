@@ -402,8 +402,10 @@ function drawLabelView() {
       ? `Mite ${mite.id}: marked as not a mite, left out of the analysis. Click to keep it.`
       : `Mite ${mite.id}: click if this is not a mite, to leave it out of the analysis.`;
     marker.setAttribute("aria-label", marker.title);
-    const r = Math.max(mite.r, 6);
-    Object.assign(marker.style, place(mite.x - r, mite.y - r, mite.x + r, mite.y + r));
+    // Placed by its centre; its size is fixed on screen (see .label-mite), since
+    // a mite is only a few pixels across once the plate is scaled down.
+    const { left, top } = place(mite.x, mite.y, mite.x, mite.y);
+    Object.assign(marker.style, { left, top });
     marker.addEventListener("mousedown", (event) => {
       if (event.button !== 0) return;
       event.preventDefault();
