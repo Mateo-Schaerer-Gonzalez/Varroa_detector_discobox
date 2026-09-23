@@ -7,6 +7,7 @@ can never reach into the analysis internals.
 
     open_session(...)          cheap: the zones to label and a preview image
     run_analysis(...)          the full pipeline, writing Excel and figures to out_dir
+    analysis_clip(...)         frames of one recording, of one zone or the whole plate
 
     open_calibration(...)      detect and score the mites of a calibration session
     calibration_clip(...)      frames of one zone in one recording, to judge by eye
@@ -112,8 +113,10 @@ def open_session(data_dir, out_dir, coords_file=DEFAULT_COORDS_FILE):
     """Describe a recording session so its zones can be labelled.
 
     Decodes a single frame, writes it to `out_dir` as a JPEG, and returns the zone
-    rectangles in image pixel coordinates. Drawing is left to the caller: the UI
-    gets numbers, not a picture with boxes burnt into it.
+    rectangles in image pixel coordinates, each with the number of mites detected
+    in it -- detection only needs that first frame, so the UI can offer only the
+    zones with mites for labelling. Drawing is left to the caller: the UI gets
+    numbers, not a picture with boxes burnt into it.
     """
     data_dir = Path(data_dir)
     if not data_dir.is_dir():
@@ -131,13 +134,21 @@ def open_session(data_dir, out_dir, coords_file=DEFAULT_COORDS_FILE):
     cv2.imwrite(str(out_dir / PREVIEW_NAME), frame, [cv2.IMWRITE_JPEG_QUALITY, 85])
 
     zone_manager = _build_zone_manager(coords_file)
+    # The same detection as an analysis run, on the same first frame.
+    Mite.reset_ids()
+    zone_manager.assign_mites(Analyzer().detect(zone_manager.mask_image_to_valid_rois(frame)))
+    zone_manager.remove_mites(_rejected_detections(zone_manager, load_ground_truth(data_dir)))
+    n_mites = {zone.id: len(zone.mites) for zone in zone_manager.zones}
 
+    zones = _describe_zones(zone_manager, load_labels(data_dir))
+    for zone in zones:
+        zone["n_mites"] = n_mites.get(zone["id"], 0)
     return {
         "data_dir": str(data_dir),
         "preview": PREVIEW_NAME,
         "image": {"width": int(frame.shape[1]), "height": int(frame.shape[0])},
         "n_recordings": n_recordings,
-        "zones": _describe_zones(zone_manager, load_labels(data_dir)),
+        "zones": zones,
     }
 
 
@@ -350,9 +361,8 @@ def calibration_clip(out_dir, recording, zone_id, library_dir=CALIBRATION_LIBRAR
 
     # One session can switch between datasets, so clips are named after theirs.
     name = f"clip_{dataset_id(stored['data_dir'])}_r{recording}_z{zone_id}"
-    manifest = Path(out_dir) / f"{name}.json"
-    if manifest.is_file():
-        return json.loads(manifest.read_text(encoding="utf-8"))
+    if (Path(out_dir) / f"{name}.json").is_file():
+        return json.loads((Path(out_dir) / f"{name}.json").read_text(encoding="utf-8"))
     recordings_dir = _recordings_dir(stored["data_dir"], library_dir)
     if not recordings_dir.is_dir():
         raise FileNotFoundError(
@@ -360,28 +370,69 @@ def calibration_clip(out_dir, recording, zone_id, library_dir=CALIBRATION_LIBRAR
             "so there is no clip to play. The ground truth can still be edited."
         )
 
-    loader = DataLoader(recordings_dir, grayscale=False)
     source = stored["recordings"][recording]
-    step = max(1, int(np.ceil(loader.count_frames(source["name"]) / CLIP_MAX_FRAMES)))
-    x1, y1 = max(0, zone["x1"] - CLIP_MARGIN), max(0, zone["y1"] - CLIP_MARGIN)
-    frames = loader.load_recording_region(
-        source["name"], x1, y1, zone["x2"] + CLIP_MARGIN, zone["y2"] + CLIP_MARGIN, step=step
-    )
+    box = (zone["x1"] - CLIP_MARGIN, zone["y1"] - CLIP_MARGIN, zone["x2"] + CLIP_MARGIN, zone["y2"] + CLIP_MARGIN)
+    return _write_clip(DataLoader(recordings_dir, grayscale=False), source["name"], source["fps"], box, out_dir, name)
+
+
+def _write_clip(loader, recording_name, fps, box, out_dir, name, max_width=None):
+    """Write up to CLIP_MAX_FRAMES JPEGs of the region `box` = (x1, y1, x2, y2) of
+    one recording, and a manifest `name`.json that later calls reuse.
+
+    Returns the frame filenames, where the region sits in the full image (in full
+    image pixels, even when `max_width` scales the frames down), and the delay
+    between frames that plays them back in real time.
+    """
+    manifest = Path(out_dir) / f"{name}.json"
+    if manifest.is_file():
+        return json.loads(manifest.read_text(encoding="utf-8"))
+
+    step = max(1, int(np.ceil(loader.count_frames(recording_name) / CLIP_MAX_FRAMES)))
+    x1, y1 = max(0, int(box[0])), max(0, int(box[1]))
+    frames = loader.load_recording_region(recording_name, x1, y1, int(box[2]), int(box[3]), step=step)
+    height, width = frames.shape[1:3]
+    scale = min(1.0, max_width / width) if max_width else 1.0
 
     names = []
     for index, frame in enumerate(frames):
+        if scale < 1:
+            frame = cv2.resize(frame, (round(width * scale), round(height * scale)), interpolation=cv2.INTER_AREA)
         names.append(f"{name}_{index:02d}.jpg")
         cv2.imwrite(str(Path(out_dir) / names[-1]), frame, [cv2.IMWRITE_JPEG_QUALITY, 85])
     clip = {
         "frames": names,
-        "x": int(x1),
-        "y": int(y1),
-        "width": int(frames.shape[2]),
-        "height": int(frames.shape[1]),
-        "interval_ms": int(round(1000 * step / source["fps"])),
+        "x": x1,
+        "y": y1,
+        "width": int(width),
+        "height": int(height),
+        "interval_ms": int(round(1000 * step / fps)),
     }
     manifest.write_text(json.dumps(clip), encoding="utf-8")
     return clip
+
+
+PLATE_CLIP_WIDTH = 1400  # the whole plate is scaled down to this width in its clip
+
+
+def analysis_clip(data_dir, out_dir, recording, zone_id=None, coords_file=DEFAULT_COORDS_FILE):
+    """Frames of one recording of an analysis session: of one zone, or with no
+    `zone_id` of the whole plate, scaled down. Like calibration_clip(), written
+    to `out_dir` once and reused after."""
+    loader = DataLoader(data_dir, grayscale=False)
+    recordings = loader.recording_dirs
+    if not 0 <= recording < len(recordings):
+        raise ValueError(f"No recording {recording} in this session.")
+    source = recordings[recording].name
+
+    if zone_id is None:
+        box, name, max_width = (0, 0, 10**6, 10**6), f"clip_r{recording}_plate", PLATE_CLIP_WIDTH
+    else:
+        zone = next((z for z in _build_zone_manager(coords_file).labelled_zones if z.id == zone_id), None)
+        if zone is None:
+            raise ValueError(f"No zone {zone_id} in this session.")
+        box = (zone.x1 - CLIP_MARGIN, zone.y1 - CLIP_MARGIN, zone.x2 + CLIP_MARGIN, zone.y2 + CLIP_MARGIN)
+        name, max_width = f"clip_r{recording}_z{zone_id}", None
+    return _write_clip(loader, source, loader.get_fps(source), box, out_dir, name, max_width)
 
 
 def save_ground_truth(out_dir, truth, library_dir=CALIBRATION_LIBRARY):

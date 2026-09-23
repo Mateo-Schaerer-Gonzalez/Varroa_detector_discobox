@@ -74,6 +74,8 @@ const Charts = (() => {
    *   yLabel, xLabel, yMin, yMax, height
    *   yFormat     value -> text, for axis ticks and the tooltip
    *   threshold   { value, label } drawn as a dashed reference line
+   *   selected    index of the x value to mark, e.g. the recording on screen
+   *   onXClick    index -> called when the chart is clicked away from a clickable line
    */
   function line(container, options) {
     keepLive(container, () => draw(container, options));
@@ -158,6 +160,9 @@ const Charts = (() => {
     }
 
     const xs = x.map(sx);
+    if (options.selected != null && xs[options.selected] != null) {
+      el("line", { x1: xs[options.selected], x2: xs[options.selected], y1: pad.top, y2: pad.top + plotH, class: "selected-x" }, svg);
+    }
     const crosshair = el("line", { y1: pad.top, y2: pad.top + plotH, class: "crosshair", visibility: "hidden" }, svg);
 
     // Faint lines first so the emphasised ones sit on top.
@@ -207,13 +212,28 @@ const Charts = (() => {
       el("text", { x: label.x, y: label.y, class: "direct-label" }, svg).textContent = label.name;
     });
 
-    // Crosshair + tooltip at the nearest time point.
-    svg.addEventListener("mousemove", (event) => {
+    // The time point nearest the pointer, or -1 outside the plot.
+    const nearest = (event) => {
       const box = svg.getBoundingClientRect();
       const px = ((event.clientX - box.left) / box.width) * width;
-      if (px < pad.left - 10 || px > pad.left + plotW + 10) { crosshair.setAttribute("visibility", "hidden"); hideTooltip(); return; }
+      if (px < pad.left - 10 || px > pad.left + plotW + 10) return -1;
       let index = 0;
       xs.forEach((value, i) => { if (Math.abs(value - px) < Math.abs(xs[index] - px)) index = i; });
+      return index;
+    };
+    if (options.onXClick) {
+      svg.style.cursor = "pointer";
+      svg.addEventListener("click", (event) => {
+        if (hovered && hovered.onClick) return;  // the line's own click wins
+        const index = nearest(event);
+        if (index >= 0) options.onXClick(index);
+      });
+    }
+
+    // Crosshair + tooltip at the nearest time point.
+    svg.addEventListener("mousemove", (event) => {
+      const index = nearest(event);
+      if (index < 0) { crosshair.setAttribute("visibility", "hidden"); hideTooltip(); return; }
       crosshair.setAttribute("x1", xs[index]);
       crosshair.setAttribute("x2", xs[index]);
       crosshair.setAttribute("visibility", "visible");
@@ -224,7 +244,8 @@ const Charts = (() => {
         .map((s) => `<div class="tip-row${s === hovered ? " tip-hovered" : ""}"><i style="background:${s.color}"></i>` +
           `<span>${escape(s.name)}</span><b>${yFormat(s.values[index])}</b></div>`);
       const extra = options.tooltipExtra ? options.tooltipExtra(index) : "";
-      const hint = hovered && hovered.onClick ? `<div class="tip-hint">Click to open ${escape(hovered.name)}</div>` : "";
+      const hint = hovered && hovered.onClick ? `<div class="tip-hint">Click to open ${escape(hovered.name)}</div>`
+        : options.onXClick ? `<div class="tip-hint">Click to show this recording</div>` : "";
       showTooltip(event, `<div class="tip-title">${+x[index].toFixed(1)} min</div>${rows.join("")}${extra}${hint}`);
     });
     svg.addEventListener("mouseleave", () => { crosshair.setAttribute("visibility", "hidden"); hideTooltip(); });
@@ -278,6 +299,9 @@ const Charts = (() => {
    *   square      height follows the width (up to `height`), for ROC curves
    *   xFormat, yFormat   value -> tick text
    *   yCategories [{ value, label }] named rows instead of numeric y ticks
+   *   boxes       [{ y, lo, q1, median, q3, hi, color, halfHeight }] box and whiskers
+   *               along x, centred on row y, drawn behind the points
+   *   padLeft     room for the y tick labels
    *   legend      [{ name, color, shape }] (shape "line" for a line key)
    */
   function scatter(container, options) {
@@ -300,7 +324,8 @@ const Charts = (() => {
     }
 
     const width = Math.max(260, container.clientWidth || 640);
-    const pad = { left: options.yCategories ? 70 : 56, right: 16, top: 14, bottom: 42 };
+    const boxes = options.boxes || [];
+    const pad = { left: options.padLeft ?? (options.yCategories ? 70 : 56), right: 16, top: 14, bottom: 42 };
     const height = options.square
       ? Math.min(options.height ?? 380, width - pad.left - pad.right + pad.top + pad.bottom)
       : options.height ?? 280;
@@ -316,7 +341,8 @@ const Charts = (() => {
       return [fixedMin ?? lo - margin, fixedMax ?? hi + margin];
     };
     const [xMin, xMax] = extent(
-      [...points.map((p) => p.x), ...lines.flatMap((l) => l.points.map((p) => p[0])), ...refX.map((r) => r.value)],
+      [...points.map((p) => p.x), ...lines.flatMap((l) => l.points.map((p) => p[0])), ...refX.map((r) => r.value),
+        ...boxes.flatMap((b) => [b.lo, b.hi])],
       options.xMin, options.xMax);
     const [yMin, yMax] = extent(
       [...points.map((p) => p.y), ...lines.flatMap((l) => l.points.map((p) => p[1])), ...refY.map((r) => r.value)],
@@ -361,6 +387,20 @@ const Charts = (() => {
         "text-anchor": right ? "start" : "end", class: "threshold-label",
       }, svg).textContent = label;
     });
+
+    // Box: the middle half of the values, a line at the median; whiskers to lo and hi.
+    const ppu = plotH / (yMax - yMin);  // pixels per unit of y
+    for (const b of boxes) {
+      const cy = sy(b.y);
+      const h = (b.halfHeight ?? 0.3) * ppu;
+      const g = el("g", { class: "box", stroke: b.color }, svg);
+      el("line", { x1: sx(b.lo), x2: sx(b.q1), y1: cy, y2: cy }, g);
+      el("line", { x1: sx(b.q3), x2: sx(b.hi), y1: cy, y2: cy }, g);
+      el("line", { x1: sx(b.lo), x2: sx(b.lo), y1: cy - h / 2, y2: cy + h / 2 }, g);
+      el("line", { x1: sx(b.hi), x2: sx(b.hi), y1: cy - h / 2, y2: cy + h / 2 }, g);
+      el("rect", { x: sx(b.q1), y: cy - h, width: Math.max(1, sx(b.q3) - sx(b.q1)), height: 2 * h, class: "box-body" }, g);
+      el("line", { x1: sx(b.median), x2: sx(b.median), y1: cy - h, y2: cy + h, class: "box-median" }, g);
+    }
 
     for (const l of lines) {
       const d = l.points.map(([x, y], i) => `${i ? "L" : "M"}${sx(x)},${sy(y)}`).join("");

@@ -259,7 +259,7 @@ button.secondary:hover, .button.secondary:hover { background: var(--wash); borde
 .stat-note { font-size: 12px; color: var(--muted); }
 
 .grid-2 { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 40px; margin-bottom: 36px; align-items: start; }
-.grid-mite { display: grid; grid-template-columns: 260px minmax(0, 1fr); gap: 40px; margin-bottom: 36px; align-items: start; }
+.grid-mite { display: grid; grid-template-columns: 380px minmax(0, 1fr); gap: 40px; margin-bottom: 36px; align-items: start; }
 
 /* Figures: title above, numbered caption below, no box. */
 .fig { margin: 0; min-width: 0; }
@@ -289,11 +289,27 @@ button.secondary:hover, .button.secondary:hover { background: var(--wash); borde
 .crop { width: 100%; height: auto; display: block; max-height: 420px; }
 .crop-wrap.square .crop { aspect-ratio: 1; max-height: none; }
 .zone-outline { fill: none; stroke-width: 2.5; }
-.mite-marker circle { fill: none; stroke-width: 2.5; }
-.mite-marker.moving circle { stroke: #3fdc8f; }
-.mite-marker.still circle { stroke: #ffb52e; }
-.mite-marker text { fill: #fff; font-weight: 600; paint-order: stroke; stroke: #000; stroke-width: 3px; font-family: var(--sans); }
-.mite-marker:hover circle { stroke-width: 4.5; }
+.mite-marker .hit { fill: transparent; stroke: none; }
+.mite-marker .ring { fill: none; stroke-width: 2.5; pointer-events: none; }
+.mite-marker.moving .ring { stroke: #3fdc8f; }
+.mite-marker.still .ring { stroke: #ffb52e; }
+.mite-marker text { fill: #fff; font-weight: 600; paint-order: stroke; stroke: #000; stroke-width: 3px; font-family: var(--sans); pointer-events: none; }
+.mite-marker:hover .ring { stroke-width: 4.5; }
+
+/* The recording shown on the result pages, played over the first frame. */
+.crop-wrap.loading .crop image, .plate.loading img { opacity: 0.45; }
+.clip-status { min-height: 1.5em; }
+.clip-block { margin-bottom: 36px; }
+.clip-block .plate { max-width: 1100px; }
+tr.current td { background: var(--wash); font-weight: 600; }
+.tip-glyphs { display: flex; flex-wrap: wrap; gap: 3px; font-size: 13px; line-height: 1.4; }
+.tip-glyphs .moving { color: var(--moving); }
+.tip-glyphs .still { color: var(--still); }
+.tip-glyphs .current { border-bottom: 2px solid var(--ink); }
+
+/* On the labelling page, a zone without mites is only a faint outline. */
+.zone.no-mites { --zone-color: var(--rule); border-style: dotted; cursor: default; opacity: 0.7; }
+.zone.no-mites:hover { outline: none; }
 
 /* Tables in the booktabs style: rules at top, under the header and at the bottom only. */
 .table-wrap { overflow-x: auto; }
@@ -319,6 +335,10 @@ table.clickable tbody tr:hover, table.clickable tbody tr:focus-visible { backgro
 .chart .threshold { stroke: var(--muted); stroke-width: 1; stroke-dasharray: 3 3; }
 .chart .threshold-label { fill: var(--muted); font-size: 11px; font-style: italic; }
 .chart .crosshair { stroke: var(--muted); stroke-width: 0.75; }
+.chart .box line { stroke-width: 1.25; }
+.chart .box-body { fill: var(--wash); fill-opacity: 0.7; stroke-width: 1.25; }
+.chart .box .box-median { stroke-width: 2.5; }
+.chart .selected-x { stroke: var(--ink); stroke-width: 1.5; stroke-dasharray: 2 2; }
 .chart .marker { stroke: var(--paper); stroke-width: 1.5; }
 .chart .direct-label { fill: var(--text); font-size: 11.5px; }
 .chart .series.faint path:not(.hit) { opacity: 0.5; }
@@ -376,7 +396,6 @@ table.clickable tbody tr:hover, table.clickable tbody tr:focus-visible { backgro
 .rec-tab.current { color: #fff; background: var(--ink); border-color: var(--ink); }
 .rec-tab.current span { color: #fff; }
 .truth-crop .crop { max-height: 68vh; }
-.truth-crop.loading .crop image { opacity: 0.45; }
 #clip-status { min-height: 1.5em; }
 .truth-progress { margin: 12px 0 0; max-width: none; }
 .truth-progress .hint b { color: var(--ink); font-weight: 600; }

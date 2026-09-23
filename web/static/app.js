@@ -10,6 +10,7 @@ let sessionId = null;
 let session = null;      // what opening a folder returned: preview, zones, labels
 let results = null;      // what the last analysis run returned
 let runStamp = 0;        // cache-buster so a re-run never shows old images
+let shown = 0;           // the recording the result pages show; the last after a run
 let labelsChanged = false;
 
 const $ = (id) => document.getElementById(id);
@@ -45,8 +46,10 @@ function groupColor(group, groups) {
   return index >= 0 && index < 8 ? token(`--series-${index + 1}`) : token("--series-other");
 }
 
+// Only zones with a detected mite can be labelled; the others have nothing to analyse.
+const labelZones = () => session.zones.filter((zone) => zone.n_mites > 0);
 const labelGroups = () =>
-  [...new Set(session.zones.map((zone) => zone.label.trim()).filter(Boolean))].sort();
+  [...new Set(labelZones().map((zone) => zone.label.trim()).filter(Boolean))].sort();
 // Every labelled zone counts, including groups where no mite was found, so a
 // group keeps the same colour here as on the labelling page.
 const resultGroups = () =>
@@ -82,6 +85,7 @@ function setMode(calibrating) {
 
 function route() {
   const [, view = "open", id, ...rest] = location.hash.split("/");
+  stopPlayer();
   setMode(view === "cal");
   if (view === "cal") { routeCalibration(id, ...rest); return; }
   const wanted = { open: "open", label: "label", results: "results", zone: "results", mite: "results" }[view] || "open";
@@ -101,12 +105,18 @@ function route() {
   Charts.hideTooltip();
 
   if (step === "label") drawLabelView();
-  if (step === "results") {
-    if (view === "zone") showZone(Number(id));
-    else if (view === "mite") showMite(decodeURIComponent(id));
-    else showOverview();
-  }
+  if (step === "results") drawResults();
   window.scrollTo(0, 0);
+}
+
+// The results page in the address bar: the overview, a zone or a mite.
+function drawResults() {
+  const [, view, id] = location.hash.split("/");
+  stopPlayer();
+  Charts.hideTooltip();
+  if (view === "zone") showZone(Number(id));
+  else if (view === "mite") showMite(decodeURIComponent(id));
+  else showOverview();
 }
 
 window.addEventListener("hashchange", route);
@@ -125,7 +135,8 @@ async function openFolder(dataDir) {
     $("folder-name").textContent = session.data_dir.split(/[\\/]/).filter(Boolean).pop();
     $("folder-name").title = session.data_dir;
     $("open-status").textContent = "";
-    $("run-status").textContent = `${session.n_recordings} recordings loaded.`;
+    const withMites = labelZones().length;
+    $("run-status").textContent = `${session.n_recordings} recordings loaded · mites detected in ${withMites} of ${session.zones.length} zones.`;
     go("#/label");
   } catch (error) {
     $("open-status").className = "hint error";
@@ -317,7 +328,16 @@ function drawLabelView() {
   const place = plateOverlay(plate, fileUrl(session.preview), session.image);
   const groups = labelGroups();
 
-  session.zones.forEach((zone) => {
+  session.zones.filter((zone) => !zone.n_mites).forEach((zone) => {
+    const box = document.createElement("div");
+    box.className = "zone no-mites";
+    box.title = `Zone ${zone.id}: no mites detected, nothing to label`;
+    Object.assign(box.style, place(zone.x1, zone.y1, zone.x2, zone.y2));
+    box.innerHTML = `<span class="zone-num">${zone.id}</span>`;
+    plate.appendChild(box);
+  });
+
+  labelZones().forEach((zone) => {
     const label = zone.label.trim();
     const color = label ? groupColor(label, groups) : null;
 
@@ -330,7 +350,7 @@ function drawLabelView() {
     Object.assign(box.style, place(zone.x1, zone.y1, zone.x2, zone.y2));
     if (color) box.style.setProperty("--zone-color", color);
     box.classList.toggle("empty", !label);
-    box.setAttribute("aria-label", `Zone ${zone.id}: ${label || "no label"}. Click to edit.`);
+    box.setAttribute("aria-label", `Zone ${zone.id}, ${zone.n_mites} mite${zone.n_mites === 1 ? "" : "s"}: ${label || "no label"}. Click to edit.`);
     box.innerHTML = `<span class="zone-num">${zone.id}</span>`;
 
     const rect = textRect(zone);
@@ -414,7 +434,7 @@ function startEdit(zoneId) {
     else if (event.key === "Escape") finish(false);
     else if (event.key === "Tab") {
       event.preventDefault();
-      const ids = session.zones.map((z) => z.id);
+      const ids = labelZones().map((z) => z.id);
       const next = ids[ids.indexOf(zoneId) + (event.shiftKey ? -1 : 1)];
       if (next == null) { finish(true); $("run-btn").focus(); }
       else finish(true, next);
@@ -436,7 +456,7 @@ function setLabel(zone, value) {
 
 function collectLabels() {
   const labels = {};
-  session.zones.forEach((zone) => { if (zone.label.trim()) labels[zone.id] = zone.label.trim(); });
+  labelZones().forEach((zone) => { if (zone.label.trim()) labels[zone.id] = zone.label.trim(); });
   return labels;
 }
 
@@ -448,12 +468,12 @@ function refreshSuggestions() {
 function drawGroupList() {
   const groups = labelGroups();
   const rows = groups.map((group) => {
-    const ids = session.zones.filter((z) => z.label.trim() === group).map((z) => z.id);
+    const ids = labelZones().filter((z) => z.label.trim() === group).map((z) => z.id);
     return `<li><i class="swatch" style="background:${groupColor(group, groups)}"></i>
       <span class="group-name">${esc(group)}</span>
       <span class="hint">zone${ids.length > 1 ? "s" : ""} ${ids.join(", ")}</span></li>`;
   });
-  const unlabeled = session.zones.filter((z) => !z.label.trim()).map((z) => z.id);
+  const unlabeled = labelZones().filter((z) => !z.label.trim()).map((z) => z.id);
   if (unlabeled.length) {
     rows.push(`<li><i class="swatch" style="background:${token("--series-other")}"></i>
       <span class="group-name muted">unlabeled</span>
@@ -481,6 +501,7 @@ async function run() {
   try {
     results = await post(`/api/session/${sessionId}/run`, { labels: collectLabels() });
     runStamp = Date.now();
+    shown = results.times.length - 1;
     labelsChanged = false;
     status.textContent = "Done.";
     go("#/results");
@@ -494,6 +515,74 @@ async function run() {
 }
 
 $("run-btn").addEventListener("click", run);
+
+// --- playing a recording ------------------------------------------------------
+//
+// One clip plays at a time, in a loop, on any page: the frames of one recording,
+// of one zone or of the whole plate. Used by the result pages and by the
+// ground-truth page of the calibration window.
+
+const player = { timer: null, token: 0, frames: [], index: 0, show: null, interval: 100, playing: true };
+
+function stopPlayer() {
+  clearInterval(player.timer);
+  player.timer = null;
+  player.token += 1;
+}
+
+function startPlayerTimer() {
+  clearInterval(player.timer);
+  if (!player.playing || player.frames.length < 2) return;
+  player.timer = setInterval(() => {
+    player.index = (player.index + 1) % player.frames.length;
+    player.show(player.frames[player.index]);
+  }, player.interval);
+}
+
+// Play or pause; returns whether it now plays.
+function togglePlaying() {
+  player.playing = !player.playing;
+  if (player.playing) startPlayerTimer();
+  else clearInterval(player.timer);
+  return player.playing;
+}
+
+// Fetch a clip's description from `url` and preload its frames, whose URLs
+// `frameUrl` makes from their names. Null when another clip was asked for meanwhile.
+async function loadClip(url, frameUrl) {
+  stopPlayer();
+  const token = player.token;
+  try {
+    const response = await fetch(url);
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.detail || "Could not load the recording");
+    const frames = data.frames.map(frameUrl);
+    await Promise.all(frames.map((src) => new Promise((resolve) => {
+      const image = new Image();
+      image.onload = image.onerror = resolve;
+      image.src = src;
+    })));
+    return token === player.token ? { ...data, frames } : null;
+  } catch (error) {
+    if (token !== player.token) return null;
+    throw error;
+  }
+}
+
+// Show a loaded clip's frames in turn through `show(src)`.
+function startPlayer(clip, show) {
+  Object.assign(player, { frames: clip.frames, index: 0, show, interval: clip.interval_ms });
+  show(clip.frames[0]);
+  startPlayerTimer();
+}
+
+// Put a clip over the full-image coordinates of an SVG crop; returns its `show`.
+function clipOnSvg(svg, clip) {
+  const image = svg.querySelector("image");
+  Object.entries({ x: clip.x, y: clip.y, width: clip.width, height: clip.height })
+    .forEach(([key, value]) => image.setAttribute(key, value));
+  return (src) => image.setAttribute("href", src);
+}
 
 // --- 3 · results ------------------------------------------------------------
 
@@ -535,6 +624,18 @@ function figure(id, number, title, caption, extraClass = "") {
     </figure>`;
 }
 
+// A figure playing the recording shown, with a tab per recording above it; the
+// clip goes in the element with `id`, its loading status below it.
+function clipFigure(id, number, title, caption, extraClass = "") {
+  return `<figure class="fig">
+      <div class="fig-title">${title}</div>
+      ${recordingBar()}
+      <div id="${id}" class="${extraClass}"></div>
+      <p class="hint clip-status"></p>
+      <figcaption><b>Fig. ${number}.</b> ${caption}</figcaption>
+    </figure>`;
+}
+
 const section = (title, inner) => `<section class="block"><h2>${title}</h2>${inner}</section>`;
 
 function staleBanner() {
@@ -552,6 +653,64 @@ function wireRunAgain(body) {
 
 const movingNote =
   "A mite counts as moving in a recording when its motion score in that recording reaches the threshold.";
+
+// --- the recording on screen
+
+const shownTime = () => minutes(results.times[shown]);
+const movingShown = (mite) => mite.moving[shown];
+const nMovingShown = (zone) => mitesIn(zone.id).filter(movingShown).length;
+// Zones worth a look: those with a detected mite.
+const zonesWithMites = () => results.zones.filter((zone) => zone.n_mites);
+
+// One tab per recording, as on the ground-truth page. The clip always loops.
+function recordingBar() {
+  return `<div class="rec-bar">
+    <nav class="rec-tabs" aria-label="Recording shown">${results.times.map((time, i) => `
+      <a href="#" class="rec-tab${i === shown ? " current" : ""}" data-recording="${i}" ${i === shown ? 'aria-current="true"' : ""}
+        title="Show the recording at ${minutes(time)}">${minutes(time)}</a>`).join("")}</nav>
+  </div>`;
+}
+
+function wireRecordingBar(body) {
+  body.querySelectorAll("[data-recording]").forEach((tab) => tab.addEventListener("click", (event) => {
+    event.preventDefault();
+    showRecording(Number(tab.dataset.recording));
+  }));
+}
+
+// Show another recording on the page on screen, from a tab, a chart or a table.
+function showRecording(index) {
+  if (index === shown || !(index >= 0 && index < results.times.length)) return;
+  shown = index;
+  drawResults();
+}
+
+// Load a clip of the recording shown and play it; `place(clip)` returns its `show`.
+// Until it plays, `wrap` shows the first frame dimmed.
+async function playResultClip(url, wrap, status, place) {
+  wrap.classList.add("loading");
+  status.className = "hint clip-status";
+  status.innerHTML = `<span class="spinner"></span> Loading the recording at ${shownTime()}…`;
+  try {
+    // The frames of a recording never change, so they need no cache-buster.
+    const clip = await loadClip(url, (name) => `/api/session/${sessionId}/file/${name}`);
+    if (!clip) return;
+    wrap.classList.remove("loading");
+    status.textContent = `Recording at ${shownTime()}: ${clip.frames.length} frames, looped in real time.`;
+    player.playing = true;
+    startPlayer(clip, place(clip));
+  } catch (error) {
+    wrap.classList.remove("loading");
+    status.className = "hint clip-status error";
+    status.textContent = `${error.message} Showing the first frame.`;
+  }
+}
+
+// ● and ○ per recording, the one on screen underlined.
+function movementGlyphs(mite) {
+  return `<div class="tip-glyphs">${mite.moving.map((moving, i) =>
+    `<span class="${moving ? "moving" : "still"}${i === shown ? " current" : ""}">${moving ? "●" : "○"}</span>`).join("")}</div>`;
+}
 
 // --- overview ------------------------------------------------------------------
 
@@ -578,17 +737,28 @@ function showOverview() {
       ${stat("Recordings", results.n_recordings, span)}
     </div>
 
-    <div class="grid-2">
-      ${figure("chart-group-moving", 1, "Mites moving by group", `Fraction of each group's mites moving in each recording. ${movingNote}`)}
-      ${figure("result-plate", 2, "Plate map",
-        `First frame with every detected mite, ${movingBadge(true)} or ${movingBadge(false)} in the last recording. Select a zone to open it.`, "plate")}
+    <div class="clip-block">
+      ${clipFigure("result-plate", 1, `Plate map · recording at ${shownTime()}`,
+        `The recording at ${shownTime()}, looped, with every detected mite ${movingBadge(true)} or ${movingBadge(false)} in it.
+        Choose a recording above, or click a time in a chart. Select a zone to open it.`, "plate")}
+    </div>
+
+    <div class="block">
+      ${figure("chart-group-moving", 2, "Mites moving by group",
+        `Fraction of each group's mites moving in each recording. ${movingNote} Click a time to show that recording.`)}
     </div>
 
     ${section("Movement per zone", `<div id="zone-cards" class="zone-cards"></div>
-      <p class="caption">Fraction of each zone's mites moving in each recording, on a 0–100% scale; the number is how many moved in the last recording. Select a zone to open it.</p>`)}
+      <p class="caption">Fraction of each zone's mites moving in each recording, on a 0–100% scale; the number is how many moved in the last recording.
+        Zones without mites are left out. Select a zone to open it.</p>`)}
 
     ${section("Group summary", `<div class="table-wrap"><table id="group-table"></table></div>
       <p class="caption"><b>Moving</b> is the share of all mite-recordings in which the mite moved.</p>`)}
+
+    <div class="block">${figure("chart-group-scores", 3, "Motion scores by group",
+      `Every mite in every recording at its motion score, one row per group, pooling every zone with that label: ${movingBadge(true)} at or above the threshold (dashed line),
+      ${movingBadge(false)} below it. The box spans the middle half of the zone's scores with a line at the median; the whiskers reach the
+      furthest scores within 1.5 box lengths. The box and whiskers are over all the group's mite-recordings. Points of the recording shown are drawn larger. Select a point to open that mite in that recording.`)}</div>
 
     ${section("Files", `<ul class="files">
         <li><a href="${fileUrl(results.excel)}" download>${esc(results.excel)}</a> <span class="muted">measurements, group summary and movement over time</span></li>
@@ -596,9 +766,12 @@ function showOverview() {
           .map((name) => `<li><a href="${fileUrl(name)}" target="_blank" rel="noopener">${esc(name)}</a></li>`).join("")}
       </ul>`)}`;
   wireRunAgain(body);
+  wireRecordingBar(body);
 
   Charts.line($("chart-group-moving"), {
     x: times,
+    selected: shown,
+    onXClick: showRecording,
     yLabel: "Mites moving (%)",
     yMin: 0, yMax: 100,
     yFormat: (v) => `${Math.round(v)}`,
@@ -612,18 +785,104 @@ function showOverview() {
   drawResultPlate(groups);
   drawZoneCards(groups);
   drawGroupTable(groups);
+  drawGroupScores(groups);
+}
+
+// Quartiles and Tukey whiskers of a list of numbers.
+function boxStats(values) {
+  const sorted = [...values].sort((a, b) => a - b);
+  const at = (q) => {
+    const i = (sorted.length - 1) * q;
+    const lo = Math.floor(i);
+    return sorted[lo] + (sorted[Math.min(lo + 1, sorted.length - 1)] - sorted[lo]) * (i - lo);
+  };
+  const [q1, median, q3] = [at(0.25), at(0.5), at(0.75)];
+  const reach = 1.5 * (q3 - q1);
+  return {
+    q1, median, q3,
+    lo: sorted.find((v) => v >= q1 - reach),
+    hi: [...sorted].reverse().find((v) => v <= q3 + reach),
+  };
+}
+
+// Like the calibration's "Scores by your label": each mite-recording at its
+// score, one row per group (every zone with the same label), against the
+// threshold, with a box plot per group.
+function drawGroupScores(groups) {
+  const byGroup = new Map();
+  zonesWithMites().forEach((zone) => {
+    const group = zone.label || "unlabeled";
+    if (!byGroup.has(group)) byGroup.set(group, []);
+    byGroup.get(group).push(zone);
+  });
+  // Named groups alphabetically, "unlabeled" last; the first on top.
+  const names = [...byGroup.keys()].sort((a, b) => (a === "unlabeled") - (b === "unlabeled") || a.localeCompare(b));
+  const row = (index) => names.length - 1 - index;
+  const jitter = (key) => {
+    let hash = 7;
+    for (const char of key) hash = (hash * 31 + char.charCodeAt(0)) % 1009;
+    return (hash / 1009 - 0.5) * 0.5;
+  };
+  const points = [];
+  const boxes = [];
+  const categories = [];
+  names.forEach((group, index) => {
+    const zones = byGroup.get(group);
+    const mites = zones.flatMap((zone) => mitesIn(zone.id));
+    boxes.push({ y: row(index), color: groupColor(group, groups), ...boxStats(mites.flatMap((m) => m.scores)) });
+    categories.push({ value: row(index), label: `${group} (${mites.length})` });
+    mites.forEach((mite) => mite.scores.forEach((value, recording) => {
+      const moving = mite.moving[recording];
+      points.push({
+        x: value,
+        y: row(index) + jitter(`${mite.id}/${recording}`),
+        color: token(moving ? "--moving" : "--still"),
+        shape: moving ? "circle" : "cross",
+        r: recording === shown ? 4.5 : 2.75,
+        tip: `<div class="tip-title">Mite ${esc(mite.id)} · zone ${mite.zone_id} · ${minutes(results.times[recording])}</div>
+          <div class="tip-note">${esc(group)} · zones ${zones.map((z) => z.id).join(", ")}</div>
+          <div>${movingBadge(moving)} · score ${score(value)}</div>${movementGlyphs(mite)}
+          <div class="tip-hint">Click to open this mite in this recording</div>`,
+        onClick: () => { shown = recording; go(`#/mite/${encodeURIComponent(mite.id)}`); },
+      });
+    }));
+  });
+  Charts.scatter($("chart-group-scores"), {
+    height: Math.max(180, names.length * 44 + 60),
+    padLeft: 150,
+    points,
+    boxes,
+    refX: [{ value: results.threshold, label: `threshold ${score(results.threshold)}` }],
+    yCategories: categories,
+    yMin: -0.6, yMax: names.length - 0.4,
+    xMin: 0,
+    xLabel: "Motion score",
+    legend: [
+      { name: "moving", color: token("--moving"), shape: "circle" },
+      { name: "still", color: token("--still"), shape: "cross" },
+    ],
+  });
 }
 
 function drawResultPlate(groups) {
   const plate = $("result-plate");
   const place = plateOverlay(plate, fileUrl(results.preview), results.image);
 
-  results.zones.forEach((zone) => {
+  // A zone without mites is only a faint outline: nothing to open or read there.
+  results.zones.filter((zone) => !zone.n_mites).forEach((zone) => {
+    const box = document.createElement("div");
+    box.className = "zone no-mites";
+    box.title = `Zone ${zone.id}: no mites detected`;
+    Object.assign(box.style, place(zone.x1, zone.y1, zone.x2, zone.y2));
+    plate.appendChild(box);
+  });
+
+  zonesWithMites().forEach((zone) => {
     const color = groupColor(zone.label || "unlabeled", groups);
     const link = document.createElement("a");
     link.className = "zone result";
     link.href = `#/zone/${zone.id}`;
-    link.setAttribute("aria-label", `Zone ${zone.id}, ${zone.label || "unlabeled"}, ${zone.n_mites ? `${zone.n_moving_last} of ${zone.n_mites} mites moving in the last recording` : "no mites"}`);
+    link.setAttribute("aria-label", `Zone ${zone.id}, ${zone.label || "unlabeled"}, ${zone.n_mites ? `${nMovingShown(zone)} of ${zone.n_mites} mites moving at ${shownTime()}` : "no mites"}`);
     Object.assign(link.style, place(zone.x1, zone.y1, zone.x2, zone.y2));
     link.style.setProperty("--zone-color", color);
     link.innerHTML = `<span class="zone-num">${zone.id}</span>`;
@@ -636,29 +895,33 @@ function drawResultPlate(groups) {
     text.tabIndex = -1;
     Object.assign(text.style, place(rect.x1, rect.y1, rect.x2, rect.y2));
     text.style.setProperty("--zone-color", color);
-    const count = zone.n_mites ? `${zone.n_moving_last}/${zone.n_mites} moving in the last recording` : "no mites";
+    const count = zone.n_mites ? `${nMovingShown(zone)}/${zone.n_mites} moving at ${shownTime()}` : "no mites";
     text.title = `Zone ${zone.id} · ${zone.label || "unlabeled"} · ${count}`;
     text.innerHTML = `<span class="text-tag">${esc(zone.label || "unlabeled")}
-      <small>${zone.n_mites ? `${zone.n_moving_last}/${zone.n_mites}` : "–"}</small></span>`;
+      <small>${zone.n_mites ? `${nMovingShown(zone)}/${zone.n_mites}` : "–"}</small></span>`;
 
     linkHover([link, text]);
     plate.append(link, text);
   });
 
-  // A dot per mite: moving or still in the last recording.
+  // A dot per mite: moving or still in the recording shown.
   results.mites.forEach((mite) => {
     const dot = document.createElement("span");
-    dot.className = `mite-dot ${movingLast(mite) ? "moving" : "still"}`;
+    dot.className = `mite-dot ${movingShown(mite) ? "moving" : "still"}`;
     dot.style.left = percent(mite.x, results.image.width);
     dot.style.top = percent(mite.y, results.image.height);
     plate.appendChild(dot);
   });
+
+  // The whole plate, scaled down; the zones and dots sit on it in percent.
+  const img = plate.querySelector("img");
+  playResultClip(`/api/session/${sessionId}/clip/${shown}`, plate, plate.nextElementSibling, () => (src) => { img.src = src; });
 }
 
 // Small multiples: one framed mini plot of the fraction moving per zone.
 function drawZoneCards(groups) {
   const container = $("zone-cards");
-  results.zones.forEach((zone) => {
+  zonesWithMites().forEach((zone) => {
     const color = groupColor(zone.label || "unlabeled", groups);
     const card = document.createElement("a");
     card.className = "zone-card";
@@ -671,8 +934,7 @@ function drawZoneCards(groups) {
       <div class="zone-card-group">${groupTag(zone.label || "unlabeled", color)}</div>`;
     const plot = document.createElement("div");
     plot.className = "zone-card-plot";
-    if (zone.moving) Charts.spark(plot, { values: zone.moving, color, step: false });
-    else plot.innerHTML = `<span class="muted">no mites detected</span>`;
+    Charts.spark(plot, { values: zone.moving, color, step: false });
     card.appendChild(plot);
     container.appendChild(card);
   });
@@ -708,15 +970,17 @@ function cropSvg(x, y, w, h, src = fileUrl(results.preview), size = results.imag
   return svg;
 }
 
+// A ring around a mite, coloured by its movement in the recording shown. The
+// whole disc inside the ring is its hover and click target; the label is not.
 function miteMarker(svg, mite, radius, { withLabel = true, onClick = null } = {}) {
   const ns = "http://www.w3.org/2000/svg";
   const g = document.createElementNS(ns, "g");
-  g.setAttribute("class", `mite-marker ${movingLast(mite) ? "moving" : "still"}`);
+  g.setAttribute("class", `mite-marker ${movingShown(mite) ? "moving" : "still"}`);
+  const hit = document.createElementNS(ns, "circle");
+  Object.entries({ cx: mite.x, cy: mite.y, r: radius + 3, class: "hit" }).forEach(([k, v]) => hit.setAttribute(k, v));
   const circle = document.createElementNS(ns, "circle");
-  circle.setAttribute("cx", mite.x);
-  circle.setAttribute("cy", mite.y);
-  circle.setAttribute("r", radius);
-  g.appendChild(circle);
+  Object.entries({ cx: mite.x, cy: mite.y, r: radius, class: "ring" }).forEach(([k, v]) => circle.setAttribute(k, v));
+  g.append(hit, circle);
   if (withLabel) {
     const text = document.createElementNS(ns, "text");
     text.setAttribute("x", mite.x + radius + 4);
@@ -729,8 +993,8 @@ function miteMarker(svg, mite, radius, { withLabel = true, onClick = null } = {}
     g.style.cursor = "pointer";
     g.addEventListener("click", onClick);
     g.addEventListener("mousemove", (event) => Charts.showTooltip(event,
-      `<div class="tip-title">Mite ${esc(mite.id)}</div>${movingBadge(movingLast(mite))} in the last recording
-       <div class="tip-note">moving in ${nMoving(mite)} of ${results.times.length} recordings</div><div class="tip-hint">Click to open</div>`));
+      `<div class="tip-title">Mite ${esc(mite.id)}</div>${movingBadge(movingShown(mite))} at ${shownTime()}
+       ${movementGlyphs(mite)}<div class="tip-hint">Click to open</div>`));
     g.addEventListener("mouseleave", Charts.hideTooltip);
   }
   svg.appendChild(g);
@@ -758,7 +1022,8 @@ function showZone(zoneId) {
   const movingObservations = mites.reduce((sum, mite) => sum + nMoving(mite), 0);
   const neverMoved = mites.filter((mite) => nMoving(mite) === 0).length;
   const meanScore = mites.length ? mites.flatMap((m) => m.scores).reduce((a, b) => a + b, 0) / (mites.length * times.length) : null;
-  const zoneIndex = results.zones.indexOf(zone);
+  // Step through the zones with mites; an empty zone, opened from the plate map, among all.
+  const siblings = zone.n_mites ? zonesWithMites() : results.zones;
   const body = $("results-body");
 
   body.innerHTML = `
@@ -768,7 +1033,7 @@ function showZone(zoneId) {
         <h1>Zone ${zone.id}</h1>
         <p class="meta">${groupTag(group, color)}</p>
       </div>
-      ${pager(results.zones, zoneIndex, (z) => `#/zone/${z.id}`, (z) => `Zone ${z.id}`)}
+      ${pager(siblings, siblings.indexOf(zone), (z) => `#/zone/${z.id}`, (z) => `Zone ${z.id}`)}
     </header>
 
     <div class="stats">
@@ -779,19 +1044,21 @@ function showZone(zoneId) {
       ${stat("Mean motion score", score(meanScore), `threshold ${score(results.threshold)}`)}
     </div>
 
-    <div class="grid-2">
-      ${figure("zone-crop", 1, "Plate, first frame",
-        `Detected mites, ${movingBadge(true)} or ${movingBadge(false)} in the last recording. Select a mite to open it.`, "crop-wrap")}
-      ${mites.length ? figure("chart-zone-moving", 2, "Mites moving", "Fraction of this zone's mites moving in each recording, with the whole group for comparison where the group spans several zones.") : ""}
+    <div class="clip-block">
+      ${clipFigure("zone-crop", 1, `Zone ${zone.id} · recording at ${shownTime()}`,
+        `The recording, looped, with each detected mite ${movingBadge(true)} or ${movingBadge(false)} in it. Hover a mite for every recording, select it to open it.`, "crop-wrap truth-crop")}
     </div>
+
+    ${mites.length ? `<div class="block">${figure("chart-zone-moving", 2, "Mites moving", "Fraction of this zone's mites moving in each recording, with the whole group for comparison where the group spans several zones. Click a time to show that recording.")}</div>` : ""}
 
     ${mites.length ? `
     <div class="grid-2">
       ${figure("chart-zone-scores", 3, "Motion score per mite",
-        "Thin lines are single mites; the black line is the mean. The dashed line is the threshold. Hover to identify a mite, select to open it.")}
+        "Thin lines are single mites; the black line is the mean. The dashed line is the threshold. Hover to identify a mite, select to open it; click elsewhere to show that recording.")}
       ${section("Mites", `<div class="table-wrap"><table class="clickable" id="mite-table"></table></div>`)}
     </div>` : `<p class="muted">No mites were detected in this zone.</p>`}`;
   wireRunAgain(body);
+  wireRecordingBar(body);
 
   // Crop with some margin, then mark each mite.
   const margin = 20;
@@ -804,12 +1071,16 @@ function showZone(zoneId) {
   const radius = Math.max(10, (zone.x2 - zone.x1) / 28);
   mites.forEach((mite) => miteMarker(crop, mite, radius, { onClick: () => go(`#/mite/${encodeURIComponent(mite.id)}`) }));
   $("zone-crop").appendChild(crop);
+  playResultClip(`/api/session/${sessionId}/clip/${shown}/${zone.id}`, $("zone-crop"), $("zone-crop").nextElementSibling,
+    (clip) => clipOnSvg(crop, clip));
 
   if (!mites.length) return;
 
   const groupCurve = results.groups.find((g) => g.group === group);
   Charts.line($("chart-zone-moving"), {
     x: times,
+    selected: shown,
+    onXClick: showRecording,
     yLabel: "Mites moving (%)",
     yMin: 0, yMax: 100,
     yFormat: (v) => `${Math.round(v)}`,
@@ -827,6 +1098,8 @@ function showZone(zoneId) {
 
   Charts.line($("chart-zone-scores"), {
     x: times,
+    selected: shown,
+    onXClick: showRecording,
     yLabel: "Motion score",
     noDirectLabels: true,
     threshold: { value: results.threshold, label: "threshold" },
@@ -847,11 +1120,11 @@ function showZone(zoneId) {
 
   const table = $("mite-table");
   table.innerHTML = `
-    <thead><tr><th>Mite</th><th>Last recording</th><th class="num">Last movement</th><th class="num">Moving</th><th class="num">Mean</th><th class="num">Max</th></tr></thead>
+    <thead><tr><th>Mite</th><th>At ${shownTime()}</th><th class="num">Last movement</th><th class="num">Moving</th><th class="num">Mean</th><th class="num">Max</th></tr></thead>
     <tbody>${mites.map((mite) => `
       <tr data-href="#/mite/${encodeURIComponent(mite.id)}" tabindex="0">
         <td><a href="#/mite/${encodeURIComponent(mite.id)}">${esc(mite.id)}</a></td>
-        <td>${movingBadge(movingLast(mite))}</td>
+        <td>${movingBadge(movingShown(mite))}</td>
         <td class="num">${lastMovementText(mite)}</td>
         <td class="num">${nMoving(mite)}/${times.length}</td>
         <td class="num">${score(mite.scores.reduce((a, b) => a + b, 0) / mite.scores.length)}</td>
@@ -892,27 +1165,40 @@ function showMite(miteId) {
     </div>
 
     <div class="grid-mite">
-      ${figure("mite-crop", 1, "Close-up", "First frame, 140 × 140 px around the mite.", "crop-wrap square")}
+      ${clipFigure("mite-crop", 1, "Close-up",
+        `The recording at ${shownTime()}, looped, 140 × 140 px around the mite: ${movingBadge(movingShown(mite))} in it.`, "crop-wrap square")}
       ${figure("chart-mite", 2, "Motion score over time",
-        `${movingBadge(true)} at or above the threshold, ${movingBadge(false)} below it. ${movingNote}`)}
+        `${movingBadge(true)} at or above the threshold, ${movingBadge(false)} below it. ${movingNote} Click a time to show that recording.`)}
     </div>
 
-    ${section("Recordings", `<div class="table-wrap"><table>
+    ${section("Recordings", `<div class="table-wrap"><table class="clickable" id="recording-table">
         <thead><tr><th class="num">Time</th><th class="num">Motion score</th><th>Movement</th></tr></thead>
-        <tbody>${times.map((t, i) => `<tr>
+        <tbody>${times.map((t, i) => `<tr data-recording-row="${i}" tabindex="0" class="${i === shown ? "current" : ""}"
+          title="Show this recording above">
           <td class="num">${minutes(t)}</td>
           <td class="num">${score(mite.scores[i])}</td>
           <td>${movingBadge(mite.moving[i])}</td></tr>`).join("")}</tbody>
       </table></div>`)}`;
   wireRunAgain(body);
+  wireRecordingBar(body);
+  body.querySelectorAll("[data-recording-row]").forEach((row) => {
+    const index = Number(row.dataset.recordingRow);
+    row.addEventListener("click", () => showRecording(index));
+    row.addEventListener("keydown", (event) => { if (event.key === "Enter") showRecording(index); });
+  });
 
   const size = 140;
   const crop = cropSvg(mite.x - size / 2, mite.y - size / 2, size, size);
   miteMarker(crop, mite, 22, { withLabel: false });
   $("mite-crop").appendChild(crop);
+  // The zone's clip; the crop's view box shows only the part around the mite.
+  playResultClip(`/api/session/${sessionId}/clip/${shown}/${zone.id}`, $("mite-crop"), $("mite-crop").nextElementSibling,
+    (clip) => clipOnSvg(crop, clip));
 
   Charts.line($("chart-mite"), {
     x: times,
+    selected: shown,
+    onXClick: showRecording,
     yLabel: "Motion score",
     noDirectLabels: true,
     threshold: { value: results.threshold, label: "threshold" },

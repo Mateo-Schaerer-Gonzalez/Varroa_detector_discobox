@@ -20,7 +20,6 @@ const cal = {
   reportStale: false, // the ground truth changed after that evaluation
   zoneId: null,       // the zone shown on the ground-truth page
   recording: 0,       // the recording shown on the ground-truth page
-  playing: true,      // whether the recording's frames play in a loop
   shownThreshold: "best", // confusion matrix of the calibration tab: "best" or "current"
   stamp: 0,           // cache-buster for files that change between evaluations
   scores: null,       // the movement scores the server offers, and the one in config.yaml
@@ -60,7 +59,6 @@ function routeCalibration(sub, ...args) {
   if (step === "truth" && !cal.data) step = "open";
   if (step !== wanted) { location.replace(`#/cal/${step}`); return; }
 
-  stopClip();
   showView(`cal-${step}`);
   document.querySelectorAll("#steps-cal a[data-step]").forEach((link) => {
     link.classList.toggle("active", link.dataset.step === step);
@@ -298,68 +296,32 @@ function drawRecordingTabs() {
       ${current ? 'aria-current="page"' : ""} title="${recordingName(recording)}${done ? ", labelled" : ""}">
       ${done ? '<span aria-hidden="true">✓</span>' : ""}${minutes(time)}</a>`;
   }).join("");
-  $("play-btn").textContent = cal.playing ? "Pause" : "Play";
+  $("play-btn").textContent = player.playing ? "Pause" : "Play";
 }
 
-// --- the recording's frames, looped over the zone crop
-
-const clip = { timer: null, token: 0, frames: [], index: 0, image: null, interval: 100 };
-
-function stopClip() {
-  clearInterval(clip.timer);
-  clip.timer = null;
-  clip.token += 1;
-}
-
-function startClipTimer() {
-  clearInterval(clip.timer);
-  if (!cal.playing || clip.frames.length < 2) return;
-  clip.timer = setInterval(() => {
-    clip.index = (clip.index + 1) % clip.frames.length;
-    clip.image.setAttribute("href", clip.frames[clip.index]);
-  }, clip.interval);
-}
+// --- the recording's frames, looped over the zone crop (app.js's player)
 
 async function playClip(svg, zoneId, recording) {
-  stopClip();
-  const token = clip.token;
   const wrap = $("truth-crop");
   const status = $("clip-status");
   wrap.classList.add("loading");
   status.className = "hint";
   status.innerHTML = `<span class="spinner"></span> Loading ${recordingName(recording)}…`;
   try {
-    const response = await fetch(`/api/calibration/${cal.id}/clip/${recording}/${zoneId}`);
-    const data = await response.json();
-    if (!response.ok) throw new Error(data.detail || "Could not load the recording");
     // The frames never change, so they need no cache-buster.
-    const frames = data.frames.map((name) => `/api/session/${cal.id}/file/${name}`);
-    await Promise.all(frames.map((src) => new Promise((resolve) => {
-      const image = new Image();
-      image.onload = image.onerror = resolve;
-      image.src = src;
-    })));
-    if (token !== clip.token) return;  // the user moved on meanwhile
-
-    const image = svg.querySelector("image");
-    Object.entries({ x: data.x, y: data.y, width: data.width, height: data.height, href: frames[0] })
-      .forEach(([key, value]) => image.setAttribute(key, value));
-    Object.assign(clip, { frames, index: 0, image, interval: data.interval_ms });
+    const clip = await loadClip(`/api/calibration/${cal.id}/clip/${recording}/${zoneId}`, (name) => `/api/session/${cal.id}/file/${name}`);
+    if (!clip) return;  // the user moved on meanwhile
     wrap.classList.remove("loading");
-    status.textContent = `${frames.length} frames, played back in real time.`;
-    startClipTimer();
+    status.textContent = `${clip.frames.length} frames, played back in real time.`;
+    startPlayer(clip, clipOnSvg(svg, clip));
   } catch (error) {
-    if (token !== clip.token) return;
     status.className = "hint error";
     status.textContent = error.message;
   }
 }
 
 $("play-btn").addEventListener("click", () => {
-  cal.playing = !cal.playing;
-  $("play-btn").textContent = cal.playing ? "Pause" : "Play";
-  if (cal.playing) startClipTimer();
-  else clearInterval(clip.timer);
+  $("play-btn").textContent = togglePlaying() ? "Pause" : "Play";
 });
 
 // --- marking mites

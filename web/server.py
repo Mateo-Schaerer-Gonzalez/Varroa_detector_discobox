@@ -153,6 +153,17 @@ def run_analysis(session_id: str, request: LabelsRequest):
         raise HTTPException(status_code=400, detail=str(error))
 
 
+@app.get("/api/session/{session_id}/clip/{recording}")
+@app.get("/api/session/{session_id}/clip/{recording}/{zone_id}")
+def analysis_clip(session_id: str, recording: int, zone_id: Optional[int] = None):
+    """Frames of one recording, of one zone or the whole plate, cached on first request."""
+    session = get_session(session_id)
+    try:
+        return pipeline.analysis_clip(session["data_dir"], session["out_dir"], recording, zone_id)
+    except (FileNotFoundError, ValueError) as error:
+        raise HTTPException(status_code=400, detail=str(error))
+
+
 def new_calibration_session(open_it):
     """Run `open_it(out_dir)` in a fresh calibration session and remember it."""
     session_id = uuid.uuid4().hex[:8]
@@ -295,4 +306,14 @@ def get_file(session_id: str, name: str):
     return FileResponse(path)
 
 
-app.mount("/", StaticFiles(directory=STATIC_DIR, html=True), name="static")
+class FreshStaticFiles(StaticFiles):
+    """The page and its scripts, which the browser must check for a newer version
+    on every load: a cached app.js next to an updated server breaks the page."""
+
+    def file_response(self, *args, **kwargs):
+        response = super().file_response(*args, **kwargs)
+        response.headers["Cache-Control"] = "no-cache"
+        return response
+
+
+app.mount("/", FreshStaticFiles(directory=STATIC_DIR, html=True), name="static")
