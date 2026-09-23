@@ -110,7 +110,7 @@ def save_labels(data_dir, labels):
     return str(path)
 
 
-def open_session(data_dir, out_dir, coords_file=DEFAULT_COORDS_FILE):
+def open_session(data_dir, out_dir, coords_file=DEFAULT_COORDS_FILE, library_dir=CALIBRATION_LIBRARY):
     """Describe a recording session so its zones can be labelled.
 
     Decodes a single frame, writes it to `out_dir` as a JPEG, and returns the zone
@@ -139,7 +139,7 @@ def open_session(data_dir, out_dir, coords_file=DEFAULT_COORDS_FILE):
     Mite.reset_ids()
     zone_manager.assign_mites(Analyzer().detect(zone_manager.mask_image_to_valid_rois(frame)))
     # Rejected detections are listed too, marked, so the user can take a mark back.
-    rejected = set(map(id, _rejected_detections(zone_manager, load_ground_truth(data_dir))))
+    rejected = set(map(id, _rejected_detections(zone_manager, _folder_truth(data_dir, library_dir))))
     mites = [
         {
             "id": mite.text,
@@ -166,29 +166,37 @@ def open_session(data_dir, out_dir, coords_file=DEFAULT_COORDS_FILE):
     }
 
 
-def set_rejected(data_dir, x, y, rejected, tolerance=10.0, library_dir=CALIBRATION_LIBRARY):
+def set_rejected(data_dir, x, y, rejected, restore=None, tolerance=10.0, library_dir=CALIBRATION_LIBRARY):
     """Mark the detection at (x, y) as not a mite, or take that mark back.
 
     The mark goes into the session's ground truth, where an analysis run and a
     calibration both read it, and into the calibration library's dataset of this
     folder, if it has one. Marking replaces any movement labels a calibration
-    gave the detection; taking the mark back leaves it unlabelled.
+    gave the detection and returns them (None if it had none). Taking the mark
+    back puts back the labels passed as `restore`, so a detection marked by
+    mistake and unmarked keeps its labels; without them it is left unlabelled.
     """
     data_dir = Path(data_dir)
-    saved = load_ground_truth(data_dir) or _library_positions(data_dir, library_dir)
+    saved = _folder_truth(data_dir, library_dir)
     near = [entry for entry in saved if np.hypot(entry["x"] - x, entry["y"] - y) <= tolerance]
+    # a detection matches only the nearest saved entry
+    nearest = min(near, key=lambda entry: np.hypot(entry["x"] - x, entry["y"] - y), default=None)
 
+    replaced = None
     if rejected:
-        # One entry per detection: a position already in the ground truth is overwritten,
-        # since a detection matches only the nearest saved entry.
-        if near:
-            min(near, key=lambda entry: np.hypot(entry["x"] - x, entry["y"] - y))["truth"] = calibration.NOT_A_MITE
-        else:
+        # One entry per detection: a position already in the ground truth is overwritten.
+        if nearest is None:
             saved.append({"x": x, "y": y, "truth": calibration.NOT_A_MITE})
+        else:
+            if not calibration.is_rejected(nearest.get("truth")):
+                replaced = nearest.get("truth")
+            nearest["truth"] = calibration.NOT_A_MITE
     else:
         for entry in near:
             truth = entry.get("truth")
-            if isinstance(truth, list):
+            if entry is nearest and restore is not None and calibration.is_rejected(truth):
+                entry["truth"] = restore
+            elif isinstance(truth, list):
                 entry["truth"] = [None if state == calibration.NOT_A_MITE else state for state in truth]
             elif truth == calibration.NOT_A_MITE:
                 entry["truth"] = None
@@ -196,10 +204,10 @@ def set_rejected(data_dir, x, y, rejected, tolerance=10.0, library_dir=CALIBRATI
 
     (data_dir / GROUND_TRUTH_FILENAME).write_text(json.dumps(saved), encoding="utf-8")
     _update_library_truth(data_dir, saved, library_dir)
-    return rejected
+    return replaced
 
 
-def _detect_and_score(data_dir, coords_file, labels=None, reject=True, score=True):
+def _detect_and_score(data_dir, coords_file, labels=None, reject=True, score=True, library_dir=CALIBRATION_LIBRARY):
     """Decode every recording, find the mites and, with `score`, score their motion.
 
     The expensive part shared by an analysis run and a calibration. With `reject`,
@@ -222,7 +230,7 @@ def _detect_and_score(data_dir, coords_file, labels=None, reject=True, score=Tru
     mites = analyzer.detect(masked)
     valid_mites = zone_manager.assign_mites(mites)
     if reject:
-        rejected = _rejected_detections(zone_manager, load_ground_truth(data_dir))
+        rejected = _rejected_detections(zone_manager, _folder_truth(data_dir, library_dir))
         valid_mites = zone_manager.remove_mites(rejected)
     if score:
         analyzer.classify_motility(valid_mites, recording_bursts)
@@ -250,14 +258,14 @@ def _write_preview(frame, out_dir):
     cv2.imwrite(str(out_dir / PREVIEW_NAME), frame, [cv2.IMWRITE_JPEG_QUALITY, 85])
 
 
-def run_analysis(data_dir, out_dir, labels=None, coords_file=DEFAULT_COORDS_FILE):
+def run_analysis(data_dir, out_dir, labels=None, coords_file=DEFAULT_COORDS_FILE, library_dir=CALIBRATION_LIBRARY):
     """Run the whole pipeline and write its results to `out_dir`.
 
     `labels` maps zone id (as a string) to the group name the user typed, e.g.
     {"0": "venom 2x", "1": "control"}. Returns the output filenames, a summary, and
     the per-zone and per-mite results the UI browses.
     """
-    run = _detect_and_score(data_dir, coords_file, labels)
+    run = _detect_and_score(data_dir, coords_file, labels, library_dir=library_dir)
     burst_minutes = run.burst_minutes
     mite_data = run.zone_manager.get_mite_scores(burst_minutes)
 
@@ -300,6 +308,14 @@ def load_ground_truth(data_dir):
     if not path.is_file():
         return []
     return json.loads(path.read_text(encoding="utf-8"))
+
+
+def _folder_truth(data_dir, library_dir):
+    """The ground truth saved for a recording folder, by position, as every window
+    reads it: the file next to the recordings (the library's copy of them once
+    the folder is gone), else the library's dataset of the folder, which covers
+    a folder copied somewhere without that file."""
+    return load_ground_truth(_recordings_dir(data_dir, library_dir)) or _library_positions(data_dir, library_dir)
 
 
 def _rejected_detections(zone_manager, saved):
@@ -386,10 +402,7 @@ def open_calibration(data_dir, out_dir, coords_file=DEFAULT_COORDS_FILE, library
     }
     (Path(out_dir) / CALIBRATION_SESSION_NAME).write_text(json.dumps(stored), encoding="utf-8")
 
-    # The file next to the recordings comes first; the library's copy covers a
-    # folder that was copied somewhere without it.
-    saved = load_ground_truth(data_dir) or _library_positions(data_dir, library_dir)
-    return _calibration_view(stored, calibration.match_ground_truth(mites, saved, run.n_recordings), library_dir)
+    return _calibration_view(stored, _saved_truth(stored, library_dir), library_dir)
 
 
 def calibration_clip(out_dir, recording, zone_id, library_dir=CALIBRATION_LIBRARY):
@@ -497,12 +510,17 @@ def save_ground_truth(out_dir, truth, library_dir=CALIBRATION_LIBRARY):
 
 
 def update_ground_truth(out_dir, changes, library_dir=CALIBRATION_LIBRARY):
-    """Save the statuses of the mites in `changes` and keep what is saved for the
-    others, which another window (marking a detection "not a mite" before a run,
-    say) may have changed since this session opened. Returns the whole ground
-    truth by mite id, as save_ground_truth() takes it."""
+    """Save the changes made on screen on top of what is saved, which another
+    window (marking a detection "not a mite" before a run, say) may have changed
+    since this session opened. `changes` maps mite id to the statuses that
+    changed, by recording index, or to a list of every recording's (see
+    calibration.apply_changes()); only those recordings change, so a page that
+    has not caught up with a change made elsewhere cannot undo it. Returns the
+    whole ground truth by mite id, as save_ground_truth() takes it."""
     stored = _read_calibration_session(out_dir)
-    truth = {**_saved_truth(stored, library_dir), **changes}
+    truth = _saved_truth(stored, library_dir)
+    for mite_id, changed in changes.items():
+        truth[mite_id] = calibration.apply_changes(truth.get(mite_id), changed, len(stored["times"]))
     return _write_ground_truth(stored, truth, out_dir, library_dir)
 
 
@@ -512,10 +530,8 @@ def load_calibration_truth(out_dir, library_dir=CALIBRATION_LIBRARY):
 
 
 def _saved_truth(stored, library_dir):
-    # The file next to the recordings comes first, as in open_calibration().
-    saved = (load_ground_truth(_recordings_dir(stored["data_dir"], library_dir))
-             or _library_positions(stored["data_dir"], library_dir))
-    return calibration.match_ground_truth(stored["mites"], saved, len(stored["times"]))
+    """The saved ground truth of a calibration session's mites, by mite id."""
+    return calibration.match_ground_truth(stored["mites"], _folder_truth(stored["data_dir"], library_dir), len(stored["times"]))
 
 
 def _write_ground_truth(stored, truth, out_dir, library_dir, tolerance=10.0):

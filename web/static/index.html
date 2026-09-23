@@ -180,7 +180,8 @@
       <p class="caption">
         Watch the clip and mark, for every mite in every recording, whether it moves. Click a mite to cycle it through
         <b>moving</b>, <b>still</b>, <b>not a mite</b> and back to unlabelled; <kbd>Shift</kbd>-click goes backwards.
-        <b>Not a mite</b> applies to every recording and removes the detection from later analyses of this folder.
+        <b>Not a mite</b> applies to every recording and removes the detection from later analyses of this folder;
+        clicking on past a <b>not a mite</b> you just set brings back the mite's labels.
         <kbd>↑</kbd> <kbd>↓</kbd> change recording, <kbd>←</kbd> <kbd>→</kbd> change zone, <kbd>P</kbd> plays or pauses.
       </p>
     </div>
@@ -188,7 +189,7 @@
       <h2>Ground truth</h2>
       <p class="hint">
         The detector's own call is hidden until the report, so it cannot sway you.
-        Saved automatically, also to the saved ground truth you can pool later.
+        <b>Save changes</b> or showing the report saves your labels, also to the saved ground truth you can pool later.
       </p>
       <div class="progress truth-progress">
         <div class="progress-bar"><div id="truth-progress-bar"></div></div>
@@ -222,7 +223,7 @@
 <div id="tooltip" class="tooltip" hidden></div>
 
 <script src="charts.js?v=9"></script>
-<script src="app.js?v=10"></script>
-<script src="calibration.js?v=10"></script>
+<script src="app.js?v=11"></script>
+<script src="calibration.js?v=11"></script>
 </body>
 </html>

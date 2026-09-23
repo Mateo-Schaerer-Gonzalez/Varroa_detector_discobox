@@ -329,6 +329,27 @@ def test_a_save_keeps_what_another_window_changed(tmp_path, library):
     assert truth == {"2": ["not_a_mite", "not_a_mite"]}
 
 
+def test_a_save_keeps_other_recordings_of_the_same_mite(tmp_path, library):
+    """Only the recordings changed on screen are saved, so a page that has not
+    caught up with a change to another recording of the same mite keeps it."""
+    data_dir, out_dir = make_session(tmp_path, "a", 1, times=(0.0, 5.0, 10.0))
+    pipeline.save_ground_truth(out_dir, {"0": ["still", "still", "still"]}, library_dir=library)
+    pipeline.update_ground_truth(out_dir, {"0": {0: "moving"}}, library_dir=library)
+    truth = pipeline.update_ground_truth(out_dir, {"0": {2: "moving"}}, library_dir=library)
+    assert truth == {"0": ["moving", "still", "moving"]}
+    assert pipeline.load_calibration_truth(out_dir, library_dir=library) == truth
+
+
+def test_a_detection_marked_by_mistake_and_unmarked_keeps_its_labels(tmp_path, library):
+    data_dir, out_dir = make_session(tmp_path, "a", 2)
+    pipeline.save_ground_truth(out_dir, {"0": ["still", "moving"], "1": ["moving", "moving"]}, library_dir=library)
+    replaced = pipeline.set_rejected(data_dir, 10.0, 10.0, True, library_dir=library)  # mite "0"
+    pipeline.set_rejected(data_dir, 10.0, 10.0, False, restore=replaced, library_dir=library)
+
+    view = pipeline.open_saved_calibration(pipeline.dataset_id(data_dir), tmp_path / "reopened", library_dir=library)
+    assert view["truth"] == {"0": ["still", "moving"], "1": ["moving", "moving"]}
+
+
 def test_marking_a_detection_updates_the_saved_dataset(tmp_path, library):
     data_dir, out_dir = make_session(tmp_path, "a", 3)
     pipeline.save_ground_truth(out_dir, {"0": ["still", "moving"]}, library_dir=library)

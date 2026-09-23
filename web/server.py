@@ -12,7 +12,7 @@ import threading
 import time
 import uuid
 from contextlib import asynccontextmanager
-from typing import Optional
+from typing import Optional, Union
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, Request
@@ -95,6 +95,8 @@ class RejectRequest(BaseModel):
     x: float
     y: float
     rejected: bool
+    # taking a mark back: the labels marking replaced, as it returned them, to put back
+    restore: Union[list[Optional[str]], str, None] = None
 
 
 class UploadedFile(BaseModel):
@@ -106,15 +108,19 @@ class ManifestRequest(BaseModel):
     files: list[UploadedFile]
 
 
+# mite id -> the statuses changed on screen, by recording index ("moving", "still",
+# "not_a_mite" or null), or a list with every recording's status
+TruthChanges = dict[str, Union[dict[int, Optional[str]], list[Optional[str]]]]
+
+
 class TruthRequest(BaseModel):
-    # mite id -> one status per recording: "moving", "still", "not_a_mite" or null
-    truth: dict[str, list[Optional[str]]] = {}
+    truth: TruthChanges = {}
 
 
 class EvaluateRequest(BaseModel):
-    # statuses of mites changed on screen, saved first; the other mites, or all of
-    # them when this is left out, keep the saved ground truth
-    truth: Optional[dict[str, list[Optional[str]]]] = None
+    # statuses changed on screen, saved first; everything else, or everything when
+    # this is left out, keeps the saved ground truth
+    truth: Optional[TruthChanges] = None
     # ids of the saved datasets to pool; by default only this session's own
     datasets: Optional[list[str]] = None
     # the movement score to try; by default the one in config.yaml
@@ -204,10 +210,12 @@ def save_labels(session_id: str, request: LabelsRequest):
 
 @app.post("/api/session/{session_id}/reject")
 def reject_detection(session_id: str, request: RejectRequest):
-    """Mark a detection as not a mite, or take the mark back, before a run."""
+    """Mark a detection as not a mite, or take the mark back, before a run. Marking
+    returns the movement labels it replaced, for taking the mark back to restore."""
     session = get_session(session_id)
     with truth_lock:
-        return {"rejected": pipeline.set_rejected(session["data_dir"], request.x, request.y, request.rejected)}
+        replaced = pipeline.set_rejected(session["data_dir"], request.x, request.y, request.rejected, request.restore)
+    return {"rejected": request.rejected, "replaced": replaced}
 
 
 @app.post("/api/session/{session_id}/run")
@@ -333,8 +341,8 @@ def get_ground_truth(session_id: str):
 
 @app.post("/api/calibration/{session_id}/truth")
 def save_ground_truth(session_id: str, request: TruthRequest):
-    """Persist the statuses of the mites that changed, next to the recordings and in
-    the library, so they survive a restart. The other mites keep what is saved."""
+    """Persist the statuses that changed, next to the recordings and in the library,
+    so they survive a restart. Everything else keeps what is saved."""
     session = get_session(session_id)
     try:
         with truth_lock:

@@ -55,11 +55,12 @@ mites move in each recording and compare that with the detector:
    then drop the folder. Every frame is decoded and each mite is scored.
 2. **Ground truth**: zone by zone and recording by recording, the zone's frames
    of that recording play in a loop; click each mite to cycle it through
-   *moving*, *still*, *not a mite* (a false detection) and back to unlabelled.
+   *moving*, *still*, *not a mite* (a false detection) and back to unlabelled;
+   clicking on past a *not a mite* you just set brings back the mite's labels.
    <kbd>↑</kbd> <kbd>↓</kbd> change recording, <kbd>←</kbd> <kbd>→</kbd> change
-   zone. The detector's own call is hidden so it cannot bias you. The labels are
-   saved by position in `ground_truth.json` next to the recordings, so they
-   survive a change in detector settings.
+   zone. The detector's own call is hidden so it cannot bias you. *Save changes*,
+   or showing the report, saves the labels by position in `ground_truth.json`
+   next to the recordings, so they survive a change in detector settings.
 3. **Report**: every labelled (mite, recording) is compared with the
    detector's call there, moving when that recording's score reaches the
    threshold. *Calibration* suggests the threshold that maximises sensitivity +

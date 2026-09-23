@@ -102,8 +102,7 @@ function showDataset(data) {
     data, truth: { ...data.truth }, datasetId: data.dataset_id,
     zoneId: null, recording: 0, stamp: Date.now(),
   });
-  unsavedTruth = {};  // changes to the dataset shown before, saved or dropped by now
-  drawSaveButton();
+  forgetTruthChanges();
   $("folder-name").textContent = folderOf(data.data_dir);
   $("folder-name").title = data.data_dir;
 }
@@ -257,7 +256,7 @@ $("pool-btn").addEventListener("click", () => openWithTruthSaved($("pool-status"
       id: session_id, data: null, truth: {}, datasetId: null, selected: ids,
       report: null, reportStale: false, stamp: Date.now(),
     });
-    unsavedTruth = {};
+    forgetTruthChanges();
     cal.report = await requestReport();
     $("folder-name").textContent = `${ids.length} saved dataset${ids.length === 1 ? "" : "s"}`;
     $("folder-name").title = "";
@@ -404,37 +403,59 @@ function truthMarker(mite, radius) {
 //
 // Movement is judged recording by recording -- a mite still in one recording may
 // move in the next -- so only this recording changes. "Not a mite" is about the
-// detection, not about a recording, so it applies to every recording, and
-// leaving it clears them all.
+// detection, not about a recording, so it applies to every recording. Leaving it
+// brings back the statuses the mite had before this page marked it, so clicking
+// through "not a mite" on the way from still to moving loses nothing; a mite
+// marked in another window, or before the dataset was opened, is left unlabelled.
 function setTruth(mite, recording, state) {
   const n = nRecordings();
-  let states = statesOf(mite).slice();
+  const before = statesOf(mite);
+  const rejected = isRejected(mite);
+  let states;
   if (state === "not_a_mite") {
+    if (!rejected) labelsBeforeRejection[mite.id] = before;
     states = Array(n).fill("not_a_mite");
   } else {
-    if (isRejected(mite)) states = Array(n).fill(null);
+    states = (rejected ? labelsBeforeRejection[mite.id] || Array(n).fill(null) : before).slice();
+    delete labelsBeforeRejection[mite.id];
     states[recording] = state;
   }
   if (states.some(Boolean)) cal.truth[mite.id] = states;
   else delete cal.truth[mite.id];
   if (cal.report) cal.reportStale = true;
-  unsavedTruth[mite.id] = states;
+  // Only the recordings that changed are saved.
+  const changed = unsavedTruth[mite.id] || {};
+  states.forEach((s, r) => { if (s !== before[r]) changed[r] = s; });
+  if (Object.keys(changed).length) unsavedTruth[mite.id] = changed;
   drawSaveButton();
 }
 
 // --- saving: changes wait on screen until "Save changes", or showing a report
 //
 // Saving also brings the library's copy of the recordings up to date, which is
-// too slow to do on every click. Only the mites changed here are sent; the
-// server keeps what is saved for the others, which another window may have
-// changed meanwhile. Saves go one after another, so a slow one is never
-// overtaken by the next.
+// too slow to do on every click. Only the statuses changed here are sent, mite by
+// mite and recording by recording; the server applies them to what is saved,
+// which another window may have changed meanwhile, so a save never undoes a
+// change made elsewhere, even one this page has not caught up with. Saves go one
+// after another, so a slow one is never overtaken by the next.
 
-let unsavedTruth = {};  // mite id -> statuses changed on screen and not saved yet
+let unsavedTruth = {};  // mite id -> { recording: status } changed on screen and not saved yet
+let labelsBeforeRejection = {};  // mite id -> its statuses before it was marked "not a mite" here
 let truthSaving = Promise.resolve();
 let truthSavesUnderWay = 0;
+// Counts the saves started and the datasets shown: a reply about the saved ground
+// truth is out of date once another save has started or another dataset is shown.
+let truthEpoch = 0;
 
 const truthUnsaved = () => Object.keys(unsavedTruth).length > 0;
+
+// Another dataset replaces the one on screen, whose changes are saved or dropped by now.
+function forgetTruthChanges() {
+  unsavedTruth = {};
+  labelsBeforeRejection = {};
+  truthEpoch++;
+  drawSaveButton();
+}
 
 function drawSaveButton() {
   const button = $("save-truth-btn");
@@ -447,33 +468,32 @@ function drawSaveButton() {
 $("save-truth-btn").addEventListener("click", () => flushTruthSave().catch(() => {}));
 
 // Save what is waiting, now; resolves once it and every earlier save are done.
-// The session is taken when called, so a dataset opened next never gets them.
+// The dataset is taken when called, so a dataset opened next never gets them.
 function flushTruthSave() {
   const changes = unsavedTruth;
-  const sessionId = cal.id;
+  if (!truthUnsaved()) return truthSaving.catch(() => {});  // nothing new: wait for any save under way
+  const { id: sessionId, data } = cal;
+  const epoch = ++truthEpoch;
   unsavedTruth = {};
   truthSavesUnderWay++;
   drawSaveButton();
   truthSaving = truthSaving.catch(() => {}).then(async () => {
-    if (!Object.keys(changes).length) return;
     const status = $("evaluate-status");
+    let saved;
     try {
-      // keepalive: a save under way still lands when the window reloads or closes
+      const body = JSON.stringify({ truth: changes });
       const response = await fetch(`/api/calibration/${sessionId}/truth`, {
-        method: "POST", keepalive: true,
+        method: "POST",
+        // keepalive: a save under way still lands when the window reloads or
+        // closes; browsers refuse it for a body over 64 KB
+        keepalive: body.length < 60000,
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ truth: changes }),
+        body,
       });
-      const data = await response.json();
-      if (!response.ok) throw new Error(data.detail || "Request failed");
-      if (status.classList.contains("error") && status.dataset.saveError) {
-        status.className = "hint";
-        delete status.dataset.saveError;
-        if (cal.data && sessionId === cal.id) drawTruthCounts();
-      }
+      saved = await response.json();
+      if (!response.ok) throw new Error(saved.detail || "Request failed");
     } catch (error) {
-      // Kept for the next save, unless a newer change of the same mite came meanwhile.
-      if (sessionId === cal.id) unsavedTruth = { ...changes, ...unsavedTruth };
+      if (data === cal.data) keepUnsaved(changes);
       status.className = "hint error";
       status.dataset.saveError = "1";
       status.textContent = `Could not save the ground truth: ${error.message}. Click "Save changes" to try again.`;
@@ -482,13 +502,65 @@ function flushTruthSave() {
       truthSavesUnderWay--;
       drawSaveButton();
     }
+    if (status.classList.contains("error") && status.dataset.saveError) {
+      status.className = "hint";
+      delete status.dataset.saveError;
+      if (cal.data && data === cal.data) drawTruthCounts();
+    }
+    // What is saved now, with any change from another window, unless a later save will say.
+    if (epoch === truthEpoch && data === cal.data) showSavedTruth(saved.truth);
   });
   return truthSaving;
 }
 
-// Closing or reloading the window with unsaved changes asks first.
+// A failed save's changes wait for the next save: those still on screen, as a
+// status changed again since is saved with its own change.
+function keepUnsaved(changes) {
+  Object.entries(changes).forEach(([id, statuses]) => {
+    const shown = statesOf({ id });
+    Object.entries(statuses).forEach(([recording, state]) => {
+      const waiting = unsavedTruth[id] || {};
+      if (shown[recording] === state && !(recording in waiting)) unsavedTruth[id] = { ...waiting, [recording]: state };
+    });
+  });
+}
+
+// A mite's statuses after changes of some of its recordings, as the server
+// applies them (calibration.apply_changes).
+function applyChanges(states, changes, n) {
+  const changed = Object.entries(changes);
+  if (!changed.length) return states || Array(n).fill(null);
+  if (changed.some(([, state]) => state === "not_a_mite")) return Array(n).fill("not_a_mite");
+  const result = states && !states.includes("not_a_mite") ? states.slice() : Array(n).fill(null);
+  changed.forEach(([recording, state]) => { result[recording] = state; });
+  return result;
+}
+
+const sameTruth = (a, b) => Object.keys(a).length === Object.keys(b).length
+  && Object.keys(a).every((id) => JSON.stringify(a[id]) === JSON.stringify(b[id]));
+
+// Show the ground truth as saved, which another window may have changed, with the
+// changes not saved yet on top.
+function showSavedTruth(saved) {
+  const truth = { ...saved };
+  Object.entries(unsavedTruth).forEach(([id, changes]) => {
+    const states = applyChanges(truth[id], changes, nRecordings());
+    if (states.some(Boolean)) truth[id] = states;
+    else delete truth[id];
+  });
+  // Statuses to bring back belong to "not a mite" marks still on screen.
+  Object.keys(labelsBeforeRejection).forEach((id) => {
+    if (!(truth[id] || []).includes("not_a_mite")) delete labelsBeforeRejection[id];
+  });
+  if (sameTruth(truth, cal.truth)) return;
+  cal.truth = truth;
+  if (cal.report) cal.reportStale = true;
+  if (location.hash.startsWith("#/cal/truth")) drawTruthView(String(cal.zoneId), String(cal.recording));
+}
+
+// Closing or reloading the window with changes not saved yet, or still saving, asks first.
 window.addEventListener("beforeunload", (event) => {
-  if (!truthUnsaved()) return;
+  if (!truthUnsaved() && !truthSavesUnderWay) return;
   event.preventDefault();
   event.returnValue = "";
 });
@@ -497,19 +569,16 @@ window.addEventListener("beforeunload", (event) => {
 // window, e.g. marking a detection "not a mite" before a run, may have changed.
 async function reloadTruth() {
   if (!cal.data || !cal.id || document.visibilityState !== "visible") return;
-  const sessionId = cal.id;
-  if (truthUnsaved()) return;  // never overwrite changes not saved yet
+  // A reply is up to date only if no save lands while it is on its way.
+  while (truthSavesUnderWay) await truthSaving.catch(() => {});
+  const { id: sessionId, data } = cal;
+  if (!data) return;
+  const epoch = truthEpoch;
   try {
-    await truthSaving.catch(() => {});
     const response = await fetch(`/api/calibration/${sessionId}/truth`, { cache: "no-store" });
-    const data = await response.json();
-    if (!response.ok) throw new Error(data.detail || "Could not load the ground truth");
-    const same = (a, b) => Object.keys(a).length === Object.keys(b).length
-      && Object.keys(a).every((id) => JSON.stringify(a[id]) === JSON.stringify(b[id]));
-    if (sessionId !== cal.id || truthUnsaved() || same(data.truth, cal.truth)) return;
-    cal.truth = data.truth;
-    if (cal.report) cal.reportStale = true;
-    if (location.hash.startsWith("#/cal/truth")) drawTruthView(String(cal.zoneId), String(cal.recording));
+    const saved = await response.json();
+    if (!response.ok) throw new Error(saved.detail || "Could not load the ground truth");
+    if (epoch === truthEpoch && data === cal.data) showSavedTruth(saved.truth);
   } catch {
     // the page keeps what it shows; the next change saves as usual
   }
@@ -1051,6 +1120,7 @@ async function saveThreshold() {
     if (cal.data) cal.data.threshold = saved.threshold;
     // Evaluate again, so "in use" is what was just saved.
     cal.report = await requestReport();
+    cal.reportStale = false;
     cal.stamp = Date.now();
     drawReport();
     $("save-status").className = "hint";

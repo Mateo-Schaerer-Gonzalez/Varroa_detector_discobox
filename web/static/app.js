@@ -484,8 +484,10 @@ function startEdit(zoneId) {
 }
 
 // A false detection is marked "not a mite" in the session's ground truth, which
-// every later run leaves out; clicking it again takes the mark back.
-async function toggleMite(mite, refocus = false) {
+// every later run leaves out; clicking it again takes the mark back and puts back
+// the movement labels a calibration gave it, so a click by mistake loses nothing.
+// A mite's requests go one at a time, so each knows what the one before replaced.
+function toggleMite(mite, refocus = false) {
   if (finishEditing) finishEditing();
   const recount = () => {
     const zone = session.zones.find((z) => z.id === mite.zone_id);
@@ -494,17 +496,25 @@ async function toggleMite(mite, refocus = false) {
     showLoadedStatus();
     if (refocus) document.querySelector(`.label-mite[data-mite-id="${mite.id}"]`)?.focus();
   };
-  mite.rejected = !mite.rejected;
+  const rejected = !mite.rejected;
+  const id = sessionId;
+  mite.rejected = rejected;
   if (results) labelsChanged = true;
   recount();
-  try {
-    await post(`/api/session/${sessionId}/reject`, { x: mite.x, y: mite.y, rejected: mite.rejected });
-  } catch (error) {
-    mite.rejected = !mite.rejected;
-    recount();
-    $("run-status").className = "hint error";
-    $("run-status").textContent = `Could not save that detection: ${error.message}`;
-  }
+  mite.saving = (mite.saving || Promise.resolve()).then(async () => {
+    try {
+      const saved = await post(`/api/session/${id}/reject`, {
+        x: mite.x, y: mite.y, rejected, restore: rejected ? null : mite.replaced ?? null,
+      });
+      mite.replaced = saved.replaced;
+    } catch (error) {
+      if (id !== sessionId) return;  // another folder is open by now
+      mite.rejected = !rejected;
+      recount();
+      $("run-status").className = "hint error";
+      $("run-status").textContent = `Could not save that detection: ${error.message}`;
+    }
+  });
 }
 
 function setLabel(zone, value) {

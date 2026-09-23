@@ -18,6 +18,12 @@ TRUTH_STATES = (MOVING, STILL, NOT_A_MITE)
 _OLDER_STATES = {"alive": MOVING, "dead": STILL}
 
 
+def _status(state):
+    """A saved status by its current name; anything unknown is unlabelled."""
+    state = _OLDER_STATES.get(state, state)
+    return state if state in TRUTH_STATES else None
+
+
 def per_recording(truth, n_recordings):
     """A saved status as a list with one entry per recording.
 
@@ -28,9 +34,34 @@ def per_recording(truth, n_recordings):
         truth = [truth] * n_recordings
     if not isinstance(truth, list):
         return [None] * n_recordings
-    truth = [_OLDER_STATES.get(state, state) for state in truth[:n_recordings]]
-    truth = [state if state in TRUTH_STATES else None for state in truth]
+    truth = [_status(state) for state in truth[:n_recordings]]
     return truth + [None] * (n_recordings - len(truth))
+
+
+def apply_changes(truth, changes, n_recordings):
+    """A mite's statuses, one per recording, after the user changed some of them.
+
+    `changes` maps a recording's index to its new status, or is a list with every
+    recording's. The recordings not in it keep `truth`, so a change made to them
+    elsewhere is never undone. As on the ground-truth page, "not a mite" in any
+    recording marks every recording, and another status given to a mite marked
+    not a mite takes the mark back, leaving the recordings not in `changes`
+    unlabelled.
+    """
+    states = per_recording(truth, n_recordings)
+    if not isinstance(changes, dict):
+        changes = dict(enumerate(per_recording(changes, n_recordings)))
+    changes = {int(recording): _status(state) for recording, state in changes.items()
+               if 0 <= int(recording) < n_recordings}
+    if not changes:
+        return states
+    if NOT_A_MITE in changes.values():
+        return [NOT_A_MITE] * n_recordings
+    if is_rejected(states):
+        states = [None] * n_recordings
+    for recording, state in changes.items():
+        states[recording] = state
+    return states
 
 
 def is_rejected(states):

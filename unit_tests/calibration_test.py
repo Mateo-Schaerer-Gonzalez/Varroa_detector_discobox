@@ -4,6 +4,7 @@ import pytest
 
 from classes import app_config
 from classes.calibration import (
+    apply_changes,
     auc,
     best_threshold,
     confusion,
@@ -99,6 +100,33 @@ def test_rejection_is_any_not_a_mite_mark():
     assert is_rejected(["not_a_mite", "not_a_mite"])
     assert is_rejected("not_a_mite")
     assert not is_rejected(["moving", None])
+
+
+def test_changes_leave_the_other_recordings_as_saved():
+    # e.g. recording 3 labelled in another window since this page loaded
+    assert apply_changes(["still", "still", "moving"], {0: "moving"}, 3) == ["moving", "still", "moving"]
+    assert apply_changes(None, {"1": "still"}, 3) == [None, "still", None]
+    assert apply_changes(["still", "still"], {1: None}, 2) == ["still", None]
+
+
+def test_not_a_mite_in_one_recording_marks_every_recording():
+    assert apply_changes(["moving", "still"], {1: "not_a_mite"}, 2) == ["not_a_mite", "not_a_mite"]
+
+
+def test_a_status_for_a_mite_marked_not_a_mite_takes_the_mark_back():
+    marked = ["not_a_mite", "not_a_mite", "not_a_mite"]
+    assert apply_changes(marked, {1: "moving"}, 3) == [None, "moving", None]
+    # the page sends every recording's status when it brings the labels back
+    assert apply_changes(marked, {0: "still", 1: "moving", 2: "still"}, 3) == ["still", "moving", "still"]
+
+
+def test_a_list_of_changes_gives_every_recording():
+    assert apply_changes(["moving", "moving"], ["still"], 2) == ["still", None]
+
+
+def test_changes_outside_the_recordings_are_ignored():
+    assert apply_changes(["moving"], {5: "still", -1: "still"}, 1) == ["moving"]
+    assert apply_changes(["not_a_mite"], {}, 1) == ["not_a_mite"]
 
 
 def test_moving_over_time_compares_labels_and_detector_on_the_same_rows():
