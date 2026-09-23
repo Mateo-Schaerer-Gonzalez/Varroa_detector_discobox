@@ -707,9 +707,9 @@ def open_saved_calibration(dataset, out_dir, library_dir=CALIBRATION_LIBRARY):
     stored = {key: saved[key] for key in ("data_dir", "times", "recordings", "image", "zones", "mites")}
     (out_dir / CALIBRATION_SESSION_NAME).write_text(json.dumps(stored), encoding="utf-8")
 
-    n_recordings = len(stored["times"])
-    truth = {mite_id: calibration.per_recording(states, n_recordings) for mite_id, states in saved["truth"].items()}
-    return _calibration_view(stored, truth, library_dir)
+    # Read like every other load and save does, the file next to the recordings
+    # first: it can hold changes the dataset missed, e.g. marks made before a run.
+    return _calibration_view(stored, _saved_truth(stored, library_dir), library_dir)
 
 
 def dataset_preview(dataset, library_dir=CALIBRATION_LIBRARY):

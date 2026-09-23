@@ -348,3 +348,15 @@ def test_a_save_keeps_entries_of_detections_not_in_the_session(tmp_path, library
     (data_dir / pipeline.GROUND_TRUTH_FILENAME).write_text(json.dumps([far]), encoding="utf-8")
     pipeline.update_ground_truth(out_dir, {"0": ["still", None]}, library_dir=library)
     assert far in json.loads((data_dir / pipeline.GROUND_TRUTH_FILENAME).read_text(encoding="utf-8"))
+
+
+def test_reopening_a_dataset_reads_the_ground_truth_next_to_the_recordings(tmp_path, library):
+    # e.g. a mark written there before the saved dataset was kept in line with it
+    data_dir, out_dir = make_session(tmp_path, "a", 2)
+    pipeline.save_ground_truth(out_dir, {"0": ["still", "moving"]}, library_dir=library)
+    entries = json.loads((data_dir / pipeline.GROUND_TRUTH_FILENAME).read_text(encoding="utf-8"))
+    entries.append({"x": 20.0, "y": 10.0, "truth": ["moving", "moving"]})
+    (data_dir / pipeline.GROUND_TRUTH_FILENAME).write_text(json.dumps(entries), encoding="utf-8")
+
+    view = pipeline.open_saved_calibration(pipeline.dataset_id(data_dir), tmp_path / "reopened", library_dir=library)
+    assert view["truth"] == {"0": ["still", "moving"], "1": ["moving", "moving"]}

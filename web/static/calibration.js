@@ -86,8 +86,9 @@ function setCalMode(mode) {
 }
 
 // Start labelling what the server opened: a folder just detected, or a saved dataset.
+// Callers first save or drop the unsaved changes (openWithTruthSaved), so that
+// reopening the dataset just edited shows what was saved.
 function startCalibration(data) {
-  flushTruthSave().catch(() => {});  // to the session that was open
   Object.assign(cal, {
     id: data.session_id, report: null, reportStale: false, selected: [data.dataset_id],
   });
@@ -101,6 +102,8 @@ function showDataset(data) {
     data, truth: { ...data.truth }, datasetId: data.dataset_id,
     zoneId: null, recording: 0, stamp: Date.now(),
   });
+  unsavedTruth = {};  // changes to the dataset shown before, saved or dropped by now
+  drawSaveButton();
   $("folder-name").textContent = folderOf(data.data_dir);
   $("folder-name").title = data.data_dir;
 }
@@ -111,7 +114,7 @@ function showDataset(data) {
 async function goToMite(datasetId, zoneId, recording) {
   if (!(cal.data && cal.datasetId === datasetId)) {
     try {
-      await flushTruthSave();
+      await saveOrDropChanges();
       showDataset(await post(`/api/calibration/${cal.id}/dataset/${encodeURIComponent(datasetId)}`, {}));
     } catch (error) {
       alert(`Could not open that recording: ${error.message}`);
@@ -121,7 +124,29 @@ async function goToMite(datasetId, zoneId, recording) {
   go(truthHref(zoneId, recording));
 }
 
-async function openCalibration(dataDir) {
+// Before another dataset replaces the one on screen: ask whether to save its
+// unsaved changes, and wait for a save under way, so the server reads the ground
+// truth with them. Throws when the save fails; the changes then stay on screen.
+async function saveOrDropChanges() {
+  if (truthUnsaved() && confirm("Save your changes to the ground truth first?\n\nOK saves them, Cancel discards them.")) {
+    await flushTruthSave();
+  } else {
+    await truthSaving.catch(() => {});
+  }
+}
+
+async function openWithTruthSaved(status, open) {
+  try {
+    await saveOrDropChanges();
+  } catch (error) {
+    status.className = "hint error";
+    status.textContent = `Not opened: the last changes could not be saved (${error.message}).`;
+    return;
+  }
+  await open();
+}
+
+const openCalibration = (dataDir) => openWithTruthSaved($("cal-open-status"), async () => {
   const status = $("cal-open-status");
   status.className = "hint";
   status.innerHTML = `<span class="spinner"></span> Detecting and scoring the mites… every frame is decoded, this takes a while.`;
@@ -133,7 +158,7 @@ async function openCalibration(dataDir) {
     status.className = "hint error";
     status.textContent = error.message;
   }
-}
+});
 
 wireFolderPicker("cal-", openCalibration);
 
@@ -143,7 +168,7 @@ const savedDate = (iso) => new Date(iso).toLocaleString(undefined, { dateStyle: 
 const labelsText = (d) => `${d.n_moving} moving · ${d.n_still} still`;
 
 async function fetchDatasets() {
-  const response = await fetch("/api/calibration/datasets");
+  const response = await fetch("/api/calibration/datasets", { cache: "no-store" });
   const data = await response.json();
   if (!response.ok) throw new Error(data.detail || "Could not list the saved ground truth");
   cal.datasets = data.datasets;
@@ -188,7 +213,7 @@ async function refreshDatasets() {
   table.querySelectorAll("[data-delete]").forEach((button) => button.addEventListener("click", () => deleteDataset(button.dataset.delete)));
 }
 
-async function openDataset(id) {
+const openDataset = (id) => openWithTruthSaved($("pool-status"), async () => {
   const status = $("pool-status");
   status.className = "hint";
   status.innerHTML = `<span class="spinner"></span> Opening…`;
@@ -200,7 +225,7 @@ async function openDataset(id) {
     status.className = "hint error";
     status.textContent = error.message;
   }
-}
+});
 
 async function deleteDataset(id) {
   const dataset = cal.datasets.find((d) => d.id === id);
@@ -221,18 +246,18 @@ async function deleteDataset(id) {
 }
 
 // A report on saved datasets alone, with no recording opened for labelling.
-$("pool-btn").addEventListener("click", async () => {
+$("pool-btn").addEventListener("click", () => openWithTruthSaved($("pool-status"), async () => {
   const ids = [...document.querySelectorAll(".pool-check:checked")].map((c) => c.value);
   const status = $("pool-status");
   status.className = "hint";
   status.innerHTML = `<span class="spinner"></span> Comparing…`;
   try {
     const { session_id } = await post("/api/calibration/pooled", {});
-    flushTruthSave().catch(() => {});  // to the session that was open
     Object.assign(cal, {
       id: session_id, data: null, truth: {}, datasetId: null, selected: ids,
       report: null, reportStale: false, stamp: Date.now(),
     });
+    unsavedTruth = {};
     cal.report = await requestReport();
     $("folder-name").textContent = `${ids.length} saved dataset${ids.length === 1 ? "" : "s"}`;
     $("folder-name").title = "";
@@ -242,7 +267,7 @@ $("pool-btn").addEventListener("click", async () => {
     status.className = "hint error";
     status.textContent = error.message;
   }
-});
+}));
 
 // --- 2 · entering the ground truth ---------------------------------------------------
 
@@ -394,37 +419,53 @@ function setTruth(mite, recording, state) {
   else delete cal.truth[mite.id];
   if (cal.report) cal.reportStale = true;
   unsavedTruth[mite.id] = states;
-  scheduleTruthSave();
+  drawSaveButton();
 }
 
-// --- saving: every change is saved on its own, a moment after the last click
+// --- saving: changes wait on screen until "Save changes", or showing a report
 //
-// Only the mites changed here are sent; the server keeps what is saved for the
-// others, which another window may have changed meanwhile. Saves go one after
-// another, so a slow one is never overtaken by the next.
+// Saving also brings the library's copy of the recordings up to date, which is
+// too slow to do on every click. Only the mites changed here are sent; the
+// server keeps what is saved for the others, which another window may have
+// changed meanwhile. Saves go one after another, so a slow one is never
+// overtaken by the next.
 
 let unsavedTruth = {};  // mite id -> statuses changed on screen and not saved yet
-let truthSaveTimer = null;
 let truthSaving = Promise.resolve();
+let truthSavesUnderWay = 0;
 
-function scheduleTruthSave() {
-  clearTimeout(truthSaveTimer);
-  truthSaveTimer = setTimeout(() => flushTruthSave().catch(() => {}), 400);
+const truthUnsaved = () => Object.keys(unsavedTruth).length > 0;
+
+function drawSaveButton() {
+  const button = $("save-truth-btn");
+  const n = Object.keys(unsavedTruth).length;
+  button.disabled = !n || truthSavesUnderWay > 0;
+  button.textContent = truthSavesUnderWay ? "Saving…"
+    : n ? `Save changes (${n} mite${n === 1 ? "" : "s"})` : "All changes saved";
 }
+
+$("save-truth-btn").addEventListener("click", () => flushTruthSave().catch(() => {}));
 
 // Save what is waiting, now; resolves once it and every earlier save are done.
 // The session is taken when called, so a dataset opened next never gets them.
 function flushTruthSave() {
-  clearTimeout(truthSaveTimer);
-  truthSaveTimer = null;
   const changes = unsavedTruth;
   const sessionId = cal.id;
   unsavedTruth = {};
+  truthSavesUnderWay++;
+  drawSaveButton();
   truthSaving = truthSaving.catch(() => {}).then(async () => {
     if (!Object.keys(changes).length) return;
     const status = $("evaluate-status");
     try {
-      await post(`/api/calibration/${sessionId}/truth`, { truth: changes });
+      // keepalive: a save under way still lands when the window reloads or closes
+      const response = await fetch(`/api/calibration/${sessionId}/truth`, {
+        method: "POST", keepalive: true,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ truth: changes }),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.detail || "Request failed");
       if (status.classList.contains("error") && status.dataset.saveError) {
         status.className = "hint";
         delete status.dataset.saveError;
@@ -435,26 +476,21 @@ function flushTruthSave() {
       if (sessionId === cal.id) unsavedTruth = { ...changes, ...unsavedTruth };
       status.className = "hint error";
       status.dataset.saveError = "1";
-      status.textContent = `Could not save the ground truth, retrying with the next change: ${error.message}`;
+      status.textContent = `Could not save the ground truth: ${error.message}. Click "Save changes" to try again.`;
       throw error;
+    } finally {
+      truthSavesUnderWay--;
+      drawSaveButton();
     }
   });
   return truthSaving;
 }
 
-const truthUnsaved = () => truthSaveTimer != null || Object.keys(unsavedTruth).length > 0;
-
-// Closing or reloading the window sends what is still waiting.
-window.addEventListener("pagehide", () => {
-  if (!cal.id || !Object.keys(unsavedTruth).length) return;
-  clearTimeout(truthSaveTimer);
-  truthSaveTimer = null;
-  fetch(`/api/calibration/${cal.id}/truth`, {
-    method: "POST", keepalive: true,
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ truth: unsavedTruth }),
-  }).catch(() => {});
-  unsavedTruth = {};
+// Closing or reloading the window with unsaved changes asks first.
+window.addEventListener("beforeunload", (event) => {
+  if (!truthUnsaved()) return;
+  event.preventDefault();
+  event.returnValue = "";
 });
 
 // Coming back to this window: show the ground truth as saved, which another
@@ -462,9 +498,10 @@ window.addEventListener("pagehide", () => {
 async function reloadTruth() {
   if (!cal.data || !cal.id || document.visibilityState !== "visible") return;
   const sessionId = cal.id;
+  if (truthUnsaved()) return;  // never overwrite changes not saved yet
   try {
-    await flushTruthSave();
-    const response = await fetch(`/api/calibration/${sessionId}/truth`);
+    await truthSaving.catch(() => {});
+    const response = await fetch(`/api/calibration/${sessionId}/truth`, { cache: "no-store" });
     const data = await response.json();
     if (!response.ok) throw new Error(data.detail || "Could not load the ground truth");
     const same = (a, b) => Object.keys(a).length === Object.keys(b).length
@@ -538,6 +575,7 @@ function drawTruthCounts() {
   const done = all.reduce((sum, mite) => sum + cal.data.times.filter((_t, r) => cellDone(mite, r)).length, 0);
   $("truth-progress").innerHTML = `<b>${done}</b> of ${cells} mite-recordings labelled`;
   $("truth-progress-bar").style.width = `${(done / cells) * 100}%`;
+  drawSaveButton();
 
   const ready = all.some((mite) => !isRejected(mite) && statesOf(mite).some((s) => s === "moving" || s === "still"));
   $("evaluate-btn").disabled = !ready;
@@ -605,7 +643,7 @@ async function evaluate() {
 
 $("evaluate-btn").addEventListener("click", evaluate);
 
-// Save the changes still waiting and compare the saved ground truth, pooled over
+// Save the changes still unsaved and compare the saved ground truth, pooled over
 // the chosen datasets and scored with the chosen movement score. The saved
 // datasets and the movement scores on offer are refreshed alongside, for the
 // report's pickers.
