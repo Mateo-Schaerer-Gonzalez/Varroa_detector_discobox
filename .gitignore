@@ -4,3 +4,5 @@ outputs/
 .pytest_cache/
 uploads/
 calibration_data/
+server.log
+server.pid

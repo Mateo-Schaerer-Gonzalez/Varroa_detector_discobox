@@ -14,7 +14,9 @@ python -m uvicorn web.server:app --port 8000
 On Linux, run `bash install_linux.sh` once. It installs Miniforge if conda is
 missing, creates `discobox_env`, and adds a *Varroa discobox* icon to the
 desktop and the app menu. The icon runs `start.sh`, the Linux version of
-`start.bat`.
+`start.bat`: the server runs in the background (output in `server.log`) and
+only the browser opens. Right-click the icon and pick *Stop the app* to stop
+it, or run `./start.sh stop`.
 
 Then in the browser:
 

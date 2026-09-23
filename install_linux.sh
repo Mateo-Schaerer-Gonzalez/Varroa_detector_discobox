@@ -42,8 +42,13 @@ Comment=Detect varroa mites and score their movement
 Exec=bash "$escaped/start.sh"
 Path=$APP_DIR
 Icon=$APP_DIR/web/static/icon.svg
-Terminal=true
+Terminal=false
 Categories=Science;
+Actions=stop;
+
+[Desktop Action stop]
+Name=Stop the app
+Exec=bash "$escaped/start.sh" stop
 EOF
 )
 mkdir -p ~/.local/share/applications
