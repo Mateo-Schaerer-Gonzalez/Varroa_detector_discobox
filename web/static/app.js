@@ -618,11 +618,42 @@ const groupTag = (group, color) => `<span class="grp"><i style="background:${col
 // A numbered figure: the content goes in the element with `id`, the caption below.
 function figure(id, number, title, caption, extraClass = "") {
   return `<figure class="fig">
-      <div class="fig-title">${title}</div>
+      <div class="fig-title fig-title-row">${title}${downloadButtons(id, title)}</div>
       <div id="${id}" class="${extraClass}"></div>
       <figcaption><b>Fig. ${number}.</b> ${caption}</figcaption>
     </figure>`;
 }
+
+// SVG and PNG buttons for the chart in the element `id`; hidden by the stylesheet
+// when that element holds no chart (a table, a map).
+// `legendId`: the element holding the legend, when it is shared and not in the chart.
+function downloadButtons(id, title, legendId = "") {
+  const data = `data-download="${id}" data-title="${esc(title)}"${legendId ? ` data-legend="${legendId}"` : ""}`;
+  return `<span class="fig-download" role="group" aria-label="Download ${esc(title)}">
+      <button type="button" class="secondary small" ${data} data-format="svg" title="Download as SVG, for editing or print">SVG</button>
+      <button type="button" class="secondary small" ${data} data-format="png" title="Download as PNG">PNG</button>
+    </span>`;
+}
+
+const slug = (text) => String(text).toLowerCase().normalize("NFKD").replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+
+// Files are named after the recording folder, the page and the chart,
+// e.g. sample_data_zone-4_mites-moving.png.
+document.addEventListener("click", (event) => {
+  const button = event.target.closest("[data-download]");
+  if (!button) return;
+  const container = $(button.dataset.download);
+  const view = document.querySelector("main > .view:not([hidden])");
+  const page = view?.querySelector("h1")?.textContent || "";
+  const folder = $("folder-name").textContent;
+  const filename = [folder, page, button.dataset.title].map(slug).filter(Boolean).join("_");
+  Charts.download(container, {
+    title: [page, button.dataset.title].filter(Boolean).join(" · "),
+    filename,
+    format: button.dataset.format,
+    legend: button.dataset.legend ? $(button.dataset.legend) : null,
+  }).catch((error) => alert(`Could not save the chart: ${error.message}`));
+});
 
 // A figure playing the recording shown, with a tab per recording above it; the
 // clip goes in the element with `id`, its loading status below it.
@@ -762,9 +793,8 @@ function showOverview() {
 
     ${section("Files", `<ul class="files">
         <li><a href="${fileUrl(results.excel)}" download>${esc(results.excel)}</a> <span class="muted">measurements, group summary and movement over time</span></li>
-        ${[...results.figures, results.detections]
-          .map((name) => `<li><a href="${fileUrl(name)}" target="_blank" rel="noopener">${esc(name)}</a></li>`).join("")}
-      </ul>`)}`;
+      </ul>
+      <p class="caption">Every chart above can be downloaded as SVG or PNG from the buttons beside its title.</p>`)}`;
   wireRunAgain(body);
   wireRecordingBar(body);
 
@@ -846,6 +876,10 @@ function drawGroupScores(groups) {
         onClick: () => { shown = recording; go(`#/mite/${encodeURIComponent(mite.id)}`); },
       });
     }));
+  });
+  // On paper there is no recording on screen: every point the same size.
+  $("chart-group-scores").exportAdjust = (options) => ({
+    ...options, points: options.points.map((point) => ({ ...point, r: 3 })),
   });
   Charts.scatter($("chart-group-scores"), {
     height: Math.max(180, names.length * 44 + 60),

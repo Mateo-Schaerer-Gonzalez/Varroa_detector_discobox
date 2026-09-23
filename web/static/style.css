@@ -470,6 +470,11 @@ td.num.error { color: var(--critical); font-weight: 600; }
 .map-legend { margin-top: 8px; }
 
 .fig-title-row { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+.fig-download { display: inline-flex; gap: 4px; flex: none; opacity: 0.55; transition: opacity 0.15s; }
+.fig:hover .fig-download, .fig-download:focus-within { opacity: 1; }
+.fig-download button { padding: 1px 7px; font-size: 11px; font-weight: 500; }
+/* Only charts can be downloaded; a figure holding a table or a map has no buttons. */
+.fig:not(:has(.chart > svg)) .fig-download { display: none; }
 .fig-title-row select, .fig select {
   font: inherit; font-size: 12px; font-weight: 400; color: var(--ink);
   padding: 3px 6px; border: 1px solid var(--rule); border-radius: 2px; background: var(--paper);
@@ -478,7 +483,7 @@ td.num.error { color: var(--critical); font-weight: 600; }
 /* Mites moving per group: small multiples, one framed chart per group. */
 .group-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 12px 28px; }
 .group-card-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; font-size: 13px; font-weight: 500; }
-.group-card-head .hint { margin: 0; font-size: 12px; }
+.group-card-head .hint { margin: 0 0 0 auto; font-size: 12px; }
 
 .chart .point .hit { cursor: default; }
 .chart .point.hover .marker, .chart .point.hover .glyph { stroke-width: 3; }

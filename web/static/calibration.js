@@ -1043,12 +1043,15 @@ function drawGroupMoving(r, marks) {
     name: s.name, color: s.color, ...(s.dashed ? { dashed: true } : { shape: "line" }),
   })));
   const container = $("group-moving");
-  r.groups.forEach((group) => {
+  r.groups.forEach((group, index) => {
     const card = document.createElement("div");
-    card.className = "group-card";
+    card.className = "group-card fig";
+    const id = `group-moving-${index}`;
     card.innerHTML = `<div class="group-card-head">${groupTag(group.group, token(group.group === "unlabeled" ? "--series-other" : "--muted"))}
-      <span class="hint">${group.n_mites} mite${group.n_mites === 1 ? "" : "s"}</span></div>`;
+      <span class="hint">${group.n_mites} mite${group.n_mites === 1 ? "" : "s"}</span>
+      ${downloadButtons(id, `Mites moving · ${group.group} (${group.n_mites} mites)`, "group-legend")}</div>`;
     const plot = document.createElement("div");
+    plot.id = id;
     card.appendChild(plot);
     container.appendChild(card);
     Charts.line(plot, {
