@@ -78,6 +78,9 @@ app = FastAPI(title="Varroa discobox", lifespan=lifespan)
 
 # Everything a run produces lives in outputs/<session id>/.
 sessions: dict[str, dict] = {}
+# Every change to a ground truth reads what is saved and writes it back; one at a
+# time, so two windows saving at once cannot undo each other's change.
+truth_lock = threading.Lock()
 
 
 class OpenRequest(BaseModel):
@@ -109,8 +112,8 @@ class TruthRequest(BaseModel):
 
 
 class EvaluateRequest(BaseModel):
-    # the ground truth on screen, saved first; left out, the saved one is used as it is
-    # (an empty dict would clear it)
+    # statuses of mites changed on screen, saved first; the other mites, or all of
+    # them when this is left out, keep the saved ground truth
     truth: Optional[dict[str, list[Optional[str]]]] = None
     # ids of the saved datasets to pool; by default only this session's own
     datasets: Optional[list[str]] = None
@@ -203,7 +206,8 @@ def save_labels(session_id: str, request: LabelsRequest):
 def reject_detection(session_id: str, request: RejectRequest):
     """Mark a detection as not a mite, or take the mark back, before a run."""
     session = get_session(session_id)
-    return {"rejected": pipeline.set_rejected(session["data_dir"], request.x, request.y, request.rejected)}
+    with truth_lock:
+        return {"rejected": pipeline.set_rejected(session["data_dir"], request.x, request.y, request.rejected)}
 
 
 @app.post("/api/session/{session_id}/run")
@@ -317,12 +321,24 @@ def calibration_clip(session_id: str, recording: int, zone_id: int):
         raise HTTPException(status_code=400, detail=str(error))
 
 
-@app.post("/api/calibration/{session_id}/truth")
-def save_ground_truth(session_id: str, request: TruthRequest):
-    """Persist the ground truth next to the recordings so it survives a restart."""
+@app.get("/api/calibration/{session_id}/truth")
+def get_ground_truth(session_id: str):
+    """The ground truth saved for this session's mites, which another window may have changed."""
     session = get_session(session_id)
     try:
-        return {"saved": pipeline.save_ground_truth(session["out_dir"], request.truth)}
+        return {"truth": pipeline.load_calibration_truth(session["out_dir"])}
+    except (FileNotFoundError, ValueError) as error:
+        raise HTTPException(status_code=400, detail=str(error))
+
+
+@app.post("/api/calibration/{session_id}/truth")
+def save_ground_truth(session_id: str, request: TruthRequest):
+    """Persist the statuses of the mites that changed, next to the recordings and in
+    the library, so they survive a restart. The other mites keep what is saved."""
+    session = get_session(session_id)
+    try:
+        with truth_lock:
+            return {"truth": pipeline.update_ground_truth(session["out_dir"], request.truth)}
     except (FileNotFoundError, ValueError) as error:
         raise HTTPException(status_code=400, detail=str(error))
 
@@ -334,7 +350,8 @@ def evaluate_calibration(session_id: str, request: EvaluateRequest):
     datasets = request.datasets if request.datasets is not None else [session["dataset_id"]]
     try:
         if session["dataset_id"] and request.truth is not None:
-            pipeline.save_ground_truth(session["out_dir"], request.truth)
+            with truth_lock:
+                pipeline.update_ground_truth(session["out_dir"], request.truth)
         return pipeline.evaluate_calibration(session["out_dir"], datasets, request.metric, request.params)
     except (FileNotFoundError, ValueError) as error:
         raise HTTPException(status_code=400, detail=str(error))

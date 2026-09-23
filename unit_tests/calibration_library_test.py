@@ -311,3 +311,40 @@ def test_a_session_can_switch_to_another_saved_dataset(tmp_path, library):
     counts = {d["name"]: (d["n_moving"], d["n_still"]) for d in pipeline.list_calibration_datasets(library)}
     assert counts == {"a": (1, 1), "b": (1, 1)}
     assert pipeline.dataset_preview(pipeline.dataset_id(b), library_dir=library).endswith(pipeline.PREVIEW_NAME)
+
+
+def test_a_save_keeps_what_another_window_changed(tmp_path, library):
+    """Saving the mites changed on screen leaves the others as saved, e.g. a
+    detection marked "not a mite" on the labelling page since the page opened."""
+    data_dir, out_dir = make_session(tmp_path, "a", 3)
+    pipeline.save_ground_truth(out_dir, {"0": ["still", "moving"]}, library_dir=library)
+    pipeline.set_rejected(data_dir, 30.0, 10.0, True, library_dir=library)  # mite "2"
+
+    truth = pipeline.update_ground_truth(out_dir, {"0": ["moving", "moving"]}, library_dir=library)
+    assert truth == {"0": ["moving", "moving"], "2": ["not_a_mite", "not_a_mite"]}
+    assert pipeline.load_calibration_truth(out_dir, library_dir=library) == truth
+
+    # a mite cleared on screen is cleared in the saved ground truth too
+    truth = pipeline.update_ground_truth(out_dir, {"0": [None, None]}, library_dir=library)
+    assert truth == {"2": ["not_a_mite", "not_a_mite"]}
+
+
+def test_marking_a_detection_updates_the_saved_dataset(tmp_path, library):
+    data_dir, out_dir = make_session(tmp_path, "a", 3)
+    pipeline.save_ground_truth(out_dir, {"0": ["still", "moving"]}, library_dir=library)
+    pipeline.set_rejected(data_dir, 30.0, 10.0, True, library_dir=library)
+
+    view = pipeline.open_saved_calibration(pipeline.dataset_id(data_dir), tmp_path / "reopened", library_dir=library)
+    assert view["truth"] == {"0": ["still", "moving"], "2": ["not_a_mite", "not_a_mite"]}
+
+    pipeline.set_rejected(data_dir, 30.0, 10.0, False, library_dir=library)
+    view = pipeline.open_saved_calibration(pipeline.dataset_id(data_dir), tmp_path / "reopened", library_dir=library)
+    assert view["truth"] == {"0": ["still", "moving"]}
+
+
+def test_a_save_keeps_entries_of_detections_not_in_the_session(tmp_path, library):
+    data_dir, out_dir = make_session(tmp_path, "a", 1)
+    far = {"x": 90.0, "y": 90.0, "truth": "not_a_mite"}
+    (data_dir / pipeline.GROUND_TRUTH_FILENAME).write_text(json.dumps([far]), encoding="utf-8")
+    pipeline.update_ground_truth(out_dir, {"0": ["still", None]}, library_dir=library)
+    assert far in json.loads((data_dir / pipeline.GROUND_TRUTH_FILENAME).read_text(encoding="utf-8"))

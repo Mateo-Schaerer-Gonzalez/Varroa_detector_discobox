@@ -87,6 +87,7 @@ function setCalMode(mode) {
 
 // Start labelling what the server opened: a folder just detected, or a saved dataset.
 function startCalibration(data) {
+  flushTruthSave().catch(() => {});  // to the session that was open
   Object.assign(cal, {
     id: data.session_id, report: null, reportStale: false, selected: [data.dataset_id],
   });
@@ -227,6 +228,7 @@ $("pool-btn").addEventListener("click", async () => {
   status.innerHTML = `<span class="spinner"></span> Comparing…`;
   try {
     const { session_id } = await post("/api/calibration/pooled", {});
+    flushTruthSave().catch(() => {});  // to the session that was open
     Object.assign(cal, {
       id: session_id, data: null, truth: {}, datasetId: null, selected: ids,
       report: null, reportStale: false, stamp: Date.now(),
@@ -391,30 +393,92 @@ function setTruth(mite, recording, state) {
   if (states.some(Boolean)) cal.truth[mite.id] = states;
   else delete cal.truth[mite.id];
   if (cal.report) cal.reportStale = true;
+  unsavedTruth[mite.id] = states;
   scheduleTruthSave();
 }
 
+// --- saving: every change is saved on its own, a moment after the last click
+//
+// Only the mites changed here are sent; the server keeps what is saved for the
+// others, which another window may have changed meanwhile. Saves go one after
+// another, so a slow one is never overtaken by the next.
+
+let unsavedTruth = {};  // mite id -> statuses changed on screen and not saved yet
 let truthSaveTimer = null;
+let truthSaving = Promise.resolve();
+
 function scheduleTruthSave() {
   clearTimeout(truthSaveTimer);
-  truthSaveTimer = setTimeout(async () => {
-    truthSaveTimer = null;
-    try {
-      await post(`/api/calibration/${cal.id}/truth`, { truth: cal.truth });
-    } catch (error) {
-      $("evaluate-status").className = "hint error";
-      $("evaluate-status").textContent = `Could not save the ground truth: ${error.message}`;
-    }
-  }, 400);
+  truthSaveTimer = setTimeout(() => flushTruthSave().catch(() => {}), 400);
 }
 
-// Save a change still waiting for its timer, before the session shows another dataset.
-async function flushTruthSave() {
-  if (truthSaveTimer == null) return;
+// Save what is waiting, now; resolves once it and every earlier save are done.
+// The session is taken when called, so a dataset opened next never gets them.
+function flushTruthSave() {
   clearTimeout(truthSaveTimer);
   truthSaveTimer = null;
-  await post(`/api/calibration/${cal.id}/truth`, { truth: cal.truth });
+  const changes = unsavedTruth;
+  const sessionId = cal.id;
+  unsavedTruth = {};
+  truthSaving = truthSaving.catch(() => {}).then(async () => {
+    if (!Object.keys(changes).length) return;
+    const status = $("evaluate-status");
+    try {
+      await post(`/api/calibration/${sessionId}/truth`, { truth: changes });
+      if (status.classList.contains("error") && status.dataset.saveError) {
+        status.className = "hint";
+        delete status.dataset.saveError;
+        if (cal.data && sessionId === cal.id) drawTruthCounts();
+      }
+    } catch (error) {
+      // Kept for the next save, unless a newer change of the same mite came meanwhile.
+      if (sessionId === cal.id) unsavedTruth = { ...changes, ...unsavedTruth };
+      status.className = "hint error";
+      status.dataset.saveError = "1";
+      status.textContent = `Could not save the ground truth, retrying with the next change: ${error.message}`;
+      throw error;
+    }
+  });
+  return truthSaving;
 }
+
+const truthUnsaved = () => truthSaveTimer != null || Object.keys(unsavedTruth).length > 0;
+
+// Closing or reloading the window sends what is still waiting.
+window.addEventListener("pagehide", () => {
+  if (!cal.id || !Object.keys(unsavedTruth).length) return;
+  clearTimeout(truthSaveTimer);
+  truthSaveTimer = null;
+  fetch(`/api/calibration/${cal.id}/truth`, {
+    method: "POST", keepalive: true,
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ truth: unsavedTruth }),
+  }).catch(() => {});
+  unsavedTruth = {};
+});
+
+// Coming back to this window: show the ground truth as saved, which another
+// window, e.g. marking a detection "not a mite" before a run, may have changed.
+async function reloadTruth() {
+  if (!cal.data || !cal.id || document.visibilityState !== "visible") return;
+  const sessionId = cal.id;
+  try {
+    await flushTruthSave();
+    const response = await fetch(`/api/calibration/${sessionId}/truth`);
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.detail || "Could not load the ground truth");
+    const same = (a, b) => Object.keys(a).length === Object.keys(b).length
+      && Object.keys(a).every((id) => JSON.stringify(a[id]) === JSON.stringify(b[id]));
+    if (sessionId !== cal.id || truthUnsaved() || same(data.truth, cal.truth)) return;
+    cal.truth = data.truth;
+    if (cal.report) cal.reportStale = true;
+    if (location.hash.startsWith("#/cal/truth")) drawTruthView(String(cal.zoneId), String(cal.recording));
+  } catch {
+    // the page keeps what it shows; the next change saves as usual
+  }
+}
+window.addEventListener("focus", reloadTruth);
+document.addEventListener("visibilitychange", reloadTruth);
 
 function refreshTruthPanel() {
   drawRecordingTabs();
@@ -541,13 +605,15 @@ async function evaluate() {
 
 $("evaluate-btn").addEventListener("click", evaluate);
 
-// Save the ground truth on screen and compare, pooled over the chosen datasets and
-// scored with the chosen movement score. The saved datasets and the movement
-// scores on offer are refreshed alongside, for the report's pickers.
+// Save the changes still waiting and compare the saved ground truth, pooled over
+// the chosen datasets and scored with the chosen movement score. The saved
+// datasets and the movement scores on offer are refreshed alongside, for the
+// report's pickers.
 async function requestReport() {
+  await flushTruthSave();
   const [report] = await Promise.all([
     post(`/api/calibration/${cal.id}/evaluate`, {
-      truth: cal.truth, datasets: cal.selected, metric: cal.metric?.name ?? null, params: cal.metric?.params ?? null,
+      datasets: cal.selected, metric: cal.metric?.name ?? null, params: cal.metric?.params ?? null,
     }),
     fetchDatasets().catch(() => cal.datasets),
     fetchScores().catch(() => cal.scores),
@@ -642,7 +708,7 @@ function drawReport() {
       look at the suggested threshold, and save it with this movement score to use it.</div>`}
     ${testing ? testReport(r) : calibrateReport(r)}
     ${section("Mites moving per group", `<div id="group-legend" class="legend"></div><div id="group-moving" class="group-cards"></div>
-      <p class="caption">Each group's fraction of mites moving in each recording, by the ground truth and as called by the detector, on the same mites. Groups are the plate labels.</p>`)}
+      <p class="caption">Each group's fraction of mites moving in each recording, by the ground truth and as called by the detector, on the same mites. Groups are the plate labels.${poolNote(r)}</p>`)}
     ${section("Files", `<ul class="files">
       <li><a href="${calFileUrl(r.excel)}" download>${esc(r.excel)}</a>
         <span class="muted">every labelled mite-recording with its score and outcome, the fraction moving per recording, the ROC curve and the summary</span></li></ul>`)}`;
@@ -828,8 +894,19 @@ const rocCaption = (r) =>
   `Every possible threshold, from the highest (bottom left) to the lowest (top right). AUC ${aucText(r)}. Hover the curve for the threshold at each step.`;
 const stripCaption =
   "Each labelled mite-recording at its motion score. Everything right of a line is called moving at that threshold. Select a point to see that mite.";
-const overTimeCaption =
-  "Fraction of the labelled mites moving in each recording: by the ground truth (black) and as called by the detector.";
+const overTimeCaption = (r) =>
+  `Fraction of the labelled mites moving in each recording: by the ground truth (black) and as called by the detector.${poolNote(r, r.moving_over_time.n)}`;
+
+// Pooled datasets need not cover every recording, e.g. recordings of different
+// lengths, so the fractions over time can rest on different numbers of mites.
+function poolNote(r, counts = null) {
+  if (!pooled(r)) return "";
+  const known = (counts || []).filter((n) => n != null);
+  const range = known.length && Math.min(...known) !== Math.max(...known)
+    ? ` (here from ${Math.min(...known)} to ${Math.max(...known)})` : "";
+  return ` <b>Pooled:</b> not every recording has the same number of mites${range}, e.g. when the datasets have recordings of different lengths,
+    so later recordings may rest on fewer mites. Hover a point for its count.`;
+}
 
 // --- calibrate: pick a threshold and save it
 
@@ -844,7 +921,7 @@ function calibrateReport(r) {
       </div>
       <div class="grid-2">
         ${figure("confusion", 1, "Confusion matrix at the threshold in use", confusionCaption)}
-        ${figure("chart-over-time", 2, "Mites moving: ground truth and the detector", overTimeCaption)}
+        ${figure("chart-over-time", 2, "Mites moving: ground truth and the detector", overTimeCaption(r))}
       </div>`;
   }
   const same = Math.abs(r.suggested_threshold - r.threshold) < 0.005;
@@ -883,11 +960,11 @@ function calibrateReport(r) {
     </div>
 
     <div class="grid-2">
-      ${figure("chart-over-time", 2, "Mites moving: ground truth and the detector", overTimeCaption)}
+      ${figure("chart-over-time", 2, "Mites moving: ground truth and the detector", overTimeCaption(r))}
       ${figure("chart-roc", 3, "ROC curve", rocCaption(r))}
     </div>
 
-    ${figure("chart-strip", 4, "Scores by your label", stripCaption)}`;
+    ${figure("chart-strip", 4, "Motion score distribution", stripCaption)}`;
 }
 
 function comparisonTable(r) {
@@ -960,7 +1037,7 @@ function testReport(r) {
 
     <div class="grid-2">
       ${figure("confusion", 1, "Confusion matrix at the threshold in use", confusionCaption)}
-      ${figure("chart-over-time", 2, "Mites moving: ground truth and the detector", overTimeCaption)}
+      ${figure("chart-over-time", 2, "Mites moving: ground truth and the detector", overTimeCaption(r))}
     </div>
 
     <div class="grid-2">
@@ -985,7 +1062,7 @@ function testReport(r) {
       ${r.roc ? figure("chart-roc", 4, "ROC curve", rocCaption(r)) : section("ROC curve", `<p class="hint">${oneClassNote(r)}</p>`)}
     </div>
 
-    ${r.roc ? figure("chart-strip", 5, "Scores by your label", stripCaption) : ""}
+    ${r.roc ? figure("chart-strip", 5, "Motion score distribution", stripCaption) : ""}
 
     ${section("Per zone", `<div class="table-wrap"><table class="clickable" id="zone-errors"></table></div>
       <p class="caption">Counts are mite-recordings, at the threshold in use. Select a zone to review its labels.</p>`)}`;
