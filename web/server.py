@@ -8,6 +8,7 @@ Run it with start.bat, or:  python -m uvicorn web.server:app --port 8000
 """
 
 import os
+import shutil
 import threading
 import time
 import uuid
@@ -23,9 +24,9 @@ from pydantic import BaseModel
 import pipeline
 
 STATIC_DIR = Path(__file__).parent / "static"
-OUTPUT_ROOT = Path(__file__).resolve().parent.parent / "outputs"
-# Folders dropped into the browser are copied here, one subfolder per folder name.
-UPLOAD_ROOT = Path(__file__).resolve().parent.parent / "uploads"
+# Folders dropped into the browser are copied to recordings/, one subfolder per
+# folder name, next to the live runs.
+UPLOAD_ROOT = pipeline.RECORDINGS_ROOT
 
 # --- stopping when the last page closes ---------------------------------------
 # start.bat and start.sh set DISCOBOX_AUTO_STOP=1, so the server does not keep
@@ -74,6 +75,9 @@ def watch_pages():
 
 @asynccontextmanager
 async def lifespan(app):
+    # What earlier versions wrote to output/, uploads/ and outputs/ moves to today's folders.
+    for line in pipeline.tidy_folders():
+        print(f"Folders: {line}", flush=True)
     if AUTO_STOP:
         threading.Thread(target=watch_pages, daemon=True).start()
     yield
@@ -83,7 +87,8 @@ async def lifespan(app):
 
 app = FastAPI(title="Varroa discobox", lifespan=lifespan)
 
-# Everything a run produces lives in outputs/<session id>/.
+# A session's files go to its out_dir: results/<recording>/ for an analysis or a
+# live run, calibration_data/reports/<date time name>/ for a calibration.
 sessions: dict[str, dict] = {}
 # Every change to a ground truth reads what is saved and writes it back; one at a
 # time, so two windows saving at once cannot undo each other's change.
@@ -165,14 +170,14 @@ def get_session(session_id: str) -> dict:
 def open_session(request: OpenRequest):
     """Point the app at a folder of recordings and get back the zones to label."""
     session_id = uuid.uuid4().hex[:8]
-    out_dir = OUTPUT_ROOT / session_id
+    out_dir = pipeline.results_dir(request.data_dir)
     try:
         session = pipeline.open_session(request.data_dir, out_dir)
     except (FileNotFoundError, ValueError) as error:
         raise HTTPException(status_code=400, detail=str(error))
 
     sessions[session_id] = {"data_dir": session["data_dir"], "out_dir": out_dir}
-    return {"session_id": session_id, **session}
+    return {"session_id": session_id, "results_dir": str(out_dir), **session}
 
 
 @app.post("/api/uploads/{name}/manifest")
@@ -259,13 +264,15 @@ def analysis_clip(session_id: str, recording: int, zone_id: Optional[int] = None
         raise HTTPException(status_code=400, detail=str(error))
 
 
-def new_calibration_session(open_it):
-    """Run `open_it(out_dir)` in a fresh calibration session and remember it."""
+def new_calibration_session(name, open_it):
+    """Run `open_it(out_dir)` in a fresh calibration session and remember it.
+    Its folder is named by when it began and by `name`, what it opened."""
     session_id = uuid.uuid4().hex[:8]
-    out_dir = OUTPUT_ROOT / f"calibration_{session_id}"
+    out_dir = pipeline.new_calibration_report_dir(name)
     try:
         calibration = open_it(out_dir)
     except (FileNotFoundError, ValueError) as error:
+        shutil.rmtree(out_dir, ignore_errors=True)
         raise HTTPException(status_code=400, detail=str(error))
 
     sessions[session_id] = {
@@ -279,7 +286,8 @@ def new_calibration_session(open_it):
 @app.post("/api/calibration")
 def open_calibration(request: OpenRequest):
     """Detect and score the mites of a calibration recording. Slow: decodes every frame."""
-    return new_calibration_session(lambda out_dir: pipeline.open_calibration(request.data_dir, out_dir))
+    return new_calibration_session(Path(request.data_dir).name,
+                                   lambda out_dir: pipeline.open_calibration(request.data_dir, out_dir))
 
 
 @app.get("/api/calibration/datasets")
@@ -291,7 +299,7 @@ def list_datasets():
 @app.post("/api/calibration/datasets/{dataset_id}/open")
 def open_dataset(dataset_id: str):
     """Reopen a saved dataset to go on labelling it. Fast: nothing is decoded."""
-    return new_calibration_session(lambda out_dir: pipeline.open_saved_calibration(dataset_id, out_dir))
+    return new_calibration_session(dataset_id, lambda out_dir: pipeline.open_saved_calibration(dataset_id, out_dir))
 
 
 @app.get("/api/calibration/datasets/{dataset_id}/preview")
@@ -321,7 +329,8 @@ def delete_dataset(dataset_id: str):
 def open_pooled():
     """A session for reports on saved datasets alone, with no recording opened."""
     session_id = uuid.uuid4().hex[:8]
-    sessions[session_id] = {"data_dir": None, "out_dir": OUTPUT_ROOT / f"calibration_{session_id}", "dataset_id": None}
+    out_dir = pipeline.new_calibration_report_dir("pooled")
+    sessions[session_id] = {"data_dir": None, "out_dir": out_dir, "dataset_id": None}
     return {"session_id": session_id}
 
 
@@ -405,8 +414,9 @@ def save_movement_score(request: MovementScoreRequest):
 # --- live runs -------------------------------------------------------------------
 #
 # A live run is a session like one opened from a folder: its folder is the run's
-# folder in output/, where its recordings, labels and "not a mite" marks go, so
-# the label and result pages and their clips work on it unchanged.
+# folder in recordings/, where its recordings, labels and "not a mite" marks go, so
+# the label and result pages and their clips work on it unchanged. Its results go
+# to results/<run name>/.
 
 LIVE_ERRORS = (FileNotFoundError, ValueError, pipeline.CameraError)
 
@@ -451,12 +461,11 @@ def live_options():
 def open_live(request: LiveOpenRequest):
     """Open the camera (or a replay) and start the live feed; nothing is recorded yet."""
     session_id = uuid.uuid4().hex[:8]
-    out_dir = OUTPUT_ROOT / session_id
-    status = live_call(pipeline.open_live, session_id, out_dir, request.run_name, source=request.source,
+    status = live_call(pipeline.open_live, session_id, None, request.run_name, source=request.source,
                        camera_id=request.camera_id, replay_dir=request.replay_dir, replay_fps=request.replay_fps,
                        replay_gap=request.replay_gap, serial_port=request.serial_port,
                        save_frames=request.save_frames, pool_size=request.pool_size)
-    sessions[session_id] = {"data_dir": status["run_dir"], "out_dir": out_dir, "live": True,
+    sessions[session_id] = {"data_dir": status["run_dir"], "out_dir": Path(status["out_dir"]), "live": True,
                             "pool_size": request.pool_size, "save_frames": request.save_frames}
     return {"session_id": session_id, **status}
 
@@ -542,16 +551,36 @@ def live_frame(session_id: str, w: int = 960):
     return Response(content=data, media_type="image/jpeg", headers={"Cache-Control": "no-store"})
 
 
-@app.get("/api/session/{session_id}/file/{name}")
+@app.get("/api/session/{session_id}/file/{name:path}")
 def get_file(session_id: str, name: str):
-    """Serve one output file (preview, figure or workbook) from this session."""
+    """Serve one output file (preview, figure, workbook or clip frame) from this session."""
     session = get_session(session_id)
 
-    # Only ever serve a plain filename from this session's own output folder.
-    path = (session["out_dir"] / Path(name).name).resolve()
+    # Only ever serve a file from this session's own output folder.
+    path = safe_join(session["out_dir"], name).resolve()
     if not path.is_file() or session["out_dir"].resolve() not in path.parents:
         raise HTTPException(status_code=404, detail=f"No such file: {name}")
     return FileResponse(path)
+
+
+# --- the recordings kept -------------------------------------------------------------
+
+
+@app.get("/api/recordings")
+def list_recordings():
+    """Every recording in recordings/, with how it was recorded: the live runs and
+    the folders dropped into the page."""
+    return {"recordings": pipeline.list_recordings(), "root": str(pipeline.RECORDINGS_ROOT),
+            "results_root": str(pipeline.RESULTS_ROOT)}
+
+
+@app.get("/api/recordings/{name}/results/{filename}")
+def recording_results(name: str, filename: str):
+    """A file of the last analysis of a recording, e.g. its results.xlsx."""
+    try:
+        return FileResponse(pipeline.recording_results_file(name, filename), filename=f"{name}_{filename}")
+    except (FileNotFoundError, ValueError) as error:
+        raise HTTPException(status_code=404, detail=str(error))
 
 
 @app.post("/api/page/{page_id}/alive")

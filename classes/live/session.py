@@ -15,7 +15,8 @@ Results are published with `publish(session, write_files)`, given by the caller
 the analysis holds while it changes the core's state. After each recording the
 files (workbook, figures) are written too; with a pool size smaller than a
 recording, the results in between are published at most every
-MIN_PUBLISH_INTERVAL seconds, without files.
+MIN_PUBLISH_INTERVAL seconds, without files. Once the run is over,
+`on_finish(session)`, if given, is called before `finished` is set.
 """
 
 import logging
@@ -30,12 +31,13 @@ MIN_PUBLISH_INTERVAL = 0.5  # seconds
 
 
 class LiveSession:
-    def __init__(self, source, analysis, pool_size=None, recorder=None, publish=None):
+    def __init__(self, source, analysis, pool_size=None, recorder=None, publish=None, on_finish=None):
         self.source = source
         self.analysis = analysis
         self.pool_size = pool_size
         self.recorder = recorder
         self._publish = publish
+        self._on_finish = on_finish
         self.lock = threading.RLock()
         self.results = None
         self.version = 0
@@ -68,6 +70,11 @@ class LiveSession:
                 self.recorder.close()
             self.publish(write_files=True)
             self.state = "finished"
+            if self._on_finish is not None:
+                try:
+                    self._on_finish(self)
+                except Exception:
+                    _logger.exception("on_finish failed")
             self.finished.set()
 
     def _events(self):

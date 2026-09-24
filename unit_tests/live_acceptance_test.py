@@ -26,7 +26,7 @@ def replay(tmp_path, data_dir, name="run", **kwargs):
     live_id = f"test-{name}"
     with reference.capture_figures() as figures:
         pipeline.open_live(live_id, tmp_path / f"{name}_out", name, source="replay", replay_dir=data_dir,
-                           output_root=tmp_path / "output", library_dir=library, **options)
+                           recordings_root=tmp_path / "recordings", library_dir=library, **options)
         pipeline.start_live(live_id)
         run = pipeline._live[live_id]
         assert run.session.finished.wait(120), "the live run did not finish"
@@ -108,7 +108,7 @@ def test_a_run_stopped_midway_is_analysed_as_far_as_it_got(tmp_path, small_sessi
     library = tmp_path / "library"
     library.mkdir()
     pipeline.open_live("stop", tmp_path / "out", "stopped", source="replay", replay_dir=small_session,
-                       replay_fps=40, replay_gap=0.5, output_root=tmp_path / "output", library_dir=library)
+                       replay_fps=40, replay_gap=0.5, recordings_root=tmp_path / "recordings", library_dir=library)
     pipeline.start_live("stop")
     run = pipeline._live["stop"]
     deadline = time.monotonic() + 20
@@ -128,7 +128,7 @@ def test_results_are_published_after_each_recording(tmp_path, small_session):
     library = tmp_path / "library"
     library.mkdir()
     pipeline.open_live("steps", tmp_path / "out", "steps", source="replay", replay_dir=small_session,
-                       replay_fps=100_000, replay_gap=0.3, output_root=tmp_path / "output", library_dir=library)
+                       replay_fps=100_000, replay_gap=0.3, recordings_root=tmp_path / "recordings", library_dir=library)
     assert pipeline.live_results("steps") == {"version": 0, "results": None}
     pipeline.start_live("steps")
     seen = set()
@@ -158,29 +158,29 @@ def test_labels_changed_during_a_run_show_at_once(tmp_path, small_session):
 
 
 def test_a_run_name_already_taken_is_refused(tmp_path, small_session):
-    (tmp_path / "output" / "taken").mkdir(parents=True)
+    (tmp_path / "recordings" / "taken").mkdir(parents=True)
     with pytest.raises(ValueError, match="already exists"):
         pipeline.open_live("taken", tmp_path / "out", "taken", source="replay", replay_dir=small_session,
-                           output_root=tmp_path / "output")
+                           recordings_root=tmp_path / "recordings")
     with pytest.raises(ValueError, match="letters"):
         pipeline.open_live("bad", tmp_path / "out", "../escape", source="replay", replay_dir=small_session,
-                           output_root=tmp_path / "output")
+                           recordings_root=tmp_path / "recordings")
 
 
 def test_closing_a_run_that_recorded_nothing_leaves_no_folder(tmp_path, small_session):
     pipeline.open_live("empty", tmp_path / "out", "empty", source="replay", replay_dir=small_session,
-                       output_root=tmp_path / "output")
-    assert (tmp_path / "output" / "empty").is_dir()
+                       recordings_root=tmp_path / "recordings")
+    assert (tmp_path / "recordings" / "empty").is_dir()
     pipeline.close_live("empty")
-    assert not (tmp_path / "output" / "empty").exists()
-    shutil.rmtree(tmp_path / "output")
+    assert not (tmp_path / "recordings" / "empty").exists()
+    shutil.rmtree(tmp_path / "recordings")
 
 
 def test_the_status_says_how_far_a_replay_is(tmp_path, small_session):
     library = tmp_path / "library"
     library.mkdir()
     pipeline.open_live("far", tmp_path / "out", "far", source="replay", replay_dir=small_session,
-                       replay_fps=100, replay_gap=0, output_root=tmp_path / "output", library_dir=library)
+                       replay_fps=100, replay_gap=0, recordings_root=tmp_path / "recordings", library_dir=library)
     assert pipeline.live_status("far")["timeline"] is None
     pipeline.start_live("far")
     assert pipeline._live["far"].session.finished.wait(60)

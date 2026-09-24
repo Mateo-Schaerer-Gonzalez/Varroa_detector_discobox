@@ -34,6 +34,17 @@ can never reach into the analysis internals.
     live_results(...)          the results so far, as run_analysis() gives them
     live_frame(...)            the newest frame as a JPEG, for the live feed
     pause_live / resume_live / stop_live / close_live
+
+    list_recordings()          every recording kept in recordings/, with how it was recorded
+    results_dir(...)           where the analysis of a folder goes: results/<its name>/
+    new_calibration_report_dir(...)  a folder for one calibration session's report
+    tidy_folders()             move what earlier versions wrote into today's folders
+
+Where things go:
+
+    recordings/<name>/         the frames: live test runs, and folders dropped into the page
+    results/<name>/            the last analysis of <name>: workbook, figures (clips/ is a cache)
+    calibration_data/          saved ground truth; reports/ holds the calibration reports
 """
 
 import hashlib
@@ -43,9 +54,10 @@ import logging
 import os
 import re
 import shutil
+import stat
 import threading
 import time
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -80,9 +92,20 @@ LABELS_FILENAME = "labels.json"
 GROUND_TRUTH_FILENAME = "ground_truth.json"
 PREVIEW_NAME = "preview.jpg"
 CALIBRATION_SESSION_NAME = "calibration_session.json"
+CLIPS_DIRNAME = "clips"  # in a results folder: the frames the pages play, remade when missing
+
+# The app's folders, one for each kind of file it keeps:
+APP_DIR = Path(__file__).resolve().parent
+# The frames: one folder per recording session, live test runs and folders dropped
+# into the page alike.
+RECORDINGS_ROOT = APP_DIR / "recordings"
+# results/<recording>/: the last analysis of that recording.
+RESULTS_ROOT = APP_DIR / "results"
 # The ground truth of every labelled calibration recording is also kept here, so it
 # can be reopened, pooled with others, or scored with a new metric later.
-CALIBRATION_LIBRARY = Path(__file__).resolve().parent / "calibration_data"
+CALIBRATION_LIBRARY = APP_DIR / "calibration_data"
+# One folder per calibration session, for its report.
+CALIBRATION_REPORTS = CALIBRATION_LIBRARY / "reports"
 DATASET_NAME = "dataset.json"
 SCORES_DIRNAME = "scores"
 RECORDINGS_DIRNAME = "recordings"
@@ -134,6 +157,36 @@ def save_labels(data_dir, labels):
     return str(path)
 
 
+def _folder_name(path):
+    return Path(path).resolve().name or "recording"
+
+
+def results_dir(data_dir, results_root=RESULTS_ROOT):
+    """Where the analysis of a recording folder goes: results/<its name>/. Analysing
+    it again replaces what is there."""
+    return Path(results_root) / _folder_name(data_dir)
+
+
+def new_calibration_report_dir(name, reports_root=CALIBRATION_REPORTS):
+    """A new folder for one calibration session, named by when it began and what
+    it opened, e.g. "2026-09-24 14-05-12 sample_data"."""
+    base = f"{datetime.now():%Y-%m-%d %H-%M-%S} {re.sub(r'[^A-Za-z0-9 ._-]+', '_', str(name)).strip() or 'calibration'}"
+    folder, number = Path(reports_root) / base, 1
+    while True:
+        try:
+            folder.mkdir(parents=True)
+            return folder
+        except FileExistsError:
+            number += 1
+            folder = Path(reports_root) / f"{base} ({number})"
+
+
+def _clear_clips(out_dir):
+    """Clips are cached by recording index: another folder of the same name, or a
+    run of a name used before, must not play the old ones."""
+    shutil.rmtree(Path(out_dir) / CLIPS_DIRNAME, ignore_errors=True)
+
+
 def open_session(data_dir, out_dir, coords_file=DEFAULT_COORDS_FILE, library_dir=CALIBRATION_LIBRARY):
     """Describe a recording session so its zones can be labelled.
 
@@ -149,6 +202,7 @@ def open_session(data_dir, out_dir, coords_file=DEFAULT_COORDS_FILE, library_dir
 
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
+    _clear_clips(out_dir)
 
     loader = DataLoader(data_dir, grayscale=False)
     n_recordings = loader.count_recordings()
@@ -458,8 +512,9 @@ def calibration_clip(out_dir, recording, zone_id, library_dir=CALIBRATION_LIBRAR
 
     # One session can switch between datasets, so clips are named after theirs.
     name = f"clip_{dataset_id(stored['data_dir'])}_r{recording}_z{zone_id}"
-    if (Path(out_dir) / f"{name}.json").is_file():
-        return json.loads((Path(out_dir) / f"{name}.json").read_text(encoding="utf-8"))
+    manifest = Path(out_dir) / CLIPS_DIRNAME / f"{name}.json"
+    if manifest.is_file():
+        return json.loads(manifest.read_text(encoding="utf-8"))
     recordings_dir = _recordings_dir(stored["data_dir"], library_dir)
     if not recordings_dir.is_dir():
         raise FileNotFoundError(
@@ -475,15 +530,17 @@ def calibration_clip(out_dir, recording, zone_id, library_dir=CALIBRATION_LIBRAR
 def _write_clip(loader, recording_name, fps, box, out_dir, name, max_width=None, first=0, count=None):
     """Write up to CLIP_MAX_FRAMES JPEGs of the region `box` = (x1, y1, x2, y2) of
     one recording (with `count`, of its `count` frames from index `first` on),
-    and a manifest `name`.json that later calls reuse.
+    and a manifest `name`.json that later calls reuse, to out_dir/clips/.
 
-    Returns the frame filenames, where the region sits in the full image (in full
-    image pixels, even when `max_width` scales the frames down), and the delay
-    between frames that plays them back in real time.
+    Returns the frame files (relative to `out_dir`), where the region sits in the
+    full image (in full image pixels, even when `max_width` scales the frames
+    down), and the delay between frames that plays them back in real time.
     """
-    manifest = Path(out_dir) / f"{name}.json"
+    clips_dir = Path(out_dir) / CLIPS_DIRNAME
+    manifest = clips_dir / f"{name}.json"
     if manifest.is_file():
         return json.loads(manifest.read_text(encoding="utf-8"))
+    clips_dir.mkdir(parents=True, exist_ok=True)
 
     n_frames = loader.count_frames(recording_name) if count is None else count
     step = max(1, int(np.ceil(n_frames / CLIP_MAX_FRAMES)))
@@ -497,7 +554,7 @@ def _write_clip(loader, recording_name, fps, box, out_dir, name, max_width=None,
     for index, frame in enumerate(frames):
         if scale < 1:
             frame = cv2.resize(frame, (round(width * scale), round(height * scale)), interpolation=cv2.INTER_AREA)
-        names.append(f"{name}_{index:02d}.jpg")
+        names.append(f"{CLIPS_DIRNAME}/{name}_{index:02d}.jpg")
         cv2.imwrite(str(Path(out_dir) / names[-1]), frame, [cv2.IMWRITE_JPEG_QUALITY, 85])
     clip = {
         "frames": names,
@@ -1112,17 +1169,20 @@ def save_movement_score(metric, params, threshold):
 # same core as a folder (MotionAnalysis), and its results are described by the same
 # _arrange() and _results() as run_analysis() uses, so the live pages are the
 # folder pages, filling in. The bursts are saved, as the Discobox app saves them, to
-# output/<run name>/, which is then a folder like any other: folder mode reads it
-# back and gets exactly the same results. A folder can also be replayed as if it
-# came from the camera, to try all this without one.
+# recordings/<run name>/, which is then a folder like any other: folder mode reads
+# it back and gets exactly the same results. Its results go to results/<run name>/.
+# A folder can also be replayed as if it came from the camera, to try all this
+# without one.
 #
 # The plate labels and "not a mite" marks of a run live in its folder, as for any
-# folder, so the label page works on a live run unchanged.
+# folder, so the label page works on a live run unchanged. So does run.json: how
+# the run was made (camera or replay, pools, frames dropped), kept up to date
+# after every recording.
 
 CameraError = live_camera.CameraError  # the camera or Vimba X cannot be used
-LIVE_OUTPUT = Path(__file__).resolve().parent / "output"
-LIVE_SETTINGS_FILE = Path(__file__).resolve().parent / "settings.txt"
+LIVE_SETTINGS_FILE = APP_DIR / "settings.txt"
 SETTINGS_FILENAME = ".settings.txt"
+RUN_INFO_NAME = "run.json"
 LIVE_FEED_WIDTH = 960
 LIVE_STATES = ("running", "paused", "stopping")
 LEDS = ("led1", "led2")
@@ -1133,7 +1193,12 @@ _live = {}  # live id -> the run's parts
 _live_lock = threading.Lock()
 
 
-def live_options(settings_path=LIVE_SETTINGS_FILE, output_root=LIVE_OUTPUT):
+def _setting_ranges():
+    return {name: {"label": label, "unit": unit, "min": low, "max": high}
+            for name, (label, unit, low, high) in SETTING_RANGES.items()}
+
+
+def live_options(settings_path=LIVE_SETTINGS_FILE, recordings_root=RECORDINGS_ROOT):
     """What the live page offers before a run: the cameras (or why there are none),
     the serial ports, the saved test-run settings with their ranges, and a run
     name not taken yet."""
@@ -1147,10 +1212,9 @@ def live_options(settings_path=LIVE_SETTINGS_FILE, output_root=LIVE_OUTPUT):
         "camera_error": camera_error,
         "serial_ports": serial_ports(),
         "settings": Settings.from_file(settings_path).as_dict(),
-        "ranges": {name: {"label": label, "unit": unit, "min": low, "max": high}
-                   for name, (label, unit, low, high) in SETTING_RANGES.items()},
-        "run_name": default_run_name(output_root),
-        "output_root": str(output_root),
+        "ranges": _setting_ranges(),
+        "run_name": default_run_name(recordings_root),
+        "recordings_root": str(recordings_root),
         "open": [live_status(live_id) for live_id in list(_live)],
     }
 
@@ -1160,26 +1224,26 @@ def print_cameras():
     live_camera.print_cameras()
 
 
-def default_run_name(output_root=LIVE_OUTPUT):
+def default_run_name(recordings_root=RECORDINGS_ROOT):
     """test_run_<today>, as the Discobox app names a run, with a number added if
     that name is taken."""
     base = f"test_run_{date.today():%Y-%m-%d}"
     name, number = base, 1
-    while (Path(output_root) / name).exists():
+    while (Path(recordings_root) / name).exists():
         number += 1
         name = f"{base}_{number}"
     return name
 
 
-def _new_run_dir(run_name, output_root):
+def _new_run_dir(run_name, recordings_root):
     run_name = (run_name or "").strip()
     if not run_name:
         raise ValueError("Enter a name for the test run.")
     if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9 ._-]*", run_name) or run_name.endswith("."):
         raise ValueError("A test run name may only hold letters, digits, spaces, dots, dashes and underscores.")
-    run_dir = Path(output_root) / run_name
+    run_dir = Path(recordings_root) / run_name
     if run_dir.exists():
-        raise ValueError(f"A test run called {run_name} already exists in {output_root}.")
+        raise ValueError(f"A recording called {run_name} already exists in {recordings_root}.")
     run_dir.mkdir(parents=True)
     return run_dir
 
@@ -1203,13 +1267,15 @@ def save_live_settings(values, live_id=None, settings_path=LIVE_SETTINGS_FILE):
 
 def open_live(live_id, out_dir, run_name, source="camera", camera_id=None, replay_dir=None, replay_fps=None,
               replay_gap=2.0, serial_port="auto", save_frames=True, pool_size=None, settings_path=LIVE_SETTINGS_FILE,
-              settings=None, output_root=LIVE_OUTPUT, coords_file=DEFAULT_COORDS_FILE, library_dir=CALIBRATION_LIBRARY):
+              settings=None, recordings_root=RECORDINGS_ROOT, results_root=RESULTS_ROOT,
+              coords_file=DEFAULT_COORDS_FILE, library_dir=CALIBRATION_LIBRARY):
     """Open the camera, with the fan and LEDs (or a replay of `replay_dir`), for a
-    live run called `run_name`, whose recordings go to output_root/run_name and
-    whose results go to `out_dir`. The live feed starts, with the LEDs on so the
-    plates can be seen; nothing is recorded until start_live(), which switches
-    them off and leaves them to the test run. Only one live run can be open:
-    opening another closes the one that is open, unless that one is running.
+    live run called `run_name`, whose recordings go to recordings_root/run_name and
+    whose results go to `out_dir` (by default results_root/run_name). The live
+    feed starts, with the LEDs on so the plates can be seen; nothing is recorded
+    until start_live(), which switches them off and leaves them to the test run.
+    Only one live run can be open: opening another closes the one that is open,
+    unless that one is running.
 
     The test run's settings are those saved in `settings_path`, with `settings`
     (name -> value, e.g. {"fps": 30}) overriding them for this run only."""
@@ -1235,7 +1301,7 @@ def open_live(live_id, out_dir, run_name, source="camera", camera_id=None, repla
 
         run_dir = None
         try:
-            run_dir = _new_run_dir(run_name, output_root)
+            run_dir = _new_run_dir(run_name, recordings_root)
             live_source.open()
         except Exception:
             if lights is not None:
@@ -1252,13 +1318,16 @@ def open_live(live_id, out_dir, run_name, source="camera", camera_id=None, repla
         # image and for labelling, until the run starts and switches them itself.
         _leds_on(lights, settings)
 
+        out_dir = results_dir(run_dir, results_root) if out_dir is None else Path(out_dir)
+        _clear_clips(out_dir)
         analysis = MotionAnalysis(_build_zone_manager(coords_file))
         run = SimpleNamespace(
             live_id=live_id, source=live_source, lights=lights, analysis=analysis, run_dir=run_dir,
-            out_dir=Path(out_dir), pool_size=pool_size, save_frames=bool(save_frames), library_dir=library_dir,
-            coords_file=coords_file, feed=(None, None), feed_lock=threading.Lock(),
+            out_dir=out_dir, pool_size=pool_size, save_frames=bool(save_frames), library_dir=library_dir,
+            coords_file=coords_file, feed=(None, None), feed_lock=threading.Lock(), started_at=None,
         )
-        run.session = LiveSession(live_source, analysis, pool_size, publish=lambda session, write: _publish_live(run, write))
+        run.session = LiveSession(live_source, analysis, pool_size, publish=lambda session, write: _publish_live(run, write),
+                                  on_finish=lambda session: _write_run_info(run, ended=True))
         _live[live_id] = run
     return live_status(live_id)
 
@@ -1294,10 +1363,44 @@ def _light_for_labelling(run):
 
 def _publish_live(run, write_files):
     """The results of a live run so far, exactly as run_analysis() describes a
-    folder: the same labels and "not a mite" marks, read from the run's folder."""
+    folder: the same labels and "not a mite" marks, read from the run's folder.
+    After each recording (`write_files`), run.json says how far the run got."""
     labels = load_labels(run.run_dir)
     _arrange(run.analysis, run.run_dir, labels, True, run.library_dir)
-    return _results(_run_view(run.analysis), run.out_dir, labels, write_files)
+    results = _results(_run_view(run.analysis), run.out_dir, labels, write_files)
+    if write_files:
+        _write_run_info(run)
+    return results
+
+
+def _write_run_info(run, ended=False):
+    """Write run.json next to the recordings: how the test run was made, and how
+    far it got. Never fails the run: it is only a record."""
+    if run.started_at is None or not run.run_dir.is_dir():
+        return
+    try:
+        status = run.session.status()
+        info = {
+            "source": status["source"],
+            "camera": status["camera"],
+            "started_at": run.started_at,
+            "ended_at": datetime.now().isoformat(timespec="seconds") if ended else None,
+            "recordings_planned": status["recordings"],
+            "recordings_analysed": status["analysed"],
+            "pool_size": run.pool_size,
+            "frames_saved": run.save_frames,
+            "frames_dropped": status["dropped"],
+            "frames_incomplete": status["incomplete"],
+            "error": status["error"] or status["save_error"],
+        }
+        if isinstance(run.source, ReplaySource):
+            info["replay_of"] = str(run.source.data_dir.resolve())
+        path = run.run_dir / RUN_INFO_NAME
+        partial = path.with_name(path.name + ".part")
+        partial.write_text(json.dumps(info, indent=2), encoding="utf-8")
+        partial.replace(path)
+    except Exception:
+        _logger.exception("Could not write %s", RUN_INFO_NAME)
 
 
 def live_preview(live_id, out_dir=None):
@@ -1354,6 +1457,9 @@ def start_live(live_id, labels=None):
     if text:
         (run.run_dir / SETTINGS_FILENAME).write_text(text, encoding="utf-8")
     run.session.recorder = Recorder(run.run_dir) if run.save_frames else None
+    # Before the start: a quick replay can be over before start() returns.
+    run.started_at = datetime.now().isoformat(timespec="seconds")
+    _write_run_info(run)
     try:
         run.session.start()
     except Exception:
@@ -1459,3 +1565,203 @@ def close_all_live():
     with _live_lock:
         for live_id in list(_live):
             _close_live(live_id)
+
+
+# --- the recordings kept ------------------------------------------------------------
+#
+# recordings/ holds every recording session the app has: each live test run and
+# each folder dropped into the page. The pages list them with how they were
+# recorded, so any of them can be analysed, or calibrated on, again.
+
+
+def _read_json(path, default=None):
+    try:
+        return json.loads(Path(path).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return default
+
+
+def list_recordings(recordings_root=RECORDINGS_ROOT, results_root=RESULTS_ROOT, library_dir=CALIBRATION_LIBRARY):
+    """Every folder in `recordings_root` that holds a recording, the most recently
+    recorded first, as describe_recording() describes it, and whether it is the
+    live run being recorded now."""
+    root = Path(recordings_root)
+    if not root.is_dir():
+        return []
+    recording_now = {run.run_dir.resolve() for run in list(_live.values()) if run.session.state in LIVE_STATES}
+    listed = []
+    for folder in root.iterdir():
+        if not folder.is_dir():
+            continue
+        try:
+            described = describe_recording(folder, results_root, library_dir)
+        except Exception:  # one odd folder must not hide the others
+            _logger.exception("Could not describe the recording %s", folder)
+            continue
+        if described is not None:
+            listed.append({**described, "recording_now": folder.resolve() in recording_now})
+    return sorted(listed, key=lambda entry: entry["started"], reverse=True)
+
+
+def describe_recording(data_dir, results_root=RESULTS_ROOT, library_dir=CALIBRATION_LIBRARY):
+    """One recording folder as the list of recordings shows it (None when it holds
+    no recording): when it was recorded, how -- the Discobox settings of its
+    .settings.txt and, for a live run, its run.json -- and what the app has of it:
+    plate labels, ground truth and results."""
+    data_dir = Path(data_dir)
+    loader = DataLoader(data_dir)
+    recordings = loader.recording_dirs
+    if not recordings:
+        return None
+    first, last = recordings[0].name, recordings[-1].name
+    fps = loader.get_fps(first)
+    frames = loader.count_frames(first)
+    ended = DataLoader.parse_start_time(last) + timedelta(seconds=loader.count_frames(last) / loader.get_fps(last))
+
+    run = _read_json(data_dir / RUN_INFO_NAME)
+    if isinstance(run, dict):
+        run["pool_size_text"] = describe_pool_size(run.get("pool_size"))
+    else:
+        run = None
+    labels = _read_json(data_dir / LABELS_FILENAME, {})
+    groups = [str(group).strip() for group in labels.values() if str(group).strip()] if isinstance(labels, dict) else []
+    truth = [entry.get("truth") for entry in _folder_truth(data_dir, library_dir) if isinstance(entry, dict)]
+    rejected = sum(calibration.is_rejected(value) for value in truth)
+    labelled = sum(1 for value in truth
+                   if not calibration.is_rejected(value) and any(calibration.per_recording(value, len(recordings))))
+    workbook = results_dir(data_dir, results_root) / reporting.EXCEL_NAME
+    return {
+        "name": data_dir.name,
+        "path": str(data_dir.resolve()),
+        "started": DataLoader.parse_start_time(first).isoformat(timespec="seconds"),
+        "ended": ended.isoformat(timespec="seconds"),
+        "n_recordings": len(recordings),
+        "frames": frames,
+        "fps": fps,
+        # as the Discobox app saved them; None for a folder without .settings.txt
+        "settings": {name: loader.settings[name] for name in SETTING_RANGES if name in loader.settings} or None,
+        "run": run,
+        "n_labelled_plates": len(groups),
+        "groups": sorted(set(groups)),
+        "n_not_a_mite": rejected,
+        "n_ground_truth": labelled,
+        "results": None if not workbook.is_file() else {
+            "file": workbook.name,
+            "saved_at": datetime.fromtimestamp(workbook.stat().st_mtime).isoformat(timespec="seconds"),
+        },
+    }
+
+
+def recording_results_file(name, filename, results_root=RESULTS_ROOT):
+    """The path of one file of a recording's results: results/<name>/<filename>."""
+    for part in (name, filename):
+        if not part or part in (".", "..") or Path(part).name != part:
+            raise ValueError(f"Bad name: {part}")
+    path = Path(results_root) / name / filename
+    if not path.is_file():
+        raise FileNotFoundError(f"{name} has no {filename}.")
+    return str(path)
+
+
+# --- the folders of earlier versions ------------------------------------------------
+#
+# Earlier versions saved live runs to output/, copied dropped folders to uploads/,
+# and gave every page session a folder named by a random id in outputs/.
+# tidy_folders() moves all of it into today's folders, once, when the app starts.
+
+OLD_RECORDING_FOLDERS = ("output", "uploads")
+OLD_RESULTS_FOLDER = "outputs"
+EARLIER_SESSIONS = "earlier sessions"  # results/earlier sessions/: outputs/, as it was
+
+
+def _shown(path, app_dir):
+    try:
+        return Path(path).relative_to(app_dir).as_posix()
+    except ValueError:
+        return str(path)
+
+
+def _subfolders(folder):
+    return sorted(path for path in Path(folder).iterdir() if path.is_dir()) if Path(folder).is_dir() else []
+
+
+def _move(folder, target, app_dir, done):
+    """Rename `folder` to `target` unless `target` is taken; True if moved."""
+    if target.exists():
+        done.append(f"left {_shown(folder, app_dir)} where it is: {_shown(target, app_dir)} already exists")
+        return False
+    try:
+        target.parent.mkdir(parents=True, exist_ok=True)
+        folder.rename(target)
+    except OSError as error:
+        done.append(f"could not move {_shown(folder, app_dir)}: {error}")
+        return False
+    done.append(f"moved {_shown(folder, app_dir)} to {_shown(target, app_dir)}")
+    return True
+
+
+def _remove_if_empty(folder):
+    """Remove a folder that has been emptied. On Windows a read-only flag, which
+    OneDrive sets on its folders, keeps even an empty folder: it is cleared first."""
+    try:
+        folder.rmdir()
+    except PermissionError:
+        if os.name != "nt":
+            return
+        try:
+            os.chmod(folder, stat.S_IWRITE)
+            folder.rmdir()
+        except OSError:
+            pass
+    except OSError:  # not there, or not empty
+        pass
+
+
+def _relink_datasets(moved, library_dir, done):
+    """A saved dataset of a folder that moved now points at its new place, under
+    the id of that place, as if it had been saved from there."""
+    for path in sorted(Path(library_dir).glob(f"*/{DATASET_NAME}")):
+        dataset = _read_json(path)
+        if not isinstance(dataset, dict) or "data_dir" not in dataset:
+            continue
+        new_dir = moved.get(os.path.normcase(str(dataset["data_dir"])))
+        if new_dir is None:
+            continue
+        folder = Path(library_dir) / dataset_id(new_dir)
+        if folder.exists():
+            continue
+        try:
+            path.parent.rename(folder)
+            dataset["data_dir"] = str(new_dir)
+            (folder / DATASET_NAME).write_text(json.dumps(dataset), encoding="utf-8")
+        except OSError as error:
+            done.append(f"could not update the saved ground truth {path.parent.name}: {error}")
+            continue
+        done.append(f"saved ground truth {path.parent.name} is now {folder.name}")
+
+
+def tidy_folders(app_dir=APP_DIR, recordings_root=RECORDINGS_ROOT, results_root=RESULTS_ROOT,
+                 library_dir=CALIBRATION_LIBRARY, reports_root=CALIBRATION_REPORTS):
+    """Move what earlier versions wrote into today's folders -- recordings from
+    output/ and uploads/ to recordings/, outputs/ to results/earlier sessions/ --
+    and remove the folders of calibration sessions that made no report. Nothing
+    is overwritten: a folder whose new place is taken stays where it is.
+    Returns a line for each thing done."""
+    app_dir = Path(app_dir)
+    done, moved = [], {}
+    for old in OLD_RECORDING_FOLDERS:
+        for folder in _subfolders(app_dir / old):
+            before = os.path.normcase(str(folder.resolve()))
+            target = Path(recordings_root) / folder.name
+            if _move(folder, target, app_dir, done):
+                moved[before] = target.resolve()
+    _relink_datasets(moved, library_dir, done)
+    for folder in _subfolders(app_dir / OLD_RESULTS_FOLDER):
+        _move(folder, Path(results_root) / EARLIER_SESSIONS / folder.name, app_dir, done)
+    for old in (*OLD_RECORDING_FOLDERS, OLD_RESULTS_FOLDER):
+        _remove_if_empty(app_dir / old)
+    # A calibration session's folder is only of use for its report.
+    for folder in _subfolders(reports_root):
+        if not any(folder.glob("*.xlsx")):
+            shutil.rmtree(folder, ignore_errors=True)
+    return done

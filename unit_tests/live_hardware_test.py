@@ -513,7 +513,7 @@ def test_connecting_switches_the_leds_on_and_labelling_keeps_them_on(tmp_path, m
     monkeypatch.setattr(pipeline, "open_lights", lambda port: lights)
     monkeypatch.setattr(pipeline, "CameraSource", lambda _id, settings, lights: camera_source(settings, lights=lights))
     monkeypatch.setattr(pipeline, "LIGHTS_SETTLE", 0)
-    pipeline.open_live("leds", tmp_path / "out", "leds", settings_path=settings_path, output_root=tmp_path / "output")
+    pipeline.open_live("leds", tmp_path / "out", "leds", settings_path=settings_path, recordings_root=tmp_path / "recordings")
     try:
         state = pipeline.live_status("leds")["lights"]
         assert (state["led1"], state["led2"]) == ({"on": True, "level": 120}, {"on": True, "level": 200})

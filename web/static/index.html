@@ -4,39 +4,38 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Varroa discobox</title>
-<link rel="stylesheet" href="style.css?v=11">
+<link rel="stylesheet" href="style.css?v=12">
 </head>
 <body>
 
 <header class="topbar">
   <div class="brand">
     <span class="brand-name">Varroa discobox</span>
-    <span id="brand-mode" class="brand-mode" hidden>Calibration</span>
+    <!-- The three modes share this window; each waits where it was left while
+         another is shown, and its tab goes back there. A test run goes on
+         while you look at the others. -->
+    <nav class="modes" aria-label="Modes">
+      <a id="live-link" href="#/live/open" data-mode="live">Live</a>
+      <a id="analysis-link" href="#/open" data-mode="analysis">Analysis</a>
+      <a id="cal-link" href="#/cal/open" data-mode="cal">Calibration</a>
+    </nav>
     <span id="folder-name" class="folder-name"></span>
   </div>
-  <!-- The three stages. Each is a link, so the browser's back button works. -->
-  <nav id="steps-analysis" class="steps" aria-label="Stages">
+  <!-- The three stages of each mode. Each is a link, so the browser's back button works. -->
+  <nav id="steps-live" class="steps" aria-label="Live stages">
+    <a href="#/live/open" data-step="open"><span class="step-num">1</span> Camera</a>
+    <a href="#/live/label" data-step="label" class="disabled"><span class="step-num">2</span> Plate labels</a>
+    <a href="#/live/results" data-step="results" class="disabled"><span class="step-num">3</span> Live results</a>
+  </nav>
+  <nav id="steps-analysis" class="steps" aria-label="Analysis stages" hidden>
     <a href="#/open" data-step="open"><span class="step-num">1</span> Recordings</a>
     <a href="#/label" data-step="label" class="disabled"><span class="step-num">2</span> Plate labels</a>
     <a href="#/results" data-step="results" class="disabled"><span class="step-num">3</span> Results</a>
-    <!-- Calibration opens in this window; the analysis waits in memory until you come back. -->
-    <a id="mode-link" class="mode-link" href="#/cal/open">Calibration&nbsp;↗</a>
-    <!-- So does a live run from the Discobox camera. -->
-    <a id="live-link" class="mode-link" href="#/live/open">Live&nbsp;↗</a>
   </nav>
   <nav id="steps-cal" class="steps" aria-label="Calibration stages" hidden>
     <a href="#/cal/open" data-step="open"><span class="step-num">1</span> Calibration data</a>
     <a href="#/cal/truth" data-step="truth" class="disabled"><span class="step-num">2</span> Ground truth</a>
     <a href="#/cal/report" data-step="report" class="disabled"><span class="step-num">3</span> Report</a>
-    <!-- The way back out of calibration, to the analysis stages. -->
-    <a id="exit-cal-link" class="mode-link" href="#/open">←&nbsp;Exit calibration</a>
-  </nav>
-  <nav id="steps-live" class="steps" aria-label="Live stages" hidden>
-    <a href="#/live/open" data-step="open"><span class="step-num">1</span> Camera</a>
-    <a href="#/live/label" data-step="label" class="disabled"><span class="step-num">2</span> Plate labels</a>
-    <a href="#/live/results" data-step="results" class="disabled"><span class="step-num">3</span> Live results</a>
-    <!-- A test run goes on while you look at the analysis; come back here to follow it. -->
-    <a id="exit-live-link" class="mode-link" href="#/open">←&nbsp;Exit live</a>
   </nav>
 </header>
 
@@ -44,32 +43,36 @@
 
 <!-- 1 · choose the recordings ------------------------------------------------ -->
 <section id="view-open" class="view" hidden>
-  <div id="drop-zone" class="drop-zone" tabindex="0">
-    <svg class="drop-icon" viewBox="0 0 24 24" aria-hidden="true">
-      <path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>
-      <path d="M12 16v-6m-3 3 3-3 3 3"/>
-    </svg>
-    <p class="drop-title">Drop the recording folder here</p>
-    <p class="hint">The folder that holds the <code>..._fps-30</code> recording folders.</p>
-    <button id="browse-btn" type="button" class="secondary">Choose folder&hellip;</button>
-    <input id="folder-input" type="file" webkitdirectory multiple hidden>
+  <div class="open-narrow">
+    <div id="drop-zone" class="drop-zone" tabindex="0">
+      <svg class="drop-icon" viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>
+        <path d="M12 16v-6m-3 3 3-3 3 3"/>
+      </svg>
+      <p class="drop-title">Drop the recording folder here</p>
+      <p class="hint">The folder that holds the <code>..._fps-30</code> recording folders.</p>
+      <button id="browse-btn" type="button" class="secondary">Choose folder&hellip;</button>
+      <input id="folder-input" type="file" webkitdirectory multiple hidden>
 
-    <div id="upload-progress" class="progress" hidden>
-      <div class="progress-bar"><div id="upload-bar"></div></div>
-      <p id="upload-text" class="hint"></p>
+      <div id="upload-progress" class="progress" hidden>
+        <div class="progress-bar"><div id="upload-bar"></div></div>
+        <p id="upload-text" class="hint"></p>
+      </div>
     </div>
+
+    <details class="path-option">
+      <summary>Or type a folder path on this computer</summary>
+      <p class="hint">Labels are then saved as <code>labels.json</code> right next to the recordings.</p>
+      <div class="row">
+        <input id="data-dir" type="text" value="sample_data" spellcheck="false"
+               placeholder="e.g. C:\recordings\2025-09-04">
+        <button id="open-btn" type="button">Open</button>
+      </div>
+    </details>
+    <p id="open-status" class="hint"></p>
   </div>
-
-  <details class="path-option">
-    <summary>Or type a folder path on this computer</summary>
-    <p class="hint">Labels are then saved as <code>labels.json</code> right next to the recordings.</p>
-    <div class="row">
-      <input id="data-dir" type="text" value="sample_data" spellcheck="false"
-             placeholder="e.g. C:\recordings\2025-09-04">
-      <button id="open-btn" type="button">Open</button>
-    </div>
-  </details>
-  <p id="open-status" class="hint"></p>
+  <!-- filled by recordings.js -->
+  <section class="block recordings-block" data-recordings="analysis"></section>
 </section>
 
 <!-- 2 · label the plates ------------------------------------------------------ -->
@@ -141,7 +144,7 @@
             <label for="live-pool-size">Frames per pool</label>
             <input id="live-pool-size" type="number" min="2" step="1" placeholder="whole recording" class="number-input">
             <label class="live-check"><input id="live-save" type="checkbox" checked> Save the recordings
-              <span class="hint">to output/&lt;run name&gt;/, to analyse them again as a folder later</span></label>
+              <span class="hint">to recordings/&lt;run name&gt;/, to analyse them again later</span></label>
           </div>
         </details>
       </div>
@@ -174,58 +177,62 @@
       <button id="live-label-btn" type="button" class="wide" disabled>Next: label the plates</button>
     </aside>
   </div>
+  <!-- filled by recordings.js -->
+  <section class="block recordings-block" data-recordings="live"></section>
 </section>
 
 <!-- Calibration window ======================================================= -->
 
 <!-- 1 · choose what to do and the calibration recordings ---------------------- -->
 <section id="view-cal-open" class="view" hidden>
-  <h1>Calibration</h1>
-  <p class="hint">
-    For each detected mite and each recording, you watch the clip and mark whether the mite moves.
-    The detector's calls are then compared with yours, one mite-recording at a time.
-  </p>
+  <div class="open-narrow">
+    <h1>Calibration</h1>
+    <p class="hint">
+      For each detected mite and each recording, you watch the clip and mark whether the mite moves.
+      The detector's calls are then compared with yours, one mite-recording at a time.
+    </p>
 
-  <fieldset class="mode-choice">
-    <legend>What do you want to do?</legend>
-    <label class="mode-option">
-      <input type="radio" name="cal-mode" value="calibrate" checked>
-      <span class="mode-title">Calibrate the threshold</span>
-      <span class="hint">Find the movement threshold that best separates the mites you saw moving from the still ones, and save it for every later analysis.</span>
-    </label>
-    <label class="mode-option">
-      <input type="radio" name="cal-mode" value="test">
-      <span class="mode-title">Test the threshold</span>
-      <span class="hint">Check the threshold in use against a different recording: confusion matrix, mites moving per recording by the ground truth and by the detector, ROC curve, and where on the plate the errors are.</span>
-    </label>
-  </fieldset>
+    <fieldset class="mode-choice">
+      <legend>What do you want to do?</legend>
+      <label class="mode-option">
+        <input type="radio" name="cal-mode" value="calibrate" checked>
+        <span class="mode-title">Calibrate the threshold</span>
+        <span class="hint">Find the movement threshold that best separates the mites you saw moving from the still ones, and save it for every later analysis.</span>
+      </label>
+      <label class="mode-option">
+        <input type="radio" name="cal-mode" value="test">
+        <span class="mode-title">Test the threshold</span>
+        <span class="hint">Check the threshold in use against a different recording: confusion matrix, mites moving per recording by the ground truth and by the detector, ROC curve, and where on the plate the errors are.</span>
+      </label>
+    </fieldset>
 
-  <div id="cal-drop-zone" class="drop-zone" tabindex="0">
-    <svg class="drop-icon" viewBox="0 0 24 24" aria-hidden="true">
-      <path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>
-      <path d="M12 16v-6m-3 3 3-3 3 3"/>
-    </svg>
-    <p class="drop-title">Drop the calibration recording folder here</p>
-    <p class="hint">The folder that holds the <code>..._fps-30</code> recording folders.</p>
-    <button id="cal-browse-btn" type="button" class="secondary">Choose folder&hellip;</button>
-    <input id="cal-folder-input" type="file" webkitdirectory multiple hidden>
+    <div id="cal-drop-zone" class="drop-zone" tabindex="0">
+      <svg class="drop-icon" viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>
+        <path d="M12 16v-6m-3 3 3-3 3 3"/>
+      </svg>
+      <p class="drop-title">Drop the calibration recording folder here</p>
+      <p class="hint">The folder that holds the <code>..._fps-30</code> recording folders.</p>
+      <button id="cal-browse-btn" type="button" class="secondary">Choose folder&hellip;</button>
+      <input id="cal-folder-input" type="file" webkitdirectory multiple hidden>
 
-    <div id="cal-upload-progress" class="progress" hidden>
-      <div class="progress-bar"><div id="cal-upload-bar"></div></div>
-      <p id="cal-upload-text" class="hint"></p>
+      <div id="cal-upload-progress" class="progress" hidden>
+        <div class="progress-bar"><div id="cal-upload-bar"></div></div>
+        <p id="cal-upload-text" class="hint"></p>
+      </div>
     </div>
+
+    <details class="path-option">
+      <summary>Or type a folder path on this computer</summary>
+      <p class="hint">The ground truth is then saved as <code>ground_truth.json</code> right next to the recordings.</p>
+      <div class="row">
+        <input id="cal-data-dir" type="text" value="sample_data" spellcheck="false"
+               placeholder="e.g. C:\recordings\calibration">
+        <button id="cal-open-btn" type="button">Open</button>
+      </div>
+    </details>
+    <p id="cal-open-status" class="hint"></p>
   </div>
-
-  <details class="path-option">
-    <summary>Or type a folder path on this computer</summary>
-    <p class="hint">The ground truth is then saved as <code>ground_truth.json</code> right next to the recordings.</p>
-    <div class="row">
-      <input id="cal-data-dir" type="text" value="sample_data" spellcheck="false"
-             placeholder="e.g. C:\recordings\calibration">
-      <button id="cal-open-btn" type="button">Open</button>
-    </div>
-  </details>
-  <p id="cal-open-status" class="hint"></p>
 
   <section class="block saved-datasets">
     <h2>Saved ground truth</h2>
@@ -240,6 +247,9 @@
       <p id="pool-status" class="hint"></p>
     </div>
   </section>
+
+  <!-- filled by recordings.js -->
+  <section class="block recordings-block" data-recordings="cal"></section>
 </section>
 
 <!-- 2 · enter the ground truth, zone by zone ------------------------------------ -->
@@ -305,8 +315,9 @@
 <div id="tooltip" class="tooltip" hidden></div>
 
 <script src="charts.js?v=10"></script>
-<script src="app.js?v=14"></script>
-<script src="live.js?v=2"></script>
-<script src="calibration.js?v=14"></script>
+<script src="app.js?v=15"></script>
+<script src="recordings.js?v=1"></script>
+<script src="live.js?v=3"></script>
+<script src="calibration.js?v=15"></script>
 </body>
 </html>

@@ -83,6 +83,18 @@ code, kbd { font-family: var(--mono); font-size: 12px; color: var(--ink); backgr
 .steps a.disabled { opacity: 0.4; pointer-events: none; }
 .step-num { font-family: var(--mono); font-size: 11px; }
 
+/* Live, analysis and calibration: one tab each, the mode shown filled in. */
+.modes { display: inline-flex; align-self: center; border: 1px solid var(--rule); border-radius: 2px; }
+.modes a { position: relative; padding: 2px 11px; font-size: 13px; color: var(--muted); }
+.modes a + a { border-left: 1px solid var(--rule); }
+.modes a:hover { color: var(--ink); background: var(--wash); text-decoration: none; }
+.modes a.active { color: #fff; background: var(--ink); }
+/* A test run is being recorded, whichever mode is shown. */
+.modes a.recording::after {
+  content: ""; position: absolute; top: 3px; right: 3px;
+  width: 6px; height: 6px; border-radius: 50%; background: var(--critical);
+}
+
 /* --- controls ------------------------------------------------------------------ */
 
 .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
@@ -127,7 +139,9 @@ button.secondary:hover, .button.secondary:hover { background: var(--wash); borde
 
 /* --- 1 · recordings -------------------------------------------------------------- */
 
-#view-open { max-width: 640px; margin: 48px auto 0; }
+/* The start pages of the analysis and calibration: the choice in a narrow
+   column, the lists of recordings under it at full width. */
+.open-narrow { max-width: 640px; margin: 48px auto 0; }
 
 .drop-zone {
   display: flex; flex-direction: column; align-items: center; text-align: center; gap: 4px;
@@ -407,12 +421,7 @@ table.clickable tbody tr:hover, table.clickable tbody tr:focus-visible { backgro
 
 /* --- calibration window -------------------------------------------------------------- */
 
-.brand-mode { font-size: 13px; color: var(--muted); }
-.brand-mode::before { content: "·"; margin-right: 10px; }
-.mode-link { margin-left: 8px; padding-left: 16px; border-left: 1px solid var(--rule); border-bottom: 0 !important; }
-
-#view-cal-open { max-width: 640px; margin: 48px auto 0; }
-#view-cal-open > .hint { margin: 6px 0 20px; }
+#view-cal-open .open-narrow > .hint { margin: 6px 0 20px; }
 .mode-choice { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin: 0 0 20px; padding: 0; border: 0; }
 .mode-choice legend { padding: 0; margin-bottom: 8px; font-weight: 600; color: var(--ink); }
 .mode-option {
@@ -650,3 +659,22 @@ td.num.error { color: var(--critical); font-weight: 600; }
   .live-panel { grid-template-columns: minmax(0, 1fr); }
   .live-actions { justify-items: start; }
 }
+
+/* --- recordings kept ------------------------------------------------------------------ */
+
+.recordings-block { margin-top: 44px; }
+.recordings-block > h2 { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.recordings-block > h2 .hint { margin: 0; font-weight: 400; }
+.recordings td { vertical-align: top; padding-top: 8px; padding-bottom: 8px; white-space: normal; }
+.recordings tbody tr + tr td { border-top: 1px solid var(--rule); }
+.recordings .rec-name { font-weight: 600; color: var(--ink); white-space: nowrap; }
+.recordings .sub { display: block; color: var(--muted); font-size: 12px; }
+.recordings .settings { min-width: 260px; }
+.recordings .plates { min-width: 180px; }
+.recordings .name { min-width: 160px; }
+.recordings td.nowrap { white-space: nowrap; }
+.recordings .row-actions { white-space: nowrap; }
+.recordings .row-actions button + button { margin-left: 4px; }
+.rec-state { display: inline-block; margin-left: 6px; padding: 0 5px; font-size: 11px; font-weight: 600; color: #fff; background: var(--muted); border-radius: 2px; vertical-align: 1px; }
+.rec-state.now { background: var(--critical); }
+.rec-state.cut { background: var(--still); }

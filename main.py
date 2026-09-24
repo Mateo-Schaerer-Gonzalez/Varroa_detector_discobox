@@ -13,7 +13,8 @@ Live, from the Discobox camera -- a test run with the settings of settings.txt
     python main.py --live [--camera-id ID] [--fps 30] [--run-name NAME] [--no-save-frames]
     python main.py --replay sample_data  # a recorded folder, played as if from the camera
 
-The recordings of a live run are saved to output/<run name>/, a folder the first
+The results go to results/<folder name>/ unless another folder is given. The
+recordings of a live run are saved to recordings/<run name>/, a folder the first
 form reads back with the same results. Ctrl+C stops a live run cleanly: the
 recording being captured ends with the frames already in, is analysed, and the
 results are written.
@@ -37,7 +38,7 @@ def parse_args(argv):
     parser = argparse.ArgumentParser(
         description="Detect varroa mites and score how much they move, from a folder of recordings or live.")
     parser.add_argument("data_dir", nargs="?", default="sample_data", help="the folder holding the ..._fps-30 folders")
-    parser.add_argument("out_dir", nargs="?", default=None, help="where the results go (default outputs/cli)")
+    parser.add_argument("out_dir", nargs="?", default=None, help="where the results go (default results/<folder name>)")
     parser.add_argument("--pool-size", type=int, default=None, metavar="N",
                         help="frames scored together (default: a whole recording, one burst)")
 
@@ -56,7 +57,7 @@ def parse_args(argv):
     live.add_argument("--labels", metavar="FILE", help="plate labels for a live run (JSON: zone id -> group)")
     live.add_argument("--no-save-frames", action="store_true", help="analyse without saving the recordings (long runs)")
     live.add_argument("--out-dir", dest="live_out_dir", metavar="DIR",
-                      help="where a live run's results go (default outputs/<run name>)")
+                      help="where a live run's results go (default results/<run name>)")
 
     args = parser.parse_args(argv)
     args.is_live = args.live or bool(args.camera_id) or bool(args.replay)
@@ -78,7 +79,7 @@ def print_summary(results, out_dir):
 
 def analyse_folder(args):
     data_dir = args.data_dir
-    out_dir = args.out_dir or "outputs/cli"
+    out_dir = args.out_dir or pipeline.results_dir(data_dir, pipeline.RESULTS_ROOT)
 
     labels = pipeline.load_labels(data_dir)
     if not labels:
@@ -89,8 +90,7 @@ def analyse_folder(args):
 
 
 def run_live(args):
-    run_name = args.run_name or pipeline.default_run_name(pipeline.LIVE_OUTPUT)
-    out_dir = args.live_out_dir or f"outputs/{run_name}"
+    run_name = args.run_name or pipeline.default_run_name(pipeline.RECORDINGS_ROOT)
     labels = json.loads(Path(args.labels).read_text(encoding="utf-8")) if args.labels else None
     if args.replay:
         options = {"source": "replay", "replay_dir": args.replay, "replay_fps": args.fps, "replay_gap": args.replay_gap}
@@ -98,8 +98,10 @@ def run_live(args):
         options = {"source": "camera", "camera_id": args.camera_id, "serial_port": args.serial_port,
                    "settings_path": args.settings, "settings": {"fps": args.fps} if args.fps else None}
 
-    status = pipeline.open_live(LIVE_ID, out_dir, run_name, save_frames=not args.no_save_frames,
-                                pool_size=args.pool_size, output_root=pipeline.LIVE_OUTPUT, **options)
+    status = pipeline.open_live(LIVE_ID, args.live_out_dir, run_name, save_frames=not args.no_save_frames,
+                                pool_size=args.pool_size, recordings_root=pipeline.RECORDINGS_ROOT,
+                                results_root=pipeline.RESULTS_ROOT, **options)
+    out_dir = status["out_dir"]
     try:
         print(f"Test run {run_name}: {status['camera']}, pools of {status['pool_size_text']}")
         print(f"Recordings {'saved to ' + status['run_dir'] if status['save_frames'] else 'not saved'}; Ctrl+C stops the run.")

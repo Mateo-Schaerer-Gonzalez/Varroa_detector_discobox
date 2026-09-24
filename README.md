@@ -23,13 +23,30 @@ seconds after the last browser tab is closed, so the next start always runs
 the current code (e.g. after a `git pull`). A tab left in the background keeps
 it running. Started by hand with the command above, it keeps running.
 
-Then in the browser:
+The page opens on **Live**, the Discobox camera (see *Live from the Discobox*
+below). The tabs *Live*, *Analysis* and *Calibration* in the header switch
+between the three modes. Each keeps its place while you look at another, and
+a test run goes on meanwhile; a red dot on *Live* says one is being recorded.
 
-1. **Recordings**: drag the session folder (the one holding the `..._fps-30`
-   folders) onto the page, or click *Choose folder*. The images are copied to
-   `uploads/<folder name>/`. Dropping the same folder again only sends files that
-   changed, and keeps the labels you already typed. You can also type a path
-   instead, and then labels are saved next to the recordings.
+The first page of each mode lists the **previous recordings**: every test run
+recorded here and every folder dropped into the page. For each it shows when
+it was recorded, how many recordings it holds and the Discobox settings it
+was recorded with. Those are the frames and frame rate of a recording, the time
+between recordings, and the fan and LED durations and intensities, from its
+`.settings.txt`. For a live run it also shows the camera or the folder
+replayed, the frames per pool, dropped frames and whether the run was stopped
+early (from its `run.json`). It shows the plate labels, *not a mite* marks and
+ground truth kept with it, and its last results. *Analyse* and *Calibrate*
+open it in that mode.
+
+To analyse a folder, in *Analysis*:
+
+1. **Recordings**: pick one of the previous recordings, or drag the session
+   folder (the one holding the `..._fps-30` folders) onto the page, or click
+   *Choose folder*. The images are copied to `recordings/<folder name>/`.
+   Dropping the same folder again only sends files that changed, and keeps the
+   labels you already typed. You can also type a path instead, and then labels
+   are saved next to the recordings.
 2. **Plate labels**: click a plate and type its group (e.g. the venom extract).
    <kbd>Tab</kbd> saves and moves to the next plate. Labels are saved to
    `labels.json` automatically.
@@ -51,13 +68,12 @@ is judged on its own; the app makes no call about a mite being alive or dead.
 
 ### Calibration
 
-*Calibration ↗* in the header switches to calibration in the same window, where
-you mark by eye which mites move in each recording and compare that with the
-detector. *← Exit calibration* goes back to the analysis where you left it; both
-keep their state while you switch:
+In *Calibration* you mark by eye which mites move in each recording and compare
+that with the detector:
 
 1. **Calibration data**: pick *Calibrate the threshold* or *Test the threshold*,
-   then drop the folder. Every frame is decoded and each mite is scored.
+   then drop the folder, or *Calibrate* one of the previous recordings. Every
+   frame is decoded and each mite is scored.
 2. **Ground truth**: zone by zone and recording by recording, the zone's frames
    of that recording play in a loop; click each mite to cycle it through
    *moving*, *still*, *not a mite* (a false detection) and back to unlabelled;
@@ -74,7 +90,9 @@ keep their state while you switch:
    confusion matrix at the threshold in use, the ROC curve with AUC, and where on
    the plate the errors are. Both show the fraction of mites moving per recording
    by the ground truth against the detector's; *Test* also shows it per group. Everything is
-   also written to `calibration.xlsx`. Under *Data used*, switch on *Pool with
+   also written to `calibration.xlsx`, in the session's folder in
+   `calibration_data/reports/` (named by when it began and what it opened).
+   Under *Data used*, switch on *Pool with
    saved ground truth* to add other labelled recordings, and untick any you
    want left out. Every point, map dot and zone row names the folder and
    recording it comes from, and clicking it opens that mite in its own recording,
@@ -108,7 +126,7 @@ app works with no network connection.
 
 ### Live from the Discobox
 
-*Live ↗* in the header runs a Discobox test run from this app, as the Discobox app
+*Live*, the page the app opens on, runs a Discobox test run from this app, as the Discobox app
 (github.com/Abilium-GmbH/varroa-discobox) does: every *time between recordings*
 the fan and LEDs come on and the camera records a burst of frames. Each recording
 is analysed as soon as it is in, and the usual result pages fill in as the run goes.
@@ -134,12 +152,15 @@ is analysed as soon as it is in, and the usual result pages fill in as the run g
    still change; the results follow them.
 
 Each recording is saved, as the Discobox app saves it, to
-`output/<run name>/<YYYY-MM-DD-HH-MM-SS>_fps-<fps>/<recording>_<frame id>.bmp`
-(8-bit grey), with the settings, labels and marks next to them. Only the bursts are
+`recordings/<run name>/<YYYY-MM-DD-HH-MM-SS>_fps-<fps>/<recording>_<frame id>.bmp`
+(8-bit grey), with the settings, labels and marks next to them, and `run.json`:
+how the run was made (camera or replay, frames per pool, frames dropped) and how
+far it got, brought up to date after every recording. Only the bursts are
 saved, never the camera image in between. That folder is a session like any
-other: opened as a folder, it gives exactly the results the live run gave.
-Untick *Save the recordings* for long runs; the results are the same, but there
-is then no clip to play and nothing to open again.
+other: it is listed with the previous recordings, and analysed there it gives
+exactly the results the live run gave. The live results go to
+`results/<run name>/`. Untick *Save the recordings* for long runs; the results
+are the same, but there is then no clip to play and nothing to open again.
 
 *Stop* ends the recording being captured with the frames already in, analyses it
 and writes the results; so does Ctrl+C on the server. Closing the page does not
@@ -171,7 +192,7 @@ this.
 ## Running from the command line
 
 ```
-python main.py                       # sample_data, labels from its labels.json
+python main.py                       # sample_data, labels from its labels.json -> results/sample_data/
 python main.py my_recordings out/run1
 python main.py my_recordings out/run1 --pool-size 10
 ```
@@ -186,12 +207,28 @@ python main.py --live --no-save-frames      # long runs: analyse, save nothing
 python main.py --replay sample_data         # a recorded folder, as if from the camera
 ```
 
-It prints a line per recording analysed, and the results go to
-`outputs/<run name>/` (`--out-dir` to change that).
+It prints a line per recording analysed; the recordings go to
+`recordings/<run name>/` and the results to `results/<run name>/` (`--out-dir`
+to change that).
+
+## Where files go
+
+| Folder | Contents |
+| --- | --- |
+| `recordings/<name>/` | The frames of every recording session: each live test run, and each folder dropped into the page. Its labels, *not a mite* marks, ground truth, `.settings.txt` and, for a live run, `run.json` are kept next to them. |
+| `results/<name>/` | The last analysis of that recording, replaced when it is analysed again (files below). `clips/` holds the frames the result pages play; it can be deleted at any time. |
+| `calibration_data/<dataset>/` | Saved ground truth, one dataset per labelled recording (see *Saved ground truth*). |
+| `calibration_data/reports/<date time> <name>/` | One calibration session: its `calibration.xlsx`. Sessions that made no report are removed at the next start. |
+
+Earlier versions kept live runs in `output/`, dropped folders in `uploads/`
+and every page session in `outputs/<random id>/`. When the app starts, it
+moves them: recordings to `recordings/` (any saved ground truth follows), and
+the old sessions to `results/earlier sessions/`. A folder whose new place is
+already taken stays where it was.
 
 ## Results
 
-Each run writes to `outputs/<session>/`:
+Each analysis writes to `results/<recording>/`:
 
 | File | Contents |
 | --- | --- |

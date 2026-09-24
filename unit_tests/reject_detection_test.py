@@ -76,8 +76,8 @@ def test_restoring_keeps_labels_given_since(tmp_path):
 
 
 def test_the_labelling_page_reads_marks_kept_only_in_the_library(tmp_path):
-    """A folder without its ground_truth.json, e.g. dropped again after uploads/
-    was cleared, shows the detections its saved dataset marks "not a mite", as
+    """A folder without its ground_truth.json, e.g. dropped again after its copy in
+    recordings/ was deleted, shows the detections its saved dataset marks "not a mite", as
     the calibration window does."""
     root = Path(pipeline.__file__).resolve().parent
     data_dir = tmp_path / "plate"

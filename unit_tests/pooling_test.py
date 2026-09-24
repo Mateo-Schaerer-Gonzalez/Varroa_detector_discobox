@@ -114,5 +114,5 @@ def test_with_a_pool_size_a_clip_plays_its_pool(tmp_path):
     assert [int(np.median(frame)) for frame in frames] == [12, 13]  # recording 1, frames 2 and 3
     with pytest.raises(ValueError):
         pipeline.analysis_clip(root, tmp_path / "out", 4, pool_size=2)
-    # without a pool size, as always: one clip per recording, named as before
-    assert pipeline.analysis_clip(root, tmp_path / "out", 1)["frames"][0].startswith("clip_r1_plate_")
+    # without a pool size, as always: one clip per recording, named as before, in the clips folder
+    assert pipeline.analysis_clip(root, tmp_path / "out", 1)["frames"][0].startswith("clips/clip_r1_plate_")

@@ -1,13 +1,18 @@
 __pycache__/
 ground_truth_30min/
-outputs/
 .pytest_cache/
-uploads/
 calibration_data/
 server.log
 server.pid
 
-# live runs: recordings (Discobox layout) and the saved test-run settings
-output/
+# what the app keeps: the frames of every recording, and the results of each
+recordings/
+results/
+# the saved test-run settings
 settings.txt
 vimbax.config
+
+# where earlier versions kept them; the app moves them to the folders above
+output/
+outputs/
+uploads/

@@ -16,12 +16,12 @@ def small_session(tmp_path):
 
 
 @pytest.fixture
-def output_root(tmp_path, monkeypatch):
-    monkeypatch.setattr(pipeline, "LIVE_OUTPUT", tmp_path / "output")
-    return tmp_path / "output"
+def recordings_root(tmp_path, monkeypatch):
+    monkeypatch.setattr(pipeline, "RECORDINGS_ROOT", tmp_path / "recordings")
+    return tmp_path / "recordings"
 
 
-def test_a_replay_runs_live_and_saves_a_folder_folder_mode_reads_the_same(tmp_path, small_session, output_root, capsys):
+def test_a_replay_runs_live_and_saves_a_folder_folder_mode_reads_the_same(tmp_path, small_session, recordings_root, capsys):
     out = tmp_path / "live_out"
     assert main.main(["--replay", str(small_session), "--replay-gap", "0", "--fps", "1000",
                       "--run-name", "cli run", "--out-dir", str(out)]) == 0
@@ -29,11 +29,11 @@ def test_a_replay_runs_live_and_saves_a_folder_folder_mode_reads_the_same(tmp_pa
     assert "Test run cli run: replay of small_session, pools of whole recording" in printed
     assert "3/3" in printed and "30 mites across 3 recordings" in printed
 
-    folder = reference.run_folder(output_root / "cli run", tmp_path / "folder_out", tmp_path / "no_library")
+    folder = reference.run_folder(recordings_root / "cli run", tmp_path / "folder_out", tmp_path / "no_library")
     assert reference.outputs(out)["excel"] == folder["excel"]
 
 
-def test_ctrl_c_stops_a_live_run_cleanly(tmp_path, small_session, output_root, monkeypatch, capsys):
+def test_ctrl_c_stops_a_live_run_cleanly(tmp_path, small_session, recordings_root, monkeypatch, capsys):
     def interrupted(total):
         while not pipeline.live_status(main.LIVE_ID)["analysed"]:
             time.sleep(0.01)

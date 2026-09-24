@@ -1,5 +1,6 @@
-// Live from the Discobox, in the same window as the analysis:
-//   #/live/open      the camera (or a replay), the test run's settings, the fan and LEDs
+// Live from the Discobox, the mode the app opens on:
+//   #/live/open      the camera (or a replay), the test run's settings, the fan and LEDs,
+//                    and under them the recordings kept (recordings.js)
 //   #/live/label     app.js's label page; its button starts the test run
 //   #/live/results   app.js's result pages -- the very ones a folder gets -- under a
 //                    small panel with how the run is going, filling in as it goes
@@ -62,6 +63,9 @@ function routeLive(sub = "open") {
 }
 
 function drawLiveSteps(step = null) {
+  // The Live tab says a run is being recorded, whichever mode is shown.
+  $("live-link").classList.toggle("recording", liveRunning());
+  $("live-link").title = liveRunning() ? "A test run is being recorded" : "";
   document.querySelectorAll("#steps-live a[data-step]").forEach((link) => {
     if (step) link.classList.toggle("active", link.dataset.step === step);
     const liveSession = loadedContext === "live" ? session : contexts.live.session;
@@ -90,6 +94,7 @@ function drawLiveWaiting() {
 // themselves. Replaying a folder instead is folded away below it.
 
 async function drawLiveOpen() {
+  refreshRecordings();
   if (!live.options) {
     $("live-open-status").innerHTML = `<span class="spinner"></span> Looking for cameras…`;
     try {
@@ -244,6 +249,7 @@ async function closeLive() {
   live.options = null;  // the run name is free again, a camera may have come or gone
   $("live-feed").removeAttribute("src");
   $("live-open-status").textContent = "";
+  drawLiveSteps();
   if (shownMode === "live") location.hash === "#/live/open" ? drawLiveOpen() : go("#/live/open");
 }
 
@@ -501,7 +507,11 @@ async function pollLive() {
     if (id !== live.id) return;
     if (!response.ok) return;
     const wasRunning = liveRunning();
+    const was = live.status;
     live.status = await response.json();
+    // The list of recordings on the camera page shows the run from its first recording on.
+    const changed = !was || was.state !== live.status.state || was.analysed !== live.status.analysed;
+    if (changed && shownMode === "live" && location.hash.startsWith("#/live/open")) refreshRecordings();
     if (live.status.version !== live.version) await fetchLiveResults();
     // Once the run is over, the charts' time axis is what was recorded, no longer the whole run.
     else if (wasRunning && !liveRunning() && results && onLiveResults()) drawResults();

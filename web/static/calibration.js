@@ -67,7 +67,7 @@ function routeCalibration(sub, ...args) {
   });
   Charts.hideTooltip();
 
-  if (step === "open") refreshDatasets();
+  if (step === "open") { refreshDatasets(); refreshRecordings(); }
   if (step === "truth") drawTruthView(...args);
   if (step === "report") drawReport();
   window.scrollTo(0, 0);

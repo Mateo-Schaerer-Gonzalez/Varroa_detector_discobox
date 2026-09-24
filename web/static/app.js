@@ -1,12 +1,15 @@
 // Browser side. Talks to the server over the /api endpoints and knows nothing
 // about how the analysis works.
 //
-// Navigation is hash-based so the browser's back/forward buttons work:
-//   #/open  #/label  #/results  #/zone/<id>  #/mite/<id>
-// in calibration (calibration.js), in the same window:
-//   #/cal/open  #/cal/truth/<zone id>/<recording>  #/cal/report
-// and live from the Discobox camera (live.js), with the same label and result pages:
+// Navigation is hash-based so the browser's back/forward buttons work. Three modes
+// share the window, each with a tab in the header. Live from the Discobox camera
+// (live.js), the page the app opens on, with the label and result pages below:
 //   #/live/open  #/live/label  #/live/results  #/live/zone/<id>  #/live/mite/<id>
+// the analysis of a folder:
+//   #/open  #/label  #/results  #/zone/<id>  #/mite/<id>
+// and calibration (calibration.js):
+//   #/cal/open  #/cal/truth/<zone id>/<recording>  #/cal/report
+// The recordings kept (recordings.js) are listed on each mode's first page.
 
 let sessionId = null;
 let session = null;      // what opening a folder returned: preview, zones, labels
@@ -105,13 +108,14 @@ function movingBadge(moving) {
 
 // --- routing ---------------------------------------------------------------
 
-// The analysis and calibration share this window. Each keeps its own folder in
-// the header and the page it was left on, which the link over to it goes back to.
+// Live, the analysis and calibration share this window. Each keeps its own folder
+// in the header and the page it was left on, which its tab goes back to.
 const modes = {
-  analysis: { page: "#/open", folder: "", path: "" },
-  cal: { page: "#/cal/open", folder: "", path: "" },
-  live: { page: "#/live/open", folder: "", path: "" },
+  live: { page: "#/live/open", folder: "", path: "", title: "Live" },
+  analysis: { page: "#/open", folder: "", path: "", title: "Analysis" },
+  cal: { page: "#/cal/open", folder: "", path: "", title: "Calibration" },
 };
+const HOME = modes.live.page;
 let shownMode = null;
 const modeOf = (hash) => (hash.startsWith("#/cal") ? "cal" : hash.startsWith("#/live") ? "live" : "analysis");
 
@@ -141,31 +145,32 @@ function setFolder(mode, name, path = "") {
 }
 
 function drawModeLinks() {
-  $("mode-link").href = modes.cal.page;
-  $("exit-cal-link").href = modes.analysis.page;
-  $("live-link").href = modes.live.page;
-  $("exit-live-link").href = modes.analysis.page;
+  document.querySelectorAll(".modes a[data-mode]").forEach((link) => { link.href = modes[link.dataset.mode].page; });
 }
 
-// Calibration uses its own steps in the header.
+// Each mode has its own steps in the header.
 function setMode(mode) {
-  const calibrating = mode === "cal";
   const switched = mode !== shownMode;
   shownMode = mode;
   $("steps-analysis").hidden = mode !== "analysis";
-  $("steps-cal").hidden = !calibrating;
+  $("steps-cal").hidden = mode !== "cal";
   $("steps-live").hidden = mode !== "live";
   $("live-panel").hidden = true;  // live.js shows it over the live result pages
-  $("mode-link").hidden = calibrating;
-  $("brand-mode").hidden = mode === "analysis";
-  $("brand-mode").textContent = calibrating ? "Calibration" : "Live";
-  document.title = calibrating ? "Calibration · Varroa discobox" : mode === "live" ? "Live · Varroa discobox" : "Varroa discobox";
+  document.querySelectorAll(".modes a[data-mode]").forEach((link) => {
+    const active = link.dataset.mode === mode;
+    link.classList.toggle("active", active);
+    if (active) link.setAttribute("aria-current", "page");
+    else link.removeAttribute("aria-current");
+  });
+  document.title = `${modes[mode].title} · Varroa discobox`;
   setFolder(mode, modes[mode].folder, modes[mode].path);
   // The analysis may have marked a detection "not a mite" meanwhile.
-  if (calibrating && switched) reloadTruth();
+  if (mode === "cal" && switched) reloadTruth();
 }
 
 function route() {
+  // The app opens on the camera.
+  if (!/^#\/./.test(location.hash)) { location.replace(HOME); return; }
   const [, view = "open", id, ...rest] = location.hash.split("/");
   const mode = view === "cal" ? "cal" : view === "live" ? "live" : "analysis";
   stopPlayer();
@@ -191,6 +196,7 @@ function route() {
   });
   Charts.hideTooltip();
 
+  if (step === "open") refreshRecordings();
   if (step === "label") drawLabelView();
   if (step === "results") drawResults();
   window.scrollTo(0, 0);
@@ -227,9 +233,10 @@ async function openFolder(dataDir) {
   }
 }
 
-// Only these files matter to the analysis; everything else stays on disk.
+// Only these files matter to the analysis, and run.json to the list of recordings;
+// everything else stays on disk.
 const wanted = (path) =>
-  /\.bmp$/i.test(path) || /(^|\/)\.settings\.txt$/.test(path) || /(^|\/)(labels|ground_truth)\.json$/.test(path);
+  /\.bmp$/i.test(path) || /(^|\/)\.settings\.txt$/.test(path) || /(^|\/)(labels|ground_truth|run)\.json$/.test(path);
 
 // Walk a dropped folder into a flat list of { path, file }, paths relative to it.
 async function filesFromDrop(dataTransfer) {
@@ -1009,7 +1016,7 @@ function showOverview() {
     ${section("Files", `<ul class="files">
         <li><a href="${fileUrl(results.excel)}" download>${esc(results.excel)}</a> <span class="muted">measurements, group summary and movement over time</span></li>
       </ul>
-      <p class="caption">Every chart above can be downloaded as SVG or PNG from the buttons beside its title.</p>`)}`;
+      <p class="caption">${resultsFolderNote()}Every chart above can be downloaded as SVG or PNG from the buttons beside its title.</p>`)}`;
   wireRunAgain(body);
   wireRecordingBar(body);
 
@@ -1038,6 +1045,14 @@ function showOverview() {
   drawGroupScores(groups, rows, topScore * 1.05);
   drawMovingScores(groups, rows, topScore * 1.05);
   drawMovementIntervals(groups);
+}
+
+// Where the workbook and figures are saved on disk: results/<recording>/.
+function resultsFolderNote() {
+  const dir = loadedContext === "live" ? live.status && live.status.out_dir : session && session.results_dir;
+  if (!dir) return "";
+  const short = dir.split(/[\\/]/).filter(Boolean).slice(-2).join("/");
+  return `The workbook and the figures are saved in <code title="${esc(dir)}">${esc(short)}/</code>, replaced when this recording is analysed again. `;
 }
 
 // Quartiles and Tukey whiskers of a list of numbers.
