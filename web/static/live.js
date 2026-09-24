@@ -512,12 +512,19 @@ async function pollLive() {
     // The list of recordings on the camera page shows the run from its first recording on.
     const changed = !was || was.state !== live.status.state || was.analysed !== live.status.analysed;
     if (changed && shownMode === "live" && location.hash.startsWith("#/live/open")) refreshRecordings();
-    if (live.status.version !== live.version) await fetchLiveResults();
-    // Once the run is over, the charts' time axis is what was recorded, no longer the whole run.
-    else if (wasRunning && !liveRunning() && results && onLiveResults()) drawResults();
+    // How the run is going first: the progress bar and the feed never wait on the results.
     drawLiveStatus();
     drawLiveSteps();
     refreshFeed();
+    try {
+      if (live.status.version !== live.version) await fetchLiveResults();
+      // Once the run is over, the charts' time axis is what was recorded, no longer the whole run.
+      else if (wasRunning && !liveRunning() && results && onLiveResults()) drawResults();
+    } catch (error) {
+      // Said, not swallowed: the next poll tries again.
+      console.error("Could not show the live results", error);
+      if (onLiveResults()) $("live-error").textContent = `Could not show the results: ${error.message}`;
+    }
   } catch {
     // the server is busy or restarting: try again at the next tick
   } finally {
@@ -531,7 +538,9 @@ setInterval(pollLive, LIVE_POLL_MS);
 // moving the page. With "follow" on, the page moves on to the newest recording.
 async function fetchLiveResults() {
   const id = live.id;
-  const data = await (await fetch(`/api/live/${id}/results`, { cache: "no-store" })).json();
+  const response = await fetch(`/api/live/${id}/results`, { cache: "no-store" });
+  if (!response.ok) throw new Error(`the server answered ${response.status} ${response.statusText}`);
+  const data = await response.json();
   if (id !== live.id) return;
   live.version = data.version;
   if (!data.results) return;
