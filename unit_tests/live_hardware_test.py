@@ -110,6 +110,79 @@ def test_the_camera_is_configured_as_the_discobox_app_does():
     ]
 
 
+class DiscoveredCam:
+    def __init__(self, cam_id):
+        self.cam_id = cam_id
+
+    def get_id(self):
+        return self.cam_id
+
+    def get_extended_id(self):
+        return f"extended-{self.cam_id}"
+
+
+class Discovery:
+    """A started Vimba X whose GigE cameras answer the discovery after a while,
+    on a clock that moves only when waited on."""
+
+    def __init__(self, answers):
+        self.answers = answers  # seconds after start -> camera id
+        self.t = 0.0
+
+    def now(self):
+        return self.t
+
+    def sleep(self, seconds):
+        self.t += seconds
+
+    def get_all_cameras(self):
+        return tuple(DiscoveredCam(cam_id) for when, cam_id in sorted(self.answers.items()) if when <= self.t)
+
+
+def test_discovery_waits_for_a_gige_camera_that_answers_late():
+    vmb = Discovery({0.4: "DEV_1"})
+    cams = live_camera.discover(vmb, now=vmb.now, sleep=vmb.sleep)
+    assert [cam.get_id() for cam in cams] == ["DEV_1"]
+    assert vmb.t < 1.5  # it stops soon after the camera answered
+
+
+def test_discovery_waits_a_moment_more_for_other_cameras():
+    vmb = Discovery({0.2: "DEV_1", 0.5: "DEV_2"})
+    assert len(live_camera.discover(vmb, now=vmb.now, sleep=vmb.sleep)) == 2
+
+
+def test_discovery_waits_for_the_camera_asked_for():
+    vmb = Discovery({0.1: "DEV_1", 1.2: "DEV_2"})
+    cams = live_camera.discover(vmb, wanted="DEV_2", now=vmb.now, sleep=vmb.sleep)
+    assert "DEV_2" in [cam.get_id() for cam in cams]
+
+
+def test_discovery_gives_up_when_no_camera_answers():
+    vmb = Discovery({})
+    assert live_camera.discover(vmb, now=vmb.now, sleep=vmb.sleep) == ()
+    assert live_camera.DISCOVERY_WAIT <= vmb.t < live_camera.DISCOVERY_WAIT + 0.2
+
+
+def test_streaming_passes_vmbpys_type_check():
+    # With vmbpy 1.1 on Python 3.14, start_streaming() failed with "name 'Camera' is
+    # not defined": its type check could not resolve the hint of the frame handler.
+    # Calling Stream's check on its own, as here, fails the same way on any Python.
+    vmbpy = pytest.importorskip("vmbpy")
+    from vmbpy.stream import Stream
+    from vmbpy.util.runtime_type_check import RuntimeTypeCheckEnable
+
+    live_camera.resolve_type_hint_names(vmbpy)
+    check = Stream.start_streaming
+    while check is not None and not any(isinstance(getattr(cell, "cell_contents", None), RuntimeTypeCheckEnable)
+                                        for cell in check.__closure__ or ()):
+        check = getattr(check, "__wrapped__", None)
+    if check is None:
+        pytest.skip("this vmbpy does not type-check start_streaming")
+    handler = FrameHandler(queue.Queue(), vmbpy.FrameStatus.Complete)
+    with pytest.raises(AttributeError):  # the check passed; the stand-in stream then cannot stream
+        check(object(), handler=handler, buffer_count=10, allocation_mode=vmbpy.AllocationMode.AnnounceFrame)
+
+
 def test_without_an_id_the_only_camera_is_used():
     one = [{"id": "DEV_1", "model": "Mako"}]
     assert choose_camera(None, one) == "DEV_1"

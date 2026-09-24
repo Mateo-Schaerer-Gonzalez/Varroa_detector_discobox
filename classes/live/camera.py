@@ -11,10 +11,16 @@ vmbpy calls FrameHandler with every frame. It does as little as it can, since
 the frame's buffer goes back to the camera only when it returns: copy the pixels,
 put them on a bounded queue, give the buffer back. Whatever reads the queue does
 the rest; when it falls behind, frames are dropped and counted, never piled up.
+
+The Discobox camera is a GigE camera, found by a network discovery Vimba X starts
+as it starts: vmbpy lists the cameras that have answered by then and adds the
+others as they answer, a moment later. The Discobox app happens to ask for the
+list only after building its window; discover() waits for them on purpose.
 """
 
 import logging
 import queue
+import sys
 import threading
 import time
 
@@ -22,6 +28,8 @@ _logger = logging.getLogger(__name__)
 
 BUFFER_COUNT = 10  # frame buffers vmbpy streams into, as in the Discobox app
 QUEUE_SIZE = 64    # frames waiting to be read, about two seconds at 30 fps
+DISCOVERY_WAIT = 3.0    # seconds to wait for a GigE camera to answer the discovery
+DISCOVERY_SETTLE = 0.5  # once one has answered, how long to wait for any other
 
 
 class CameraError(RuntimeError):
@@ -38,7 +46,57 @@ def _vimba():
             f"vmbpy is not installed ({error}). Install it from the Vimba X SDK, as the Discobox app's "
             "setup-python-env.sh does, to use the camera."
         )
+    resolve_type_hint_names(vmbpy)
     return vmbpy, camera_utils
+
+
+def resolve_type_hint_names(vmbpy):
+    """Let vmbpy's run-time type checks resolve their type hints on Python 3.14.
+
+    vmbpy checks the arguments of some calls against their type hints, and some
+    hints name a class their module imports only for type checkers: Stream's
+    start_streaming() names Camera. Up to Python 3.13 such a name was resolved
+    once, where it is defined, and remembered; Python 3.14 resolves it anew in
+    each module, and start_streaming() fails with "name 'Camera' is not defined".
+    So every vmbpy module is given the vmbpy classes it lacks. Nothing it has is
+    replaced: only names that were undefined become defined.
+    """
+    exported = {name: getattr(vmbpy, name) for name in getattr(vmbpy, "__all__", ()) if hasattr(vmbpy, name)}
+    for name, module in list(sys.modules.items()):
+        if module is not None and name.startswith("vmbpy."):
+            for export, value in exported.items():
+                module.__dict__.setdefault(export, value)
+
+
+def _camera_ids(cam):
+    ids = {cam.get_id()}
+    try:
+        ids.add(cam.get_extended_id())
+    except Exception:
+        pass
+    return ids
+
+
+def discover(vmb, wanted=None, timeout=DISCOVERY_WAIT, settle=DISCOVERY_SETTLE, now=time.monotonic, sleep=time.sleep):
+    """The cameras Vimba X has found, once a GigE camera has had time to answer the
+    network discovery: until the camera `wanted` (an id) is in the list, or until
+    one camera is and `settle` more seconds have passed for any other, or until
+    `timeout`. Called with Vimba X started (inside `with VmbSystem.get_instance()`)."""
+    start = now()
+    first_seen = None
+    while True:
+        cams = vmb.get_all_cameras()
+        waited = now() - start
+        if wanted is not None:
+            if any(wanted in _camera_ids(cam) for cam in cams):
+                return cams
+        elif cams:
+            first_seen = waited if first_seen is None else first_seen
+            if waited - first_seen >= settle:
+                return cams
+        if waited >= timeout:
+            return cams
+        sleep(0.1)
 
 
 def _vimba_errors(vmbpy):
@@ -57,7 +115,9 @@ def list_cameras():
     """Every camera Vimba X sees: id, model, name and serial number."""
     vmbpy, camera_utils = _vimba()
     try:
-        with vmbpy.VmbSystem.get_instance():
+        with vmbpy.VmbSystem.get_instance() as vmb:
+            discover(vmb)
+            # Vimba X stays started, so the Discobox function lists what was found.
             return [
                 {"id": cam.get_id(), "model": cam.get_model(), "name": cam.get_name(), "serial": cam.get_serial()}
                 for cam in camera_utils.get_all_cameras()
@@ -70,7 +130,9 @@ def print_cameras():
     """Print every camera, as `discobox.py --list` does."""
     vmbpy, camera_utils = _vimba()
     try:
-        camera_utils.list_cameras()
+        with vmbpy.VmbSystem.get_instance() as vmb:
+            discover(vmb)
+            camera_utils.list_cameras()
     except _vimba_errors(vmbpy) as error:
         raise _vimba_failure(error)
 
@@ -165,7 +227,8 @@ class Camera:
     def _run(self):
         vmbpy, camera_utils = _vimba()
         try:
-            with vmbpy.VmbSystem.get_instance():
+            with vmbpy.VmbSystem.get_instance() as vmb:
+                discover(vmb, wanted=self.camera_id)
                 try:
                     cam = camera_utils.get_camera(self.camera_id)
                 except SystemExit:  # the Discobox get_camera() exits when it cannot open the camera
