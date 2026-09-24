@@ -360,6 +360,31 @@ table.clickable tbody tr:hover, table.clickable tbody tr:focus-visible { backgro
 .chart .direct-label { fill: var(--text); font-size: 11.5px; }
 .chart .series.faint path:not(.hit) { opacity: 0.5; }
 .chart .series.faint.hover path:not(.hit) { opacity: 1; stroke-width: 2.5; }
+.chart .box.hover .box-body { fill-opacity: 1; }
+.chart .row-note { fill: var(--muted); font-size: 11.5px; font-style: italic; }
+
+/* A live run's axis covers the whole run: the part not recorded yet is shaded. */
+.pending { fill: var(--wash); }
+.chart .pending-label { fill: var(--muted); font-size: 11px; font-style: italic; }
+
+/* Each new recording's points are drawn in as they arrive. */
+.chart .enter-line { stroke-dasharray: 1 1; stroke-dashoffset: 1; animation: draw-in 0.9s ease-out forwards; }
+.chart .enter-mark { animation: pop-in 0.35s 0.6s ease-out backwards; transform-box: fill-box; transform-origin: center; }
+@keyframes draw-in { to { stroke-dashoffset: 0; } }
+@keyframes pop-in { from { opacity: 0; transform: scale(0.2); } }
+@media (prefers-reduced-motion: reduce) {
+  .chart .enter-line { animation: none; stroke-dasharray: none; stroke-dashoffset: 0; }
+  .chart .enter-mark { animation: none; }
+}
+
+/* Ridgelines: each ridge hides what lies behind it, the lower in front. */
+.chart .ridge-under { fill: var(--paper); stroke: none; }
+.chart .ridge-fill { fill-opacity: 0.32; stroke: none; }
+.chart .ridge-line { stroke-width: 1.5; stroke-linejoin: round; }
+.chart .ridge-rug { stroke-width: 1; stroke-opacity: 0.8; }
+.chart .ridge-median { stroke: var(--ink); stroke-width: 1.5; }
+.chart .ridge.hover .ridge-fill { fill-opacity: 0.55; }
+.chart .ridge.hover .ridge-line { stroke-width: 2.5; }
 
 .legend { display: flex; flex-wrap: wrap; gap: 4px 16px; margin-bottom: 6px; font-size: 12px; color: var(--text); }
 .legend-item { display: inline-flex; align-items: center; gap: 6px; }
@@ -557,18 +582,17 @@ td.num.error { color: var(--critical); font-weight: 600; }
 
 .live-form { display: grid; gap: 4px; margin-bottom: 12px; }
 .live-form label, .live-settings label, .light-row label { font-size: 12.5px; color: var(--ink); font-weight: 500; }
-.live-form label:not(.live-choice):not(.live-check) { margin-top: 8px; }
+.live-form label:not(.live-check) { margin-top: 8px; }
 .live-form input[type="text"] { min-width: 0; width: 100%; }
-.live-choice, .live-check { display: flex; align-items: baseline; gap: 6px; flex-wrap: wrap; cursor: pointer; font-weight: 400 !important; }
-.live-choice input, .live-check input { margin: 0; accent-color: var(--ink); }
-.live-choice .hint, .live-check .hint { flex-basis: 100%; margin: 0 0 0 19px; font-size: 12px; }
-.live-form select, .number-input {
+.live-check { display: flex; align-items: baseline; gap: 6px; flex-wrap: wrap; cursor: pointer; font-weight: 400 !important; }
+.live-check input { margin: 0; accent-color: var(--ink); }
+.live-check .hint { flex-basis: 100%; margin: 0 0 0 19px; font-size: 12px; }
+.number-input {
   width: 100%; font: inherit; font-size: 13px; color: var(--ink); background: var(--paper);
   padding: 6px 8px; border: 1px solid var(--rule); border-radius: 2px;
 }
-.live-form select:focus, .number-input:focus { outline: none; border-color: var(--ink); }
+.number-input:focus { outline: none; border-color: var(--ink); }
 #pool-option .number-input { margin-top: 4px; }
-.live-connect { margin-top: 4px; }
 .live-heading { margin-top: 22px; padding-top: 14px; border-top: 1px solid var(--rule); }
 .live-settings { display: grid; grid-template-columns: minmax(0, 1fr) 84px; gap: 6px 10px; align-items: center; }
 .live-lights { display: grid; gap: 6px; margin-top: 8px; }
@@ -599,6 +623,28 @@ td.num.error { color: var(--critical); font-weight: 600; }
 .live-state.finished { background: var(--ink); }
 .live-actions { display: grid; gap: 8px; justify-items: end; }
 .live-waiting { max-width: 640px; margin-top: 16px; color: var(--muted); }
+
+/* The whole test run as one bar, a tick under it per recording. */
+.run-progress { grid-column: 1 / -1; }
+.run-bar { position: relative; height: 8px; background: var(--wash); box-shadow: inset 0 0 0 1px var(--rule); overflow: hidden; }
+.run-bar-fill { position: absolute; top: 0; bottom: 0; left: 0; width: 0; background: var(--critical); transition: width 0.5s linear; }
+.run-bar.paused .run-bar-fill, .run-bar.stopping .run-bar-fill { background: var(--still); }
+.run-bar.finished .run-bar-fill { background: var(--ink); }
+.run-marks { position: relative; height: 7px; margin-top: 2px; }
+.run-marks i { position: absolute; top: 0; width: 2px; height: 6px; margin-left: -1px; background: var(--rule); transition: left 0.5s linear; }
+.run-marks i.analysed { background: var(--ink); }
+.run-marks i.captured { background: var(--muted); }
+.run-marks i.capturing { background: var(--critical); height: 7px; }
+.run-progress-text { display: flex; justify-content: space-between; gap: 4px 16px; flex-wrap: wrap; margin-top: 2px; color: var(--text); }
+#run-left { color: var(--muted); }
+@media (prefers-reduced-motion: reduce) {
+  .run-bar-fill, .run-marks i { transition: none; }
+}
+
+.live-more { margin-top: 10px; }
+.live-more .live-form { margin: 4px 0 0; }
+#live-replay { margin-top: 18px; }
+#live-replay .live-form { margin-bottom: 8px; }
 
 @media (max-width: 900px) {
   .live-panel { grid-template-columns: minmax(0, 1fr); }

@@ -34,10 +34,13 @@ Then in the browser:
    <kbd>Tab</kbd> saves and moves to the next plate. Labels are saved to
    `labels.json` automatically.
 3. **Results**: an overview with the fraction of mites moving per group, a plate
-   map and one card per zone. Click a zone to see its mites, how many moved and
-   their motion scores. Click a mite
-   to see its close-up and score in each recording. The browser's back button
-   works throughout.
+   map, one card per zone, every motion score by group, the scores of the moving
+   mites alone by group (a box plot the many still recordings do not pull down),
+   and per zone a ridgeline of the time between two movements of a mite. Click a
+   zone to see its mites, how many moved and their motion scores. Click a mite
+   to see its close-up and score in each recording. Every chart has a tooltip,
+   opens what it shows when clicked, and downloads as SVG or PNG. The browser's
+   back button works throughout.
 
 ### Moving or still
 
@@ -110,19 +113,25 @@ app works with no network connection.
 the fan and LEDs come on and the camera records a burst of frames. Each recording
 is analysed as soon as it is in, and the usual result pages fill in as the run goes.
 
-1. **Camera**: choose the camera and the fan/LED controller (the Discobox's
-   Arduino is found by itself), name the run, and *Connect*. The camera's image
-   shows at once. The test run's settings are the Discobox app's (number of
-   recordings, time between them, fan and LED durations and intensities, frames
-   per recording, frames per second); they are saved to `settings.txt` as you
-   change them. *On/Off* switches the fan or an LED to check it.
-2. **Plate labels**: the same page as for a folder, on the camera's newest frame.
-   *Start test run* starts recording.
-3. **Live results**: the result pages of a folder, with a panel above them:
-   what is recording, the frame rate, dropped frames, the fan and LEDs, and
-   *Pause* / *Stop*. *Follow the latest recording* shows each new recording as it
-   comes; choose an older one and the page stays on it. Labels and *not a mite*
-   marks can still change; the results follow them.
+1. **Camera**: name the run and *Connect*: the camera and the Discobox's
+   Arduino are found by themselves, and the LEDs come on so the plates can be
+   seen. The camera's image shows at once. The test run's settings are the
+   Discobox app's (number of recordings, time between them, fan and LED
+   durations and intensities, frames per recording, frames per second); they
+   are saved to `settings.txt` as you change them. *On/Off* switches the fan or
+   an LED to check it. *More options* holds the frames per pool and whether the
+   recordings are saved.
+2. **Plate labels**: the same page as for a folder, on the camera's newest frame,
+   with the LEDs on (any switched off comes back on first). *Start test run*
+   switches them off and starts recording; from then on the run switches them.
+3. **Live results**: the result pages of a folder, with a panel above them: a
+   bar for the whole run (how far it is, a tick per recording, the time left),
+   the frame rate, dropped frames, the fan and LEDs, and *Pause* / *Stop*. The
+   charts' time axis covers the whole run from the start, and each recording
+   fills in its part; once the run is over, the axis is what was recorded.
+   *Follow the latest recording* shows each new recording as it comes; choose
+   an older one and the page stays on it. Labels and *not a mite* marks can
+   still change; the results follow them.
 
 Each recording is saved, as the Discobox app saves it, to
 `output/<run name>/<YYYY-MM-DD-HH-MM-SS>_fps-<fps>/<recording>_<frame id>.bmp`
@@ -137,8 +146,8 @@ and writes the results; so does Ctrl+C on the server. Closing the page does not
 stop a run: open the page again to get back to it. Started from `start.bat` or
 `start.sh`, the server waits for a run to end before stopping by itself.
 
-With no camera, *Replay a recorded folder* plays a folder's recordings as if they
-came from the camera, to try all this; its results are the folder's.
+With no camera, *No camera? Replay a recorded folder* plays a folder's recordings
+as if they came from the camera, to try all this; its results are the folder's.
 
 **Frames per pool** sets how many consecutive frames are scored together. Left
 empty, a pool is a whole recording, as it has always been. With a number N, each

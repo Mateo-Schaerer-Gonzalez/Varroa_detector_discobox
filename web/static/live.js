@@ -85,8 +85,9 @@ function drawLiveWaiting() {
 }
 
 // --- 1 · camera, settings, fan and LEDs ----------------------------------------------
-
-const liveSource = () => document.querySelector("input[name=live-source]:checked").value;
+//
+// One button connects: the camera and the Discobox's Arduino are found by
+// themselves. Replaying a folder instead is folded away below it.
 
 async function drawLiveOpen() {
   if (!live.options) {
@@ -107,20 +108,12 @@ async function drawLiveOpen() {
 }
 
 function fillLiveForm() {
-  const { cameras, camera_error: cameraError, serial_ports: ports, run_name: runName } = live.options;
-  $("live-camera").innerHTML = cameras.length
-    ? cameras.map((cam) => `<option value="${esc(cam.id)}">${esc(cam.model)} ${esc(cam.id)}</option>`).join("")
-    : `<option value="">No camera found</option>`;
-  $("live-serial").innerHTML = [
-    `<option value="auto">Automatic: the Discobox's Arduino</option>`,
-    ...ports.map((port) => `<option value="${esc(port.device)}">${esc(port.device)} · ${esc(port.description)}</option>`),
-    `<option value="none">None: run without the fan and LEDs</option>`,
-  ].join("");
+  const { cameras, camera_error: cameraError, run_name: runName } = live.options;
   $("live-run-name").value = runName;
   if (!cameras.length) {
-    document.querySelector("input[name=live-source][value=replay]").checked = true;
+    $("live-replay").open = true;
     $("live-open-status").className = "hint";
-    $("live-open-status").textContent = cameraError || "No camera is connected; you can replay a recorded folder instead.";
+    $("live-open-status").textContent = `${cameraError || "No camera found."} You can replay a recorded folder instead.`;
   }
   drawLiveSettings();
 }
@@ -152,15 +145,14 @@ function drawRecordingTime() {
     + `of every ${s.recording_timeout} min. The whole run: about ${+(s.recording_count * s.recording_timeout).toFixed(0)} min.`;
 }
 
-// What can be changed now: the source before connecting, the settings until the run starts.
+// What can be changed now: how to connect before connecting, the settings until the run starts.
 function drawLiveForm() {
   const connected = Boolean(live.id);
-  const replay = liveSource() === "replay";
   const ready = !liveStarted();
-  $("live-camera-fields").hidden = replay;
-  $("live-replay-fields").hidden = !replay;
-  $("live-settings-block").hidden = replay;
-  document.querySelectorAll(".live-form input, .live-form select").forEach((input) => { input.disabled = connected; });
+  // A replay has no settings of its own: its folder's recordings are what they are.
+  $("live-settings-block").hidden = connected && live.status && live.status.source === "replay";
+  $("live-replay").hidden = connected;
+  document.querySelectorAll(".live-form input").forEach((input) => { input.disabled = connected; });
   $("live-connect-btn").hidden = connected;
   $("live-close-btn").hidden = !connected;
   $("live-close-btn").disabled = liveRunning();
@@ -183,20 +175,23 @@ function drawLiveForm() {
   }
 }
 
-document.querySelectorAll("input[name=live-source]").forEach((radio) => radio.addEventListener("change", drawLiveForm));
-
-async function connectLive() {
+// `source`: "camera", or "replay" for the folder under "No camera?".
+async function connectLive(source) {
   const status = $("live-open-status");
   status.className = "hint";
-  status.innerHTML = `<span class="spinner"></span> Connecting…`;
+  status.innerHTML = source === "camera"
+    ? `<span class="spinner"></span> Connecting to the camera and switching the LEDs on…`
+    : `<span class="spinner"></span> Opening the replay…`;
   const poolSize = $("live-pool-size").value.trim();
+  // The camera found when the page opened saves looking for it again.
+  const cameras = live.options ? live.options.cameras : [];
   const body = {
-    source: liveSource(),
+    source,
     run_name: $("live-run-name").value.trim(),
     save_frames: $("live-save").checked,
     pool_size: poolSize ? Number(poolSize) : null,
-    camera_id: $("live-camera").value || null,
-    serial_port: $("live-serial").value,
+    camera_id: source === "camera" && cameras.length === 1 ? cameras[0].id : null,
+    serial_port: "auto",
     replay_dir: $("live-replay-dir").value.trim(),
     replay_gap: Number($("live-replay-gap").value || 0),
   };
@@ -252,7 +247,8 @@ async function closeLive() {
   if (shownMode === "live") location.hash === "#/live/open" ? drawLiveOpen() : go("#/live/open");
 }
 
-$("live-connect-btn").addEventListener("click", connectLive);
+$("live-connect-btn").addEventListener("click", () => connectLive("camera"));
+$("live-replay-btn").addEventListener("click", () => connectLive("replay"));
 $("live-close-btn").addEventListener("click", closeLive);
 
 // Settings are saved as they change, like the Discobox settings window does.
@@ -357,7 +353,6 @@ $("live-panel").innerHTML = `
   <div class="live-thumb-wrap"><img id="live-thumb" alt="The camera's newest frame" hidden></div>
   <div class="live-facts">
     <div class="live-title"><span id="live-state" class="live-state"></span><span id="live-run"></span></div>
-    <div id="live-progress"></div>
     <div id="live-acquisition"></div>
     <div id="live-devices"></div>
     <div id="live-saving"></div>
@@ -370,6 +365,13 @@ $("live-panel").innerHTML = `
       <button id="live-stop-btn" type="button" class="small">Stop test run</button>
       <button id="live-new-btn" type="button" class="secondary small" hidden>New test run</button>
     </div>
+  </div>
+  <div class="run-progress">
+    <div id="run-bar" class="run-bar" role="progressbar" aria-label="The test run" aria-valuemin="0" aria-valuemax="100">
+      <div id="run-bar-fill" class="run-bar-fill"></div>
+    </div>
+    <div id="run-marks" class="run-marks" aria-hidden="true"></div>
+    <div class="run-progress-text"><span id="live-progress"></span><span id="run-left"></span></div>
   </div>`;
 
 const STATE_NAMES = { ready: "Connected", running: "Recording", paused: "Paused", stopping: "Stopping", finished: "Finished" };
@@ -383,13 +385,6 @@ function drawLiveStatus() {
   $("live-state").textContent = STATE_NAMES[s.state] || s.state;
   $("live-state").className = `live-state ${s.state}`;
   $("live-run").textContent = ` ${s.run_name} · ${s.camera} · pools of ${s.pool_size_text}`;
-
-  const parts = [`Recording ${s.recording} of ${s.recordings}`];
-  if (s.recording_name) parts.push(`capturing frame ${s.frame}${s.frames ? ` of ${s.frames}` : ""}`);
-  parts.push(`${s.analysed} analysed`);
-  if (s.next_recording && s.state !== "finished") parts.push(`next recording at ${clock(s.next_recording)}`);
-  if (s.state === "paused") parts.push("paused until you resume: the next recording waits");
-  $("live-progress").textContent = parts.join(" · ");
 
   $("live-acquisition").textContent = (s.state === "finished" ? "Acquisition ended" : `Acquisition ${s.fps.toFixed(1)} fps${s.fps_set ? ` (set to ${s.fps_set})` : ""}`)
     + ` · ${s.dropped} frame${s.dropped === 1 ? "" : "s"} dropped · ${s.incomplete} incomplete`;
@@ -405,6 +400,8 @@ function drawLiveStatus() {
     ? `${s.saved_frames} frames saved to ${s.run_dir}` : "Recordings are not saved.";
   $("live-error").textContent = [s.error, s.save_error].filter(Boolean).join(" · ");
 
+  drawRunProgress(s);
+
   const finished = s.state === "finished";
   $("live-pause-btn").hidden = finished;
   $("live-pause-btn").textContent = s.state === "paused" ? "Resume" : "Pause";
@@ -413,6 +410,53 @@ function drawLiveStatus() {
   $("live-stop-btn").disabled = s.state === "stopping";
   $("live-new-btn").hidden = !finished;
   $("live-follow").checked = live.follow;
+}
+
+// "12 min", "1 h 5 min", "40 s".
+function duration(seconds) {
+  const s = Math.max(0, Math.round(seconds));
+  if (s < 60) return `${s} s`;
+  const m = Math.round(s / 60);
+  return m < 60 ? `${m} min` : `${Math.floor(m / 60)} h${m % 60 ? ` ${m % 60} min` : ""}`;
+}
+
+// The whole test run as one bar: filled as far as the run has got, with a tick
+// under it for each recording, dark once analysed. Polled twice a second, the
+// fill glides from one poll to the next.
+function drawRunProgress(s) {
+  const line = s.timeline;
+  const fraction = line && line.length > 0 ? Math.min(1, line.elapsed / line.length) : 0;
+  const finished = s.state === "finished";
+  $("run-bar-fill").style.width = `${fraction * 100}%`;
+  $("run-bar").className = `run-bar ${s.state}`;
+  $("run-bar").setAttribute("aria-valuenow", String(Math.round(fraction * 100)));
+
+  // A tick per recording, as long as there is room to tell them apart.
+  const marks = $("run-marks");
+  const starts = line && line.starts.length <= 150 ? line.starts : [];
+  if (marks.children.length !== starts.length) {
+    marks.innerHTML = starts.map(() => `<i></i>`).join("");
+  }
+  starts.forEach((start, i) => {
+    const mark = marks.children[i];
+    const state = i < s.analysed ? "analysed" : i < s.completed ? "captured"
+      : i === s.completed && s.recording_name ? "capturing" : "planned";
+    mark.style.left = `${(start / line.length) * 100}%`;
+    mark.className = state;
+    mark.title = `Recording ${i + 1}: ${{ analysed: "analysed", captured: "being analysed", capturing: "being recorded", planned: "to come" }[state]}`;
+  });
+
+  const parts = [`Recording ${s.recording} of ${s.recordings}`];
+  if (s.recording_name) parts.push(`capturing frame ${s.frame}${s.frames ? ` of ${s.frames}` : ""}`);
+  parts.push(`${s.analysed} analysed`);
+  if (s.next_recording && !finished) parts.push(`next recording at ${clock(s.next_recording)}`);
+  $("live-progress").textContent = parts.join(" · ");
+
+  const left = line ? line.length - line.elapsed : 0;
+  $("run-left").textContent = !line ? ""
+    : finished ? (s.analysed < s.recordings ? `Stopped after ${s.analysed} of ${s.recordings} recordings` : `Finished in ${duration(line.length)}`)
+      : s.state === "paused" ? `${Math.round(fraction * 100)}% · paused: the rest of the run waits`
+        : `${Math.round(fraction * 100)}% · ${duration(left)} left · ends about ${new Date(Date.now() + left * 1000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`;
 }
 
 function liveFollow(on) {
@@ -456,8 +500,11 @@ async function pollLive() {
     const response = await fetch(`/api/live/${id}/status`, { cache: "no-store" });
     if (id !== live.id) return;
     if (!response.ok) return;
+    const wasRunning = liveRunning();
     live.status = await response.json();
     if (live.status.version !== live.version) await fetchLiveResults();
+    // Once the run is over, the charts' time axis is what was recorded, no longer the whole run.
+    else if (wasRunning && !liveRunning() && results && onLiveResults()) drawResults();
     drawLiveStatus();
     drawLiveSteps();
     refreshFeed();
@@ -484,7 +531,16 @@ async function fetchLiveResults() {
   setContext("live", { results: data.results, runStamp: Date.now(), shown: next });
   // The first recording is where the run's mites are found: label those.
   if (!before.results) loadLivePreview().catch(() => {});
-  if (onLiveResults()) drawResults();
+  if (onLiveResults()) {
+    // The charts keep their axes; what the new recordings add is drawn in.
+    const had = before.results ? before.results.times.length : 0;
+    enterFrom = had && latest + 1 > had ? had : null;
+    try {
+      drawResults();
+    } finally {
+      enterFrom = null;
+    }
+  }
 }
 
 // The newest frame, fetched only when there is a newer one and the last has loaded.

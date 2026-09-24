@@ -39,10 +39,12 @@ can never reach into the analysis internals.
 import hashlib
 import inspect
 import json
+import logging
 import os
 import re
 import shutil
 import threading
+import time
 from datetime import date, datetime
 from pathlib import Path
 from types import SimpleNamespace
@@ -66,6 +68,8 @@ from classes.live.sources import CameraSource, ReplaySource
 from classes.motion_analysis import MotionAnalysis, detect_mites
 from classes.pooling import check_pool_size, describe_pool_size, pools
 from classes.zones import UNLABELED, ZoneManager
+
+_logger = logging.getLogger(__name__)
 
 # Zone type ids as they appear in the coordinates file.
 ZONE_TYPES = {"0": "label", "1": "mite"}
@@ -1121,6 +1125,9 @@ LIVE_SETTINGS_FILE = Path(__file__).resolve().parent / "settings.txt"
 SETTINGS_FILENAME = ".settings.txt"
 LIVE_FEED_WIDTH = 960
 LIVE_STATES = ("running", "paused", "stopping")
+LEDS = ("led1", "led2")
+# Seconds for the camera's automatic exposure to follow the LEDs coming on.
+LIGHTS_SETTLE = 1.5
 
 _live = {}  # live id -> the run's parts
 _live_lock = threading.Lock()
@@ -1199,9 +1206,10 @@ def open_live(live_id, out_dir, run_name, source="camera", camera_id=None, repla
               settings=None, output_root=LIVE_OUTPUT, coords_file=DEFAULT_COORDS_FILE, library_dir=CALIBRATION_LIBRARY):
     """Open the camera, with the fan and LEDs (or a replay of `replay_dir`), for a
     live run called `run_name`, whose recordings go to output_root/run_name and
-    whose results go to `out_dir`. The live feed starts; nothing is recorded
-    until start_live(). Only one live run can be open: opening another closes
-    the one that is open, unless that one is running.
+    whose results go to `out_dir`. The live feed starts, with the LEDs on so the
+    plates can be seen; nothing is recorded until start_live(), which switches
+    them off and leaves them to the test run. Only one live run can be open:
+    opening another closes the one that is open, unless that one is running.
 
     The test run's settings are those saved in `settings_path`, with `settings`
     (name -> value, e.g. {"fps": 30}) overriding them for this run only."""
@@ -1240,6 +1248,9 @@ def open_live(live_id, out_dir, run_name, source="camera", camera_id=None, repla
             for name in (LABELS_FILENAME, GROUND_TRUTH_FILENAME):
                 if (Path(replay_dir) / name).is_file():
                     shutil.copy2(Path(replay_dir) / name, run_dir / name)
+        # Without its LEDs the Discobox is dark: they stay on, for the camera's
+        # image and for labelling, until the run starts and switches them itself.
+        _leds_on(lights, settings)
 
         analysis = MotionAnalysis(_build_zone_manager(coords_file))
         run = SimpleNamespace(
@@ -1259,6 +1270,28 @@ def _get_live(live_id):
     return run
 
 
+def _leds_on(lights, settings):
+    """Switch on the LEDs that are off, at their set intensity. True if any was
+    off. A failure is only logged: the camera works without its light."""
+    if lights is None or not lights.connected:
+        return False
+    off = [device for device in LEDS if not lights.on[device]]
+    try:
+        for device in off:
+            lights.switch(device, True, getattr(settings, device))
+    except Exception:
+        _logger.exception("Could not switch the LEDs on")
+        return False
+    return bool(off)
+
+
+def _light_for_labelling(run):
+    """The mites can only be found on a lit plate: before the run starts, switch
+    on any LED switched off meanwhile, and give the camera's exposure time to follow."""
+    if run.session.state == "ready" and _leds_on(run.lights, getattr(run.source, "settings", None)):
+        time.sleep(LIGHTS_SETTLE)
+
+
 def _publish_live(run, write_files):
     """The results of a live run so far, exactly as run_analysis() describes a
     folder: the same labels and "not a mite" marks, read from the run's folder."""
@@ -1275,6 +1308,7 @@ def live_preview(live_id, out_dir=None):
     with run.session.lock:
         frame = run.analysis.first_frame
     if frame is None:
+        _light_for_labelling(run)
         _count, frame = run.source.latest.get()
         if frame is None:
             raise ValueError("No frame has come from the camera yet.")

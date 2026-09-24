@@ -1,15 +1,17 @@
 """The Discobox hardware parts, with stand-ins for the camera, the serial port and
 the clock: the frame handler, the camera set-up, the fan and LED commands, the
-test-run schedule and the camera's bursts."""
+test-run schedule, the camera's bursts and connecting to them all."""
 
 import queue
 import threading
 import time
 from datetime import datetime, timedelta
+from types import SimpleNamespace
 
 import numpy as np
 import pytest
 
+import pipeline
 from classes.frame_source import Frame, RecordingEnd
 from classes.live import camera as live_camera
 from classes.live.camera import FrameHandler, choose_camera, configure
@@ -340,6 +342,35 @@ def test_a_pause_waits_for_the_next_cycle_and_pushes_the_rest_back():
     assert len(bursts) == 3 and bursts[1][0] - bursts[0][0] == pytest.approx(60, abs=0.01)
 
 
+def test_the_timeline_follows_the_run_and_a_pause_pushes_the_rest_back():
+    settings = Settings(recording_count=3, recording_timeout=1, vent_time=0, led1_time=0, led2_time=0,
+                        frame_count=10, fps=10)
+    run, lights, bursts = run_schedule(settings)
+    assert run.timeline() is None
+    run.pause()
+    thread = threading.Thread(target=run.run)
+    thread.start()
+    deadline = time.monotonic() + 5
+    while run._held_since is None and time.monotonic() < deadline:
+        time.sleep(0.01)
+    # Held at its first cycle: three 1 s bursts a minute apart, all off 1 s after the last.
+    line = run.timeline()
+    assert line["elapsed"] == pytest.approx(0, abs=0.01)
+    assert line["starts"] == pytest.approx([0, 60, 120], abs=0.01)
+    assert line["length"] == pytest.approx(122, abs=0.01)
+    lights.clock.t += 100  # the pause goes on for 100 s: so does the run, and it ends 100 s later
+    line = run.timeline()
+    assert line["elapsed"] == pytest.approx(100, abs=0.01)
+    assert line["starts"] == pytest.approx([100, 160, 220], abs=0.01)
+    assert line["length"] == pytest.approx(222, abs=0.01)
+    run.resume()
+    thread.join(5)
+    assert [when for when, _name in bursts] == pytest.approx([100, 160, 220], abs=0.01)
+    line = run.timeline()
+    assert line["starts"] == pytest.approx([100, 160, 220], abs=0.01)
+    assert line["elapsed"] == pytest.approx(line["length"], abs=0.01)
+
+
 def test_stopping_ends_the_run_without_another_burst():
     settings = Settings(recording_count=5, recording_timeout=1, frame_count=10, fps=10)
     run, lights, bursts = run_schedule(settings)
@@ -386,10 +417,10 @@ class FakeCamera:
         self.streaming = False
 
 
-def camera_source(settings, first_id=1, fps=200):
+def camera_source(settings, first_id=1, fps=200, lights=None):
     frames = queue.Queue(maxsize=64)
     camera = FakeCamera(frames, fps=fps, first_id=first_id)
-    source = CameraSource(None, settings, NoLights(), camera=camera)
+    source = CameraSource(None, settings, lights or NoLights(), camera=camera)
     source.frames = frames
     source.camera = camera
     return source
@@ -458,3 +489,39 @@ def test_the_camera_and_schedule_run_a_whole_test_run():
     assert len(ends) == 3 and len(set(ends)) == 3
     assert sum(isinstance(event, Frame) for event in events) == 15
     assert source.state == "finished" and not source.camera.streaming
+
+
+def test_the_status_says_how_far_the_run_is():
+    settings = Settings(recording_count=2, recording_timeout=1, vent_time=2, led1_time=2, led2_time=2,
+                        frame_count=6, fps=30)
+    source = camera_source(settings)
+    assert source.status()["timeline"] is None
+    source.test_run = SimpleNamespace(recording_count=1, next_recording=None,
+                                      timeline=lambda: {"elapsed": 30.04, "length": 63.0, "starts": [1.8, 61.8]})
+    # The results' time axis runs from the first burst to the end of the last, 0.2 s long.
+    assert source.status()["timeline"] == {"elapsed": 30.0, "length": 63.0, "starts": [1.8, 61.8],
+                                           "minutes": round(60.2 / 60, 3)}
+
+
+# --- connecting --------------------------------------------------------------------------
+
+def test_connecting_switches_the_leds_on_and_labelling_keeps_them_on(tmp_path, monkeypatch):
+    settings_path = tmp_path / "settings.txt"
+    Settings(led1=120, led2=200).save(settings_path)
+    lights = Lights(connection=Port())
+    monkeypatch.setattr(pipeline.live_camera, "choose_camera", lambda camera_id: "DEV_1")
+    monkeypatch.setattr(pipeline, "open_lights", lambda port: lights)
+    monkeypatch.setattr(pipeline, "CameraSource", lambda _id, settings, lights: camera_source(settings, lights=lights))
+    monkeypatch.setattr(pipeline, "LIGHTS_SETTLE", 0)
+    pipeline.open_live("leds", tmp_path / "out", "leds", settings_path=settings_path, output_root=tmp_path / "output")
+    try:
+        state = pipeline.live_status("leds")["lights"]
+        assert (state["led1"], state["led2"]) == ({"on": True, "level": 120}, {"on": True, "level": 200})
+        assert not state["vent"]["on"]
+        # Switched off to check it, an LED comes back on for labelling.
+        pipeline.set_live_light("leds", "led2", on=False)
+        pipeline._light_for_labelling(pipeline._live["leds"])
+        assert pipeline.live_status("leds")["lights"]["led2"] == {"on": True, "level": 200}
+    finally:
+        pipeline.close_live("leds")
+    assert not any(lights.on.values())

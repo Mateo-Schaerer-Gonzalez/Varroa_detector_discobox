@@ -174,3 +174,21 @@ def test_closing_a_run_that_recorded_nothing_leaves_no_folder(tmp_path, small_se
     pipeline.close_live("empty")
     assert not (tmp_path / "output" / "empty").exists()
     shutil.rmtree(tmp_path / "output")
+
+
+def test_the_status_says_how_far_a_replay_is(tmp_path, small_session):
+    library = tmp_path / "library"
+    library.mkdir()
+    pipeline.open_live("far", tmp_path / "out", "far", source="replay", replay_dir=small_session,
+                       replay_fps=100, replay_gap=0, output_root=tmp_path / "output", library_dir=library)
+    assert pipeline.live_status("far")["timeline"] is None
+    pipeline.start_live("far")
+    assert pipeline._live["far"].session.finished.wait(60)
+    line = pipeline.live_status("far")["timeline"]
+    results = pipeline.live_results("far")["results"]
+    pipeline.close_live("far")
+    # Three recordings of 6 frames at 100 fps, back to back, all played (seconds to a tenth).
+    assert line["starts"] == pytest.approx([0.0, 0.06, 0.12], abs=0.05)
+    assert line["elapsed"] == line["length"] == pytest.approx(0.18, abs=0.05)
+    # The results' axis is the folder's own: its recordings' times, not the replay's.
+    assert results["times"][-1] <= line["minutes"] < results["times"][-1] + 0.01

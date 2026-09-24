@@ -1,7 +1,13 @@
 // Small hand-written SVG charts, so the page needs no charting library and works
 // offline. Charts.line (time series with axes, legend, hover tooltip),
-// Charts.scatter (x-y points and lines, for the calibration report) and
-// Charts.spark (a bare mini line for the zone cards).
+// Charts.scatter (x-y points, lines and boxes), Charts.ridgeline (one smoothed
+// distribution per row, overlapping) and Charts.spark (a bare mini line for the
+// zone cards).
+//
+// A live run's charts are drawn again with every recording. Given `xDomain`, a
+// time chart keeps that axis however far the data reaches, and shades the part
+// not recorded yet; given `enterFrom`, the points from that index on are drawn
+// in, so each redraw looks like the chart filling in.
 
 const Charts = (() => {
   const SVG = "http://www.w3.org/2000/svg";
@@ -76,20 +82,26 @@ const Charts = (() => {
    *   threshold   { value, label } drawn as a dashed reference line
    *   selected    index of the x value to mark, e.g. the recording on screen
    *   onXClick    index -> called when the chart is clicked away from a clickable line
+   *   xDomain     [min, max] of the x axis, e.g. a whole live run; the part past
+   *               the last x value is shaded as still to come
+   *   enterFrom   index of the first new x value, whose points are drawn in
    */
   function line(container, options) {
     container.chartRedraw = (target, adjust) => draw(target, adjust(options));
-    keepLive(container, () => draw(container, options));
+    keepLive(container, draw, options);
   }
 
-  // Draw now, and again on every resize for as long as the container is on the page.
-  function keepLive(container, render) {
+  // Draw now, and again on every resize for as long as the container is on the
+  // page. Only the first drawing draws the new points in; a resize just redraws.
+  function keepLive(container, render, options) {
+    let first = true;
     const redraw = () => {
       if (!container.isConnected) { live.delete(redraw); return; }
-      render();
+      render(container, first ? options : { ...options, animate: false });
+      first = false;
     };
     live.add(redraw);
-    render();
+    redraw();
   }
 
   function draw(container, options) {
@@ -125,8 +137,9 @@ const Charts = (() => {
     const yTicks = niceTicks(yMin, yMax);
     if (options.yMax == null) yMax = Math.max(yMax, yTicks[yTicks.length - 1]);
 
-    const xMin = x[0];
-    const xMax = x.length > 1 ? x[x.length - 1] : x[0] + 1;
+    const domain = options.xDomain;
+    const xMin = domain ? Math.min(domain[0], x[0]) : x[0];
+    const xMax = domain ? Math.max(domain[1], x[x.length - 1]) : x.length > 1 ? x[x.length - 1] : x[0] + 1;
     const sx = (v) => pad.left + ((v - xMin) / (xMax - xMin || 1)) * plotW;
     const sy = (v) => pad.top + plotH - ((v - yMin) / (yMax - yMin || 1)) * plotH;
 
@@ -144,7 +157,15 @@ const Charts = (() => {
       el("line", { x1: pad.left - 4, x2: pad.left, y1: sy(t), y2: sy(t), class: "tick-mark" }, axes);
       el("text", { x: pad.left - 7, y: sy(t) + 4, "text-anchor": "end", class: "tick" }, axes).textContent = yFormat(t);
     }
-    const xTicks = x.length <= 10 ? x : niceTicks(xMin, xMax, 6);
+    // Still to come: the part of a whole run's axis past the last recording.
+    const lastX = sx(x[x.length - 1]);
+    if (domain && pad.left + plotW - lastX > 1) {
+      el("rect", { x: lastX, y: pad.top, width: pad.left + plotW - lastX, height: plotH, class: "pending" }, grid);
+      if (pad.left + plotW - lastX > 70) {
+        el("text", { x: pad.left + plotW - 6, y: pad.top + 14, "text-anchor": "end", class: "pending-label" }, grid).textContent = "still to come";
+      }
+    }
+    const xTicks = x.length <= 10 && !domain ? x : niceTicks(xMin, xMax, 6).filter((t) => t <= xMax + 1e-9);
     for (const t of xTicks) {
       el("line", { x1: sx(t), x2: sx(t), y1: bottom, y2: bottom + 4, class: "tick-mark" }, axes);
       el("text", { x: sx(t), y: bottom + 17, "text-anchor": "middle", class: "tick" }, axes).textContent = `${+t.toFixed(1)}`;
@@ -170,21 +191,31 @@ const Charts = (() => {
     const ordered = [...series].sort((a, b) => (b.faint ? 1 : 0) - (a.faint ? 1 : 0));
     let hovered = null;
     const endLabels = [];
+    // New points: the line on from the last old one is drawn in, their markers pop in.
+    const enter = options.animate !== false && options.enterFrom > 0 && options.enterFrom < x.length ? options.enterFrom : null;
 
     for (const s of ordered) {
       const ys = s.values.map((v) => (v == null ? null : sy(v)));
       const d = linePath(xs, ys, s.step);
       const g = el("g", { class: `series${s.faint ? " faint" : ""}` }, svg);
-      el("path", {
-        d, fill: "none", stroke: s.color, "stroke-width": s.width ?? 1.75,
+      const stroke = {
+        fill: "none", stroke: s.color, "stroke-width": s.width ?? 1.75,
         "stroke-linejoin": "round", "stroke-linecap": "round",
         ...(s.dashed ? { "stroke-dasharray": "6 5" } : {}),
-      }, g);
+      };
+      if (enter == null || s.dashed) el("path", { d, ...stroke }, g);
+      else {
+        el("path", { d: linePath(xs.slice(0, enter), ys.slice(0, enter), s.step), ...stroke }, g);
+        el("path", { d: linePath(xs.slice(enter - 1), ys.slice(enter - 1), s.step), ...stroke, pathLength: 1, class: "enter-line" }, g);
+      }
 
       if (s.markers !== false && !s.faint) {
         ys.forEach((y, i) => {
           if (y == null) return;
-          el("circle", { cx: xs[i], cy: y, r: 3.5, fill: s.pointColors ? s.pointColors[i] : s.color, class: "marker" }, g);
+          el("circle", {
+            cx: xs[i], cy: y, r: 3.5, fill: s.pointColors ? s.pointColors[i] : s.color,
+            class: `marker${enter != null && i >= enter ? " enter-mark" : ""}`,
+          }, g);
         });
       }
 
@@ -293,21 +324,23 @@ const Charts = (() => {
    *
    * options:
    *   points      [{ x, y, color, shape ("circle" | "cross" | "square" | "ring"),
-   *                  r, tip (tooltip html), label, labelDy, onClick, hidden (hover target only) }]
+   *                  r, tip (tooltip html), label, labelDy, onClick, hidden (hover target only),
+   *                  enter (new: pops in) }]
    *   lines       [{ points: [[x, y], ...], color, width, dashed }]
    *   refX, refY  [{ value, label }] vertical / horizontal dashed reference lines
    *   xLabel, yLabel, xMin, xMax, yMin, yMax, height
    *   square      height follows the width (up to `height`), for ROC curves
    *   xFormat, yFormat   value -> tick text
    *   yCategories [{ value, label }] named rows instead of numeric y ticks
-   *   boxes       [{ y, lo, q1, median, q3, hi, color, halfHeight }] box and whiskers
-   *               along x, centred on row y, drawn behind the points
+   *   boxes       [{ y, lo, q1, median, q3, hi, color, halfHeight, tip }] box and
+   *               whiskers along x, centred on row y, drawn behind the points
+   *   notes       [{ y, text }] a word on a row with nothing drawn in it
    *   padLeft     room for the y tick labels
    *   legend      [{ name, color, shape }] (shape "line" for a line key)
    */
   function scatter(container, options) {
     container.chartRedraw = (target, adjust) => drawScatter(target, adjust(options));
-    keepLive(container, () => drawScatter(container, options));
+    keepLive(container, drawScatter, options);
   }
 
   function drawScatter(container, options) {
@@ -402,6 +435,15 @@ const Charts = (() => {
       el("line", { x1: sx(b.hi), x2: sx(b.hi), y1: cy - h / 2, y2: cy + h / 2 }, g);
       el("rect", { x: sx(b.q1), y: cy - h, width: Math.max(1, sx(b.q3) - sx(b.q1)), height: 2 * h, class: "box-body" }, g);
       el("line", { x1: sx(b.median), x2: sx(b.median), y1: cy - h, y2: cy + h, class: "box-median" }, g);
+      if (b.tip) {
+        // The whole box and its whiskers; the points drawn over it keep their own tooltips.
+        const hit = el("rect", { x: sx(b.lo) - 4, y: cy - h - 4, width: sx(b.hi) - sx(b.lo) + 8, height: 2 * h + 8, fill: "transparent", stroke: "none", class: "hit" }, g);
+        hit.addEventListener("mousemove", (event) => { g.classList.add("hover"); showTooltip(event, b.tip); });
+        hit.addEventListener("mouseleave", () => { g.classList.remove("hover"); hideTooltip(); });
+      }
+    }
+    for (const note of options.notes || []) {
+      el("text", { x: pad.left + 8, y: sy(note.y) + 4, class: "row-note" }, svg).textContent = note.text;
     }
 
     for (const l of lines) {
@@ -417,7 +459,7 @@ const Charts = (() => {
       const cx = sx(p.x);
       const cy = sy(p.y);
       const r = p.r ?? 4;
-      const g = el("g", { class: "point" }, svg);
+      const g = el("g", { class: `point${p.enter && options.animate !== false ? " enter-mark" : ""}` }, svg);
       if (!p.hidden) glyph(g, p.shape, cx, cy, r, p.color);
       if (p.label) {
         el("text", { x: cx + r + 5, y: cy + 4 + (p.labelDy || 0), class: "point-label" }, g).textContent = p.label;
@@ -437,14 +479,132 @@ const Charts = (() => {
     container.appendChild(svg);
   }
 
-  /** A bare mini line in a hairline frame, 0..1 on y, for the zone cards. */
-  function spark(container, { values, color, step = true, height = 40 }) {
+  /** A bare mini line in a hairline frame, 0..1 on y, for the zone cards: evenly
+   *  spaced, or at the times `x` on the axis `xDomain` (by default theirs). */
+  function spark(container, { values, color, step = true, height = 40, x = null, xDomain = null }) {
     const width = 160;
     const svg = el("svg", { viewBox: `0 0 ${width} ${height}`, preserveAspectRatio: "none", class: "spark", "aria-hidden": "true" });
-    const xs = values.map((_, i) => 3 + (i / Math.max(1, values.length - 1)) * (width - 6));
+    const [lo, hi] = xDomain || (x ? [x[0], x[x.length - 1]] : [0, values.length - 1]);
+    const at = (i) => ((x ? x[i] : i) - lo) / (hi - lo || 1);
+    const xs = values.map((_, i) => 3 + at(i) * (width - 6));
     const ys = values.map((v) => (v == null ? null : 3 + (1 - v) * (height - 6)));
+    const lastX = xs[xs.length - 1];
+    if (xDomain && width - 3 - lastX > 1) el("rect", { x: lastX, y: 1, width: width - 3 - lastX, height: height - 2, class: "pending" }, svg);
     el("rect", { x: 0.5, y: 0.5, width: width - 1, height: height - 1, class: "spark-frame", "vector-effect": "non-scaling-stroke" }, svg);
     el("path", { d: linePath(xs, ys, step), fill: "none", stroke: color, "stroke-width": 1.75, "vector-effect": "non-scaling-stroke" }, svg);
+    container.appendChild(svg);
+  }
+
+  /**
+   * One distribution per row, each a smoothed density (a Gaussian kernel's)
+   * scaled to its own peak and rising into the row above: a ridgeline plot. A
+   * tick along the base marks every value and a line the median.
+   *
+   * options:
+   *   rows          [{ label, color, values, tip (tooltip html), onClick }], top to bottom
+   *   xMin, xMax, xLabel, xFormat, padLeft
+   *   rowHeight     pixels per row (default 30)
+   *   overlap       a ridge's peak, in rows (default 1.6)
+   *   bandwidth     the kernel's; by default one for all rows, from all their values
+   *   minBandwidth  the least bandwidth, e.g. half the step of values that come in steps
+   *   legend        [{ name, color, shape }]
+   */
+  function ridgeline(container, options) {
+    container.chartRedraw = (target, adjust) => drawRidgeline(target, adjust(options));
+    keepLive(container, drawRidgeline, options);
+  }
+
+  function quantile(sorted, q) {
+    const i = (sorted.length - 1) * q;
+    const lo = Math.floor(i);
+    return sorted[lo] + (sorted[Math.min(lo + 1, sorted.length - 1)] - sorted[lo]) * (i - lo);
+  }
+
+  // Silverman's rule of thumb, no less than `floor`.
+  function kernelBandwidth(values, floor) {
+    const n = values.length;
+    if (!n) return floor;
+    const sorted = [...values].sort((a, b) => a - b);
+    const mean = values.reduce((a, b) => a + b, 0) / n;
+    const sd = Math.sqrt(values.reduce((sum, v) => sum + (v - mean) ** 2, 0) / Math.max(1, n - 1));
+    const iqr = quantile(sorted, 0.75) - quantile(sorted, 0.25);
+    const spread = Math.min(sd, iqr / 1.34) || sd;
+    return Math.max(0.9 * spread * n ** -0.2, floor);
+  }
+
+  function drawRidgeline(container, options) {
+    const { rows, xLabel = "", xFormat = (v) => `${+v.toFixed(2)}`, rowHeight = 30, overlap = 1.6 } = options;
+
+    container.innerHTML = "";
+    container.classList.add("chart");
+    if (options.legend && options.legend.length) {
+      const legend = document.createElement("div");
+      legend.className = "legend";
+      legend.innerHTML = legendHtml(options.legend);
+      container.appendChild(legend);
+    }
+
+    const width = Math.max(260, container.clientWidth || 640);
+    const peak = rowHeight * overlap;
+    const pad = { left: options.padLeft ?? 130, right: 16, top: Math.max(14, peak - rowHeight + 8), bottom: 42 };
+    const plotW = width - pad.left - pad.right;
+    const bottom = pad.top + rows.length * rowHeight;
+    const height = bottom + pad.bottom;
+    const xMin = options.xMin ?? 0;
+    const xMax = options.xMax > xMin ? options.xMax : xMin + 1;
+    const sx = (v) => pad.left + ((v - xMin) / (xMax - xMin)) * plotW;
+
+    const svg = el("svg", { viewBox: `0 0 ${width} ${height}`, width: "100%", height, role: "img" });
+    if (options.title) el("title", {}, svg).textContent = options.title;
+
+    const grid = el("g", { class: "grid" }, svg);
+    const axes = el("g", {}, svg);
+    for (const t of niceTicks(xMin, xMax, 6).filter((t) => t >= xMin - 1e-9 && t <= xMax + 1e-9)) {
+      el("line", { x1: sx(t), x2: sx(t), y1: pad.top - peak + rowHeight, y2: bottom }, grid);
+      el("line", { x1: sx(t), x2: sx(t), y1: bottom, y2: bottom + 4, class: "tick-mark" }, axes);
+      el("text", { x: sx(t), y: bottom + 17, "text-anchor": "middle", class: "tick" }, axes).textContent = xFormat(t);
+    }
+    el("line", { x1: pad.left, x2: pad.left + plotW, y1: bottom, y2: bottom, class: "axis" }, axes);
+    el("text", { x: pad.left + plotW / 2, y: height - 6, "text-anchor": "middle", class: "axis-label" }, svg).textContent = xLabel;
+
+    // One bandwidth for every row, so each is smoothed alike.
+    const h = options.bandwidth ?? kernelBandwidth(rows.flatMap((row) => row.values), Math.max(options.minBandwidth ?? 0, (xMax - xMin) / 200));
+    const samples = 160;
+    const at = Array.from({ length: samples + 1 }, (_, k) => xMin + (k / samples) * (xMax - xMin));
+    const kernel = (t, v) => Math.exp(-0.5 * ((t - v) / h) ** 2);
+
+    // The top row first, so each lower ridge is drawn in front of the one above it.
+    rows.forEach((row, i) => {
+      const base = pad.top + (i + 1) * rowHeight;
+      const density = at.map((t) => row.values.reduce((sum, v) => sum + kernel(t, v), 0));
+      const top = Math.max(...density) || 1;
+      const ys = density.map((d) => base - (d / top) * peak);
+      const outline = at.map((t, k) => `${k ? "L" : "M"}${sx(t)},${ys[k]}`).join("");
+      const area = `${outline}L${sx(xMax)},${base}L${sx(xMin)},${base}Z`;
+
+      const g = el("g", { class: "ridge" }, svg);
+      el("path", { d: area, class: "ridge-under" }, g);
+      const fill = el("path", { d: area, fill: row.color, class: "ridge-fill" }, g);
+      el("path", { d: outline, fill: "none", stroke: row.color, class: "ridge-line" }, g);
+      for (const v of row.values) {
+        el("line", { x1: sx(v), x2: sx(v), y1: base, y2: base - 5, stroke: row.color, class: "ridge-rug" }, g);
+      }
+      const median = quantile([...row.values].sort((a, b) => a - b), 0.5);
+      const k = Math.round(((median - xMin) / (xMax - xMin)) * samples);
+      el("line", { x1: sx(median), x2: sx(median), y1: base, y2: ys[Math.max(0, Math.min(samples, k))], class: "ridge-median" }, g);
+      el("text", { x: pad.left - 8, y: base - 4, "text-anchor": "end", class: "tick" }, g).textContent = row.label;
+
+      if (row.tip || row.onClick) {
+        fill.classList.add("hit-area");
+        fill.addEventListener("mousemove", (event) => { g.classList.add("hover"); if (row.tip) showTooltip(event, row.tip); });
+        fill.addEventListener("mouseleave", () => { g.classList.remove("hover"); hideTooltip(); });
+        if (row.onClick) {
+          fill.style.cursor = "pointer";
+          fill.addEventListener("click", row.onClick);
+        }
+      }
+    });
+
     container.appendChild(svg);
   }
 
@@ -482,7 +642,7 @@ const Charts = (() => {
     copy.style.cssText = `position:absolute;left:-10000px;top:0;width:${container.clientWidth}px`;
     document.body.appendChild(copy);
     const adjust = container.exportAdjust || ((options) => options);
-    container.chartRedraw(copy, (options) => adjust({ ...options, selected: null }));
+    container.chartRedraw(copy, (options) => adjust({ ...options, selected: null, animate: false }));
     return copy;
   }
 
@@ -596,5 +756,5 @@ const Charts = (() => {
     canvas.toBlob((blob) => saveBlob(blob, `${filename}.png`), "image/png");
   }
 
-  return { line, scatter, spark, legendHtml, showTooltip, hideTooltip, escape, exportSvg, download };
+  return { line, scatter, ridgeline, spark, legendHtml, showTooltip, hideTooltip, escape, exportSvg, download, quantile };
 })();

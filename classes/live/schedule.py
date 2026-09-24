@@ -87,6 +87,15 @@ class TestRun:
         self.recordings = []  # names of the recordings started
         self.finished = threading.Event()
         self._thread = None
+        # The run's own clock, for timeline(): when its first cycle started, that
+        # start pushed back by the pauses so far, since when a pause holds the run,
+        # when the run ended, and when each burst started (from the first cycle).
+        self._clock_lock = threading.Lock()
+        self._origin = None
+        self._start = None
+        self._held_since = None
+        self._ended_at = None
+        self._burst_starts = []
 
     @property
     def paused(self):
@@ -123,6 +132,28 @@ class TestRun:
             self._wait(self._stop, left)
         return False
 
+    def timeline(self):
+        """Where the run is, in seconds from the start of its first cycle:
+        `elapsed`, the `length` of the whole run (to everything switched off after
+        the last burst) and when each burst `starts`, those still to come as
+        planned now. A pause pushes the rest of the run back, so while it holds
+        the run, the run grows longer. None before the run starts."""
+        with self._clock_lock:
+            if self._origin is None:
+                return None
+            now = self._ended_at if self._ended_at is not None else self._now()
+            shift = self._start - self._origin
+            if self._held_since is not None:
+                shift += now - self._held_since
+            done = list(self._burst_starts)
+            elapsed = now - self._origin
+        settings = self.settings
+        timeout = settings.recording_timeout * 60
+        planned = cycle(shift, settings)
+        starts = done + [planned.start_recording + timeout * i for i in range(len(done), settings.recording_count)]
+        length = planned.stop_recording + timeout * (settings.recording_count - 1) + LIGHTS_AFTER
+        return {"elapsed": min(max(elapsed, 0.0), length), "length": length, "starts": starts}
+
     def run(self):
         try:
             self._run()
@@ -134,24 +165,30 @@ class TestRun:
                 self.lights.all_off()
             finally:
                 self.next_recording = None
+                with self._clock_lock:
+                    self._ended_at = self._now()
                 self.finished.set()
 
     def _run(self):
         settings = self.settings
-        start = self._now() + START_DELAY
+        with self._clock_lock:
+            self._origin = self._start = self._now() + START_DELAY
         timeout = settings.recording_timeout * 60
         while self.recording_count < settings.recording_count and not self._stop.is_set():
-            if not self._wait_until(start + timeout * self.recording_count):
+            if not self._wait_until(self._start + timeout * self.recording_count):
                 return
             self.recording_count += 1
             if self.paused:
-                paused_at = self._now()
+                with self._clock_lock:
+                    self._held_since = self._now()
                 self.next_recording = None
                 self._unpaused.wait()
                 if self._stop.is_set():
                     return
-                start += self._now() - paused_at
-            planned = cycle(start + timeout * (self.recording_count - 1), settings)
+                with self._clock_lock:
+                    self._start += self._now() - self._held_since
+                    self._held_since = None
+            planned = cycle(self._start + timeout * (self.recording_count - 1), settings)
             self.next_recording = self._wall_clock().timestamp() + planned.start_recording - self._now()
 
             actions = [(when, "switch", device) for device, when in planned.switch_on.items()]
@@ -165,6 +202,8 @@ class TestRun:
                 else:
                     name = recording_name(self._wall_clock(), settings.fps)
                     self.recordings.append(name)
+                    with self._clock_lock:
+                        self._burst_starts.append(self._now() - self._origin)
                     burst_done = self.start_burst(name)
 
             # Everything stays on for the whole burst, even one running late

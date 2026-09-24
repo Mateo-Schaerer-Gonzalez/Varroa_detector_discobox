@@ -387,6 +387,9 @@ function plateOverlay(container, src, image) {
   const img = document.createElement("img");
   img.src = src;
   img.alt = "First frame of the recording";
+  // Its size holds its place while it loads, so a page drawn again does not jump.
+  img.width = image.width;
+  img.height = image.height;
   container.appendChild(img);
   return (x1, y1, x2, y2) => ({
     left: percent(x1, image.width),
@@ -871,6 +874,22 @@ function wireRunAgain(body) {
 const movingNote =
   "A mite counts as moving in a recording when its motion score in that recording reaches the threshold.";
 
+// --- a live run filling in
+
+// While a live run goes on, the time axis of every chart covers the whole run as
+// planned so far, so the charts fill in as it goes instead of stretching to each
+// new recording. Null otherwise: a chart's time axis is then its data's.
+function timeDomain() {
+  const line = loadedContext === "live" && liveRunning() ? live.status.timeline : null;
+  return line ? [0, Math.max(line.minutes, results.times[results.times.length - 1])] : null;
+}
+
+const stillToCome = () => (timeDomain() ? " The shaded end of the axis is the part of the run still to come." : "");
+
+// The index of the first recording new since the page was last drawn, set by
+// live.js for the one drawing that shows it: its points are drawn in.
+let enterFrom = null;
+
 // --- the recording on screen
 
 const shownTime = () => minutes(results.times[shown]);
@@ -963,20 +982,29 @@ function showOverview() {
 
     <div class="block">
       ${figure("chart-group-moving", 2, "Mites moving by group",
-        `Fraction of each group's mites moving in each recording. ${movingNote} Click a time to show that recording.`)}
+        `Fraction of each group's mites moving in each recording. ${movingNote} Click a time to show that recording.${stillToCome()}`)}
     </div>
 
     ${section("Movement per zone", `<div id="zone-cards" class="zone-cards"></div>
       <p class="caption">Fraction of each zone's mites moving in each recording, on a 0–100% scale; the number is how many moved in the last recording.
-        Zones without mites are left out. Select a zone to open it.</p>`)}
+        Zones without mites are left out. Select a zone to open it.${stillToCome()}</p>`)}
 
     ${section("Group summary", `<div class="table-wrap"><table id="group-table"></table></div>
       <p class="caption"><b>Moving</b> is the share of all mite-recordings in which the mite moved.</p>`)}
 
     <div class="block">${figure("chart-group-scores", 3, "Motion scores by group",
       `Every mite in every recording at its motion score, one row per group, pooling every zone with that label: ${movingBadge(true)} at or above the threshold (dashed line),
-      ${movingBadge(false)} below it. The box spans the middle half of the zone's scores with a line at the median; the whiskers reach the
-      furthest scores within 1.5 box lengths. The box and whiskers are over all the group's mite-recordings. Points of the recording shown are drawn larger. Select a point to open that mite in that recording.`)}</div>
+      ${movingBadge(false)} below it; the number is the group's mites. Points of the recording shown are drawn larger. Select a point to open that mite in that recording.`)}</div>
+
+    <div class="block">${figure("chart-moving-scores", 4, "Motion scores of moving mites by group",
+      `Only the recordings in which a mite moved, so the many still ones do not pull the distribution down: how strongly each group's mites move when they do.
+      The box spans the middle half of these scores with a line at the median; the whiskers reach the furthest scores within 1.5 box lengths.
+      The number is how many moving mite-recordings the row holds. Same scale as Fig. 3. Hover a box for its numbers; select a point to open that mite in that recording.`)}</div>
+
+    <div class="block">${figure("chart-intervals", 5, "Time between movements, per zone",
+      `For every mite, the time from each recording in which it moved to the next one in which it moved again, pooled per zone and coloured by group.
+      Each ridge is a smoothed distribution scaled to its own peak, with a tick along its base for every interval and a line at the median.
+      <span id="intervals-left"></span>Hover a ridge for its numbers; select it to open the zone.`)}</div>
 
     ${section("Files", `<ul class="files">
         <li><a href="${fileUrl(results.excel)}" download>${esc(results.excel)}</a> <span class="muted">measurements, group summary and movement over time</span></li>
@@ -987,6 +1015,8 @@ function showOverview() {
 
   Charts.line($("chart-group-moving"), {
     x: times,
+    xDomain: timeDomain(),
+    enterFrom,
     selected: shown,
     onXClick: showRecording,
     yLabel: "Mites moving (%)",
@@ -1002,7 +1032,12 @@ function showOverview() {
   drawResultPlate(groups);
   drawZoneCards(groups);
   drawGroupTable(groups);
-  drawGroupScores(groups);
+  // Figs. 3 and 4 share their scale, so a group's scores compare between them.
+  const rows = groupRows();
+  const topScore = results.mites.reduce((top, mite) => mite.scores.reduce((a, b) => Math.max(a, b), top), results.threshold);
+  drawGroupScores(groups, rows, topScore * 1.05);
+  drawMovingScores(groups, rows, topScore * 1.05);
+  drawMovementIntervals(groups);
 }
 
 // Quartiles and Tukey whiskers of a list of numbers.
@@ -1022,70 +1057,189 @@ function boxStats(values) {
   };
 }
 
-// Like the calibration's "Scores by your label": each mite-recording at its
-// score, one row per group (every zone with the same label), against the
-// threshold, with a box plot per group.
-function drawGroupScores(groups) {
+// The groups with a detected mite, each with its zones and mites: named groups
+// alphabetically, "unlabeled" last.
+function groupRows() {
   const byGroup = new Map();
   zonesWithMites().forEach((zone) => {
     const group = zone.label || "unlabeled";
     if (!byGroup.has(group)) byGroup.set(group, []);
     byGroup.get(group).push(zone);
   });
-  // Named groups alphabetically, "unlabeled" last; the first on top.
-  const names = [...byGroup.keys()].sort((a, b) => (a === "unlabeled") - (b === "unlabeled") || a.localeCompare(b));
-  const row = (index) => names.length - 1 - index;
-  const jitter = (key) => {
-    let hash = 7;
-    for (const char of key) hash = (hash * 31 + char.charCodeAt(0)) % 1009;
-    return (hash / 1009 - 0.5) * 0.5;
+  return [...byGroup.keys()]
+    .sort((a, b) => (a === "unlabeled") - (b === "unlabeled") || a.localeCompare(b))
+    .map((group) => ({ group, zones: byGroup.get(group), mites: byGroup.get(group).flatMap((zone) => mitesIn(zone.id)) }));
+}
+
+// A small offset from a row, the same for a mite-recording at every drawing.
+function jitter(key) {
+  let hash = 7;
+  for (const char of key) hash = (hash * 31 + char.charCodeAt(0)) % 1009;
+  return (hash / 1009 - 0.5) * 0.5;
+}
+
+// A mite in one recording at its motion score, on the row `y` of its group;
+// selecting it opens the mite in that recording.
+function scorePoint(mite, recording, y, group, zones) {
+  const moving = mite.moving[recording];
+  const value = mite.scores[recording];
+  return {
+    x: value,
+    y: y + jitter(`${mite.id}/${recording}`),
+    color: token(moving ? "--moving" : "--still"),
+    shape: moving ? "circle" : "cross",
+    r: recording === shown ? 4.5 : 2.75,
+    enter: enterFrom != null && recording >= enterFrom,
+    tip: `<div class="tip-title">Mite ${esc(mite.id)} · zone ${mite.zone_id} · ${minutes(results.times[recording])}</div>
+      <div class="tip-note">${esc(group)} · zones ${zones.map((z) => z.id).join(", ")}</div>
+      <div>${movingBadge(moving)} · score ${score(value)}</div>${movementGlyphs(mite)}
+      <div class="tip-hint">Click to open this mite in this recording</div>`,
+    onClick: () => {
+      shown = recording;
+      if (loadedContext === "live") liveFollow(recording === results.times.length - 1);
+      go(R(`mite/${encodeURIComponent(mite.id)}`));
+    },
   };
+}
+
+// On paper there is no recording on screen: every point the same size.
+const samePointSize = (options) => ({ ...options, points: options.points.map((point) => ({ ...point, r: 3 })) });
+
+// Like the calibration's "Scores by your label": each mite-recording at its
+// score, one row per group (every zone with the same label), against the threshold.
+function drawGroupScores(groups, rows, xMax) {
+  const row = (index) => rows.length - 1 - index;  // the first group on top
   const points = [];
-  const boxes = [];
   const categories = [];
-  names.forEach((group, index) => {
-    const zones = byGroup.get(group);
-    const mites = zones.flatMap((zone) => mitesIn(zone.id));
-    boxes.push({ y: row(index), color: groupColor(group, groups), ...boxStats(mites.flatMap((m) => m.scores)) });
+  rows.forEach(({ group, zones, mites }, index) => {
     categories.push({ value: row(index), label: `${group} (${mites.length})` });
-    mites.forEach((mite) => mite.scores.forEach((value, recording) => {
-      const moving = mite.moving[recording];
-      points.push({
-        x: value,
-        y: row(index) + jitter(`${mite.id}/${recording}`),
-        color: token(moving ? "--moving" : "--still"),
-        shape: moving ? "circle" : "cross",
-        r: recording === shown ? 4.5 : 2.75,
-        tip: `<div class="tip-title">Mite ${esc(mite.id)} · zone ${mite.zone_id} · ${minutes(results.times[recording])}</div>
-          <div class="tip-note">${esc(group)} · zones ${zones.map((z) => z.id).join(", ")}</div>
-          <div>${movingBadge(moving)} · score ${score(value)}</div>${movementGlyphs(mite)}
-          <div class="tip-hint">Click to open this mite in this recording</div>`,
-        onClick: () => {
-          shown = recording;
-          if (loadedContext === "live") liveFollow(recording === results.times.length - 1);
-          go(R(`mite/${encodeURIComponent(mite.id)}`));
-        },
-      });
+    mites.forEach((mite) => mite.scores.forEach((_value, recording) => {
+      points.push(scorePoint(mite, recording, row(index), group, zones));
     }));
   });
-  // On paper there is no recording on screen: every point the same size.
-  $("chart-group-scores").exportAdjust = (options) => ({
-    ...options, points: options.points.map((point) => ({ ...point, r: 3 })),
-  });
+  $("chart-group-scores").exportAdjust = samePointSize;
   Charts.scatter($("chart-group-scores"), {
-    height: Math.max(180, names.length * 44 + 60),
+    height: Math.max(180, rows.length * 44 + 60),
     padLeft: 150,
     points,
-    boxes,
     refX: [{ value: results.threshold, label: `threshold ${score(results.threshold)}` }],
     yCategories: categories,
-    yMin: -0.6, yMax: names.length - 0.4,
-    xMin: 0,
+    yMin: -0.6, yMax: rows.length - 0.4,
+    xMin: 0, xMax,
     xLabel: "Motion score",
     legend: [
       { name: "moving", color: token("--moving"), shape: "circle" },
       { name: "still", color: token("--still"), shape: "cross" },
     ],
+  });
+}
+
+// Only the mite-recordings in which the mite moved, one row per group, with the
+// box plot of their scores: how strongly the mites move when they do, untouched
+// by how often they sit still.
+function drawMovingScores(groups, rows, xMax) {
+  const row = (index) => rows.length - 1 - index;
+  const points = [];
+  const boxes = [];
+  const notes = [];
+  const categories = [];
+  rows.forEach(({ group, zones, mites }, index) => {
+    const moving = mites.flatMap((mite) => mite.moving
+      .map((isMoving, recording) => (isMoving ? { mite, recording, value: mite.scores[recording] } : null))
+      .filter(Boolean));
+    categories.push({ value: row(index), label: `${group} (${moving.length})` });
+    if (!moving.length) {
+      notes.push({ y: row(index), text: "no mite seen moving yet" });
+      return;
+    }
+    const stats = boxStats(moving.map((m) => m.value));
+    const nMites = new Set(moving.map((m) => m.mite.id)).size;
+    boxes.push({
+      y: row(index), color: groupColor(group, groups), ...stats,
+      tip: `<div class="tip-title">${esc(group)}</div>
+        <div class="tip-note">${moving.length} moving mite-recording${moving.length === 1 ? "" : "s"} of ${nMites} mite${nMites === 1 ? "" : "s"}</div>
+        <div>median ${score(stats.median)}</div>
+        <div>middle half ${score(stats.q1)}–${score(stats.q3)}</div>
+        <div>whiskers ${score(stats.lo)}–${score(stats.hi)}</div>`,
+    });
+    moving.forEach(({ mite, recording }) => points.push(scorePoint(mite, recording, row(index), group, zones)));
+  });
+  $("chart-moving-scores").exportAdjust = samePointSize;
+  Charts.scatter($("chart-moving-scores"), {
+    height: Math.max(160, rows.length * 44 + 60),
+    padLeft: 150,
+    points,
+    boxes,
+    notes,
+    refX: [{ value: results.threshold, label: `threshold ${score(results.threshold)}` }],
+    yCategories: categories,
+    yMin: -0.6, yMax: rows.length - 0.4,
+    xMin: 0, xMax,
+    xLabel: "Motion score",
+  });
+}
+
+// For a mite, the time from each recording in which it moved to the next one in
+// which it moved again, in minutes.
+function movementIntervals(mite) {
+  const intervals = [];
+  let last = -1;
+  mite.moving.forEach((moving, recording) => {
+    if (!moving) return;
+    if (last >= 0) intervals.push(results.times[recording] - results.times[last]);
+    last = recording;
+  });
+  return intervals;
+}
+
+const shorten = (text, length) => (text.length > length ? `${text.slice(0, length - 1)}…` : text);
+
+// The time between movements pooled per zone, one ridge per zone, zones of a
+// group together. The axis reaches as far as two recordings can be apart.
+function drawMovementIntervals(groups) {
+  const { times } = results;
+  const rows = [];
+  let without = 0;
+  groupRows().forEach(({ group, zones }) => zones.forEach((zone) => {
+    const perMite = mitesIn(zone.id).map(movementIntervals).filter((intervals) => intervals.length);
+    const values = perMite.flat();
+    if (!values.length) { without += 1; return; }
+    const sorted = [...values].sort((a, b) => a - b);
+    const q = (p) => minutes(Charts.quantile(sorted, p));
+    rows.push({
+      group,
+      label: `Zone ${zone.id} · ${shorten(group, 14)} (${values.length})`,
+      color: groupColor(group, groups),
+      values,
+      tip: `<div class="tip-title">Zone ${zone.id} · ${esc(group)}</div>
+        <div class="tip-note">${values.length} time${values.length === 1 ? "" : "s"} between movements, of ${perMite.length} mite${perMite.length === 1 ? "" : "s"}</div>
+        <div>median ${q(0.5)}</div>
+        <div>middle half ${q(0.25)}–${q(0.75)}</div>
+        <div>shortest ${minutes(sorted[0])}, longest ${minutes(sorted[sorted.length - 1])}</div>
+        <div class="tip-hint">Click to open zone ${zone.id}</div>`,
+      onClick: () => go(R(`zone/${zone.id}`)),
+    });
+  }));
+
+  $("intervals-left").textContent = without
+    ? `${without} zone${without === 1 ? "" : "s"} where no mite moved in two recordings ${without === 1 ? "is" : "are"} left out. ` : "";
+  if (!rows.length) {
+    $("chart-intervals").innerHTML = `<p class="muted">No mite has been seen moving in two recordings${timeDomain() ? " yet" : ""}, so there is no time between movements to show.</p>`;
+    return;
+  }
+  const domain = timeDomain();
+  // Times that come in steps of the time between recordings are smoothed over at least half a step.
+  const steps = times.slice(1).map((t, i) => t - times[i]).filter((step) => step > 0).sort((a, b) => a - b);
+  const shownGroups = [...new Set(rows.map((row) => row.group))];
+  Charts.ridgeline($("chart-intervals"), {
+    rows,
+    xMin: 0,
+    xMax: domain ? domain[1] - domain[0] : times[times.length - 1] - times[0],
+    xLabel: "Time between two movements of a mite (min)",
+    xFormat: (v) => `${+v.toFixed(1)}`,
+    minBandwidth: steps.length ? Charts.quantile(steps, 0.5) / 2 : 0,
+    padLeft: 170,
+    legend: shownGroups.length > 1 ? shownGroups.map((group) => ({ name: group, color: groupColor(group, groups), shape: "square" })) : [],
   });
 }
 
@@ -1159,7 +1313,7 @@ function drawZoneCards(groups) {
       <div class="zone-card-group">${groupTag(zone.label || "unlabeled", color)}</div>`;
     const plot = document.createElement("div");
     plot.className = "zone-card-plot";
-    Charts.spark(plot, { values: zone.moving, color, step: false });
+    Charts.spark(plot, { values: zone.moving, color, step: false, x: results.times, xDomain: timeDomain() });
     card.appendChild(plot);
     container.appendChild(card);
   });
@@ -1274,7 +1428,7 @@ function showZone(zoneId) {
         `The recording, looped, with each detected mite ${movingBadge(true)} or ${movingBadge(false)} in it. Hover a mite for every recording, select it to open it.`, "crop-wrap truth-crop")}
     </div>
 
-    ${mites.length ? `<div class="block">${figure("chart-zone-moving", 2, "Mites moving", "Fraction of this zone's mites moving in each recording, with the whole group for comparison where the group spans several zones. Click a time to show that recording.")}</div>` : ""}
+    ${mites.length ? `<div class="block">${figure("chart-zone-moving", 2, "Mites moving", `Fraction of this zone's mites moving in each recording, with the whole group for comparison where the group spans several zones. Click a time to show that recording.${stillToCome()}`)}</div>` : ""}
 
     ${mites.length ? `
     <div class="grid-2">
@@ -1304,6 +1458,8 @@ function showZone(zoneId) {
   const groupCurve = results.groups.find((g) => g.group === group);
   Charts.line($("chart-zone-moving"), {
     x: times,
+    xDomain: timeDomain(),
+    enterFrom,
     selected: shown,
     onXClick: showRecording,
     yLabel: "Mites moving (%)",
@@ -1323,6 +1479,8 @@ function showZone(zoneId) {
 
   Charts.line($("chart-zone-scores"), {
     x: times,
+    xDomain: timeDomain(),
+    enterFrom,
     selected: shown,
     onXClick: showRecording,
     yLabel: "Motion score",
@@ -1393,7 +1551,7 @@ function showMite(miteId) {
       ${clipFigure("mite-crop", 1, "Close-up",
         `The recording at ${shownTime()}, looped, 140 × 140 px around the mite: ${movingBadge(movingShown(mite))} in it.`, "crop-wrap square")}
       ${figure("chart-mite", 2, "Motion score over time",
-        `${movingBadge(true)} at or above the threshold, ${movingBadge(false)} below it. ${movingNote} Click a time to show that recording.`)}
+        `${movingBadge(true)} at or above the threshold, ${movingBadge(false)} below it. ${movingNote} Click a time to show that recording.${stillToCome()}`)}
     </div>
 
     ${section("Recordings", `<div class="table-wrap"><table class="clickable" id="recording-table">
@@ -1422,6 +1580,8 @@ function showMite(miteId) {
 
   Charts.line($("chart-mite"), {
     x: times,
+    xDomain: timeDomain(),
+    enterFrom,
     selected: shown,
     onXClick: showRecording,
     yLabel: "Motion score",

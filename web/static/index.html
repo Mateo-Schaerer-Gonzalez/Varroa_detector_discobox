@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Varroa discobox</title>
-<link rel="stylesheet" href="style.css?v=10">
+<link rel="stylesheet" href="style.css?v=11">
 </head>
 <body>
 
@@ -130,44 +130,44 @@
       </figure>
     </div>
     <aside class="split-side panel">
-      <h2>Source</h2>
+      <h2>Discobox</h2>
+      <p class="hint">Connecting finds the camera and the fan and LEDs by itself, and switches the LEDs on so the plates can be seen.</p>
       <div class="live-form">
-        <label class="live-choice"><input type="radio" name="live-source" value="camera" checked> Discobox camera</label>
-        <label class="live-choice"><input type="radio" name="live-source" value="replay"> Replay a recorded folder
-          <span class="hint">as if it came from the camera, to try all this without one</span></label>
+        <label for="live-run-name">Test run name</label>
+        <input id="live-run-name" type="text" spellcheck="false">
+        <details class="path-option live-more">
+          <summary>More options</summary>
+          <div class="live-form">
+            <label for="live-pool-size">Frames per pool</label>
+            <input id="live-pool-size" type="number" min="2" step="1" placeholder="whole recording" class="number-input">
+            <label class="live-check"><input id="live-save" type="checkbox" checked> Save the recordings
+              <span class="hint">to output/&lt;run name&gt;/, to analyse them again as a folder later</span></label>
+          </div>
+        </details>
+      </div>
+      <button id="live-connect-btn" type="button" class="wide">Connect</button>
+      <button id="live-close-btn" type="button" class="wide secondary" hidden>Disconnect</button>
+      <p id="live-open-status" class="hint"></p>
 
-        <div id="live-camera-fields">
-          <label for="live-camera">Camera</label>
-          <select id="live-camera"></select>
-          <label for="live-serial">Fan and LEDs</label>
-          <select id="live-serial"></select>
-        </div>
-        <div id="live-replay-fields" hidden>
+      <details id="live-replay" class="path-option">
+        <summary>No camera? Replay a recorded folder</summary>
+        <p class="hint">Its recordings play as if they came from the camera, to try all this without one.</p>
+        <div class="live-form">
           <label for="live-replay-dir">Recording folder</label>
           <input id="live-replay-dir" type="text" value="sample_data" spellcheck="false">
           <label for="live-replay-gap">Seconds between recordings</label>
           <input id="live-replay-gap" type="number" min="0" step="0.5" value="2" class="number-input">
         </div>
-
-        <label for="live-run-name">Test run name</label>
-        <input id="live-run-name" type="text" spellcheck="false">
-        <label for="live-pool-size">Frames per pool</label>
-        <input id="live-pool-size" type="number" min="2" step="1" placeholder="whole recording" class="number-input">
-        <label class="live-check"><input id="live-save" type="checkbox" checked> Save the recordings
-          <span class="hint">to output/&lt;run name&gt;/, to analyse them again as a folder later</span></label>
-      </div>
-      <div class="row live-connect">
-        <button id="live-connect-btn" type="button">Connect</button>
-        <button id="live-close-btn" type="button" class="secondary" hidden>Disconnect</button>
-      </div>
-      <p id="live-open-status" class="hint"></p>
+        <button id="live-replay-btn" type="button" class="secondary small live-replay-btn">Replay</button>
+      </details>
 
       <div id="live-settings-block">
         <h2 class="live-heading">Test run settings</h2>
         <div id="live-settings" class="live-settings"></div>
         <p id="live-recording-time" class="hint"></p>
         <h2 class="live-heading">Fan and LEDs</h2>
-        <p class="hint">Their intensity during the run. Switch each on to check it while connected.</p>
+        <p class="hint">Their intensity during the run. The LEDs stay on from connecting until the run starts;
+          switch the fan or an LED on or off here to check it.</p>
         <div id="live-lights" class="live-lights"></div>
         <p id="live-settings-status" class="hint"></p>
       </div>
@@ -304,9 +304,9 @@
 
 <div id="tooltip" class="tooltip" hidden></div>
 
-<script src="charts.js?v=9"></script>
-<script src="app.js?v=13"></script>
-<script src="live.js?v=1"></script>
+<script src="charts.js?v=10"></script>
+<script src="app.js?v=14"></script>
+<script src="live.js?v=2"></script>
 <script src="calibration.js?v=14"></script>
 </body>
 </html>

@@ -88,6 +88,14 @@ class RateMeter:
             return (len(self._times) - 1) / (self._times[-1] - self._times[0])
 
 
+def rounded(timeline):
+    """A timeline as the status sends it, twice a second: seconds to a tenth."""
+    if timeline is None:
+        return None
+    return {"elapsed": round(timeline["elapsed"], 1), "length": round(timeline["length"], 1),
+            "starts": [round(start, 1) for start in timeline["starts"]], "minutes": round(timeline["minutes"], 3)}
+
+
 class LiveSource:
     """What the live sources share: the stream, the live feed, the state."""
 
@@ -292,6 +300,16 @@ class CameraSource(LiveSource):
     def wait_closed(self, timeout=None):
         return self._stopped.wait(timeout)
 
+    def timeline(self):
+        """The test run's timeline (TestRun.timeline), and `minutes`: how far the
+        results' time axis reaches once every recording is in, from the start of
+        the first to the end of the last. None before the run starts."""
+        line = self.test_run.timeline() if self.test_run is not None else None
+        if line is None:
+            return None
+        starts = line["starts"]
+        return {**line, "minutes": (starts[-1] - starts[0] + self.settings.recording_seconds) / 60}
+
     def status(self):
         burst = self._burst
         run = self.test_run
@@ -313,6 +331,7 @@ class CameraSource(LiveSource):
             "completed": self.completed,
             "next_recording": run.next_recording if run else None,
             "lights": self.lights.state(),
+            "timeline": rounded(self.timeline()),
         }
 
 
@@ -328,12 +347,16 @@ class ReplaySource(LiveSource):
         self.recordings = self.folder.recordings()
         if not self.recordings:
             raise FileNotFoundError(f"No recordings found in {self.data_dir}")
+        self.frame_counts = [len(list((self.data_dir / recording.name).glob("*.bmp"))) for recording in self.recordings]
         self.fps = fps
         self.gap = gap
         self.recording_count = 0
         self.frame = 0
         self.current = None
         self.next_recording = None
+        self._playing = None   # (index, recording) being played, from before its first frame
+        self._gap_from = None  # when the gap after the recording just played began
+        self._ended_at = None  # where on the timeline the replay ended
         self._stop = threading.Event()
         self._unpaused = threading.Event()
         self._unpaused.set()
@@ -366,9 +389,10 @@ class ReplaySource(LiveSource):
                 if isinstance(event, RecordingEnd):
                     self._events.put(event)
                     self.completed += 1
-                    self.current = None
+                    self.current = self._playing = None
                     if self.completed < len(self.recordings):
                         self.next_recording = time.time() + self.gap
+                        self._gap_from = time.monotonic()
                         if not self._sleep(self.gap):
                             break
                     continue
@@ -379,6 +403,8 @@ class ReplaySource(LiveSource):
                         self._unpaused.wait()
                         if self._stop.is_set():
                             break
+                    self.frame, self._gap_from = 0, None
+                    self._playing = (self.recording_count, event.recording)
                     self.recording_count += 1
                     self.next_recording = None
                     next_frame = time.monotonic()
@@ -399,6 +425,7 @@ class ReplaySource(LiveSource):
             _logger.exception("The replay failed")
             self.error = str(error)
         finally:
+            self._ended_at = self._position(*self._plan())
             self.current = None
             self.next_recording = None
             self.state = "finished"
@@ -431,6 +458,37 @@ class ReplaySource(LiveSource):
     def wait_closed(self, timeout=None):
         return self._stopped.wait(timeout)
 
+    def _plan(self):
+        """When each recording starts on the replay's timeline, and how long it lasts."""
+        durations = [count / (self.fps or recording.fps) for recording, count in zip(self.recordings, self.frame_counts)]
+        starts = [sum(durations[:index]) + self.gap * index for index in range(len(durations))]
+        return starts, durations
+
+    def _position(self, starts, durations):
+        """Where the replay is on its timeline: in a recording, or in the gap after one."""
+        playing = self._playing
+        if playing is not None:
+            index, recording = playing
+            return starts[index] + self.frame / (self.fps or recording.fps)
+        index = self.completed - 1
+        if index < 0:
+            return 0.0
+        gap_from = self._gap_from
+        into_gap = 0.0 if gap_from is None else min(self.gap, time.monotonic() - gap_from)
+        return starts[index] + durations[index] + into_gap
+
+    def timeline(self):
+        """The replay as a test run's timeline (TestRun.timeline): each recording
+        lasts its frames at the replay's frame rate, `gap` seconds apart. Its
+        `minutes` are those of the folder's recordings, which the results keep."""
+        if self.state == "ready":
+            return None
+        starts, durations = self._plan()
+        length = starts[-1] + durations[-1]
+        elapsed = self._ended_at if self._ended_at is not None else self._position(starts, durations)
+        span = (self.recordings[-1].start - self.recordings[0].start).total_seconds() + durations[-1]
+        return {"elapsed": min(elapsed, length), "length": length, "starts": starts, "minutes": span / 60}
+
     def status(self):
         return {
             "source": self.kind,
@@ -449,4 +507,5 @@ class ReplaySource(LiveSource):
             "completed": self.completed,
             "next_recording": self.next_recording,
             "lights": None,
+            "timeline": rounded(self.timeline()),
         }
