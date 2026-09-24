@@ -427,8 +427,8 @@ function duration(seconds) {
 }
 
 // The whole test run as one bar: filled as far as the run has got, with a tick
-// under it for each recording, dark once analysed. Polled twice a second, the
-// fill glides from one poll to the next.
+// under it for each recording, dark once analysed. Polled twice a second, it
+// moves on in small steps, with no animation between them.
 function drawRunProgress(s) {
   const line = s.timeline;
   const fraction = line && line.length > 0 ? Math.min(1, line.elapsed / line.length) : 0;

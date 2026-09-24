@@ -636,19 +636,18 @@ td.num.error { color: var(--critical); font-weight: 600; }
 /* The whole test run as one bar, a tick under it per recording. */
 .run-progress { grid-column: 1 / -1; }
 .run-bar { position: relative; height: 8px; background: var(--wash); box-shadow: inset 0 0 0 1px var(--rule); overflow: hidden; }
-.run-bar-fill { position: absolute; top: 0; bottom: 0; left: 0; width: 0; background: var(--critical); transition: width 0.5s linear; }
+/* No transition: the width comes twice a second, and Firefox on the Discobox's
+   Linux left an animation restarted that often stuck at its start. */
+.run-bar-fill { position: absolute; top: 0; bottom: 0; left: 0; width: 0; background: var(--critical); }
 .run-bar.paused .run-bar-fill, .run-bar.stopping .run-bar-fill { background: var(--still); }
 .run-bar.finished .run-bar-fill { background: var(--ink); }
 .run-marks { position: relative; height: 7px; margin-top: 2px; }
-.run-marks i { position: absolute; top: 0; width: 2px; height: 6px; margin-left: -1px; background: var(--rule); transition: left 0.5s linear; }
+.run-marks i { position: absolute; top: 0; width: 2px; height: 6px; margin-left: -1px; background: var(--rule); }
 .run-marks i.analysed { background: var(--ink); }
 .run-marks i.captured { background: var(--muted); }
 .run-marks i.capturing { background: var(--critical); height: 7px; }
 .run-progress-text { display: flex; justify-content: space-between; gap: 4px 16px; flex-wrap: wrap; margin-top: 2px; color: var(--text); }
 #run-left { color: var(--muted); }
-@media (prefers-reduced-motion: reduce) {
-  .run-bar-fill, .run-marks i { transition: none; }
-}
 
 .live-more { margin-top: 10px; }
 .live-more .live-form { margin: 4px 0 0; }
