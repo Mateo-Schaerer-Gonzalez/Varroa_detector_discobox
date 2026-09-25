@@ -9,6 +9,7 @@ Run it with start.bat, or:  python -m uvicorn web.server:app --port 8000
 
 import os
 import shutil
+import subprocess
 import threading
 import time
 import uuid
@@ -17,7 +18,7 @@ from typing import Optional, Union
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import FileResponse, Response
+from fastapi.responses import FileResponse, PlainTextResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
@@ -599,6 +600,26 @@ def page_closed(page_id: str):
     pages.pop(page_id, None)
     last_activity = time.monotonic()
     return {}
+
+
+def _git_commit() -> str:
+    try:
+        return subprocess.run(["git", "rev-parse", "HEAD"], cwd=APP_DIR, capture_output=True,
+                              text=True, timeout=5).stdout.strip()
+    except (OSError, subprocess.SubprocessError):
+        return ""
+
+
+# Read once: the code this process runs, even if the folder is updated meanwhile.
+APP_DIR = Path(__file__).resolve().parent.parent
+COMMIT = _git_commit()
+
+
+@app.get("/api/version", response_class=PlainTextResponse)
+def version():
+    """Folder, commit and whether a live run is going, one per line: start.sh
+    replaces a server running other code, unless a live run is going."""
+    return f"{APP_DIR}\n{COMMIT}\n{int(pipeline.live_running())}\n"
 
 
 class FreshStaticFiles(StaticFiles):

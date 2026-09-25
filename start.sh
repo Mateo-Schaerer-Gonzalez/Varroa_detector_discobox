@@ -19,17 +19,9 @@ fail() {
 }
 
 if [ "$1" = stop ]; then
-    # The server may have stopped by itself and its pid been reused, so only
-    # kill the pid if it is still our server.
-    pid=$(cat "$PID_FILE" 2>/dev/null)
-    grep -qs uvicorn "/proc/$pid/cmdline" && kill "$pid" 2>/dev/null
+    # Also a server started by hand or from another copy of the app.
+    pkill -f "uvicorn web.server:app"
     rm -f "$PID_FILE"
-    exit 0
-fi
-
-# Already running (e.g. icon double-clicked twice): just show the page.
-if server_up; then
-    xdg-open "$URL" >/dev/null 2>&1
     exit 0
 fi
 
@@ -49,6 +41,37 @@ if [ -z "$DISCOBOX_UPDATED" ] && [ -d .git ] && command -v git >/dev/null; then
     else
         notify-send "Varroa discobox" "Could not update, starting the current version (see update.log)." 2>/dev/null
     fi
+fi
+
+# Folder, commit and "live run going" (1/0) of the server on port 8000, one per line.
+running_version() {
+    exec 3<>/dev/tcp/127.0.0.1/8000 || return
+    printf 'GET /api/version HTTP/1.0\r\nHost: 127.0.0.1\r\n\r\n' >&3
+    timeout 5 cat <&3 | tr -d '\r' | sed '1,/^$/d'
+    exec 3<&-
+}
+
+# A server is already running (e.g. icon double-clicked twice). If it runs this
+# folder's current code, just show the page. One from another folder or an older
+# version (e.g. started by hand, which never stops by itself) would keep serving
+# old code, so it is replaced - unless a live test run is going on it.
+if server_up; then
+    mapfile -t running < <(running_version)
+    if [ "${running[0]}" = "$(pwd -P)" ] && [ "${running[1]}" = "$(git rev-parse HEAD 2>/dev/null)" ]; then
+        xdg-open "$URL" >/dev/null 2>&1
+        exit 0
+    fi
+    if [ "${running[2]}" = 1 ]; then
+        notify-send "Varroa discobox" "A test run is going on an older version. Start the app again once it has ended to update." 2>/dev/null
+        xdg-open "$URL" >/dev/null 2>&1
+        exit 0
+    fi
+    echo "Stopping the server running other code: ${running[0]:-an older version}" >> update.log
+    pkill -f "uvicorn web.server:app"
+    for _ in $(seq 20); do server_up || break; sleep 0.5; done
+    server_up && pkill -9 -f "uvicorn web.server:app" && sleep 1
+    server_up && fail "Port 8000 is used by another program - close it and start again."
+    rm -f "$PID_FILE"
 fi
 
 # A desktop launcher does not read ~/.bashrc, so find conda ourselves.
