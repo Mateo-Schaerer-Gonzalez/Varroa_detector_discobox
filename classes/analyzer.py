@@ -75,10 +75,13 @@ class Analyzer:
         return {
             "max_diff": Analyzer._max_diff,
             "mean_diff": Analyzer._mean_diff,
+            "vector_diff": Analyzer._vector_diff_min_max,
+            "vector_variance": Analyzer._vector_variance,
             "variability": Analyzer._variability,
             "topN_variability": Analyzer._topN_variability,
             "optical_flow": Analyzer.dense_optical_flow,
             "topN_temporal_range": Analyzer._topN_temporal_range,
+            "topN_vector_temporal_range": Analyzer._topN_vector_temporal_range,
             "topN_binary_flux": Analyzer._topN_binary_flux,
         }
 
@@ -144,6 +147,37 @@ class Analyzer:
         return float(np.abs(np.diff(roi, axis=0)).mean())
 
     @staticmethod
+    def _vector_diff_min_max(roi):
+        pixel_max = np.abs(np.diff(roi, axis=0)).max(axis=(0, -1))
+        h, w = pixel_max.shape
+        dy, dx = np.mgrid[:h, :w].astype(np.float32)
+        dy -= (h - 1) / 2
+        dx -= (w - 1) / 2
+        dist = np.hypot(dx, dy)
+        dist[dist == 0] = np.inf  # the centre pixel has no direction
+        vx = (pixel_max * dx / dist).mean()
+        vy = (pixel_max * dy / dist).mean()
+        return float(np.hypot(vx, vy))
+
+    @staticmethod
+    def _vector_variance(roi):
+        """Magnitude of the spatial vector weighted by per-pixel variance."""
+        pixel_variance = roi.var(axis=0).max(axis=-1)
+        h, w = pixel_variance.shape
+        dy, dx = np.mgrid[:h, :w].astype(np.float32)
+        dy -= (h - 1) / 2
+        dx -= (w - 1) / 2
+        dist = np.hypot(dx, dy)
+        dist[dist == 0] = np.inf
+        vx = (pixel_variance * dx / dist).mean()
+        vy = (pixel_variance * dy / dist).mean()
+        return float(np.hypot(vx, vy))
+
+    
+
+
+
+    @staticmethod
     def _variability(roi):
         """Per-pixel standard deviation over the frames, averaged over the ROI."""
         return float(roi.var(axis=0).mean())
@@ -189,6 +223,27 @@ class Analyzer:
         """Mean of the n highest per-pixel dynamic ranges (max - min) over the frames."""
         pixel_range = (roi.max(axis=0) - roi.min(axis=0)).ravel()
         return float(np.sort(pixel_range)[-n:].mean())
+
+    @staticmethod
+    def _topN_vector_temporal_range(roi, n=10):
+        """Length of the vector sum of the n highest per-pixel dynamic ranges, each
+        pointing from the ROI centre to its pixel.
+
+        A leg moving on one side of the mite adds up in one direction, while
+        changes spread evenly around the centre (lighting, the whole body
+        shifting) cancel out."""
+        pixel_range = (roi.max(axis=0) - roi.min(axis=0)).max(axis=-1)
+        h, w = pixel_range.shape
+        dy, dx = np.mgrid[:h, :w].astype(np.float32)
+        dy -= (h - 1) / 2
+        dx -= (w - 1) / 2
+        dist = np.hypot(dx, dy)
+        dist[dist == 0] = np.inf  # the centre pixel has no direction
+        top = np.argsort(pixel_range.ravel())[-n:]
+        weight = pixel_range.ravel()[top] / dist.ravel()[top]
+        vx = (weight * dx.ravel()[top]).sum()
+        vy = (weight * dy.ravel()[top]).sum()
+        return float(np.hypot(vx, vy))
 
     @staticmethod
     def _topN_binary_flux(roi, threshold=110, n=10):
