@@ -4,6 +4,7 @@ ground_truth_30min/
 calibration_data/
 server.log
 server.pid
+update.log
 
 # what the app keeps: the frames of every recording, and the results of each
 recordings/

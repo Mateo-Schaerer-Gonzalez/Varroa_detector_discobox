@@ -33,12 +33,34 @@ if server_up; then
     exit 0
 fi
 
+# Get the newest version from GitHub before starting. Offline, or if the pull
+# fails, the current version starts; the reason is in update.log.
+if [ -z "$DISCOBOX_UPDATED" ] && [ -d .git ] && command -v git >/dev/null; then
+    old=$(git rev-parse HEAD)
+    # chmod +x must not count as a local change, or git refuses to pull.
+    git config core.fileMode false
+    if GIT_TERMINAL_PROMPT=0 timeout 30 git pull --ff-only > update.log 2>&1; then
+        new=$(git rev-parse HEAD)
+        if [ "$old" != "$new" ]; then
+            git diff --quiet "$old" "$new" -- discobox_env.yaml || env_changed=1
+            # This script may have changed under us: run the new one.
+            DISCOBOX_UPDATED=1 DISCOBOX_ENV_CHANGED=$env_changed exec bash "$0" "$@"
+        fi
+    else
+        notify-send "Varroa discobox" "Could not update, starting the current version (see update.log)." 2>/dev/null
+    fi
+fi
+
 # A desktop launcher does not read ~/.bashrc, so find conda ourselves.
 for conda in "$CONDA_EXE" "$(command -v conda)" \
              ~/miniforge3/bin/conda ~/miniconda3/bin/conda ~/anaconda3/bin/conda; do
     [ -x "$conda" ] && break
 done
 [ -x "$conda" ] || fail "conda not found - run install_linux.sh first."
+if [ -n "$DISCOBOX_ENV_CHANGED" ]; then
+    notify-send "Varroa discobox" "Updating the Python environment, this can take a few minutes." 2>/dev/null
+    "$conda" env update -n discobox_env -f discobox_env.yaml >> update.log 2>&1
+fi
 source "$("$conda" info --base)/etc/profile.d/conda.sh"
 conda activate discobox_env 2>/dev/null \
     || fail "The discobox_env environment is missing - run install_linux.sh first."

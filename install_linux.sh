@@ -80,5 +80,6 @@ if [ -d "$desktop" ]; then
     gio set "$launcher" metadata::trusted true 2>/dev/null || true
     echo "Icon added to $desktop"
 fi
+git config core.fileMode false 2>/dev/null || true
 chmod +x start.sh
 echo "Done. Start the app from the desktop icon, the app menu, or ./start.sh"

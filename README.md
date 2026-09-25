@@ -18,6 +18,10 @@ desktop and the app menu. The icon runs `start.sh`, the Linux version of
 only the browser opens. Right-click the icon and pick *Stop the app* to stop
 it, or run `./start.sh stop`.
 
+In a git clone, `start.sh` first pulls the newest version from GitHub, and it
+updates `discobox_env` if `discobox_env.yaml` changed. If it is offline or the
+pull fails, it starts the current version and says why in `update.log`.
+
 Started from `start.bat` or `start.sh`, the server stops by itself about 10
 seconds after the last browser tab is closed, so the next start always runs
 the current code (e.g. after a `git pull`). A tab left in the background keeps
