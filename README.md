@@ -60,7 +60,8 @@ To analyse a folder, in *Analysis*:
 3. **Results**: an overview with the fraction of mites moving per group, a plate
    map, one card per zone, every motion score by group, the scores of the moving
    mites alone by group (a box plot the many still recordings do not pull down),
-   and per zone a ridgeline of the time between two movements of a mite. Click a
+   and per zone a ridgeline of the rests of a mite: the time between two
+   movements with at least one still recording in between. Click a
    zone to see its mites, how many moved and their motion scores. Click a mite
    to see its close-up and score in each recording. Every chart has a tooltip,
    opens what it shows when clicked, and downloads as SVG or PNG. The browser's

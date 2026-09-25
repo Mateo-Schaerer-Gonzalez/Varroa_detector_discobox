@@ -1008,9 +1008,10 @@ function showOverview() {
       The box spans the middle half of these scores with a line at the median; the whiskers reach the furthest scores within 1.5 box lengths.
       The number is how many moving mite-recordings the row holds. Same scale as Fig. 3. Hover a box for its numbers; select a point to open that mite in that recording.`)}</div>
 
-    <div class="block">${figure("chart-intervals", 5, "Time between movements, per zone",
-      `For every mite, the time from each recording in which it moved to the next one in which it moved again, pooled per zone and coloured by group.
-      Each ridge is a smoothed distribution scaled to its own peak, with a tick along its base for every interval and a line at the median.
+    <div class="block">${figure("chart-intervals", 5, "Rest between movements, per zone",
+      `For every mite, each rest: the time from a recording in which it moved, through at least one in which it was ${movingBadge(false)}, to the next one in which it moved,
+      pooled per zone and coloured by group. Moving in two recordings in a row is no rest, so the shortest rest is two times between recordings.
+      Each ridge is a smoothed distribution scaled to its own peak, with a tick along its base for every rest and a line at the median.
       <span id="intervals-left"></span>Hover a ridge for its numbers; select it to open the zone.`)}</div>
 
     ${section("Files", `<ul class="files">
@@ -1044,7 +1045,7 @@ function showOverview() {
   const topScore = results.mites.reduce((top, mite) => mite.scores.reduce((a, b) => Math.max(a, b), top), results.threshold);
   drawGroupScores(groups, rows, topScore * 1.05);
   drawMovingScores(groups, rows, topScore * 1.05);
-  drawMovementIntervals(groups);
+  drawRestPeriods(groups);
 }
 
 // Where the workbook and figures are saved on disk: results/<recording>/.
@@ -1194,29 +1195,31 @@ function drawMovingScores(groups, rows, xMax) {
   });
 }
 
-// For a mite, the time from each recording in which it moved to the next one in
-// which it moved again, in minutes.
-function movementIntervals(mite) {
-  const intervals = [];
+// For a mite, its rests in minutes: the time from a recording in which it moved,
+// through at least one in which it was still, to the next one in which it moved.
+// Moving in two recordings in a row is no rest. Stillness before the first or
+// after the last movement is left out, as its length is not known.
+function restPeriods(mite) {
+  const rests = [];
   let last = -1;
   mite.moving.forEach((moving, recording) => {
     if (!moving) return;
-    if (last >= 0) intervals.push(results.times[recording] - results.times[last]);
+    if (last >= 0 && recording - last > 1) rests.push(results.times[recording] - results.times[last]);
     last = recording;
   });
-  return intervals;
+  return rests;
 }
 
 const shorten = (text, length) => (text.length > length ? `${text.slice(0, length - 1)}…` : text);
 
-// The time between movements pooled per zone, one ridge per zone, zones of a
-// group together. The axis reaches as far as two recordings can be apart.
-function drawMovementIntervals(groups) {
+// The rests pooled per zone, one ridge per zone, zones of a group together. The
+// axis reaches as far as two recordings can be apart.
+function drawRestPeriods(groups) {
   const { times } = results;
   const rows = [];
   let without = 0;
   groupRows().forEach(({ group, zones }) => zones.forEach((zone) => {
-    const perMite = mitesIn(zone.id).map(movementIntervals).filter((intervals) => intervals.length);
+    const perMite = mitesIn(zone.id).map(restPeriods).filter((rests) => rests.length);
     const values = perMite.flat();
     if (!values.length) { without += 1; return; }
     const sorted = [...values].sort((a, b) => a - b);
@@ -1227,7 +1230,7 @@ function drawMovementIntervals(groups) {
       color: groupColor(group, groups),
       values,
       tip: `<div class="tip-title">Zone ${zone.id} · ${esc(group)}</div>
-        <div class="tip-note">${values.length} time${values.length === 1 ? "" : "s"} between movements, of ${perMite.length} mite${perMite.length === 1 ? "" : "s"}</div>
+        <div class="tip-note">${values.length} rest${values.length === 1 ? "" : "s"}, of ${perMite.length} mite${perMite.length === 1 ? "" : "s"}</div>
         <div>median ${q(0.5)}</div>
         <div>middle half ${q(0.25)}–${q(0.75)}</div>
         <div>shortest ${minutes(sorted[0])}, longest ${minutes(sorted[sorted.length - 1])}</div>
@@ -1237,9 +1240,9 @@ function drawMovementIntervals(groups) {
   }));
 
   $("intervals-left").textContent = without
-    ? `${without} zone${without === 1 ? "" : "s"} where no mite moved in two recordings ${without === 1 ? "is" : "are"} left out. ` : "";
+    ? `${without} zone${without === 1 ? "" : "s"} where no mite was seen still between two movements ${without === 1 ? "is" : "are"} left out. ` : "";
   if (!rows.length) {
-    $("chart-intervals").innerHTML = `<p class="muted">No mite has been seen moving in two recordings${timeDomain() ? " yet" : ""}, so there is no time between movements to show.</p>`;
+    $("chart-intervals").innerHTML = `<p class="muted">No mite has been seen still between two movements${timeDomain() ? " yet" : ""}, so there is no rest to show.</p>`;
     return;
   }
   const domain = timeDomain();
@@ -1250,7 +1253,7 @@ function drawMovementIntervals(groups) {
     rows,
     xMin: 0,
     xMax: domain ? domain[1] - domain[0] : times[times.length - 1] - times[0],
-    xLabel: "Time between two movements of a mite (min)",
+    xLabel: "Rest of a mite between two movements (min)",
     xFormat: (v) => `${+v.toFixed(1)}`,
     minBandwidth: steps.length ? Charts.quantile(steps, 0.5) / 2 : 0,
     padLeft: 170,
