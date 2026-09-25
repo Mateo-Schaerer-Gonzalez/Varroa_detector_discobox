@@ -617,8 +617,8 @@ COMMIT = _git_commit()
 
 @app.get("/api/version", response_class=PlainTextResponse)
 def version():
-    """Folder, commit and whether a live run is going, one per line: start.sh
-    replaces a server running other code, unless a live run is going."""
+    """Folder, commit and whether a live run is going, one per line. start.sh
+    restarts the server to load the new version, unless a live run is going."""
     return f"{APP_DIR}\n{COMMIT}\n{int(pipeline.live_running())}\n"
 
 

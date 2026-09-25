@@ -20,7 +20,10 @@ it, or run `./start.sh stop`.
 
 In a git clone, `start.sh` first pulls the newest version from GitHub, and it
 updates `discobox_env` if `discobox_env.yaml` changed. If it is offline or the
-pull fails, it starts the current version and says why in `update.log`.
+pull fails, it starts the current version and says why in `update.log`. So that
+the new version is always the one loaded, it stops a server already running
+(unless a live test run is going on it) and starts it again, on port 8010:
+http://127.0.0.1:8010.
 
 Started from `start.bat` or `start.sh`, the server stops by itself about 10
 seconds after the last browser tab is closed, so the next start always runs
