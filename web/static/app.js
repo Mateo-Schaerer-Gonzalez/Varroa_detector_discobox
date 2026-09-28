@@ -1074,12 +1074,7 @@ function showOverview() {
     </div>
 
     <div class="block">
-      ${figure("chart-group-moving", 2, "Mites moving by group",
-        `Fraction of each group's mites moving in each recording. ${movingNote} Click a time to show that recording.${stillToCome()}`)}
-    </div>
-
-    <div class="block">
-      ${figure("chart-group-alive", 3, "Mites alive by group",
+      ${figure("chart-group-alive", 2, "Mites alive by group",
         `Fraction of each group's mites alive in each recording, pooling every zone with that label. ${deathRule()}${aliveLiveNote()}
         Click a time to show that recording.${stillToCome()}`, "", deathControl())}
     </div>
@@ -1094,16 +1089,16 @@ function showOverview() {
     ${section("Group summary", `<div class="table-wrap"><table id="group-table"></table></div>
       <p class="caption"><b>Moving</b> is the share of all mite-recordings in which the mite moved.</p>`)}
 
-    <div class="block">${figure("chart-group-scores", 4, "Motion scores by group",
+    <div class="block">${figure("chart-group-scores", 3, "Motion scores by group",
       `Every mite in every recording at its motion score, one row per group, pooling every zone with that label: ${movingBadge(true)} at or above the threshold (dashed line),
       ${movingBadge(false)} below it; the number is the group's mites. Points of the recording shown are drawn larger. Select a point to open that mite in that recording.`)}</div>
 
-    <div class="block">${figure("chart-moving-scores", 5, "Motion scores of moving mites by group",
+    <div class="block">${figure("chart-moving-scores", 4, "Motion scores of moving mites by group",
       `Only the recordings in which a mite moved, so the many still ones do not pull the distribution down: how strongly each group's mites move when they do.
       The box spans the middle half of these scores with a line at the median; the whiskers reach the furthest scores within 1.5 box lengths.
-      The number is how many moving mite-recordings the row holds. Same scale as Fig. 4. Hover a box for its numbers; select a point to open that mite in that recording.`)}</div>
+      The number is how many moving mite-recordings the row holds. Same scale as Fig. 3. Hover a box for its numbers; select a point to open that mite in that recording.`)}</div>
 
-    <div class="block">${figure("chart-intervals", 6, "Rest between movements, per zone",
+    <div class="block">${figure("chart-intervals", 5, "Rest between movements, per zone",
       `For every mite, each rest: the time from a recording in which it moved, through at least one in which it was ${movingBadge(false)}, to the next one in which it moved,
       pooled per zone and coloured by group. Moving in two recordings in a row is no rest, so the shortest rest is two times between recordings.
       Each ridge is a smoothed distribution scaled to its own peak, with a tick along its base for every rest and a line at the median.
@@ -1116,22 +1111,6 @@ function showOverview() {
   wireRunAgain(body);
   wireDeathControl(body);
   wireRecordingBar(body);
-
-  Charts.line($("chart-group-moving"), {
-    x: times,
-    xDomain: timeDomain(),
-    enterFrom,
-    selected: shown,
-    onXClick: showRecording,
-    yLabel: "Mites moving (%)",
-    yMin: 0, yMax: 100,
-    yFormat: (v) => `${Math.round(v)}`,
-    series: results.groups.map((g) => ({
-      name: g.group,
-      values: g.moving.map((v) => (v == null ? null : v * 100)),
-      color: groupColor(g.group, groups),
-    })),
-  });
 
   Charts.line($("chart-group-alive"), {
     x: times,
@@ -1147,6 +1126,7 @@ function showOverview() {
       values: alivePercent(mites),
       color: groupColor(group, groups),
       step: true,
+      markers: false,
     })),
   });
 
@@ -1735,7 +1715,7 @@ function showZone(zoneId) {
     yMin: 0, yMax: 100,
     yFormat: (v) => `${Math.round(v)}`,
     series: [
-      { name: `Zone ${zone.id}`, values: alivePercent(mites), color, step: true },
+      { name: `Zone ${zone.id}`, values: alivePercent(mites), color, step: true, markers: false },
       ...(groupMites.length > mites.length
         ? [{ name: `all “${group}”`, values: alivePercent(groupMites), color: token("--muted"), dashed: true, markers: false, step: true }]
         : []),
