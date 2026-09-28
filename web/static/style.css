@@ -215,13 +215,27 @@ button.secondary:hover, .button.secondary:hover { background: var(--wash); borde
 .text-zone.editing .text-tag { display: none; }
 .text-zone.editing { justify-content: flex-start; }
 .text-zone.editing.grows-left { justify-content: flex-end; }
-.text-zone input {
+.zone-editor {
   position: relative; z-index: 2;
-  flex: none; width: max(100%, 120px); min-width: 0;
+  flex: none; width: max(100%, 140px); min-width: 0;
+}
+.zone-editor input[type="text"] {
+  width: 100%;
   padding: 4px 6px; font-size: 12px; text-align: center;
   border: 1px solid var(--ink); border-radius: 0;
   box-shadow: 0 1px 6px rgba(0, 0, 0, 0.2);
 }
+/* The negative-control tick hangs under the name, so the name stays in place. */
+.control-check {
+  position: absolute; top: 100%; left: 0; right: 0;
+  display: flex; align-items: center; gap: 5px;
+  padding: 3px 6px;
+  font-size: 11px; white-space: nowrap; color: var(--ink);
+  background: var(--paper); border: 1px solid var(--ink); border-top: 0;
+  box-shadow: 0 3px 6px rgba(0, 0, 0, 0.2);
+  cursor: pointer;
+}
+.control-check input { margin: 0; }
 
 /* A detection on the labelling page: a ring around it, to click when it is not
    a mite. Fixed size on screen, centred on the mite, and clear of it. */
@@ -350,6 +364,9 @@ th:first-child, td:first-child { padding-left: 0; }
 th { font-weight: 600; color: var(--ink); border-bottom: 1px solid var(--rule-strong); }
 td.num, th.num { text-align: right; }
 table.clickable tbody tr { cursor: pointer; }
+table.clickable tbody tr.pooled, table.clickable tbody tr.control-row { cursor: default; }
+tr.pooled td, tr.control-row td { font-weight: 600; }
+tr.control-row td { border-bottom: 1px solid var(--rule); }
 table.clickable tbody tr:hover, table.clickable tbody tr:focus-visible { background: var(--wash); outline: none; }
 
 .files { margin: 0; padding: 0; list-style: none; font-size: 13px; }

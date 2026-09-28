@@ -89,6 +89,7 @@ EXCLUDED_TYPES = ["label"]
 
 DEFAULT_COORDS_FILE = "coords_pixel.txt"
 LABELS_FILENAME = "labels.json"
+CONTROLS_FILENAME = "controls.json"  # the zones ticked as negative controls
 GROUND_TRUTH_FILENAME = "ground_truth.json"
 PREVIEW_NAME = "preview.jpg"
 CALIBRATION_SESSION_NAME = "calibration_session.json"
@@ -155,6 +156,20 @@ def save_labels(data_dir, labels):
     path = Path(data_dir) / LABELS_FILENAME
     path.write_text(json.dumps(labels, indent=2), encoding="utf-8")
     return str(path)
+
+
+def load_controls(data_dir):
+    """The ids of the zones ticked as negative controls, which the survival of
+    every other zone is compared with; none if nothing was ticked."""
+    ids = _read_json(Path(data_dir) / CONTROLS_FILENAME, [])
+    return sorted({i for i in ids if isinstance(i, int)}) if isinstance(ids, list) else []
+
+
+def save_controls(data_dir, controls):
+    """Store the negative-control zones next to the recordings, beside the labels."""
+    ids = sorted({int(i) for i in controls})
+    (Path(data_dir) / CONTROLS_FILENAME).write_text(json.dumps(ids), encoding="utf-8")
+    return ids
 
 
 def _folder_name(path):
@@ -237,7 +252,9 @@ def _session_view(zone_manager, frame, data_dir, n_recordings, library_dir):
     ]
 
     zones = _describe_zones(zone_manager, load_labels(data_dir))
+    controls = set(load_controls(data_dir))
     for zone in zones:
+        zone["control"] = zone["id"] in controls
         zone["n_mites"] = sum(1 for m in mites if m["zone_id"] == zone["id"] and not m["rejected"])
     return {
         "data_dir": str(data_dir),
@@ -1341,7 +1358,7 @@ def open_live(live_id, out_dir, run_name, source="camera", camera_id=None, repla
             raise
         if source == "replay":
             # A replay keeps the folder's labels and "not a mite" marks, so it gives its results.
-            for name in (LABELS_FILENAME, GROUND_TRUTH_FILENAME):
+            for name in (LABELS_FILENAME, CONTROLS_FILENAME, GROUND_TRUTH_FILENAME):
                 if (Path(replay_dir) / name).is_file():
                     shutil.copy2(Path(replay_dir) / name, run_dir / name)
         # Without its LEDs the Discobox is dark: they stay on, for the camera's
@@ -1563,6 +1580,11 @@ def live_results(live_id):
 def live_death_minutes(live_id):
     """death_minutes() of a live run's folder."""
     return death_minutes(_get_live(live_id).run_dir)
+
+
+def live_controls(live_id):
+    """load_controls() of a live run's folder."""
+    return load_controls(_get_live(live_id).run_dir)
 
 
 def live_refresh(live_id):

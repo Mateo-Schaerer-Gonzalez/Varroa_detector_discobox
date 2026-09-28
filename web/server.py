@@ -106,6 +106,10 @@ class LabelsRequest(BaseModel):
     pool_size: Optional[int] = None
 
 
+class ControlsRequest(BaseModel):
+    controls: list[int] = []
+
+
 class DeathRequest(BaseModel):
     minutes: float
 
@@ -198,7 +202,7 @@ def upload_manifest(name: str, request: ManifestRequest):
     missing = []
     for file in request.files:
         target = safe_join(folder, file.path)
-        kept = (pipeline.LABELS_FILENAME, pipeline.GROUND_TRUTH_FILENAME)
+        kept = (pipeline.LABELS_FILENAME, pipeline.CONTROLS_FILENAME, pipeline.GROUND_TRUTH_FILENAME)
         if target.name in kept and target.is_file():
             continue
         if not target.is_file() or target.stat().st_size != file.size:
@@ -228,6 +232,14 @@ def save_labels(session_id: str, request: LabelsRequest):
     if session.get("live"):
         pipeline.live_refresh(session_id)
     return {"saved": len(request.labels)}
+
+
+@app.post("/api/session/{session_id}/controls")
+def save_controls(session_id: str, request: ControlsRequest):
+    """The zones ticked as negative controls, saved next to the recordings. The
+    results compare every other zone with them, with no need to run again."""
+    session = get_session(session_id)
+    return {"controls": pipeline.save_controls(session["data_dir"], request.controls)}
 
 
 @app.post("/api/session/{session_id}/reject")
@@ -262,7 +274,8 @@ def run_analysis(session_id: str, request: LabelsRequest):
     except (FileNotFoundError, ValueError) as error:
         raise HTTPException(status_code=400, detail=str(error))
     session["pool_size"] = request.pool_size  # the clips of the results are of its pools
-    return {**results, "death_minutes": pipeline.death_minutes(session["data_dir"])}
+    return {**results, "death_minutes": pipeline.death_minutes(session["data_dir"]),
+            "controls": pipeline.load_controls(session["data_dir"])}
 
 
 @app.get("/api/session/{session_id}/clip/{recording}")
@@ -556,7 +569,8 @@ def live_results(session_id: str):
     """The results so far, as a folder run returns them, with their version."""
     answer = live_call(pipeline.live_results, session_id)
     if answer["results"] is not None:
-        answer = {**answer, "results": {**answer["results"], "death_minutes": live_call(pipeline.live_death_minutes, session_id)}}
+        answer = {**answer, "results": {**answer["results"], "death_minutes": live_call(pipeline.live_death_minutes, session_id),
+                                        "controls": live_call(pipeline.live_controls, session_id)}}
     return answer
 
 

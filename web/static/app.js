@@ -236,7 +236,7 @@ async function openFolder(dataDir) {
 // Only these files matter to the analysis, and run.json to the list of recordings;
 // everything else stays on disk.
 const wanted = (path) =>
-  /\.bmp$/i.test(path) || /(^|\/)\.settings\.txt$/.test(path) || /(^|\/)(labels|ground_truth|run)\.json$/.test(path);
+  /\.bmp$/i.test(path) || /(^|\/)\.settings\.txt$/.test(path) || /(^|\/)(labels|controls|ground_truth|run)\.json$/.test(path);
 
 // Walk a dropped folder into a flat list of { path, file }, paths relative to it.
 async function filesFromDrop(dataTransfer) {
@@ -451,7 +451,7 @@ function drawLabelView() {
     Object.assign(box.style, place(zone.x1, zone.y1, zone.x2, zone.y2));
     if (color) box.style.setProperty("--zone-color", color);
     box.classList.toggle("empty", !label);
-    box.setAttribute("aria-label", `Zone ${zone.id}, ${zone.n_mites} mite${zone.n_mites === 1 ? "" : "s"}: ${label || "no label"}. Click to edit.`);
+    box.setAttribute("aria-label", `Zone ${zone.id}, ${zone.n_mites} mite${zone.n_mites === 1 ? "" : "s"}: ${label || "no label"}${zone.control ? ", negative control" : ""}. Click to edit.`);
     box.innerHTML = `<span class="zone-num">${zone.id}</span>`;
 
     const rect = textRect(zone);
@@ -462,9 +462,10 @@ function drawLabelView() {
     if (color) text.style.setProperty("--zone-color", color);
     // The editor may be wider than the label area; let it grow away from the plate.
     text.classList.toggle("grows-left", rect.x2 <= (zone.x1 + zone.x2) / 2);
+    const control = zone.control ? "<small>negative control</small>" : "";
     text.innerHTML = label
-      ? `<span class="text-tag">${esc(label)}</span>`
-      : `<span class="text-tag empty">+ label</span>`;
+      ? `<span class="text-tag">${esc(label)}${control}</span>`
+      : `<span class="text-tag empty">+ label${control}</span>`;
 
     // Open on mousedown and keep the focus where it is: a blur would redraw the
     // plate under the pointer, and the click on another plate would be lost.
@@ -556,7 +557,17 @@ function startEdit(zoneId) {
   input.placeholder = `Zone ${zone.id}`;
   input.setAttribute("list", "known-labels");
   input.setAttribute("aria-label", `Label for zone ${zone.id}`);
-  host.appendChild(input);
+  // Ticking the plate as a negative control saves at once. A click on it keeps the
+  // focus in the name, so the editor stays open.
+  const control = document.createElement("label");
+  control.className = "control-check";
+  control.innerHTML = `<input type="checkbox"${zone.control ? " checked" : ""}> negative control`;
+  control.addEventListener("mousedown", (event) => event.preventDefault());
+  control.querySelector("input").addEventListener("change", (event) => setControl(zone, event.target.checked));
+  const editor = document.createElement("div");
+  editor.className = "zone-editor";
+  editor.append(input, control);
+  host.appendChild(editor);
   input.focus();
   input.select();
 
@@ -633,6 +644,26 @@ function setLabel(zone, value) {
   saveLabels();
 }
 
+// The results compare every other zone with the negative controls; they take a
+// change at once, with no need to run again.
+function setControl(zone, checked) {
+  zone.control = checked;
+  if (results) results.controls = controlIds();
+  drawGroupList();
+  saveControls();
+}
+
+const controlIds = () => session.zones.filter((zone) => zone.control).map((zone) => zone.id);
+
+async function saveControls() {
+  if (!sessionId) return;
+  try {
+    await post(`/api/session/${sessionId}/controls`, { controls: controlIds() });
+  } catch (error) {
+    $("run-status").textContent = `Could not save the negative controls: ${error.message}`;
+  }
+}
+
 function collectLabels() {
   const labels = {};
   labelZones().forEach((zone) => { if (zone.label.trim()) labels[zone.id] = zone.label.trim(); });
@@ -646,17 +677,18 @@ function refreshSuggestions() {
 
 function drawGroupList() {
   const groups = labelGroups();
+  const zoneList = (zones) => `zone${zones.length > 1 ? "s" : ""} ${zones.map((z) => `${z.id}${z.control ? " (control)" : ""}`).join(", ")}`;
   const rows = groups.map((group) => {
-    const ids = labelZones().filter((z) => z.label.trim() === group).map((z) => z.id);
+    const zones = labelZones().filter((z) => z.label.trim() === group);
     return `<li><i class="swatch" style="background:${groupColor(group, groups)}"></i>
       <span class="group-name">${esc(group)}</span>
-      <span class="hint">zone${ids.length > 1 ? "s" : ""} ${ids.join(", ")}</span></li>`;
+      <span class="hint">${zoneList(zones)}</span></li>`;
   });
-  const unlabeled = labelZones().filter((z) => !z.label.trim()).map((z) => z.id);
+  const unlabeled = labelZones().filter((z) => !z.label.trim());
   if (unlabeled.length) {
     rows.push(`<li><i class="swatch" style="background:${token("--series-other")}"></i>
       <span class="group-name muted">unlabeled</span>
-      <span class="hint">zone${unlabeled.length > 1 ? "s" : ""} ${unlabeled.join(", ")}</span></li>`);
+      <span class="hint">${zoneList(unlabeled)}</span></li>`);
   }
   $("group-list").innerHTML = rows.join("");
 }
@@ -1049,6 +1081,9 @@ function showOverview() {
         Click a time to show that recording.${stillToCome()}`, "", deathControl())}
     </div>
 
+    ${section("Survival against the negative control", `<div class="table-wrap"><table class="clickable" id="logrank-table"></table></div>
+      <p class="caption" id="logrank-caption"></p>`)}
+
     ${section("Movement per zone", `<div id="zone-cards" class="zone-cards"></div>
       <p class="caption">Fraction of each zone's mites moving in each recording, on a 0–100% scale; the number is how many moved in the last recording.
         Zones without mites are left out. Select a zone to open it.${stillToCome()}</p>`)}
@@ -1115,6 +1150,7 @@ function showOverview() {
   drawResultPlate(groups);
   drawZoneCards(groups);
   drawGroupTable(groups);
+  drawLogRankTable(groups);
   // Figs. 3 and 4 share their scale, so a group's scores compare between them.
   const rows = groupRows();
   const topScore = results.mites.reduce((top, mite) => mite.scores.reduce((a, b) => Math.max(a, b), top), results.threshold);
@@ -1425,6 +1461,117 @@ function drawGroupTable(groups) {
       key === "group"
         ? `<td>${groupTag(row.group, groupColor(row.group, groups))}</td>`
         : `<td class="num">${format(key, row[key])}</td>`).join("")}</tr>`).join("")}</tbody>`;
+}
+
+// When a mite died, by the rule of the Mites alive charts: at the first recording
+// in which it no longer counts as alive. One alive in the last recording is
+// censored there: all that is known is that it lived at least that long.
+function survival(mite) {
+  const died = results.times.findIndex((_time, recording) => !isAlive(mite, recording));
+  return died < 0 ? { time: results.times[lastIndex()], dead: false } : { time: results.times[died], dead: true };
+}
+
+// The complementary error function (Numerical Recipes' erfcc, relative error below 1.2e-7).
+function erfc(x) {
+  const t = 1 / (1 + 0.5 * Math.abs(x));
+  const y = t * Math.exp(-x * x - 1.26551223 + t * (1.00002368 + t * (0.37409196 + t * (0.09678418 + t * (-0.18628806
+    + t * (0.27886807 + t * (-1.13520398 + t * (1.48851587 + t * (-0.82215223 + t * 0.17087277)))))))));
+  return x >= 0 ? y : 2 - y;
+}
+
+// The log-rank test of the survival() of `mites` against that of `controls`: at
+// every time a mite died, the deaths among the mites still at risk in both, set
+// against what they would be if both died alike. `observed` and `expected` are
+// the deaths among `mites`; p is from chi-squared with one degree of freedom, and
+// null when no mite died or no death could have gone either way.
+function logRank(mites, controls) {
+  const all = [
+    ...mites.map((mite) => ({ ...survival(mite), tested: true })),
+    ...controls.map((mite) => ({ ...survival(mite), tested: false })),
+  ];
+  const deathTimes = [...new Set(all.filter((s) => s.dead).map((s) => s.time))];
+  let observed = 0, expected = 0, variance = 0;
+  deathTimes.forEach((time) => {
+    const atRisk = all.filter((s) => s.time >= time);
+    const n = atRisk.length;
+    const share = atRisk.filter((s) => s.tested).length / n;
+    const dying = atRisk.filter((s) => s.dead && s.time === time);
+    observed += dying.filter((s) => s.tested).length;
+    expected += dying.length * share;
+    if (n > 1) variance += (dying.length * share * (1 - share) * (n - dying.length)) / (n - 1);
+  });
+  const chi2 = variance > 0 ? (observed - expected) ** 2 / variance : null;
+  return { observed, expected, chi2, p: chi2 == null ? null : erfc(Math.sqrt(chi2 / 2)) };
+}
+
+const pValue = (p) => (p == null ? "–" : p < 0.001 ? "&lt; 0.001" : p.toFixed(3));
+
+// Every zone, and every group of several zones pooled, against the zones ticked as
+// negative controls, pooled.
+function drawLogRankTable(groups) {
+  const table = $("logrank-table");
+  const caption = $("logrank-caption");
+  const controls = new Set(results.controls || []);
+  const controlZones = zonesWithMites().filter((zone) => controls.has(zone.id));
+  const controlMites = controlZones.flatMap((zone) => mitesIn(zone.id));
+  if (!controlMites.length) {
+    table.hidden = true;
+    caption.innerHTML = controls.size
+      ? "The zones ticked as negative control hold no mites, so there is nothing to compare with."
+      : `No zone is ticked as negative control. On the <a href="${R("label")}">label page</a>, click a plate and tick <i>negative control</i>
+        to compare the survival of every other zone with it.`;
+    return;
+  }
+
+  const byGroup = new Map();
+  zonesWithMites().filter((zone) => !controls.has(zone.id)).forEach((zone) => {
+    const group = zone.label || "unlabeled";
+    if (!byGroup.has(group)) byGroup.set(group, []);
+    byGroup.get(group).push(zone);
+  });
+  const row = (name, group, mites, href) => {
+    const test = logRank(mites, controlMites);
+    return `<tr${href ? ` data-href="${href}" tabindex="0"` : ' class="pooled"'}>
+      <td>${href ? `<a href="${href}">${name}</a>` : name}</td>
+      <td>${groupTag(group, groupColor(group, groups))}</td>
+      <td class="num">${mites.length}</td>
+      <td class="num">${test.observed}</td>
+      <td class="num">${test.expected.toFixed(1)}</td>
+      <td class="num">${test.chi2 == null ? "–" : test.chi2.toFixed(2)}</td>
+      <td class="num">${pValue(test.p)}</td></tr>`;
+  };
+  const rows = [...byGroup.keys()]
+    .sort((a, b) => (a === "unlabeled") - (b === "unlabeled") || a.localeCompare(b))
+    .flatMap((group) => {
+      const zones = byGroup.get(group);
+      return [
+        ...(zones.length > 1 ? [row("all zones", group, zones.flatMap((zone) => mitesIn(zone.id)))] : []),
+        ...zones.map((zone) => row(`Zone ${zone.id}`, group, mitesIn(zone.id), R(`zone/${zone.id}`))),
+      ];
+    });
+  const controlGroups = [...new Set(controlZones.map((zone) => zone.label || "unlabeled"))];
+
+  table.hidden = false;
+  table.innerHTML = `
+    <thead><tr><th>Zone</th><th>Group</th><th class="num">Mites</th><th class="num">Dead</th><th class="num">Expected dead</th>
+      <th class="num">χ²</th><th class="num">p</th></tr></thead>
+    <tbody>
+      <tr class="control-row"><td>Negative control · zone${controlZones.length > 1 ? "s" : ""} ${controlZones.map((zone) => zone.id).join(", ")}</td>
+        <td>${controlGroups.map((group) => groupTag(group, groupColor(group, groups))).join(" ")}</td>
+        <td class="num">${controlMites.length}</td>
+        <td class="num">${controlMites.filter((mite) => survival(mite).dead).length}</td><td></td><td></td><td></td></tr>
+      ${rows.join("")}
+    </tbody>`;
+  table.querySelectorAll("tr[data-href]").forEach((tr) => {
+    tr.addEventListener("click", () => go(tr.dataset.href));
+    tr.addEventListener("keydown", (event) => { if (event.key === "Enter") go(tr.dataset.href); });
+  });
+  caption.innerHTML = `The survival of each zone's mites against that of the negative control's, pooled, by the log-rank test.
+    A group of several zones is also tested with its zones pooled (<i>all zones</i>).
+    ${deathRule()} A mite alive in the last recording counts as alive at least until then.
+    <b>Dead</b> is how many of the zone's mites died; <b>expected dead</b> how many would have, had they died at the rate of the control's.
+    The p values are not corrected for testing several zones.${timeDomain() ? " While the run goes on, the test takes the recordings so far." : ""}
+    Select a zone to open it.`;
 }
 
 // --- zone and mite pages -------------------------------------------------------
