@@ -462,10 +462,13 @@ function drawLabelView() {
     if (color) text.style.setProperty("--zone-color", color);
     // The editor may be wider than the label area; let it grow away from the plate.
     text.classList.toggle("grows-left", rect.x2 <= (zone.x1 + zone.x2) / 2);
+    // An unnamed plate shows nothing here, so the writing on the glass stays
+    // readable; the area itself is what is clicked.
     const control = zone.control ? "<small>negative control</small>" : "";
+    text.title = label ? "" : `Click to name zone ${zone.id}`;
     text.innerHTML = label
       ? `<span class="text-tag">${esc(label)}${control}</span>`
-      : `<span class="text-tag empty">+ label${control}</span>`;
+      : control && `<span class="text-tag empty">${control}</span>`;
 
     // Open on mousedown and keep the focus where it is: a blur would redraw the
     // plate under the pointer, and the click on another plate would be lost.

@@ -196,6 +196,10 @@ button.secondary:hover, .button.secondary:hover { background: var(--wash); borde
   cursor: pointer;
 }
 .text-zone:hover { text-decoration: none; }
+/* On the labelling page an unnamed plate's label area is blank, so the writing on
+   the glass shows; hovering it outlines where to click. */
+#label-plate .text-zone:hover, #label-plate .text-zone.hot { outline: 1px dashed var(--zone-color); }
+#label-plate .text-zone.editing { outline: none; }
 .text-tag {
   max-width: 100%;
   padding: 2px 5px;
