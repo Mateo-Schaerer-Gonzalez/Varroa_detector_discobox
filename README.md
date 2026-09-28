@@ -57,12 +57,13 @@ To analyse a folder, in *Analysis*:
 2. **Plate labels**: click a plate and type its group (e.g. the venom extract).
    <kbd>Tab</kbd> saves and moves to the next plate. Labels are saved to
    `labels.json` automatically.
-3. **Results**: an overview with the fraction of mites moving per group, a plate
-   map, one card per zone, every motion score by group, the scores of the moving
+3. **Results**: an overview with the fraction of mites moving per group, the
+   fraction alive per group (a mite counts as alive up to the last recording in
+   which it moved), a plate map, one card per zone, every motion score by group, the scores of the moving
    mites alone by group (a box plot the many still recordings do not pull down),
    and per zone a ridgeline of the rests of a mite: the time between two
    movements with at least one still recording in between. Click a
-   zone to see its mites, how many moved and their motion scores. Click a mite
+   zone to see its mites, how many moved, how many are alive and their motion scores. Click a mite
    to see its close-up and score in each recording. Every chart has a tooltip,
    opens what it shows when clicked, and downloads as SVG or PNG. The browser's
    back button works throughout.

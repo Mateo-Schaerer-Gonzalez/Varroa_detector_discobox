@@ -793,6 +793,15 @@ const lastMovementText = (mite) => {
   const last = mite.moving.lastIndexOf(true);
   return last < 0 ? "never" : minutes(results.times[last]);
 };
+// A mite counts as alive in every recording up to the last one in which it moved.
+const isAlive = (mite, recording) => mite.moving.lastIndexOf(true) >= recording;
+// The share of `mites` alive in each recording, in percent.
+const alivePercent = (mites) => results.times.map((_time, recording) =>
+  (mites.length ? (100 * mites.filter((mite) => isAlive(mite, recording)).length) / mites.length : null));
+// While a live run goes on, a mite still since its last movement may yet move again.
+const aliveLiveNote = () => (timeDomain() ? " While the run goes on, a mite still since its last movement may yet move again and count as alive until then." : "");
+const aliveNote =
+  "A mite counts as alive up to the last recording in which it moved, and as dead from the next one on; a mite never seen moving counts as dead throughout.";
 
 function breadcrumb(parts) {
   // The overview is the top level, so it needs no trail.
@@ -992,6 +1001,12 @@ function showOverview() {
         `Fraction of each group's mites moving in each recording. ${movingNote} Click a time to show that recording.${stillToCome()}`)}
     </div>
 
+    <div class="block">
+      ${figure("chart-group-alive", 3, "Mites alive by group",
+        `Fraction of each group's mites alive in each recording, pooling every zone with that label. ${aliveNote}${aliveLiveNote()}
+        Click a time to show that recording.${stillToCome()}`)}
+    </div>
+
     ${section("Movement per zone", `<div id="zone-cards" class="zone-cards"></div>
       <p class="caption">Fraction of each zone's mites moving in each recording, on a 0–100% scale; the number is how many moved in the last recording.
         Zones without mites are left out. Select a zone to open it.${stillToCome()}</p>`)}
@@ -999,16 +1014,16 @@ function showOverview() {
     ${section("Group summary", `<div class="table-wrap"><table id="group-table"></table></div>
       <p class="caption"><b>Moving</b> is the share of all mite-recordings in which the mite moved.</p>`)}
 
-    <div class="block">${figure("chart-group-scores", 3, "Motion scores by group",
+    <div class="block">${figure("chart-group-scores", 4, "Motion scores by group",
       `Every mite in every recording at its motion score, one row per group, pooling every zone with that label: ${movingBadge(true)} at or above the threshold (dashed line),
       ${movingBadge(false)} below it; the number is the group's mites. Points of the recording shown are drawn larger. Select a point to open that mite in that recording.`)}</div>
 
-    <div class="block">${figure("chart-moving-scores", 4, "Motion scores of moving mites by group",
+    <div class="block">${figure("chart-moving-scores", 5, "Motion scores of moving mites by group",
       `Only the recordings in which a mite moved, so the many still ones do not pull the distribution down: how strongly each group's mites move when they do.
       The box spans the middle half of these scores with a line at the median; the whiskers reach the furthest scores within 1.5 box lengths.
-      The number is how many moving mite-recordings the row holds. Same scale as Fig. 3. Hover a box for its numbers; select a point to open that mite in that recording.`)}</div>
+      The number is how many moving mite-recordings the row holds. Same scale as Fig. 4. Hover a box for its numbers; select a point to open that mite in that recording.`)}</div>
 
-    <div class="block">${figure("chart-intervals", 5, "Rest between movements, per zone",
+    <div class="block">${figure("chart-intervals", 6, "Rest between movements, per zone",
       `For every mite, each rest: the time from a recording in which it moved, through at least one in which it was ${movingBadge(false)}, to the next one in which it moved,
       pooled per zone and coloured by group. Moving in two recordings in a row is no rest, so the shortest rest is two times between recordings.
       Each ridge is a smoothed distribution scaled to its own peak, with a tick along its base for every rest and a line at the median.
@@ -1034,6 +1049,23 @@ function showOverview() {
       name: g.group,
       values: g.moving.map((v) => (v == null ? null : v * 100)),
       color: groupColor(g.group, groups),
+    })),
+  });
+
+  Charts.line($("chart-group-alive"), {
+    x: times,
+    xDomain: timeDomain(),
+    enterFrom,
+    selected: shown,
+    onXClick: showRecording,
+    yLabel: "Mites alive (%)",
+    yMin: 0, yMax: 100,
+    yFormat: (v) => `${Math.round(v)}`,
+    series: groupRows().map(({ group, mites }) => ({
+      name: group,
+      values: alivePercent(mites),
+      color: groupColor(group, groups),
+      step: true,
     })),
   });
 
@@ -1448,9 +1480,12 @@ function showZone(zoneId) {
 
     ${mites.length ? `<div class="block">${figure("chart-zone-moving", 2, "Mites moving", `Fraction of this zone's mites moving in each recording, with the whole group for comparison where the group spans several zones. Click a time to show that recording.${stillToCome()}`)}</div>` : ""}
 
+    ${mites.length ? `<div class="block">${figure("chart-zone-alive", 3, "Mites alive", `Fraction of this zone's mites alive in each recording, with the whole group for comparison where the group spans several zones.
+      ${aliveNote}${aliveLiveNote()} Click a time to show that recording.${stillToCome()}`)}</div>` : ""}
+
     ${mites.length ? `
     <div class="grid-2">
-      ${figure("chart-zone-scores", 3, "Motion score per mite",
+      ${figure("chart-zone-scores", 4, "Motion score per mite",
         "Thin lines are single mites; the black line is the mean. The dashed line is the threshold. Hover to identify a mite, select to open it; click elsewhere to show that recording.")}
       ${section("Mites", `<div class="table-wrap"><table class="clickable" id="mite-table"></table></div>`)}
     </div>` : `<p class="muted">No mites were detected in this zone.</p>`}`;
@@ -1492,6 +1527,28 @@ function showZone(zoneId) {
     tooltipExtra: (i) => {
       const moving = mites.filter((m) => m.moving[i]).length;
       return `<div class="tip-note">${moving} of ${mites.length} mites moving</div>`;
+    },
+  });
+
+  const groupMites = results.mites.filter((mite) => (zoneById(mite.zone_id).label || "unlabeled") === group);
+  Charts.line($("chart-zone-alive"), {
+    x: times,
+    xDomain: timeDomain(),
+    enterFrom,
+    selected: shown,
+    onXClick: showRecording,
+    yLabel: "Mites alive (%)",
+    yMin: 0, yMax: 100,
+    yFormat: (v) => `${Math.round(v)}`,
+    series: [
+      { name: `Zone ${zone.id}`, values: alivePercent(mites), color, step: true },
+      ...(groupMites.length > mites.length
+        ? [{ name: `all “${group}”`, values: alivePercent(groupMites), color: token("--muted"), dashed: true, markers: false, step: true }]
+        : []),
+    ],
+    tooltipExtra: (i) => {
+      const alive = mites.filter((mite) => isAlive(mite, i)).length;
+      return `<div class="tip-note">${alive} of ${mites.length} mites alive</div>`;
     },
   });
 
