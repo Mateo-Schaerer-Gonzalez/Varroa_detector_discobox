@@ -604,6 +604,7 @@ td.num.error { color: var(--critical); font-weight: 600; }
 #pool-option .number-input { margin-top: 4px; }
 .live-heading { margin-top: 22px; padding-top: 14px; border-top: 1px solid var(--rule); }
 .live-settings { display: grid; grid-template-columns: minmax(0, 1fr) 84px; gap: 6px 10px; align-items: center; }
+.live-settings .live-check { grid-column: 1 / -1; }
 .live-lights { display: grid; gap: 6px; margin-top: 8px; }
 .light-row { display: grid; grid-template-columns: 44px minmax(0, 1fr) 28px 44px; gap: 8px; align-items: center; }
 .light-row input[type="range"] { width: 100%; accent-color: var(--ink); }
@@ -641,6 +642,8 @@ td.num.error { color: var(--critical); font-weight: 600; }
 .run-bar-fill { position: absolute; top: 0; bottom: 0; left: 0; width: 0; background: var(--critical); }
 .run-bar.paused .run-bar-fill, .run-bar.stopping .run-bar-fill { background: var(--still); }
 .run-bar.finished .run-bar-fill { background: var(--ink); }
+/* Until every mite is dead the bar is the mites alive, not the time: another colour. */
+.run-bar.alive-bar .run-bar-fill { background: var(--series-7); }
 .run-marks { position: relative; height: 7px; margin-top: 2px; }
 .run-marks i { position: absolute; top: 0; width: 2px; height: 6px; margin-left: -1px; background: var(--rule); }
 .run-marks i.analysed { background: var(--ink); }
@@ -677,3 +680,9 @@ td.num.error { color: var(--critical); font-weight: 600; }
 .rec-state { display: inline-block; margin-left: 6px; padding: 0 5px; font-size: 11px; font-weight: 600; color: #fff; background: var(--muted); border-radius: 2px; vertical-align: 1px; }
 .rec-state.now { background: var(--critical); }
 .rec-state.cut { background: var(--still); }
+
+/* A setting of a figure, between its title and the chart. */
+.fig-controls { display: flex; align-items: baseline; flex-wrap: wrap; gap: 4px 12px; margin: 4px 0 8px; font-size: 12.5px; }
+.death-field { display: inline-flex; align-items: baseline; gap: 6px; }
+.death-field .number-input { width: 84px; padding: 3px 6px; font-size: 12.5px; }
+.death-status { margin: 0; }

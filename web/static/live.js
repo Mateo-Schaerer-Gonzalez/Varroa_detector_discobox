@@ -125,9 +125,15 @@ function fillLiveForm() {
 
 function drawLiveSettings() {
   const { settings, ranges } = live.options;
-  const fields = ["recording_count", "recording_timeout", "vent_time", "led1_time", "led2_time", "frame_count", "fps"];
+  const fields = ["run_minutes", "death_minutes", "death_reset", "recording_timeout", "vent_time", "led1_time", "led2_time", "frame_count", "fps"];
   $("live-settings").innerHTML = fields.map((name) => {
     const { label, unit, min, max } = ranges[name];
+    if (name === "death_reset") {
+      return `<label class="live-check" for="live-set-${name}">
+        <input id="live-set-${name}" data-setting="${name}" type="checkbox"${settings[name] ? " checked" : ""}>${esc(label)}
+        <span class="hint">Each time a mite moves, the time it takes to count as dead starts again, so the run ends only once no mite has moved for that long.</span>
+      </label>`;
+    }
     return `<label for="live-set-${name}">${esc(label)}${unit ? ` <span class="muted">(${unit})</span>` : ""}</label>
       <input id="live-set-${name}" data-setting="${name}" type="number" min="${min}" max="${max}" step="1"
         value="${settings[name]}" class="number-input" title="${min} to ${max}">`;
@@ -142,12 +148,30 @@ function drawLiveSettings() {
   drawRecordingTime();
 }
 
+// The recordings a run takes, the first at 0 and one every `recording_timeout`
+// minutes, to reach `minutes` (Settings.recordings_until).
+const recordingsUntil = (s, minutes) => Math.ceil(minutes / s.recording_timeout - 1e-9) + 1;
+
 function drawRecordingTime() {
   const s = live.options.settings;
   const burst = s.frame_count / s.fps;
   const cycle = Math.max(s.vent_time, s.led1_time, s.led2_time, burst) + 1;
+  // Until every mite is dead, the mites alone decide how long the run lasts: no experiment duration.
+  const untilAllDead = Boolean(s.death_reset && s.death_minutes);
+  const count = recordingsUntil(s, (untilAllDead ? 0 : s.run_minutes) + s.death_minutes);
+  const length = (count - 1) * s.recording_timeout;
+  const whole = untilAllDead
+    ? `The run goes on until no mite has moved for ${duration(s.death_minutes * 60)}: at least ${duration(length * 60)} and ${count} recordings.`
+    : !s.death_minutes
+      ? `The whole run: ${duration(length * 60)}, ${count} recordings.`
+      : `The whole run: the experiment's ${duration(s.run_minutes * 60)} and ${duration(s.death_minutes * 60)} to tell a mite still at its end from a dead one, `
+        + `${duration(length * 60)}, ${count} recordings.`;
   $("live-recording-time").textContent = `Each recording: ${+burst.toFixed(2)} s of frames; with the fan and LEDs, ${+cycle.toFixed(1)} s `
-    + `of every ${s.recording_timeout} min. The whole run: about ${+(s.recording_count * s.recording_timeout).toFixed(0)} min.`;
+    + `of every ${s.recording_timeout} min. ${whole}`;
+  $("live-set-run_minutes").hidden = untilAllDead;
+  document.querySelector('label[for="live-set-run_minutes"]').hidden = untilAllDead;
+  // Going on until every mite is dead needs a time to count one as dead.
+  $("live-set-death_reset").disabled = !s.death_minutes || liveStarted();
 }
 
 // What can be changed now: how to connect before connecting, the settings until the run starts.
@@ -161,7 +185,9 @@ function drawLiveForm() {
   $("live-connect-btn").hidden = connected;
   $("live-close-btn").hidden = !connected;
   $("live-close-btn").disabled = liveRunning();
-  document.querySelectorAll("[data-setting]").forEach((input) => { input.disabled = !ready; });
+  document.querySelectorAll("[data-setting]").forEach((input) => {
+    input.disabled = !ready || (input.dataset.setting === "death_reset" && !(live.options && live.options.settings.death_minutes));
+  });
   const lights = live.status && live.status.lights;
   document.querySelectorAll("[data-light]").forEach((button) => {
     const state = lights && lights[button.dataset.light];
@@ -268,7 +294,7 @@ document.addEventListener("input", (event) => {
 
 async function saveLiveSetting(input) {
   const name = input.dataset.setting;
-  const value = Number(input.value);
+  const value = input.type === "checkbox" ? Number(input.checked) : Number(input.value);
   const status = $("live-settings-status");
   try {
     const saved = await liveRequest("/api/live/settings", { settings: { [name]: value }, session_id: live.id });
@@ -429,17 +455,23 @@ function duration(seconds) {
 // The whole test run as one bar: filled as far as the run has got, with a tick
 // under it for each recording, dark once analysed. Polled twice a second, it
 // moves on in small steps, with no animation between them.
+// A run going on until every mite is dead has no set length: its bar shows the
+// mites alive instead, in a colour of its own, and it has no ticks.
 function drawRunProgress(s) {
   const line = s.timeline;
-  const fraction = line && line.length > 0 ? Math.min(1, line.elapsed / line.length) : 0;
+  const untilAllDead = Boolean(s.open_ended);
+  const alive = s.alive && s.alive.mites ? s.alive.alive / s.alive.mites : null;
+  const fraction = untilAllDead ? (alive ?? 1)
+    : line && line.length > 0 ? Math.min(1, line.elapsed / line.length) : 0;
   const finished = s.state === "finished";
   $("run-bar-fill").style.width = `${fraction * 100}%`;
-  $("run-bar").className = `run-bar ${s.state}`;
+  $("run-bar").className = `run-bar ${s.state}${untilAllDead ? " alive-bar" : ""}`;
+  $("run-bar").setAttribute("aria-label", untilAllDead ? "Mites alive" : "The test run");
   $("run-bar").setAttribute("aria-valuenow", String(Math.round(fraction * 100)));
 
   // A tick per recording, as long as there is room to tell them apart.
   const marks = $("run-marks");
-  const starts = line && line.starts.length <= 150 ? line.starts : [];
+  const starts = !untilAllDead && line && line.starts.length <= 150 ? line.starts : [];
   if (marks.children.length !== starts.length) {
     marks.innerHTML = starts.map(() => `<i></i>`).join("");
   }
@@ -452,17 +484,25 @@ function drawRunProgress(s) {
     mark.title = `Recording ${i + 1}: ${{ analysed: "analysed", captured: "being analysed", capturing: "being recorded", planned: "to come" }[state]}`;
   });
 
-  const parts = [`Recording ${s.recording} of ${s.recordings}`];
+  // A run going on until every mite is dead may take more recordings than planned so far.
+  const more = untilAllDead && !finished;
+  const parts = [`Recording ${s.recording} of ${more ? "at least " : ""}${s.recordings}`];
+  if (untilAllDead) {
+    parts.unshift(s.alive ? `${s.alive.alive} of ${s.alive.mites} mites alive` : "Mites alive: once the first recording is analysed");
+  }
   if (s.recording_name) parts.push(`capturing frame ${s.frame}${s.frames ? ` of ${s.frames}` : ""}`);
   parts.push(`${s.analysed} analysed`);
   if (s.next_recording && !finished) parts.push(`next recording at ${clock(s.next_recording)}`);
   $("live-progress").textContent = parts.join(" · ");
 
   const left = line ? line.length - line.elapsed : 0;
+  const ends = new Date(Date.now() + left * 1000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  const share = `${Math.round(fraction * 100)}%${untilAllDead ? " alive" : ""}`;
   $("run-left").textContent = !line ? ""
     : finished ? (s.analysed < s.recordings ? `Stopped after ${s.analysed} of ${s.recordings} recordings` : `Finished in ${duration(line.length)}`)
-      : s.state === "paused" ? `${Math.round(fraction * 100)}% · paused: the rest of the run waits`
-        : `${Math.round(fraction * 100)}% · ${duration(left)} left · ends about ${new Date(Date.now() + left * 1000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`;
+      : s.state === "paused" ? `${share} · paused: the rest of the run waits`
+        : untilAllDead ? `${share} · ends once no mite has moved for the time to count as dead, no sooner than ${ends}`
+          : `${share} · ${duration(left)} left · ends about ${ends}`;
 }
 
 function liveFollow(on) {

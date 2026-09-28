@@ -106,6 +106,10 @@ class LabelsRequest(BaseModel):
     pool_size: Optional[int] = None
 
 
+class DeathRequest(BaseModel):
+    minutes: float
+
+
 class RejectRequest(BaseModel):
     x: float
     y: float
@@ -238,6 +242,16 @@ def reject_detection(session_id: str, request: RejectRequest):
     return {"rejected": request.rejected, "replaced": replaced}
 
 
+@app.post("/api/session/{session_id}/death")
+def save_death_minutes(session_id: str, request: DeathRequest):
+    """How long a mite must be still to count as dead, saved with the recordings."""
+    session = get_session(session_id)
+    try:
+        return {"death_minutes": pipeline.save_death_minutes(session["data_dir"], request.minutes)}
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error))
+
+
 @app.post("/api/session/{session_id}/run")
 def run_analysis(session_id: str, request: LabelsRequest):
     """Run the full analysis. Synchronous: the browser waits with a spinner."""
@@ -248,7 +262,7 @@ def run_analysis(session_id: str, request: LabelsRequest):
     except (FileNotFoundError, ValueError) as error:
         raise HTTPException(status_code=400, detail=str(error))
     session["pool_size"] = request.pool_size  # the clips of the results are of its pools
-    return results
+    return {**results, "death_minutes": pipeline.death_minutes(session["data_dir"])}
 
 
 @app.get("/api/session/{session_id}/clip/{recording}")
@@ -540,7 +554,10 @@ def live_status(session_id: str):
 @app.get("/api/live/{session_id}/results")
 def live_results(session_id: str):
     """The results so far, as a folder run returns them, with their version."""
-    return live_call(pipeline.live_results, session_id)
+    answer = live_call(pipeline.live_results, session_id)
+    if answer["results"] is not None:
+        answer = {**answer, "results": {**answer["results"], "death_minutes": live_call(pipeline.live_death_minutes, session_id)}}
+    return answer
 
 
 @app.get("/api/live/{session_id}/frame.jpg")

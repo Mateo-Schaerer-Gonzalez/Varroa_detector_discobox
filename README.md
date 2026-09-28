@@ -59,7 +59,10 @@ To analyse a folder, in *Analysis*:
    `labels.json` automatically.
 3. **Results**: an overview with the fraction of mites moving per group, the
    fraction alive per group (a mite counts as alive up to the last recording in
-   which it moved), a plate map, one card per zone, every motion score by group, the scores of the moving
+   which it moved; with a death time in the run's settings, only once it has
+   been still that long does it count as dead from then on; for a folder it can
+   be changed above the chart, and is saved to the folder's `.settings.txt`),
+   a plate map, one card per zone, every motion score by group, the scores of the moving
    mites alone by group (a box plot the many still recordings do not pull down),
    and per zone a ridgeline of the rests of a mite: the time between two
    movements with at least one still recording in between. Click a
@@ -143,9 +146,19 @@ is analysed as soon as it is in, and the usual result pages fill in as the run g
 1. **Camera**: name the run and *Connect*: the camera and the Discobox's
    Arduino are found by themselves, and the LEDs come on so the plates can be
    seen. The camera's image shows at once. The test run's settings are the
-   Discobox app's (number of recordings, time between them, fan and LED
-   durations and intensities, frames per recording, frames per second); they
-   are saved to `settings.txt` as you change them. *On/Off* switches the fan or
+   Discobox app's (time between recordings, fan and LED durations and
+   intensities, frames per recording, frames per second), but the length of
+   the run is set as the *experiment duration* rather than a number of
+   recordings. *Dead when still for* is how long a mite must go without moving
+   to count as dead; it is added to the end of the run, so a mite still at the
+   end of the experiment can be told from a dead one, and the *Mites alive*
+   charts use it. With *Go on until every mite is dead*, the mites alone decide
+   how long the run lasts: the experiment duration is not asked for, that time
+   starts again whenever a mite moves, and the run ends only once no mite has
+   moved for that long. The run's bar then shows the share of mites still
+   alive, in its own colour, instead of the time. The settings are saved to `settings.txt` as you change them (an older
+   file with a number of recordings is read as the duration they span).
+   *On/Off* switches the fan or
    an LED to check it. *More options* holds the frames per pool and whether the
    recordings are saved.
 2. **Plate labels**: the same page as for a folder, on the camera's newest frame,

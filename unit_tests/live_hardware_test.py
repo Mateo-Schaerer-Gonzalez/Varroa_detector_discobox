@@ -238,9 +238,29 @@ def test_settings_read_the_discobox_file_format(tmp_path):
         "recording_count=6\nrecording_timeout=5\nvent_time=20\nled1_time=20\nled2_time=20\n"
         "frame_count=30\nfps=30\nvent=255\nled1=255\nled2=255\n")
     settings = Settings.from_file(tmp_path / "settings.txt")
-    assert (settings.recording_count, settings.recording_timeout, settings.fps) == (6, 5, 30)
+    # Six recordings five minutes apart: an experiment of 25 minutes.
+    assert (settings.run_minutes, settings.recording_count, settings.recording_timeout, settings.fps) == (25, 6, 5, 30)
     settings.save(tmp_path / "again.txt")
-    assert (tmp_path / "again.txt").read_text() == (tmp_path / "settings.txt").read_text()
+    saved = (tmp_path / "again.txt").read_text()
+    assert saved.startswith("recording_count=6\nrun_minutes=25\ndeath_minutes=0\ndeath_reset=0\n")
+    assert Settings.from_file(tmp_path / "again.txt") == settings
+
+
+def test_the_run_lasts_the_experiment_and_the_time_to_count_a_mite_dead():
+    settings = Settings(run_minutes=25, recording_timeout=5)
+    assert settings.recording_count == 6  # at 0, 5, ... 25 min
+    assert Settings(run_minutes=24, recording_timeout=5).recording_count == 6  # the last one reaches past it
+    settings = Settings(run_minutes=25, death_minutes=12, recording_timeout=5)
+    assert settings.recording_count == 9  # through 37 min: the last at 40
+    # Without death_reset a movement changes nothing. With it, the mites alone
+    # decide: the experiment's duration is set aside, and the time to count a
+    # mite dead runs from the last movement.
+    assert settings.recordings_after_movement(7) == 9
+    settings.death_reset = 1
+    assert settings.until_all_dead and settings.recording_count == 4  # through 12 min: the last at 15
+    assert [settings.recordings_after_movement(last) for last in (-1, 3, 5, 7)] == [4, 7, 9, 11]
+    settings.death_minutes = 0  # no time to count a mite dead: the box does nothing
+    assert not settings.until_all_dead and settings.recording_count == 6
 
 
 def test_settings_keep_to_the_discobox_ranges():
@@ -314,7 +334,7 @@ def test_the_cycle_is_timed_as_in_the_discobox_app():
 
 def test_every_device_is_switched_on_even_with_equal_durations():
     # With equal durations the Discobox app only ever switched on LED 2.
-    settings = Settings(recording_count=2, recording_timeout=5, vent_time=20, led1_time=20, led2_time=20,
+    settings = Settings(run_minutes=5, recording_timeout=5, vent_time=20, led1_time=20, led2_time=20,
                         frame_count=30, fps=30, vent=100, led1=150, led2=200)
     run, lights, bursts = run_schedule(settings)
     run.run()
@@ -329,7 +349,7 @@ def test_every_device_is_switched_on_even_with_equal_durations():
 
 
 def test_a_pause_waits_for_the_next_cycle_and_pushes_the_rest_back():
-    settings = Settings(recording_count=3, recording_timeout=1, vent_time=0, led1_time=0, led2_time=0,
+    settings = Settings(run_minutes=2, recording_timeout=1, vent_time=0, led1_time=0, led2_time=0,
                         frame_count=10, fps=10)
     run, _lights, bursts = run_schedule(settings)
     thread = threading.Thread(target=run.run)
@@ -343,7 +363,7 @@ def test_a_pause_waits_for_the_next_cycle_and_pushes_the_rest_back():
 
 
 def test_the_timeline_follows_the_run_and_a_pause_pushes_the_rest_back():
-    settings = Settings(recording_count=3, recording_timeout=1, vent_time=0, led1_time=0, led2_time=0,
+    settings = Settings(run_minutes=2, recording_timeout=1, vent_time=0, led1_time=0, led2_time=0,
                         frame_count=10, fps=10)
     run, lights, bursts = run_schedule(settings)
     assert run.timeline() is None
@@ -371,8 +391,39 @@ def test_the_timeline_follows_the_run_and_a_pause_pushes_the_rest_back():
     assert line["elapsed"] == pytest.approx(line["length"], abs=0.01)
 
 
+def test_a_run_until_every_mite_is_dead_goes_on_while_one_moves():
+    # 2 min still to count as dead: at least 3 recordings a minute apart (the
+    # experiment's 30 min are set aside). A mite moves in each of the first five,
+    # so the run goes on through 2 min after the fifth (at 4 min): 7 recordings.
+    settings = Settings(run_minutes=30, death_minutes=2, death_reset=1, recording_timeout=1, vent_time=0,
+                        led1_time=0, led2_time=0, frame_count=10, fps=10)
+    bursts_seen = []
+    run, _lights, bursts = run_schedule(
+        settings, movement=lambda: (len(bursts_seen), min(len(bursts_seen), 5) - 1))
+    bursts_seen_hook = run.start_burst
+
+    def start_burst(name):
+        done = bursts_seen_hook(name)
+        bursts_seen.append(name)  # analysed at once
+        return done
+
+    run.start_burst = start_burst
+    assert run.planned_count() == 3
+    run.run()
+    assert len(bursts) == 7 and run.planned_count() == 7
+    assert [when for when, _name in bursts] == pytest.approx([60 * i for i in range(7)], abs=0.01)
+
+
+def test_a_run_until_every_mite_is_dead_waits_for_the_analysis_at_most_one_interval():
+    settings = Settings(run_minutes=1, death_minutes=1, death_reset=1, recording_timeout=1, vent_time=0,
+                        led1_time=0, led2_time=0, frame_count=10, fps=10)
+    run, _lights, bursts = run_schedule(settings, movement=lambda: (0, -1))  # never analysed
+    run.run()
+    assert len(bursts) == 2  # as planned, after waiting a minute for the analysis
+
+
 def test_stopping_ends_the_run_without_another_burst():
-    settings = Settings(recording_count=5, recording_timeout=1, frame_count=10, fps=10)
+    settings = Settings(run_minutes=4, recording_timeout=1, frame_count=10, fps=10)
     run, lights, bursts = run_schedule(settings)
     run.stop()
     run.run()
@@ -477,7 +528,7 @@ def test_the_camera_and_schedule_run_a_whole_test_run():
         "wait": lambda event, seconds: event.wait(max(0.0, seconds) / speed),
         "wall_clock": lambda: base + timedelta(seconds=fast_now() - start),
     }
-    settings = Settings(recording_count=3, recording_timeout=1, vent_time=2, led1_time=2, led2_time=2,
+    settings = Settings(run_minutes=2, recording_timeout=1, vent_time=2, led1_time=2, led2_time=2,
                         frame_count=5, fps=30)
     source = camera_source(settings, fps=300)
     source.clock = clock
@@ -492,11 +543,11 @@ def test_the_camera_and_schedule_run_a_whole_test_run():
 
 
 def test_the_status_says_how_far_the_run_is():
-    settings = Settings(recording_count=2, recording_timeout=1, vent_time=2, led1_time=2, led2_time=2,
+    settings = Settings(run_minutes=1, recording_timeout=1, vent_time=2, led1_time=2, led2_time=2,
                         frame_count=6, fps=30)
     source = camera_source(settings)
     assert source.status()["timeline"] is None
-    source.test_run = SimpleNamespace(recording_count=1, next_recording=None,
+    source.test_run = SimpleNamespace(recording_count=1, next_recording=None, planned_count=lambda: 2,
                                       timeline=lambda: {"elapsed": 30.04, "length": 63.0, "starts": [1.8, 61.8]})
     # The results' time axis runs from the first burst to the end of the last, 0.2 s long.
     assert source.status()["timeline"] == {"elapsed": 30.0, "length": 63.0, "starts": [1.8, 61.8],
@@ -525,3 +576,45 @@ def test_connecting_switches_the_leds_on_and_labelling_keeps_them_on(tmp_path, m
     finally:
         pipeline.close_live("leds")
     assert not any(lights.on.values())
+
+
+def test_the_last_movement_is_found_by_recording_even_with_pools():
+    recordings = ["2026-09-23-10-00-00_fps-30", "2026-09-23-10-05-00_fps-30", "2026-09-23-10-10-00_fps-30"]
+    # Two pools per recording; a mite moves in the second pool of the second recording.
+    results = {"times": [0, 0.2, 5, 5.2, 10, 10.2],
+               "mites": [{"moving": [False] * 6}, {"moving": [True, False, False, True, False, False]}]}
+    assert pipeline._last_movement(results, recordings) == 1
+    assert pipeline._last_movement({**results, "mites": results["mites"][:1]}, recordings) == -1
+
+
+def test_the_results_take_the_death_time_saved_with_the_recordings(tmp_path):
+    assert pipeline.death_minutes(tmp_path) == 0
+    Settings(death_minutes=400).save(tmp_path / pipeline.SETTINGS_FILENAME)
+    assert pipeline.death_minutes(tmp_path) == 400
+
+
+def test_the_death_time_can_be_set_for_a_folder_keeping_its_other_settings(tmp_path):
+    (tmp_path / pipeline.SETTINGS_FILENAME).write_text("recording_count=6\nfps=30\ndeath_minutes=5\n")
+    assert pipeline.save_death_minutes(tmp_path, 400) == 400
+    assert (tmp_path / pipeline.SETTINGS_FILENAME).read_text() == "recording_count=6\nfps=30\ndeath_minutes=400\n"
+    assert pipeline.death_minutes(tmp_path) == 400
+    with pytest.raises(ValueError, match="whole number"):
+        pipeline.save_death_minutes(tmp_path, 2.5)
+    with pytest.raises(ValueError, match="between 0 and"):
+        pipeline.save_death_minutes(tmp_path, -1)
+    bare = tmp_path / "bare"
+    bare.mkdir()
+    pipeline.save_death_minutes(bare, 60)
+    assert (bare / pipeline.SETTINGS_FILENAME).read_text() == "death_minutes=60\n"
+
+
+def test_the_mites_alive_are_counted_as_the_charts_count_them():
+    results = {"times": [0, 5, 10, 15, 20], "mites": [
+        {"moving": [True, False, True, False, False]},   # still 10 min since 10 min
+        {"moving": [False, False, False, True, False]},  # still 5 min since 15 min
+        {"moving": [False] * 5},                         # never moved: still 20 min
+        {"moving": [False, False, False, False, True]},  # moving now
+    ]}
+    assert pipeline.mites_alive(results, 10) == 2
+    assert pipeline.mites_alive(results, 30) == 4
+    assert pipeline.mites_alive(results, 0) == 1

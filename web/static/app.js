@@ -794,14 +794,54 @@ const lastMovementText = (mite) => {
   return last < 0 ? "never" : minutes(results.times[last]);
 };
 // A mite counts as alive in every recording up to the last one in which it moved.
-const isAlive = (mite, recording) => mite.moving.lastIndexOf(true) >= recording;
+// With a death time from the test-run settings, it counts as dead from then on only
+// once it has been seen still for that long after it (or from the start, if it
+// never moved); until then it may yet move, so it counts as alive.
+function isAlive(mite, recording) {
+  const { times } = results;
+  const last = mite.moving.lastIndexOf(true);
+  if (recording <= last) return true;
+  const stillFor = times[times.length - 1] - times[Math.max(last, 0)];
+  return stillFor < (results.death_minutes || 0);
+}
 // The share of `mites` alive in each recording, in percent.
 const alivePercent = (mites) => results.times.map((_time, recording) =>
   (mites.length ? (100 * mites.filter((mite) => isAlive(mite, recording)).length) / mites.length : null));
 // While a live run goes on, a mite still since its last movement may yet move again.
-const aliveLiveNote = () => (timeDomain() ? " While the run goes on, a mite still since its last movement may yet move again and count as alive until then." : "");
-const aliveNote =
-  "A mite counts as alive up to the last recording in which it moved, and as dead from the next one on; a mite never seen moving counts as dead throughout.";
+const aliveLiveNote = () => (timeDomain() && !results.death_minutes
+  ? " While the run goes on, a mite still since its last movement may yet move again and count as alive until then." : "");
+// In the analysis of a folder, the time a mite must be still to count as dead can
+// be changed on the page: it is saved with the recordings and the charts follow
+// at once, with no need to run the analysis again. A live run takes it from its settings.
+function deathControl() {
+  if (loadedContext !== "analysis") return "";
+  return `<label class="death-field">Dead when still for
+      <input type="number" class="number-input" data-death min="0" max="43200" step="1" value="${results.death_minutes || 0}"
+        title="0: a mite counts as dead from the recording after its last movement"> min</label>
+    <span class="hint death-status"></span>`;
+}
+
+function wireDeathControl(body) {
+  body.querySelectorAll("[data-death]").forEach((input) => input.addEventListener("change", async () => {
+    const status = input.closest(".fig-controls").querySelector(".death-status");
+    try {
+      const saved = await post(`/api/session/${sessionId}/death`, { minutes: Number(input.value) });
+      results.death_minutes = saved.death_minutes;
+      drawResults();
+    } catch (error) {
+      status.className = "hint error death-status";
+      status.textContent = error.message;
+    }
+  }));
+}
+
+function deathRule() {
+  const wait = results.death_minutes || 0;
+  return wait
+    ? `A mite counts as dead once it has been still for ${minutes(wait)}, from the recording after its last movement on; until it has been still that long, it counts as alive, as it may yet move.
+      A mite never seen moving counts as dead from the start once the recordings span ${minutes(wait)}.`
+    : "A mite counts as alive up to the last recording in which it moved, and as dead from the next one on; a mite never seen moving counts as dead throughout.";
+}
 
 function breadcrumb(parts) {
   // The overview is the top level, so it needs no trail.
@@ -820,10 +860,12 @@ function stat(label, value, note = "") {
 
 const groupTag = (group, color) => `<span class="grp"><i style="background:${color}"></i>${esc(group)}</span>`;
 
-// A numbered figure: the content goes in the element with `id`, the caption below.
-function figure(id, number, title, caption, extraClass = "") {
+// A numbered figure: the content goes in the element with `id`, the caption below;
+// `controls`, if any, between the title and the content.
+function figure(id, number, title, caption, extraClass = "", controls = "") {
   return `<figure class="fig">
       <div class="fig-title fig-title-row">${title}${downloadButtons(id, title)}</div>
+      ${controls ? `<div class="fig-controls">${controls}</div>` : ""}
       <div id="${id}" class="${extraClass}"></div>
       <figcaption><b>Fig. ${number}.</b> ${caption}</figcaption>
     </figure>`;
@@ -1003,8 +1045,8 @@ function showOverview() {
 
     <div class="block">
       ${figure("chart-group-alive", 3, "Mites alive by group",
-        `Fraction of each group's mites alive in each recording, pooling every zone with that label. ${aliveNote}${aliveLiveNote()}
-        Click a time to show that recording.${stillToCome()}`)}
+        `Fraction of each group's mites alive in each recording, pooling every zone with that label. ${deathRule()}${aliveLiveNote()}
+        Click a time to show that recording.${stillToCome()}`, "", deathControl())}
     </div>
 
     ${section("Movement per zone", `<div id="zone-cards" class="zone-cards"></div>
@@ -1034,6 +1076,7 @@ function showOverview() {
       </ul>
       <p class="caption">${resultsFolderNote()}Every chart above can be downloaded as SVG or PNG from the buttons beside its title.</p>`)}`;
   wireRunAgain(body);
+  wireDeathControl(body);
   wireRecordingBar(body);
 
   Charts.line($("chart-group-moving"), {
@@ -1481,7 +1524,7 @@ function showZone(zoneId) {
     ${mites.length ? `<div class="block">${figure("chart-zone-moving", 2, "Mites moving", `Fraction of this zone's mites moving in each recording, with the whole group for comparison where the group spans several zones. Click a time to show that recording.${stillToCome()}`)}</div>` : ""}
 
     ${mites.length ? `<div class="block">${figure("chart-zone-alive", 3, "Mites alive", `Fraction of this zone's mites alive in each recording, with the whole group for comparison where the group spans several zones.
-      ${aliveNote}${aliveLiveNote()} Click a time to show that recording.${stillToCome()}`)}</div>` : ""}
+      ${deathRule()}${aliveLiveNote()} Click a time to show that recording.${stillToCome()}`, "", deathControl())}</div>` : ""}
 
     ${mites.length ? `
     <div class="grid-2">
@@ -1490,6 +1533,7 @@ function showZone(zoneId) {
       ${section("Mites", `<div class="table-wrap"><table class="clickable" id="mite-table"></table></div>`)}
     </div>` : `<p class="muted">No mites were detected in this zone.</p>`}`;
   wireRunAgain(body);
+  wireDeathControl(body);
   wireRecordingBar(body);
 
   // Crop with some margin, then mark each mite.

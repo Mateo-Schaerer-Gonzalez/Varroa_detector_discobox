@@ -1,6 +1,11 @@
 """A Discobox test run: the recordings, one every `recording_timeout` minutes,
 and the fan and LEDs around each of them.
 
+The run takes the recordings its settings plan (Settings.recording_count). With
+`death_reset`, it goes on while a mite has moved within `death_minutes`: before
+deciding whether another recording is needed, it waits for the ones taken so far
+to be analysed, at most one time between recordings.
+
 The timing is the Discobox app's (test_run() in discobox.py). In each cycle the
 fan and each LED are switched on so that they run for their set duration and all
 end together with the burst of frames; one second after the burst everything is
@@ -60,7 +65,9 @@ class TestRun:
     """Runs the cycles of a test run in its own thread.
 
     `start_burst(name)` must start collecting the `frame_count` frames of a
-    recording and return an Event set once they are all in; `end_burst()` ends
+    recording and return an Event set once they are all in; `movement()`, if
+    given, returns how many recordings are analysed and the last one (from 0)
+    in which any mite moved, -1 for none, for `death_reset`; `end_burst()` ends
     a burst still collecting frames long after its planned end (the camera
     dropping frames). When the run is stopped, ending the burst is left to the
     source, once it has taken in every frame already captured. `lights` is a
@@ -71,8 +78,10 @@ class TestRun:
 
     __test__ = False  # a Discobox "test run", not a pytest test
 
-    def __init__(self, settings, lights, start_burst, end_burst, now=time.time, wait=None, wall_clock=datetime.now):
+    def __init__(self, settings, lights, start_burst, end_burst, now=time.time, wait=None, wall_clock=datetime.now,
+                 movement=None):
         self.settings = settings
+        self.movement = movement
         self.lights = lights
         self.start_burst = start_burst
         self.end_burst = end_burst
@@ -123,6 +132,26 @@ class TestRun:
         if self._thread is not None:
             self._thread.join(timeout)
 
+    def planned_count(self):
+        """The recordings the run takes, as far as is known now."""
+        if self.movement is None or not self.settings.until_all_dead:
+            return self.settings.recording_count
+        _analysed, last_moved = self.movement()
+        return self.settings.recordings_after_movement(last_moved)
+
+    def _needs_another(self):
+        """Whether the run takes another recording. With `death_reset`, only
+        once the recordings so far are analysed (or one time between recordings
+        has passed waiting for them), since a mite moving in one needs more."""
+        if self.recording_count < self.planned_count():
+            return True
+        if self.movement is None or not self.settings.until_all_dead:
+            return False
+        give_up = self._now() + self.settings.recording_timeout * 60
+        while not self._stop.is_set() and self.movement()[0] < self.recording_count and self._now() < give_up:
+            self._wait(self._stop, min(1.0, give_up - self._now()))
+        return not self._stop.is_set() and self.recording_count < self.planned_count()
+
     def _wait_until(self, when):
         """Wait until `when` on the run's clock; False if the run was stopped."""
         while not self._stop.is_set():
@@ -149,9 +178,10 @@ class TestRun:
             elapsed = now - self._origin
         settings = self.settings
         timeout = settings.recording_timeout * 60
+        count = max(self.planned_count(), len(done))
         planned = cycle(shift, settings)
-        starts = done + [planned.start_recording + timeout * i for i in range(len(done), settings.recording_count)]
-        length = planned.stop_recording + timeout * (settings.recording_count - 1) + LIGHTS_AFTER
+        starts = done + [planned.start_recording + timeout * i for i in range(len(done), count)]
+        length = planned.stop_recording + timeout * (count - 1) + LIGHTS_AFTER
         return {"elapsed": min(max(elapsed, 0.0), length), "length": length, "starts": starts}
 
     def run(self):
@@ -174,7 +204,7 @@ class TestRun:
         with self._clock_lock:
             self._origin = self._start = self._now() + START_DELAY
         timeout = settings.recording_timeout * 60
-        while self.recording_count < settings.recording_count and not self._stop.is_set():
+        while not self._stop.is_set() and self._needs_another():
             if not self._wait_until(self._start + timeout * self.recording_count):
                 return
             self.recording_count += 1

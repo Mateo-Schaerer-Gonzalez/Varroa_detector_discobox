@@ -148,9 +148,11 @@ class CameraSource(LiveSource):
 
     def __init__(self, camera_id, settings, lights, queue_size=QUEUE_SIZE, camera=None, clock=None):
         """`camera` and `clock` (keyword arguments of TestRun: now, wait,
-        wall_clock) replace the real ones in tests."""
+        wall_clock) replace the real ones in tests. `movement` is the test run's
+        (TestRun): set it before run() for a run that goes on until every mite is dead."""
         super().__init__()
         self.clock = clock or {}
+        self.movement = None
         self.settings = settings
         self.lights = lights
         self.frames = queue.Queue(maxsize=queue_size)
@@ -218,7 +220,8 @@ class CameraSource(LiveSource):
         """Start the test run."""
         self.settings.check_cycle()
         self.check_burst_memory()
-        self.test_run = TestRun(self.settings, self.lights, self.start_burst, self.end_burst, **self.clock)
+        self.test_run = TestRun(self.settings, self.lights, self.start_burst, self.end_burst,
+                                movement=self.movement, **self.clock)
         self.state = "running"
         self.test_run.start()
         threading.Thread(target=self._when_run_ends, name="test-run-end", daemon=True).start()
@@ -324,7 +327,9 @@ class CameraSource(LiveSource):
             "dropped": handler.dropped if handler else 0,
             "incomplete": handler.incomplete if handler else 0,
             "recording": run.recording_count if run else 0,
-            "recordings": self.settings.recording_count,
+            "recordings": run.planned_count() if run else self.settings.recording_count,
+            # More recordings may come: the run goes on while a mite moves.
+            "open_ended": self.settings.until_all_dead,
             "recording_name": burst.recording.name if burst else None,
             "frame": len(burst.frames) if burst else 0,
             "frames": self.settings.frame_count,
@@ -501,6 +506,7 @@ class ReplaySource(LiveSource):
             "incomplete": 0,
             "recording": self.recording_count,
             "recordings": len(self.recordings),
+            "open_ended": False,
             "recording_name": self.current.name if self.current else None,
             "frame": self.frame if self.current else 0,
             "frames": None,

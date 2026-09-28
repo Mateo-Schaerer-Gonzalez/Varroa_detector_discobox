@@ -349,6 +349,36 @@ def run_analysis(data_dir, out_dir, labels=None, coords_file=DEFAULT_COORDS_FILE
     return _results(run, out_dir, labels)
 
 
+def death_minutes(data_dir):
+    """How long a mite must be still to count as dead, from the test-run settings
+    saved with the recordings; 0 (dead from its last movement on) without them.
+    The pages take it with the results, for the mites alive over time."""
+    path = Path(data_dir) / SETTINGS_FILENAME
+    try:
+        value = DataLoader._parse_settings_file(path).get("death_minutes", 0) if path.is_file() else 0
+        return max(0, int(value))
+    except (OSError, TypeError, ValueError):
+        return 0
+
+
+def save_death_minutes(data_dir, minutes):
+    """Make `minutes` the time a mite must be still to count as dead for the
+    recordings in `data_dir`: the death_minutes line of their .settings.txt,
+    added or replaced, every other line kept as it is."""
+    label, unit, lowest, highest = SETTING_RANGES["death_minutes"]
+    try:
+        value = int(minutes)
+    except (TypeError, ValueError):
+        raise ValueError(f"{label} must be a whole number of {unit}.")
+    if value != minutes or not lowest <= value <= highest:
+        raise ValueError(f"{label} must be a whole number of {unit} between {lowest} and {highest}.")
+    path = Path(data_dir) / SETTINGS_FILENAME
+    lines = path.read_text(encoding="utf-8").splitlines() if path.is_file() else []
+    lines = [line for line in lines if line.split("=", 1)[0].strip() != "death_minutes"]
+    path.write_text("".join(f"{line}\n" for line in [*lines, f"death_minutes={value}"]), encoding="utf-8")
+    return value
+
+
 def _results(run, out_dir, labels, write_files=True):
     """The results of a run as the UI browses them. With `write_files`, the
     workbook, the figures, the annotated first frame and the preview are written
@@ -1325,7 +1355,10 @@ def open_live(live_id, out_dir, run_name, source="camera", camera_id=None, repla
             live_id=live_id, source=live_source, lights=lights, analysis=analysis, run_dir=run_dir,
             out_dir=out_dir, pool_size=pool_size, save_frames=bool(save_frames), library_dir=library_dir,
             coords_file=coords_file, feed=(None, None), feed_lock=threading.Lock(), started_at=None,
+            movement=(0, -1),
         )
+        if source == "camera":
+            live_source.movement = lambda: run.movement
         run.session = LiveSession(live_source, analysis, pool_size, publish=lambda session, write: _publish_live(run, write),
                                   on_finish=lambda session: _write_run_info(run, ended=True))
         _live[live_id] = run
@@ -1366,11 +1399,28 @@ def _publish_live(run, write_files):
     folder: the same labels and "not a mite" marks, read from the run's folder.
     After each recording (`write_files`), run.json says how far the run got."""
     labels = load_labels(run.run_dir)
+    recordings = list(run.session.recordings)
+    if write_files:  # even if no results can be described, these recordings are analysed
+        run.movement = (len(recordings), run.movement[1])
     _arrange(run.analysis, run.run_dir, labels, True, run.library_dir)
     results = _results(_run_view(run.analysis), run.out_dir, labels, write_files)
     if write_files:
+        run.movement = (len(recordings), _last_movement(results, recordings))
         _write_run_info(run)
     return results
+
+
+def _last_movement(results, recordings):
+    """The last of `recordings` (names, in order) in which any mite moved, from
+    0; -1 if none did. A result's times are its pools', in minutes from the
+    start of the first recording."""
+    moved = [time for index, time in enumerate(results["times"])
+             if any(mite["moving"][index] for mite in results["mites"])]
+    if not moved or not recordings:
+        return -1
+    first = DataLoader.parse_start_time(recordings[0])
+    starts = [(DataLoader.parse_start_time(name) - first).total_seconds() / 60 for name in recordings]
+    return max(index for index, start in enumerate(starts) if start <= moved[-1] + 1e-3)
 
 
 def _write_run_info(run, ended=False):
@@ -1470,8 +1520,26 @@ def start_live(live_id, labels=None):
     return live_status(live_id)
 
 
+def mites_alive(results, death_minutes):
+    """How many of the results' mites are alive in their last recording, by the
+    rule of the Mites alive charts (isAlive() in app.js): a mite that moved in it,
+    or has not yet been still for `death_minutes` since its last movement (since
+    the first recording if it never moved)."""
+    times = results["times"]
+    alive = 0
+    for mite in results["mites"]:
+        last = max((index for index, moving in enumerate(mite["moving"]) if moving), default=-1)
+        if last == len(times) - 1 or times[-1] - times[max(last, 0)] < death_minutes:
+            alive += 1
+    return alive
+
+
 def live_status(live_id):
     run = _get_live(live_id)
+    results = run.session.results
+    alive = None
+    if results is not None:
+        alive = {"alive": mites_alive(results, death_minutes(run.run_dir)), "mites": len(results["mites"])}
     return {
         **run.session.status(),
         "live_id": live_id,
@@ -1481,6 +1549,7 @@ def live_status(live_id):
         "pool_size": run.pool_size,
         "pool_size_text": describe_pool_size(run.pool_size),
         "save_frames": run.save_frames,
+        "alive": alive,  # the mites alive now, of all mites; None before the first results
     }
 
 
@@ -1489,6 +1558,11 @@ def live_results(live_id):
     analysed), and their version, which changes with every update."""
     run = _get_live(live_id)
     return {"version": run.session.version, "results": run.session.results}
+
+
+def live_death_minutes(live_id):
+    """death_minutes() of a live run's folder."""
+    return death_minutes(_get_live(live_id).run_dir)
 
 
 def live_refresh(live_id):
@@ -1639,7 +1713,8 @@ def describe_recording(data_dir, results_root=RESULTS_ROOT, library_dir=CALIBRAT
         "frames": frames,
         "fps": fps,
         # as the Discobox app saved them; None for a folder without .settings.txt
-        "settings": {name: loader.settings[name] for name in SETTING_RANGES if name in loader.settings} or None,
+        "settings": {name: loader.settings[name] for name in ("recording_count", *SETTING_RANGES)
+                     if name in loader.settings} or None,
         "run": run,
         "n_labelled_plates": len(groups),
         "groups": sorted(set(groups)),

@@ -105,7 +105,8 @@ function settingsText(r) {
   const s = r.settings;
   if (!s) return `${burst}<span class="sub">no settings saved with it</span>`;
   const every = s.recording_timeout != null ? `, every ${s.recording_timeout} min` : "";
-  return `${burst}${every}<span class="sub">${lightsText(s)}</span>`;
+  const death = s.death_minutes ? `, dead when still ${s.death_minutes} min${s.death_reset ? " (run until all dead)" : ""}` : "";
+  return `${burst}${every}${death}<span class="sub">${lightsText(s)}</span>`;
 }
 
 // "Fan and LEDs 20 s, intensity 255" when all three are alike; each on its own otherwise.
