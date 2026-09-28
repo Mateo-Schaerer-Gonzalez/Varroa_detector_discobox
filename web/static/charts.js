@@ -368,9 +368,11 @@ const Charts = (() => {
     const plotH = height - pad.top - pad.bottom;
 
     // A free end of an axis gets a little room so no point sits on the frame.
+    // A loop, not Math.min(...values): too many values overflow the call stack.
     const extent = (values, fixedMin, fixedMax) => {
-      let lo = Math.min(...values);
-      let hi = Math.max(...values);
+      let lo = Infinity;
+      let hi = -Infinity;
+      for (const v of values) { if (v < lo) lo = v; if (v > hi) hi = v; }
       if (!(hi > lo)) { lo -= 1; hi += 1; }
       const margin = (hi - lo) * 0.05;
       return [fixedMin ?? lo - margin, fixedMax ?? hi + margin];
@@ -455,28 +457,89 @@ const Charts = (() => {
       }, svg);
     }
 
+    // A plain point is one subpath of a path shared with every point of the same
+    // look, so thousands of points stay a handful of elements. A point that pops
+    // in or carries a label keeps its own element.
+    const shared = new Map();
+    const targets = [];  // points to hover or click, in screen coordinates
     for (const p of points) {
       const cx = sx(p.x);
       const cy = sy(p.y);
       const r = p.r ?? 4;
-      const g = el("g", { class: `point${p.enter && options.animate !== false ? " enter-mark" : ""}` }, svg);
-      if (!p.hidden) glyph(g, p.shape, cx, cy, r, p.color);
-      if (p.label) {
-        el("text", { x: cx + r + 5, y: cy + 4 + (p.labelDy || 0), class: "point-label" }, g).textContent = p.label;
+      if (p.tip || p.onClick) targets.push({ p, cx, cy, r });
+      if (p.hidden) continue;
+      const entering = p.enter && options.animate !== false;
+      if (entering || p.label) {
+        const g = el("g", { class: `point${entering ? " enter-mark" : ""}` }, svg);
+        glyph(g, p.shape, cx, cy, r, p.color);
+        if (p.label) el("text", { x: cx + r + 5, y: cy + 4 + (p.labelDy || 0), class: "point-label" }, g).textContent = p.label;
+        continue;
       }
-      if (p.tip || p.onClick) {
-        // The hit area is larger than the mark, so small points are easy to hover.
-        const hit = el("circle", { cx, cy, r: r + 5, fill: "transparent", class: "hit" }, g);
-        hit.addEventListener("mousemove", (event) => { g.classList.add("hover"); if (p.tip) showTooltip(event, p.tip); });
-        hit.addEventListener("mouseleave", () => { g.classList.remove("hover"); hideTooltip(); });
-        if (p.onClick) {
-          hit.style.cursor = "pointer";
-          hit.addEventListener("click", p.onClick);
+      const key = `${p.shape}|${p.color}`;
+      if (!shared.has(key)) shared.set(key, { shape: p.shape, color: p.color, d: [] });
+      shared.get(key).d.push(glyphPath(p.shape, cx, cy, r));
+    }
+    for (const { shape, color, d } of shared.values()) {
+      el("path", { d: d.join(""), ...glyphPaint(shape, color) }, svg);
+    }
+
+    // One listener for every point: the nearest within reach of the pointer, whose
+    // reach is larger than its mark, so small points are easy to hover.
+    if (targets.length) {
+      const hoverMark = el("g", { class: "point hover", "pointer-events": "none" }, svg);
+      let current = null;
+      const at = (event) => {
+        const box = svg.getBoundingClientRect();
+        const px = ((event.clientX - box.left) / box.width) * width;
+        const py = ((event.clientY - box.top) / box.height) * height;
+        let best = null;
+        let bestDistance = Infinity;
+        for (const t of targets) {
+          const dx = t.cx - px;
+          const dy = t.cy - py;
+          const distance = dx * dx + dy * dy;
+          const reach = t.r + 5;
+          if (distance <= reach * reach && distance < bestDistance) { best = t; bestDistance = distance; }
         }
-      }
+        return best;
+      };
+      svg.addEventListener("mousemove", (event) => {
+        const t = at(event);
+        if (t !== current) {
+          current = t;
+          hoverMark.innerHTML = "";
+          if (t && !t.p.hidden) glyph(hoverMark, t.p.shape, t.cx, t.cy, t.r, t.p.color);
+          svg.style.cursor = t && t.p.onClick ? "pointer" : "";
+          // Off every point, a box under the pointer shows its own tooltip.
+          if (!t && !event.target.classList.contains("hit")) hideTooltip();
+        }
+        if (t && t.p.tip) showTooltip(event, typeof t.p.tip === "function" ? t.p.tip() : t.p.tip);
+      });
+      svg.addEventListener("mouseleave", () => {
+        current = null;
+        hoverMark.innerHTML = "";
+        hideTooltip();
+      });
+      svg.addEventListener("click", (event) => {
+        const t = at(event);
+        if (t && t.p.onClick) t.p.onClick(event);
+      });
     }
 
     container.appendChild(svg);
+  }
+
+  // A glyph as a subpath, to share one path between many points (see glyph).
+  function glyphPath(shape, cx, cy, r) {
+    if (shape === "cross") return `M${cx - r},${cy - r}L${cx + r},${cy + r}M${cx - r},${cy + r}L${cx + r},${cy - r}`;
+    if (shape === "square") return `M${cx - r},${cy - r}h${2 * r}v${2 * r}h${-2 * r}z`;
+    return `M${cx - r},${cy}a${r},${r} 0 1,0 ${2 * r},0a${r},${r} 0 1,0 ${-2 * r},0z`;
+  }
+
+  function glyphPaint(shape, color) {
+    if (shape === "cross") return { fill: "none", stroke: color, "stroke-width": 2, "stroke-linecap": "round", class: "glyph" };
+    if (shape === "ring") return { fill: "none", stroke: color, "stroke-width": 1.75, class: "glyph" };
+    return { fill: color, class: "marker" };
   }
 
   /** A bare mini line in a hairline frame, 0..1 on y, for the zone cards: evenly

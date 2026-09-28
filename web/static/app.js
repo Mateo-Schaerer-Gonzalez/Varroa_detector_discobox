@@ -1200,7 +1200,8 @@ function scorePoint(mite, recording, y, group, zones) {
     shape: moving ? "circle" : "cross",
     r: recording === shown ? 4.5 : 2.75,
     enter: enterFrom != null && recording >= enterFrom,
-    tip: `<div class="tip-title">Mite ${esc(mite.id)} · zone ${mite.zone_id} · ${minutes(results.times[recording])}</div>
+    // Built on hover only: a mite's glyphs span every recording, too much to build for every point.
+    tip: () => `<div class="tip-title">Mite ${esc(mite.id)} · zone ${mite.zone_id} · ${minutes(results.times[recording])}</div>
       <div class="tip-note">${esc(group)} · zones ${zones.map((z) => z.id).join(", ")}</div>
       <div>${movingBadge(moving)} · score ${score(value)}</div>${movementGlyphs(mite)}
       <div class="tip-hint">Click to open this mite in this recording</div>`,
