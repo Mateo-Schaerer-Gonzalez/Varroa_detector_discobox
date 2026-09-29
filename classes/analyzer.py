@@ -216,10 +216,15 @@ class Analyzer:
         cv2.calcOpticalFlowFarneback; scripts/tune_optical_flow.py searches them.
         `pad` is not used here: the ROI is cut `pad` pixels larger on each side
         than the mite's box (see roi_padding()), since a patch only as wide as
-        the mite leaves Farneback too few pixels around it to follow a leg."""
+        the mite leaves Farneback too few pixels around it to follow a leg.
+
+        A stack of `step` frames or fewer has no pair `step` apart; its first and
+        last frames are compared instead, so a short recording or pool still gets
+        a score rather than NaN."""
 
         # Farneback wants 8-bit single-channel frames
         gray = np.clip(roi.mean(axis=-1), 0, 255).astype(np.uint8)
+        step = min(step, len(gray) - 1)
         # The ROI is only a few mite-widths across, so keep the pyramid shallow
         # and the averaging window small or the flow is smeared over the edges.
         magnitudes = []

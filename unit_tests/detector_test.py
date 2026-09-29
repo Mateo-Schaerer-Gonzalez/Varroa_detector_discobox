@@ -253,3 +253,15 @@ class TestRoiPadding:
                             staticmethod(lambda roi, metric, params=None: seen.append(roi.shape) or 0.0))
         Analyzer(config).score_pool([mite], [np.zeros((12, 12, 3), np.uint8)] * 3)
         assert seen == [(3, 8, 8, 3)]
+
+
+class TestOpticalFlowShortStacks:
+    def test_a_stack_shorter_than_step_still_gets_a_score(self):
+        roi = np.random.default_rng(0).uniform(0, 255, (5, 20, 20, 3)).astype(np.float32)
+        score = Analyzer._motion_score(roi, "optical_flow", {"step": 10})
+        assert np.isfinite(score)
+
+    def test_it_compares_the_first_and_last_frames(self):
+        roi = np.random.default_rng(0).uniform(0, 255, (5, 20, 20, 3)).astype(np.float32)
+        assert Analyzer._motion_score(roi, "optical_flow", {"step": 10}) == \
+            Analyzer._motion_score(roi, "optical_flow", {"step": 4})
