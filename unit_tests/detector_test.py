@@ -225,3 +225,31 @@ class TestDetectAndAssignIntegration:
 
         assert len(first_zone.mites) == 1
         assert second_zone.mites == []
+
+
+class TestRoiPadding:
+    def test_metric_without_pad_is_not_padded(self):
+        assert Analyzer.roi_padding("topN_variability", {"n": 5}) == 0
+
+    def test_optical_flow_pads_by_its_pad_parameter(self):
+        assert Analyzer.roi_padding("optical_flow") == 0
+        assert Analyzer.roi_padding("optical_flow", {"pad": 6}) == 6
+
+    def test_pad_may_be_zero_but_not_negative(self):
+        assert Analyzer.check_metric_params("optical_flow", {"pad": 0})["pad"] == 0
+        with pytest.raises(ValueError, match="negative"):
+            Analyzer.check_metric_params("optical_flow", {"pad": -1})
+
+    def test_other_parameters_must_still_be_positive(self):
+        with pytest.raises(ValueError, match="positive"):
+            Analyzer.check_metric_params("optical_flow", {"step": 0})
+
+    def test_score_pool_cuts_the_padded_roi(self, monkeypatch):
+        config = get_default_config()
+        mite = Mite(4, 4, 6, 6, config=config)
+        mite.metric, mite.metric_params = "optical_flow", {"pad": 3}
+        seen = []
+        monkeypatch.setattr(Analyzer, "_motion_score",
+                            staticmethod(lambda roi, metric, params=None: seen.append(roi.shape) or 0.0))
+        Analyzer(config).score_pool([mite], [np.zeros((12, 12, 3), np.uint8)] * 3)
+        assert seen == [(3, 8, 8, 3)]

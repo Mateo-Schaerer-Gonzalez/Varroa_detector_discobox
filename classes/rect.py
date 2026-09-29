@@ -42,15 +42,18 @@ class Rect:
         yield self.x2
         yield self.y2
 
-    def get_ROI(self, frames):
+    def get_ROI(self, frames, pad=0):
         """
-        Extract ROI from frames.
+        Extract ROI from frames, grown by `pad` pixels on each side (cut off at
+        the image's edge).
         Supports single image (H, W, C) or batch (N, H, W, C).
         """
+        x1, y1 = max(0, self.x1 - pad), max(0, self.y1 - pad)
+        x2, y2 = self.x2 + pad, self.y2 + pad
         if frames.ndim == 3:  # Single frame
-            return frames[self.y1:self.y2, self.x1:self.x2, :]
+            return frames[y1:y2, x1:x2, :]
         elif frames.ndim == 4:  # Multiple frames
-            return frames[:, self.y1:self.y2, self.x1:self.x2, :]
+            return frames[:, y1:y2, x1:x2, :]
         else:
             raise ValueError(f"Expected 3D or 4D array, got {frames.ndim}D")
 

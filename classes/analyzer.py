@@ -56,7 +56,7 @@ class Analyzer:
         recording on each mite; whether it moved follows from those scores."""
         for recording, _times in image_bursts:
             for mite in mites:
-                mite_roi = mite.get_ROI(recording)
+                mite_roi = mite.get_ROI(recording, self.roi_padding(mite.metric, mite.metric_params))
                 mite.record_motion(self._motion_score(mite_roi, mite.metric, mite.metric_params))
 
     def score_pool(self, mites, frames):
@@ -67,7 +67,8 @@ class Analyzer:
         the same (N, h, w, C) array classify_motility() cuts from a stack of the
         frames, without ever holding a second copy of the frames."""
         for mite in mites:
-            mite_roi = np.stack([mite.get_ROI(frame) for frame in frames])
+            pad = self.roi_padding(mite.metric, mite.metric_params)
+            mite_roi = np.stack([mite.get_ROI(frame, pad) for frame in frames])
             mite.record_motion(self._motion_score(mite_roi, mite.metric, mite.metric_params))
 
     @staticmethod
@@ -105,11 +106,18 @@ class Analyzer:
         return {name: p.default for name, p in signature.parameters.items() if name != "roi"}
 
     @staticmethod
+    def roi_padding(metric, params=None):
+        """Pixels the metric looks beyond the mite's box on each side: its `pad`
+        parameter, 0 for a metric without one."""
+        return int(Analyzer.check_metric_params(metric, params).get("pad", 0))
+
+    @staticmethod
     def check_metric_params(metric, params):
         """The metric's parameters: its defaults, overridden by `params`.
 
         Each value is converted to the type of its default (so n stays an int) and
-        must be positive; a name the metric does not take is refused.
+        must be positive, or at least 0 where the default is 0; a name the metric
+        does not take is refused.
         """
         defaults = Analyzer.metric_defaults(metric)
         checked = dict(defaults)
@@ -122,7 +130,9 @@ class Analyzer:
                 raise ValueError(f"{metric}: {name} must be a number, not {value!r}.")
             if isinstance(defaults[name], int) and float(params[name]) != value:
                 raise ValueError(f"{metric}: {name} must be a whole number.")
-            if not value > 0:
+            if defaults[name] == 0 and value < 0:
+                raise ValueError(f"{metric}: {name} must not be negative.")
+            if defaults[name] != 0 and not value > 0:
                 raise ValueError(f"{metric}: {name} must be positive.")
             checked[name] = value
         return checked
@@ -190,27 +200,34 @@ class Analyzer:
 
 
     @staticmethod
-    def dense_optical_flow(roi, window=5, n=10):
-        """Local Farneback flow strength (pixels/frame), averaged over every pair
-        of consecutive frames.
+    def dense_optical_flow(roi, window=5, n=10, step=1, winsize=5, levels=1,
+                           iterations=3, poly_n=5, poly_sigma=1.1, pad=0):
+        """Local Farneback flow strength (pixels per `step` frames), averaged over
+        every pair of frames `step` apart.
 
         Flow vectors are summed inside a `window` x `window` neighbourhood before
         taking their length: pixel noise points every which way and cancels, a
         moving leg pushes its neighbourhood one way. Summing only locally keeps
         legs moving in opposite directions from cancelling each other. The score
         per frame pair is the mean of the `n` strongest neighbourhoods, so a small
-        leg isn't diluted by the still body and background."""
-       
+        leg isn't diluted by the still body and background.
+
+        `winsize`, `levels`, `iterations`, `poly_n` and `poly_sigma` are passed to
+        cv2.calcOpticalFlowFarneback; scripts/tune_optical_flow.py searches them.
+        `pad` is not used here: the ROI is cut `pad` pixels larger on each side
+        than the mite's box (see roi_padding()), since a patch only as wide as
+        the mite leaves Farneback too few pixels around it to follow a leg."""
+
         # Farneback wants 8-bit single-channel frames
         gray = np.clip(roi.mean(axis=-1), 0, 255).astype(np.uint8)
         # The ROI is only a few mite-widths across, so keep the pyramid shallow
         # and the averaging window small or the flow is smeared over the edges.
         magnitudes = []
-        for prev, nxt in zip(gray[:-1], gray[1:]):
+        for prev, nxt in zip(gray[:-step], gray[step:]):
             flow = cv2.calcOpticalFlowFarneback(
                 prev, nxt, None,
-                pyr_scale=0.5, levels=1, winsize=5,
-                iterations=3, poly_n=5, poly_sigma=1.1, flags=0,
+                pyr_scale=0.5, levels=levels, winsize=winsize,
+                iterations=iterations, poly_n=poly_n, poly_sigma=poly_sigma, flags=0,
             )
             local = cv2.blur(flow, (window, window))
             strength = np.linalg.norm(local, axis=-1).ravel()

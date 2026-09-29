@@ -1095,6 +1095,17 @@ def _metric_version(metric, params, mites):
     return hashlib.sha1(key.encode("utf-8")).hexdigest()[:12]
 
 
+def mite_boxes(mites, pad=0):
+    """Mite id to (x1, y1, x2, y2): the same box around each saved mite as
+    Mite.get_ROI() cuts in an analysis run, grown by `pad` pixels on each side.
+    x1 and y1 can be negative; the caller cuts them off at the image's edge."""
+    return {
+        m["id"]: (int(round(m["x"] - m["r"])) - pad, int(round(m["y"] - m["r"])) - pad,
+                  int(round(m["x"] + m["r"])) + pad, int(round(m["y"] + m["r"])) + pad)
+        for m in mites
+    }
+
+
 def _score_mites(dataset, metric, recordings_dir, params=None):
     """Score every mite of a dataset in every recording with `metric` and its
     `params`: mite id to
@@ -1107,12 +1118,7 @@ def _score_mites(dataset, metric, recordings_dir, params=None):
             "Move them back and save its ground truth again, or leave this dataset out."
         )
     loader = DataLoader(recordings_dir, grayscale=False)
-    # The same box around each mite as Mite.get_ROI() uses in an analysis run.
-    boxes = {
-        m["id"]: (int(round(m["x"] - m["r"])), int(round(m["y"] - m["r"])),
-                  int(round(m["x"] + m["r"])), int(round(m["y"] + m["r"])))
-        for m in dataset["mites"]
-    }
+    boxes = mite_boxes(dataset["mites"], Analyzer.roi_padding(metric, params))
     x0 = max(0, min(box[0] for box in boxes.values()))
     y0 = max(0, min(box[1] for box in boxes.values()))
     x_end = max(box[2] for box in boxes.values())

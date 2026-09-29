@@ -129,6 +129,15 @@ class TestGetROI:
         assert roi.shape == (4, 4, 3, 3)
         np.testing.assert_array_equal(roi, frames[:, 3:7, 2:5, :])
 
+    def test_pad_grows_the_roi_on_each_side(self):
+        frames = np.arange(4 * 10 * 10 * 3).reshape(4, 10, 10, 3).astype(np.uint8)
+        roi = Rect(2, 3, 5, 7).get_ROI(frames, pad=1)
+        np.testing.assert_array_equal(roi, frames[:, 2:8, 1:6, :])
+
+    def test_pad_stops_at_the_image_edge(self):
+        frame = np.zeros((10, 10, 3), dtype=np.uint8)
+        assert Rect(1, 1, 8, 8).get_ROI(frame, pad=3).shape == (10, 10, 3)
+
     def test_invalid_dimensions_raises(self):
         frames = np.zeros((10, 10))  # 2D, unsupported
         r = Rect(0, 0, 5, 5)
