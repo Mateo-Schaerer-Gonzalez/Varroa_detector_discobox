@@ -155,8 +155,8 @@ class Analyzer:
         dx -= (w - 1) / 2
         dist = np.hypot(dx, dy)
         dist[dist == 0] = np.inf  # the centre pixel has no direction
-        vx = (pixel_max * dx / dist).mean()
-        vy = (pixel_max * dy / dist).mean()
+        vx = (pixel_max * dx / dist).sum()
+        vy = (pixel_max * dy / dist).sum()
         return float(np.hypot(vx, vy))
 
     @staticmethod
