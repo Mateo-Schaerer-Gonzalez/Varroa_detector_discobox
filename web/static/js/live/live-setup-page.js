@@ -121,7 +121,9 @@ class LiveSetupPage {
     $("live-label-btn").disabled = !connected;
     $("live-label-btn").textContent = live.started ? "Show the live results" : "Next: label the plates";
     $("live-feed-note").textContent = connected ? "" : "Connect to see the camera.";
-    $("live-feed").hidden = !connected || !$("live-feed").src;
+    const shown = connected && $("live-feed").src;
+    $("live-feed").hidden = !shown;
+    $("live-feed").parentElement.classList.toggle("filled", Boolean(shown));
     if (connected && lights && !lights.connected && !$("live-settings-status").textContent) {
       $("live-settings-status").className = "hint";
       $("live-settings-status").textContent = "No fan/LED controller found: the run goes ahead without them.";

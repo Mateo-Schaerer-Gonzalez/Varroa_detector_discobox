@@ -327,6 +327,7 @@ class LiveRun {
       img.src = next.src;
       img.dataset.count = String(s.feed);
       img.hidden = false;
+      if (big) img.parentElement.classList.add("filled");
       this.feedBusy = false;
     };
     next.onerror = () => { this.feedBusy = false; };

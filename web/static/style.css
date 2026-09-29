@@ -659,8 +659,10 @@ td.num.error { color: var(--critical); font-weight: 600; }
 .light-row output { font-size: 12px; text-align: right; color: var(--muted); }
 .light-toggle.on { color: #fff; background: var(--moving); border-color: var(--moving); }
 
-.live-feed { background: #000; line-height: 0; min-height: 120px; }
-.live-feed:has(img[hidden]) { background: var(--wash); }
+/* Not :has(img[hidden]): older Firefox on the Discobox's Linux doesn't support
+   :has(), which left the box permanently black. */
+.live-feed { background: var(--wash); line-height: 0; min-height: 120px; }
+.live-feed.filled { background: #000; }
 .live-feed img { width: 100%; height: auto; display: block; }
 
 /* How the test run is going: a strip over the result pages, apart from the charts. */
