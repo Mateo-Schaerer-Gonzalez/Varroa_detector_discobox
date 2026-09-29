@@ -11,9 +11,14 @@ the other. If that held-out AUC is far below the top AUC, trust neither.
 
     python scripts/tune_optical_flow.py                 # the full grid
     python scripts/tune_optical_flow.py --samples 100   # 100 random combinations
+    python scripts/tune_optical_flow.py --shake 1       # as if the plate shook
 
 `pad` grows each mite's patch by that many pixels on each side, as the app does
 when the metric's pad parameter is set.
+
+--shake PX moves the whole plate by a random offset (standard deviation PX
+pixels) in every frame, the same for every mite, before the patches are cut: a
+still mite on a shaking plate should stay still, which `stabilize` 1 is for.
 
 The ranking is written to calibration_data/reports/optical_flow_tuning_<time>.csv.
 """
@@ -30,6 +35,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
+import cv2
 import numpy as np
 
 import pipeline
@@ -50,6 +56,7 @@ GRID = {
     "levels": [1, 2],
     "poly_n": [5, 7],
     "iterations": [3],
+    "stabilize": [0, 1],
 }
 POLY_SIGMA = {5: 1.1, 7: 1.5}
 
@@ -64,10 +71,24 @@ def combinations(samples, seed):
     return combos
 
 
-def load_observations(pads):
+def shaken(frames, shake, rng):
+    """The frames with the whole plate moved by a random offset in each: a
+    shaking plate. Edges are mirrored in, so no black border appears."""
+    out = np.empty_like(frames)
+    for i, frame in enumerate(frames):
+        dx, dy = rng.normal(0, shake, 2)
+        warp = np.float32([[1, 0, dx], [0, 1, dy]])
+        out[i] = cv2.warpAffine(frame, warp, frame.shape[1::-1], flags=cv2.INTER_LINEAR,
+                                borderMode=cv2.BORDER_REFLECT101)
+    return out
+
+
+def load_observations(pads, shake=0.0, seed=0):
     """For every labelled (mite, recording) of every saved dataset whose
     recordings can still be read: its ROI cut at each padding in `pads`
-    ({pad: [roi, ...]}), whether it moved, and which mite it is."""
+    ({pad: [roi, ...]}), whether it moved, and which mite it is. With `shake`,
+    the plate is shaken first (see shaken())."""
+    rng = np.random.default_rng(seed)
     rois, moving, mites = {pad: [] for pad in pads}, [], []
     for summary in pipeline.list_calibration_datasets():
         dataset = pipeline._read_dataset(summary["id"], pipeline.CALIBRATION_LIBRARY)
@@ -94,6 +115,8 @@ def load_observations(pads):
         loader = DataLoader(recordings_dir, grayscale=False)
         for index, recording in enumerate(dataset["recordings"]):
             frames = loader.load_recording_region(recording["name"], x0, y0, x_end, y_end)
+            if shake:
+                frames = shaken(frames, shake, rng)
             for mite_id, (x1, y1, x2, y2) in boxes.items():
                 state = labelled[mite_id][1][index]
                 if state not in (calibration.MOVING, calibration.STILL):
@@ -139,6 +162,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--samples", type=int, default=0, help="score this many random combinations instead of all")
     parser.add_argument("--jobs", type=int, default=os.cpu_count(), help="worker processes")
+    parser.add_argument("--shake", type=float, default=0.0, help="shake the plate by this many pixels (std) per frame")
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--top", type=int, default=15, help="rows of the ranking to print")
     args = parser.parse_args()
@@ -148,7 +172,7 @@ def main():
     baseline_pad = Analyzer.roi_padding(config.metric, baseline_params)
 
     print("Loading labelled observations...")
-    rois, moving, mites = load_observations(sorted({*GRID["pad"], baseline_pad}))
+    rois, moving, mites = load_observations(sorted({*GRID["pad"], baseline_pad}), args.shake, args.seed)
     if not calibration.has_both_classes(moving):
         sys.exit("Need both moving and still labels in calibration_data/ to tune anything.")
     print(f"{len(moving)} observations ({moving.sum()} moving, {(~moving).sum()} still), {len(set(mites))} mites")
