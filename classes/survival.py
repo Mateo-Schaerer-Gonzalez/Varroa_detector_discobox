@@ -13,6 +13,7 @@ pages: the mites alive over time per group and per zone, and every group, its
 zones pooled, tested against the negative controls.
 """
 
+import warnings
 from dataclasses import asdict, dataclass
 
 import numpy as np
@@ -67,6 +68,47 @@ class SurvivalAnalysis:
         if not movings:
             return [None] * len(self.times)
         return [100 * self.alive_count(movings, recording) / len(movings) for recording in range(len(self.times))]
+
+    def alive_ci(self, movings, confidence=0.95):
+        """The confidence interval of alive_percent() in each recording, in percent,
+        as {low, high}. With the mites censored only at the end, alive_percent()
+        is the Kaplan-Meier estimate; the interval is scipy's, by Greenwood's
+        formula on the log-log scale, which keeps it within 0-100%. Where all
+        or none of the mites are alive it is undefined, and taken as the estimate
+        itself. None throughout without mites."""
+        if not movings:
+            return {"low": [None] * len(self.times), "high": [None] * len(self.times)}
+        curve = stats.ecdf(self.censored([self.survival(moving) for moving in movings])).sf
+        with warnings.catch_warnings():
+            # Where it is undefined, scipy warns and gives NaN.
+            warnings.simplefilter("ignore", RuntimeWarning)
+            interval = curve.confidence_interval(confidence, method="log-log")
+        estimate = curve.evaluate(self.times)
+        low = interval.low.evaluate(self.times)
+        high = interval.high.evaluate(self.times)
+        low = np.where(np.isnan(low), estimate, low)
+        high = np.where(np.isnan(high), estimate, high)
+        return {"low": [100 * float(value) for value in low], "high": [100 * float(value) for value in high]}
+
+    def lt50(self, movings):
+        """LT50, the time by which half the mites are dead: the first recording in
+        which at most 50% of them are alive, the median of the Kaplan-Meier curve.
+        Its 95% confidence interval runs from the first recording in which the low
+        bound of alive_ci() is at most 50% to the first in which the high bound
+        is. As {estimate, low, high}, in minutes from the first recording; each
+        None when it is not reached by the last recording."""
+        def first_at_most_half(percents):
+            for time, percent in zip(self.times, percents):
+                if percent is not None and percent <= 50:
+                    return time
+            return None
+
+        ci = self.alive_ci(movings)
+        return {
+            "estimate": first_at_most_half(self.alive_percent(movings)),
+            "low": first_at_most_half(ci["low"]),
+            "high": first_at_most_half(ci["high"]),
+        }
 
     def survival(self, moving):
         """(time, dead): when a mite died, at the first recording in which it no
@@ -153,8 +195,9 @@ class SurvivalReport:
         """Plain data for the result pages:
 
             death_minutes   the time a mite must be still to count as dead
-            groups          [{group, alive}]: each group's mites alive (%) per recording
-            zones           {zone id: {alive, n_alive}}: the same per zone, and how many
+            groups          [{group, alive, alive_ci}]: each group's mites alive (%) per
+                            recording, with its 95% confidence interval (see alive_ci())
+            zones           {zone id: {alive, alive_ci, n_alive}}: the same per zone, and how many
             log_rank        the groups against the negative controls, see log_rank()
         """
         analysis = self.analysis
@@ -163,14 +206,16 @@ class SurvivalReport:
             movings = self.movings([zone["id"]])
             zones[zone["id"]] = {
                 "alive": analysis.alive_percent(movings),
+                "alive_ci": analysis.alive_ci(movings),
                 "n_alive": [analysis.alive_count(movings, recording) for recording in range(len(analysis.times))],
             }
+        groups = []
+        for group, group_zones in self.groups.rows():
+            movings = self.movings([zone["id"] for zone in group_zones])
+            groups.append({"group": group, "alive": analysis.alive_percent(movings), "alive_ci": analysis.alive_ci(movings)})
         return {
             "death_minutes": analysis.death_minutes,
-            "groups": [
-                {"group": group, "alive": analysis.alive_percent(self.movings([zone["id"] for zone in group_zones]))}
-                for group, group_zones in self.groups.rows()
-            ],
+            "groups": groups,
             "zones": zones,
             "log_rank": self.log_rank(),
         }
@@ -182,10 +227,11 @@ class SurvivalReport:
             controls          the zones ticked
             control_zones     those of them with mites
             control_groups    their groups
-            n_control_mites, n_control_dead
-            rows              [{group, zones, n_mites, observed, expected, chi2, p}]:
+            n_control_mites, n_control_dead, control_lt50
+            rows              [{group, zones, n_mites, lt50, observed, expected, chi2, p}]:
                                 one per group of the zones not ticked; none
                                 without control mites
+        LT50s as SurvivalAnalysis.lt50() gives them.
         """
         ticked = set(self.controls)
         control_zones = [zone for zone in self.groups.zones if zone["id"] in ticked]
@@ -197,6 +243,7 @@ class SurvivalReport:
                 zone_ids = [zone["id"] for zone in group_zones]
                 movings = self.movings(zone_ids)
                 rows.append({"group": group, "zones": zone_ids, "n_mites": len(movings),
+                             "lt50": self.analysis.lt50(movings),
                              **asdict(self.analysis.log_rank(movings, control_movings))})
         return {
             "controls": self.controls,
@@ -204,5 +251,6 @@ class SurvivalReport:
             "control_groups": list(dict.fromkeys(ResultGroups.group_of(zone) for zone in control_zones)),
             "n_control_mites": len(control_movings),
             "n_control_dead": self.analysis.dead_count(control_movings),
+            "control_lt50": self.analysis.lt50(control_movings) if control_movings else None,
             "rows": rows,
         }

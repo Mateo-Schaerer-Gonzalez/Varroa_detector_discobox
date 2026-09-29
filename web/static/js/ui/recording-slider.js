@@ -1,16 +1,20 @@
 // A slider over the recordings, the same size however many there are: on the
 // result pages and the ground-truth page. `done`, when given, marks each
-// recording finished in a strip under the track.
+// recording finished in a strip under the track; without it, a tick under the
+// track marks each recording.
 
 class RecordingSlider {
   // The page redraws the slider, so one moved from the keyboard gets the focus back.
   static refocus = false;
 
+  // Past this many recordings, only every so many has a tick, so they stay apart.
+  static MAX_TICKS = 60;
+
   static html({ times, current, done = null, label = "Recording shown" }) {
     const n = times.length;
     const strip = done
       ? `<div class="rec-done" aria-hidden="true">${done.map((d) => `<i${d ? ' class="done"' : ""}></i>`).join("")}</div>`
-      : "";
+      : RecordingSlider.ticks(n);
     return `<div class="rec-slider" style="--n:${Math.max(2, n)}">
     <div class="rec-track">
       <input type="range" min="0" max="${Math.max(0, n - 1)}" step="1" value="${current}" aria-label="${label}"
@@ -19,6 +23,17 @@ class RecordingSlider {
     </div>
     <output class="rec-readout">${RecordingSlider.readout(times, current, done)}</output>
   </div>`;
+  }
+
+  // A tick at the thumb's place for each recording (or every `every`-th, and the last).
+  static ticks(n) {
+    if (n < 2) return "";
+    const every = Math.ceil((n - 1) / RecordingSlider.MAX_TICKS);
+    const marks = [];
+    for (let i = 0; i < n; i++) {
+      if (i % every === 0 || i === n - 1) marks.push(`<i style="left:${(100 * i) / (n - 1)}%"></i>`);
+    }
+    return `<div class="rec-ticks" aria-hidden="true">${marks.join("")}</div>`;
   }
 
   static text(times, i, done) {

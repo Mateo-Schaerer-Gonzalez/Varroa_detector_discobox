@@ -1,6 +1,9 @@
 """Alive or dead, and the log-rank test against the negative controls
 (classes/survival.py), as the result pages show them."""
 
+import math
+import random
+
 import pytest
 from scipy import stats
 
@@ -42,6 +45,55 @@ def test_the_share_alive_in_each_recording():
     assert survival.alive_percent([FIRST_ONLY, ALWAYS, FIRST_TWO]) == [100.0, 200 / 3, 100 / 3]
     assert survival.alive_count([FIRST_ONLY, ALWAYS, FIRST_TWO], 1) == 2
     assert survival.alive_percent([]) == [None, None, None]
+
+
+def test_the_confidence_interval_by_hand():
+    # Deaths at 0 (1 of 4 at risk) and 10 (1 of 3); two mites alive at the end.
+    # Greenwood: var(log S) sums d / (n (n - d)); on the log-log scale the
+    # interval is S ** exp(±z sigma), with sigma = sqrt(var(log S)) / |log S|.
+    ci = SurvivalAnalysis(TIMES).alive_ci([NEVER, FIRST_ONLY, ALWAYS, ALWAYS])
+    z = stats.norm.ppf(0.975)
+    for recording, alive, greenwood in [(0, 0.75, 1 / 12), (1, 0.5, 1 / 12 + 1 / 6), (2, 0.5, 1 / 12 + 1 / 6)]:
+        sigma = math.sqrt(greenwood) / abs(math.log(alive))
+        assert ci["low"][recording] == pytest.approx(100 * alive ** math.exp(z * sigma))
+        assert ci["high"][recording] == pytest.approx(100 * alive ** math.exp(-z * sigma))
+
+
+def test_the_confidence_interval_is_the_estimate_where_all_or_none_are_alive():
+    survival = SurvivalAnalysis(TIMES)
+    assert survival.alive_ci([ALWAYS, ALWAYS]) == {"low": [100.0] * 3, "high": [100.0] * 3}
+    assert survival.alive_ci([NEVER, NEVER]) == {"low": [0.0] * 3, "high": [0.0] * 3}
+    assert survival.alive_ci([FIRST_ONLY]) == {"low": [100.0, 0.0, 0.0], "high": [100.0, 0.0, 0.0]}
+    assert survival.alive_ci([]) == {"low": [None] * 3, "high": [None] * 3}
+
+
+def test_the_share_alive_is_the_kaplan_meier_estimate_inside_its_interval():
+    rng = random.Random(3)
+    for _ in range(200):
+        times = sorted(rng.sample(range(100), rng.randint(2, 6)))
+        survival = SurvivalAnalysis(times, rng.choice([0, 15]))
+        movings = [[rng.random() < 0.6 for _ in times] for _ in range(rng.randint(1, 12))]
+        alive = survival.alive_percent(movings)
+        ci = survival.alive_ci(movings)
+        estimate = stats.ecdf(survival.censored([survival.survival(moving) for moving in movings])).sf.evaluate(times)
+        assert alive == pytest.approx(list(100 * estimate))
+        for low, value, high in zip(ci["low"], alive, ci["high"]):
+            assert 0 <= low <= value + 1e-9 and value - 1e-9 <= high <= 100
+
+
+def test_lt50_is_the_first_time_at_most_half_are_alive():
+    survival = SurvivalAnalysis(TIMES)
+    # Alive: 75%, 50%, 50%. The interval (see the Greenwood test above) is about
+    # 13-96% at 0 and 6-84% after, so its high bound never reaches 50%.
+    assert survival.lt50([NEVER, FIRST_ONLY, ALWAYS, ALWAYS]) == {"estimate": 10, "low": 0, "high": None}
+    assert survival.lt50([NEVER, NEVER]) == {"estimate": 0, "low": 0, "high": 0}
+
+
+def test_lt50_is_none_when_more_than_half_are_alive_at_the_end():
+    survival = SurvivalAnalysis(TIMES)
+    assert survival.lt50([ALWAYS, ALWAYS]) == {"estimate": None, "low": None, "high": None}
+    # 2 of 3 alive at the end: not reached, though the interval's low bound is.
+    assert survival.lt50([ALWAYS, ALWAYS, FIRST_TWO]) == {"estimate": None, "low": 20, "high": None}
 
 
 def test_a_mite_alive_at_the_end_is_censored_there():
@@ -98,7 +150,11 @@ def test_the_groups_alive_over_time_in_the_order_the_pages_list_them():
     report = SurvivalReport(RESULTS).describe()
     assert [row["group"] for row in report["groups"]] == ["Buffer", "venom", "unlabeled"]
     assert report["groups"][1]["alive"] == [200 / 3, 100 / 3, 0.0]
-    assert report["zones"][1] == {"alive": [50.0, 0.0, 0.0], "n_alive": [1, 0, 0]}
+    assert report["zones"][1]["alive"] == [50.0, 0.0, 0.0]
+    assert report["zones"][1]["n_alive"] == [1, 0, 0]
+    # Each curve with its confidence interval, the group's of its zones pooled.
+    assert report["zones"][1]["alive_ci"] == SurvivalAnalysis(TIMES).alive_ci([NEVER, FIRST_ONLY])
+    assert report["groups"][1]["alive_ci"] == SurvivalAnalysis(TIMES).alive_ci([NEVER, FIRST_ONLY, FIRST_TWO])
     assert 5 not in report["zones"]  # nothing to show in a zone without mites
 
 
@@ -108,12 +164,14 @@ def test_every_group_against_the_controls():
     assert log_rank["control_zones"] == [3]  # zone 5 holds no mites
     assert log_rank["control_groups"] == ["Buffer"]
     assert (log_rank["n_control_mites"], log_rank["n_control_dead"]) == (2, 1)
+    assert log_rank["control_lt50"] == SurvivalAnalysis(TIMES).lt50([FIRST_TWO, ALWAYS])
     # One row per group, its zones pooled; "unlabeled" last.
     assert [(row["group"], row["zones"]) for row in log_rank["rows"]] == [("venom", [1, 4]), ("unlabeled", [2])]
     venom = log_rank["rows"][0]
     assert venom["n_mites"] == 3
     assert venom["observed"] == 3
-    assert set(venom) == {"group", "zones", "n_mites", "observed", "expected", "chi2", "p"}
+    assert venom["lt50"] == SurvivalAnalysis(TIMES).lt50([NEVER, FIRST_ONLY, FIRST_TWO])
+    assert set(venom) == {"group", "zones", "n_mites", "lt50", "observed", "expected", "chi2", "p"}
 
 
 def test_a_groups_zones_ticked_as_control_are_left_out_of_its_row():

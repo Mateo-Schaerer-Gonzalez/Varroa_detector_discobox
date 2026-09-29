@@ -4,7 +4,9 @@
  * options:
  *   x           shared x values (time in minutes)
  *   series      [{ name, values, color, width, step, faint, markers, pointColors,
- *                  legend, tooltip, onClick }]
+ *                  legend, tooltip, onClick, band }]
+ *               band: { low, high }, e.g. a confidence interval, shaded in the
+ *               series' colour beneath every line and given in the tooltip
  *   yLabel, xLabel, yMin, yMax, height
  *   yFormat     value -> text, for axis ticks and the tooltip
  *   threshold   { value, label } drawn as a dashed reference line
@@ -79,7 +81,7 @@ class LineChart {
     this.plotW = this.width - pad.left - pad.right;
     this.plotH = this.height - pad.top - pad.bottom;
 
-    const allValues = this.series.flatMap((s) => s.values.filter((v) => v != null));
+    const allValues = this.series.flatMap((s) => [...s.values, ...(s.band ? [...s.band.low, ...s.band.high] : [])].filter((v) => v != null));
     if (threshold) allValues.push(threshold.value);
     const yMin = options.yMin ?? Math.min(0, ...allValues);
     let yMax = options.yMax ?? Math.max(...allValues, yMin + 1);
@@ -145,6 +147,10 @@ class LineChart {
     const { options, xs, x } = this;
     const ordered = [...this.series].sort((a, b) => (b.faint ? 1 : 0) - (a.faint ? 1 : 0));
     const endLabels = [];
+    // The bands first, so that every line sits on top of them.
+    for (const s of this.series) {
+      if (s.band) el("path", { d: this.bandPath(s.band, s.step), fill: s.color, class: "band" }, svg);
+    }
     // New points: the line on from the last old one is drawn in, their markers pop in.
     const enter = options.animate !== false && options.enterFrom > 0 && options.enterFrom < x.length ? options.enterFrom : null;
 
@@ -192,6 +198,39 @@ class LineChart {
     return endLabels;
   }
 
+  // The corners of a line through the points, a staircase when `step`.
+  static corners(xs, ys, step) {
+    const points = [];
+    ys.forEach((y, i) => {
+      if (step && i > 0) points.push([xs[i], ys[i - 1]]);
+      points.push([xs[i], y]);
+    });
+    return points;
+  }
+
+  // The area between a band's `low` and `high`: one closed shape per stretch of
+  // time points without a gap, along `high` and back along `low`.
+  bandPath({ low, high }, step) {
+    const { xs, sy } = this;
+    let d = "";
+    let stretch = [];
+    const close = () => {
+      if (stretch.length) {
+        const x = stretch.map((i) => xs[i]);
+        const top = LineChart.corners(x, stretch.map((i) => sy(high[i])), step);
+        const bottom = LineChart.corners(x, stretch.map((i) => sy(low[i])), step).reverse();
+        d += `M${[...top, ...bottom].map(([px, py]) => `${px},${py}`).join("L")}Z`;
+      }
+      stretch = [];
+    };
+    low.forEach((value, i) => {
+      if (value == null || high[i] == null) close();
+      else stretch.push(i);
+    });
+    close();
+    return d;
+  }
+
   // Lines ending at the same value would print their names on top of each
   // other; working up from the x axis, lift each label clear of the one below.
   drawEndLabels(svg, endLabels) {
@@ -234,11 +273,13 @@ class LineChart {
       crosshair.setAttribute("visibility", "visible");
 
       const { hovered } = this;
+      const band = (s) => (s.band && s.band.low[index] != null
+        ? `<span class="tip-band">(${this.yFormat(s.band.low[index])}–${this.yFormat(s.band.high[index])})</span>` : "");
       const rows = series
         .filter((s) => s.tooltip !== false || s === hovered)
         .filter((s) => s.values[index] != null)
         .map((s) => `<div class="tip-row${s === hovered ? " tip-hovered" : ""}"><i style="background:${s.color}"></i>` +
-          `<span>${escape(s.name)}</span><b>${this.yFormat(s.values[index])}</b></div>`);
+          `<span>${escape(s.name)}</span><b>${this.yFormat(s.values[index])}</b>${band(s)}</div>`);
       const extra = options.tooltipExtra ? options.tooltipExtra(index) : "";
       const hint = hovered && hovered.onClick ? `<div class="tip-hint">Click to open ${escape(hovered.name)}</div>`
         : options.onXClick ? `<div class="tip-hint">Click to show this recording</div>` : "";

@@ -59,13 +59,15 @@ To analyse a folder, in *Analysis*:
    `labels.json` automatically. Tick *negative control* under the name of the
    control plates; they are saved to `controls.json`.
 3. **Results**: an overview with the fraction of mites moving per group, the
-   fraction alive per group (a mite counts as alive up to the last recording in
-   which it moved; with a death time in the run's settings, only once it has
+   fraction alive per group with its 95% confidence interval (Kaplan-Meier,
+   Greenwood's formula on the log-log scale; a mite counts as alive up to the
+   last recording in which it moved; with a death time in the run's settings, only once it has
    been still that long does it count as dead from then on; for a folder it can
    be changed above the chart, and is saved to the folder's `.settings.txt`),
    a table with the log-rank test of each group's survival (every zone with that
    label pooled) against the negative controls, pooled, by the same alive rule,
-   with its p value,
+   with its p value and each group's LT50 (the time by which half its mites are
+   dead) with its 95% confidence interval,
    a plate map, one card per zone, every motion score by group, the scores of the moving
    mites alone by group (a box plot the many still recordings do not pull down),
    and per zone a ridgeline of the rests of a mite: the time between two
