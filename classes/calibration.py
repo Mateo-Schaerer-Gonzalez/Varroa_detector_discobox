@@ -189,6 +189,19 @@ def confusion(scores, moving, threshold):
     }
 
 
+def outcome_rates(counts):
+    """Each outcome of a confusion() as a fraction of its row: of the moving labels
+    (moving_called_moving is the sensitivity) or of the still ones
+    (still_called_moving is the false positive rate). None for an empty row."""
+    rates = {}
+    for truth in (MOVING, STILL):
+        total = counts[f"n_{truth}"]
+        for call in (MOVING, STILL):
+            key = f"{truth}_called_{call}"
+            rates[key] = None if total == 0 else counts[key] / total
+    return rates
+
+
 def moving_over_time(rows, n_recordings, thresholds):
     """Fraction of the labelled mites moving in each recording, by the labels and
     as called by the detector at each of `thresholds` ({name: value}).

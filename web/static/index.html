@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Varroa discobox</title>
-<link rel="stylesheet" href="style.css?v=17">
+<link rel="stylesheet" href="style.css?v=18">
 </head>
 <body>
 
@@ -71,7 +71,7 @@
     </details>
     <p id="open-status" class="hint"></p>
   </div>
-  <!-- filled by recordings.js -->
+  <!-- filled by RecordingsList (js/app/recordings-list.js) -->
   <section class="block recordings-block" data-recordings="analysis"></section>
 </section>
 
@@ -177,7 +177,7 @@
       <button id="live-label-btn" type="button" class="wide" disabled>Next: label the plates</button>
     </aside>
   </div>
-  <!-- filled by recordings.js -->
+  <!-- filled by RecordingsList (js/app/recordings-list.js) -->
   <section class="block recordings-block" data-recordings="live"></section>
 </section>
 
@@ -248,7 +248,7 @@
     </div>
   </section>
 
-  <!-- filled by recordings.js -->
+  <!-- filled by RecordingsList (js/app/recordings-list.js) -->
   <section class="block recordings-block" data-recordings="cal"></section>
 </section>
 
@@ -264,7 +264,7 @@
         <div id="truth-pager"></div>
       </header>
       <div class="rec-bar">
-        <nav id="rec-tabs" class="rec-tabs" aria-label="Recordings"></nav>
+        <div id="rec-tabs" class="rec-tabs"></div>
         <button id="play-btn" type="button" class="secondary small">Pause</button>
       </div>
       <div id="truth-crop" class="crop-wrap truth-crop"></div>
@@ -314,10 +314,44 @@
 
 <div id="tooltip" class="tooltip" hidden></div>
 
-<script src="charts.js?v=10"></script>
-<script src="app.js?v=18"></script>
-<script src="recordings.js?v=2"></script>
-<script src="live.js?v=6"></script>
-<script src="calibration.js?v=15"></script>
+<!-- One class per file, in order: a class is loaded before the ones that build on it,
+     and main.js, last, creates the page's objects and starts it. -->
+<script src="js/charts/chart-kit.js"></script>
+<script src="js/charts/line-chart.js"></script>
+<script src="js/charts/scatter-chart.js"></script>
+<script src="js/charts/ridgeline-chart.js"></script>
+<script src="js/charts/chart-export.js"></script>
+<script src="js/charts/charts.js"></script>
+<script src="js/core/util.js"></script>
+<script src="js/ui/markup.js"></script>
+<script src="js/ui/recording-slider.js"></script>
+<script src="js/ui/plate-view.js"></script>
+<script src="js/app/workspace.js"></script>
+<script src="js/app/router.js"></script>
+<script src="js/app/clip-player.js"></script>
+<script src="js/app/folder-picker.js"></script>
+<script src="js/app/recordings-list.js"></script>
+<script src="js/app/analysis-mode.js"></script>
+<script src="js/app/server-heartbeat.js"></script>
+<script src="js/labels/session-labels.js"></script>
+<script src="js/labels/zone-editor.js"></script>
+<script src="js/labels/label-page.js"></script>
+<script src="js/results/results-page.js"></script>
+<script src="js/results/results-view.js"></script>
+<script src="js/results/overview-page.js"></script>
+<script src="js/results/survival-table.js"></script>
+<script src="js/results/score-figures.js"></script>
+<script src="js/results/zone-page.js"></script>
+<script src="js/results/mite-page.js"></script>
+<script src="js/live/live-run.js"></script>
+<script src="js/live/live-setup-page.js"></script>
+<script src="js/live/live-panel.js"></script>
+<script src="js/calibration/calibration.js"></script>
+<script src="js/calibration/dataset-library.js"></script>
+<script src="js/calibration/ground-truth.js"></script>
+<script src="js/calibration/truth-page.js"></script>
+<script src="js/calibration/report-figures.js"></script>
+<script src="js/calibration/report-page.js"></script>
+<script src="js/main.js"></script>
 </body>
 </html>

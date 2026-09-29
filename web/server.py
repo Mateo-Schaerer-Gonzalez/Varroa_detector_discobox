@@ -14,7 +14,7 @@ import threading
 import time
 import uuid
 from contextlib import asynccontextmanager
-from typing import Optional, Union
+from typing import Optional
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, Request
@@ -115,11 +115,8 @@ class DeathRequest(BaseModel):
 
 
 class RejectRequest(BaseModel):
-    x: float
-    y: float
+    mite: str       # the detection's id, as the label page lists it
     rejected: bool
-    # taking a mark back: the labels marking replaced, as it returned them, to put back
-    restore: Union[list[Optional[str]], str, None] = None
 
 
 class UploadedFile(BaseModel):
@@ -131,19 +128,17 @@ class ManifestRequest(BaseModel):
     files: list[UploadedFile]
 
 
-# mite id -> the statuses changed on screen, by recording index ("moving", "still",
-# "not_a_mite" or null), or a list with every recording's status
-TruthChanges = dict[str, Union[dict[int, Optional[str]], list[Optional[str]]]]
-
-
-class TruthRequest(BaseModel):
-    truth: TruthChanges = {}
+class TruthEdit(BaseModel):
+    """A click or a fill button on the ground-truth page (pipeline.edit_truth)."""
+    action: str                 # "cycle" or "fill"
+    recording: int
+    mite: Optional[str] = None  # cycle: the mite clicked
+    backwards: bool = False     # cycle: to the previous status (shift-click)
+    zone: Optional[int] = None  # fill: the zone
+    kind: Optional[str] = None  # fill: "moving", "still", "previous" or "clear"
 
 
 class EvaluateRequest(BaseModel):
-    # statuses changed on screen, saved first; everything else, or everything when
-    # this is left out, keeps the saved ground truth
-    truth: Optional[TruthChanges] = None
     # ids of the saved datasets to pool; by default only this session's own
     datasets: Optional[list[str]] = None
     # the movement score to try; by default the one in config.yaml
@@ -185,29 +180,19 @@ def open_session(request: OpenRequest):
     except (FileNotFoundError, ValueError) as error:
         raise HTTPException(status_code=400, detail=str(error))
 
-    sessions[session_id] = {"data_dir": session["data_dir"], "out_dir": out_dir}
+    # the detections of the label page, for the "not a mite" marks
+    sessions[session_id] = {"data_dir": session["data_dir"], "out_dir": out_dir, "mites": session["mites"]}
     return {"session_id": session_id, "results_dir": str(out_dir), **session}
 
 
 @app.post("/api/uploads/{name}/manifest")
 def upload_manifest(name: str, request: ManifestRequest):
-    """Say which files of a dropped folder still need sending.
-
-    A file already here with the same size is skipped, so dropping the same folder
-    twice is instant. A labels.json already here is never replaced: it holds the
-    labels typed in this app, which are newer than the copy in the dropped folder.
-    The same holds for a ground_truth.json entered during calibration.
-    """
-    folder = safe_join(UPLOAD_ROOT, name)
-    missing = []
-    for file in request.files:
-        target = safe_join(folder, file.path)
-        kept = (pipeline.LABELS_FILENAME, pipeline.CONTROLS_FILENAME, pipeline.GROUND_TRUTH_FILENAME)
-        if target.name in kept and target.is_file():
-            continue
-        if not target.is_file() or target.stat().st_size != file.size:
-            missing.append(file.path)
-    return {"data_dir": str(folder), "missing": missing}
+    """Say which files of a dropped folder still need sending, and where they go
+    (pipeline.plan_upload): every file of the folder is listed, the server picks."""
+    try:
+        return pipeline.plan_upload(name, [{"path": file.path, "size": file.size} for file in request.files], UPLOAD_ROOT)
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error))
 
 
 @app.put("/api/uploads/{name}/file")
@@ -234,34 +219,78 @@ def save_labels(session_id: str, request: LabelsRequest):
     return {"saved": len(request.labels)}
 
 
+def session_results(session_id):
+    """The results the session's pages show: its last run's, or a live run's so
+    far; None before there are any."""
+    session = get_session(session_id)
+    if session.get("live"):
+        return live_call(pipeline.live_results, session_id)["results"]
+    return session.get("results")
+
+
+def survival_of(session_id, results):
+    """The survival numbers of `results`, by the time a mite must be still to count
+    as dead and the negative controls saved with the session's recordings."""
+    data_dir = get_session(session_id)["data_dir"]
+    return pipeline.describe_survival(results, pipeline.death_minutes(data_dir), pipeline.load_controls(data_dir))
+
+
+def for_pages(session_id, results):
+    """`results` as the result pages take them: with the movement numbers, the time
+    a mite must be still to count as dead, the negative controls, and the survival
+    numbers these make."""
+    data_dir = get_session(session_id)["data_dir"]
+    return {**pipeline.describe_movement(results), "death_minutes": pipeline.death_minutes(data_dir),
+            "death_range": pipeline.death_minutes_range(),
+            "controls": pipeline.load_controls(data_dir), "survival": survival_of(session_id, results)}
+
+
+def survival_now(session_id):
+    """The survival numbers of the session's results as the recordings' settings
+    and controls are now; None before there are results."""
+    results = session_results(session_id)
+    return None if results is None else survival_of(session_id, results)
+
+
 @app.post("/api/session/{session_id}/controls")
 def save_controls(session_id: str, request: ControlsRequest):
     """The zones ticked as negative controls, saved next to the recordings. The
-    results compare every other zone with them, with no need to run again."""
+    results compare every other zone with them, with no need to run again: the
+    survival numbers come back with the change. A live run's results take them
+    at once too, as a new version."""
     session = get_session(session_id)
-    return {"controls": pipeline.save_controls(session["data_dir"], request.controls)}
+    controls = pipeline.save_controls(session["data_dir"], request.controls)
+    if session.get("live"):
+        pipeline.live_refresh(session_id)
+    return {"controls": controls, "survival": survival_now(session_id)}
 
 
 @app.post("/api/session/{session_id}/reject")
 def reject_detection(session_id: str, request: RejectRequest):
-    """Mark a detection as not a mite, or take the mark back, before a run. Marking
-    returns the movement labels it replaced, for taking the mark back to restore."""
+    """Mark a detection as not a mite, or take the mark back, before a run; taking it
+    back puts back the labels the mark replaced. Returns every detection's mark and
+    how many mites each zone has left (pipeline.mark_detection)."""
     session = get_session(session_id)
-    with truth_lock:
-        replaced = pipeline.set_rejected(session["data_dir"], request.x, request.y, request.rejected, request.restore)
+    try:
+        with truth_lock:
+            marks = pipeline.mark_detection(session["data_dir"], session.get("mites", []), request.mite, request.rejected)
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error))
     if session.get("live"):
         pipeline.live_refresh(session_id)
-    return {"rejected": request.rejected, "replaced": replaced}
+    return marks
 
 
 @app.post("/api/session/{session_id}/death")
 def save_death_minutes(session_id: str, request: DeathRequest):
-    """How long a mite must be still to count as dead, saved with the recordings."""
+    """How long a mite must be still to count as dead, saved with the recordings.
+    The survival numbers of the results come back with the change."""
     session = get_session(session_id)
     try:
-        return {"death_minutes": pipeline.save_death_minutes(session["data_dir"], request.minutes)}
+        death = pipeline.save_death_minutes(session["data_dir"], request.minutes)
     except ValueError as error:
         raise HTTPException(status_code=400, detail=str(error))
+    return {"death_minutes": death, "survival": survival_now(session_id)}
 
 
 @app.post("/api/session/{session_id}/run")
@@ -274,8 +303,8 @@ def run_analysis(session_id: str, request: LabelsRequest):
     except (FileNotFoundError, ValueError) as error:
         raise HTTPException(status_code=400, detail=str(error))
     session["pool_size"] = request.pool_size  # the clips of the results are of its pools
-    return {**results, "death_minutes": pipeline.death_minutes(session["data_dir"]),
-            "controls": pipeline.load_controls(session["data_dir"])}
+    session["results"] = results  # for the survival numbers, which follow the controls and the time to count dead
+    return for_pages(session_id, results)
 
 
 @app.get("/api/session/{session_id}/clip/{recording}")
@@ -387,22 +416,34 @@ def calibration_clip(session_id: str, recording: int, zone_id: int):
 
 @app.get("/api/calibration/{session_id}/truth")
 def get_ground_truth(session_id: str):
-    """The ground truth saved for this session's mites, which another window may have changed."""
+    """The ground truth of this session's mites as saved now, which another window
+    may have changed, with the changes not saved yet on top (pipeline.truth_view)."""
     session = get_session(session_id)
     try:
-        return {"truth": pipeline.load_calibration_truth(session["out_dir"])}
+        return pipeline.truth_view(session["out_dir"])
+    except (FileNotFoundError, ValueError) as error:
+        raise HTTPException(status_code=400, detail=str(error))
+
+
+@app.post("/api/calibration/{session_id}/truth/edit")
+def edit_ground_truth(session_id: str, request: TruthEdit):
+    """A change on the ground-truth page; it waits for "Save changes"."""
+    session = get_session(session_id)
+    try:
+        return pipeline.edit_truth(session["out_dir"], request.action, mite=request.mite, zone=request.zone,
+                                   recording=request.recording, backwards=request.backwards, kind=request.kind)
     except (FileNotFoundError, ValueError) as error:
         raise HTTPException(status_code=400, detail=str(error))
 
 
 @app.post("/api/calibration/{session_id}/truth")
-def save_ground_truth(session_id: str, request: TruthRequest):
-    """Persist the statuses that changed, next to the recordings and in the library,
-    so they survive a restart. Everything else keeps what is saved."""
+def save_ground_truth(session_id: str):
+    """Save the changes made on the ground-truth page, next to the recordings and in
+    the library, so they survive a restart. Everything else keeps what is saved."""
     session = get_session(session_id)
     try:
         with truth_lock:
-            return {"truth": pipeline.update_ground_truth(session["out_dir"], request.truth)}
+            return pipeline.save_truth(session["out_dir"])
     except (FileNotFoundError, ValueError) as error:
         raise HTTPException(status_code=400, detail=str(error))
 
@@ -413,9 +454,6 @@ def evaluate_calibration(session_id: str, request: EvaluateRequest):
     session = get_session(session_id)
     datasets = request.datasets if request.datasets is not None else [session["dataset_id"]]
     try:
-        if session["dataset_id"] and request.truth is not None:
-            with truth_lock:
-                pipeline.update_ground_truth(session["out_dir"], request.truth)
         return pipeline.evaluate_calibration(session["out_dir"], datasets, request.metric, request.params)
     except (FileNotFoundError, ValueError) as error:
         raise HTTPException(status_code=400, detail=str(error))
@@ -475,6 +513,9 @@ class LightRequest(BaseModel):
 def live_call(call, *args, **kwargs):
     try:
         return call(*args, **kwargs)
+    except pipeline.LiveRunNotOpen as error:
+        # e.g. the server restarted: the page lets the run go
+        raise HTTPException(status_code=404, detail=str(error))
     except LIVE_ERRORS as error:
         raise HTTPException(status_code=400, detail=str(error))
 
@@ -515,7 +556,8 @@ def attach_live(session_id, status):
 @app.post("/api/live/settings")
 def save_live_settings(request: LiveSettingsRequest):
     """Change the test-run settings; an open camera takes a new frame rate at once."""
-    return {"settings": live_call(pipeline.save_live_settings, request.settings, request.session_id)}
+    settings = live_call(pipeline.save_live_settings, request.settings, request.session_id)
+    return {"settings": settings, "plan": pipeline.live_plan(settings)}
 
 
 @app.post("/api/live/{session_id}/attach")
@@ -536,7 +578,9 @@ def set_live_light(session_id: str, request: LightRequest):
 def live_preview(session_id: str):
     """Detect the mites on the newest frame, to label the plates."""
     session = live_session(session_id)
-    return {"session_id": session_id, **live_call(pipeline.live_preview, session_id, session["out_dir"])}
+    preview = live_call(pipeline.live_preview, session_id, session["out_dir"])
+    session["mites"] = preview["mites"]  # the detections of the label page, for the "not a mite" marks
+    return {"session_id": session_id, **preview}
 
 
 @app.post("/api/live/{session_id}/start")
@@ -569,8 +613,7 @@ def live_results(session_id: str):
     """The results so far, as a folder run returns them, with their version."""
     answer = live_call(pipeline.live_results, session_id)
     if answer["results"] is not None:
-        answer = {**answer, "results": {**answer["results"], "death_minutes": live_call(pipeline.live_death_minutes, session_id),
-                                        "controls": live_call(pipeline.live_controls, session_id)}}
+        answer = {**answer, "results": for_pages(session_id, answer["results"])}
     return answer
 
 
@@ -655,7 +698,7 @@ def version():
 
 class FreshStaticFiles(StaticFiles):
     """The page and its scripts, which the browser must check for a newer version
-    on every load: a cached app.js next to an updated server breaks the page."""
+    on every load: a cached script next to an updated server breaks the page."""
 
     def file_response(self, *args, **kwargs):
         response = super().file_response(*args, **kwargs)

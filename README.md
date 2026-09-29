@@ -63,9 +63,9 @@ To analyse a folder, in *Analysis*:
    which it moved; with a death time in the run's settings, only once it has
    been still that long does it count as dead from then on; for a folder it can
    be changed above the chart, and is saved to the folder's `.settings.txt`),
-   a table with the log-rank test of each zone's survival (and of each group of
-   several zones, pooled) against the negative controls, pooled, by the same
-   alive rule, with its p value,
+   a table with the log-rank test of each group's survival (every zone with that
+   label pooled) against the negative controls, pooled, by the same alive rule,
+   with its p value,
    a plate map, one card per zone, every motion score by group, the scores of the moving
    mites alone by group (a box plot the many still recordings do not pull down),
    and per zone a ridgeline of the rests of a mite: the time between two

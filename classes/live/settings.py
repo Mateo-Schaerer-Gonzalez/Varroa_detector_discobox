@@ -146,6 +146,21 @@ class Settings:
         everything off again (one second after the burst)."""
         return max(self.vent_time, self.led1_time, self.led2_time, self.recording_seconds) + 1
 
+    def plan(self):
+        """The run these settings make, for the live page: each recording's burst
+        and whole cycle in seconds, and the recordings planned and the minutes they
+        span (at least that many, when the run goes on until every mite is dead),
+        and whether it can go on until every mite is dead: that needs a time to
+        count a mite as dead."""
+        return {
+            "recording_seconds": self.recording_seconds,
+            "cycle_seconds": self.cycle_seconds,
+            "recordings": self.recording_count,
+            "minutes": (self.recording_count - 1) * self.recording_timeout,
+            "until_all_dead": self.until_all_dead,
+            "can_run_until_all_dead": bool(self.death_minutes),
+        }
+
     def check_cycle(self):
         """A recording must be over before the next one is due."""
         if self.cycle_seconds > self.recording_timeout * 60:

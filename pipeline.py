@@ -7,12 +7,19 @@ can never reach into the analysis internals.
 
     open_session(...)          cheap: the zones to label, their mites and a preview image
     set_rejected(...)          mark a detection as not a mite, or take the mark back
+    mark_detection(...)        the same from the label page, which it tells how many mites each zone has left
     run_analysis(...)          the full pipeline, writing Excel and figures to out_dir
     analysis_clip(...)         frames of one recording, of one zone or the whole plate
+    describe_movement(...)     each mite's, zone's and group's movement numbers, for the pages
+    describe_survival(...)     the mites alive over time and the log-rank tests against the
+                               negative controls, for results and a time to count a mite dead
 
     open_calibration(...)      detect and score the mites of a calibration session
     calibration_clip(...)      frames of one zone in one recording, to judge by eye
     save_ground_truth(...)     store which mites the user saw moving in each recording
+    truth_view(...)            the ground truth being entered, as saved with the changes not saved yet
+    edit_truth(...)            a click or a fill button on the ground-truth page, not saved yet
+    save_truth(...)            save the changes made on the ground-truth page
     list_calibration_datasets(...)   the ground truth saved so far, one dataset per folder
     open_saved_calibration(...)      reopen a saved dataset without decoding anything
     delete_calibration_dataset(...)  forget a saved dataset
@@ -26,6 +33,7 @@ can never reach into the analysis internals.
 
     live_options()             the cameras, serial ports and saved test-run settings
     save_live_settings(...)    change the test-run settings (and the camera's frame rate)
+    live_plan(...)             how long a test run with some settings takes, and its recordings
     open_live(...)             open the camera (or a replay of a folder) for a live run
     live_preview(...)          detect the mites on the newest frame, to label the plates
     set_live_light(...)        switch the fan or an LED, to check the settings
@@ -36,6 +44,7 @@ can never reach into the analysis internals.
     pause_live / resume_live / stop_live / close_live
 
     list_recordings()          every recording kept in recordings/, with how it was recorded
+    plan_upload(...)           which files of a folder dropped into the page to copy, and where
     results_dir(...)           where the analysis of a folder goes: results/<its name>/
     new_calibration_report_dir(...)  a folder for one calibration session's report
     tidy_folders()             move what earlier versions wrote into today's folders
@@ -49,6 +58,7 @@ Where things go:
 
 import hashlib
 import inspect
+import itertools
 import json
 import logging
 import os
@@ -70,15 +80,22 @@ from classes.analyzer import Analyzer
 from classes import app_config
 from classes.app_config import get_default_config, save_motion_threshold
 from classes.data_loader import DataLoader
+from classes.error_map import ErrorMap
 from classes.frame_source import FolderSource, as_analysis_image
 from classes.live import camera as live_camera
 from classes.live.lights import DEVICES, open_lights, serial_ports
+from classes.live.progress import RunProgress
 from classes.live.recorder import Recorder
 from classes.live.session import LiveSession
 from classes.live.settings import RANGES as SETTING_RANGES, Settings
 from classes.live.sources import CameraSource, ReplaySource
 from classes.motion_analysis import MotionAnalysis, detect_mites
+from classes.movement_stats import MovementReport
 from classes.pooling import check_pool_size, describe_pool_size, pools
+from classes.recording_info import RecordingInfo
+from classes.survival import SurvivalAnalysis, SurvivalReport
+from classes.truth_draft import TruthDraft
+from classes.upload_plan import UploadPlan
 from classes.zones import UNLABELED, ZoneManager
 
 _logger = logging.getLogger(__name__)
@@ -225,7 +242,7 @@ def open_session(data_dir, out_dir, coords_file=DEFAULT_COORDS_FILE, library_dir
         raise FileNotFoundError(f"No recordings found in {data_dir}")
 
     frame = loader.load_preview_frame()
-    cv2.imwrite(str(out_dir / PREVIEW_NAME), frame, [cv2.IMWRITE_JPEG_QUALITY, 85])
+    _write_preview(frame, out_dir)
 
     zone_manager = _build_zone_manager(coords_file)
     # The same detection as an analysis run, on the same first frame.
@@ -307,6 +324,41 @@ def set_rejected(data_dir, x, y, rejected, restore=None, tolerance=10.0, library
     return replaced
 
 
+# What a "not a mite" mark made from the label page replaced, by folder and
+# position, so taking the mark back puts the labels back.
+_replaced = {}
+
+
+def mark_detection(data_dir, mites, mite_id, rejected, library_dir=CALIBRATION_LIBRARY):
+    """Mark the detection `mite_id` of the label page's `mites` ([{id, zone_id, x,
+    y}], as open_session() or live_preview() listed them) as not a mite, or take
+    the mark back, as set_rejected() does. What a mark replaced is remembered and
+    put back when the mark is taken back, so a click by mistake loses nothing.
+    Returns the marks now: {mites: {id: rejected}, zones: {zone id: mites left}}."""
+    mite = next((m for m in mites if m["id"] == str(mite_id)), None)
+    if mite is None:
+        raise ValueError(f"No detection {mite_id} in this session.")
+    key = (_draft_key(data_dir), mite["x"], mite["y"])
+    restore = None if rejected else _replaced.pop(key, None)
+    replaced = set_rejected(data_dir, mite["x"], mite["y"], rejected, restore, library_dir=library_dir)
+    if rejected:
+        _replaced[key] = replaced
+    return detection_marks(data_dir, mites, library_dir)
+
+
+def detection_marks(data_dir, mites, library_dir=CALIBRATION_LIBRARY):
+    """Which of the label page's `mites` are marked "not a mite" in the ground
+    truth saved for `data_dir`, and how many mites each zone has left."""
+    rejected = [entry for entry in _folder_truth(data_dir, library_dir) if calibration.is_rejected(entry.get("truth"))]
+    positions = [{"id": m["id"], "x": m["x"], "y": m["y"]} for m in mites]
+    matched = calibration.match_ground_truth(positions, rejected, n_recordings=1) if rejected else {}
+    marks = {m["id"]: m["id"] in matched for m in mites}
+    zones = {}
+    for m in mites:
+        zones[m["zone_id"]] = zones.get(m["zone_id"], 0) + (not marks[m["id"]])
+    return {"mites": marks, "zones": zones}
+
+
 def _detect_and_score(data_dir, coords_file, labels=None, reject=True, score=True, library_dir=CALIBRATION_LIBRARY,
                       pool_size=None):
     """Decode every recording, find the mites and, with `score`, score their motion.
@@ -347,9 +399,22 @@ def _image_size(frame):
 
 
 def _write_preview(frame, out_dir):
+    """The first frame as preview.jpg, written whole before it takes the name: a
+    page may be loading the one it replaces, e.g. a live run's labels page while
+    the first recording's results come in."""
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
-    cv2.imwrite(str(out_dir / PREVIEW_NAME), frame, [cv2.IMWRITE_JPEG_QUALITY, 85])
+    partial = out_dir / f"partial_{PREVIEW_NAME}"
+    cv2.imwrite(str(partial), frame, [cv2.IMWRITE_JPEG_QUALITY, 85])
+    # Windows refuses to replace a file while it is being sent; that takes moments.
+    for attempt in range(20):
+        try:
+            partial.replace(out_dir / PREVIEW_NAME)
+            return
+        except PermissionError:
+            if attempt == 19:
+                raise
+            time.sleep(0.05)
 
 
 def run_analysis(data_dir, out_dir, labels=None, coords_file=DEFAULT_COORDS_FILE, library_dir=CALIBRATION_LIBRARY,
@@ -376,6 +441,12 @@ def death_minutes(data_dir):
         return max(0, int(value))
     except (OSError, TypeError, ValueError):
         return 0
+
+
+def death_minutes_range():
+    """The least and the most a mite can be still to count as dead, in minutes."""
+    _label, _unit, lowest, highest = SETTING_RANGES["death_minutes"]
+    return [lowest, highest]
 
 
 def save_death_minutes(data_dir, minutes):
@@ -424,6 +495,24 @@ def _results(run, out_dir, labels, write_files=True):
         }
     )
     return results
+
+
+def describe_movement(results):
+    """`results` (as run_analysis() returns them) with the numbers the result
+    pages show about how the mites move: per mite, per zone (their rests between
+    movements too), and the groups in the order the pages list them, each with
+    the box of its moving mites' scores (see classes/movement_stats.py)."""
+    return {**results, **MovementReport(results).describe()}
+
+
+def describe_survival(results, death_minutes=0, controls=()):
+    """The survival numbers of `results` (as run_analysis() returns them) for the
+    result pages, with `death_minutes` the time a mite must be still to count as
+    dead and `controls` the zones ticked as negative controls: the mites alive
+    over time per group and per zone, and every group, its zones pooled, against
+    the controls by the log-rank test (see classes/survival.py). They change with
+    those two, with no need to run the analysis again."""
+    return SurvivalReport(results, death_minutes, controls).describe()
 
 
 # --- calibration -------------------------------------------------------------------
@@ -497,6 +586,15 @@ def _calibration_view(stored, truth, library_dir):
     }
 
 
+def _opened_calibration(stored, out_dir, library_dir):
+    """The ground-truth page's view of a calibration session just opened in
+    `out_dir`, whose ground truth is entered from scratch: no changes yet."""
+    truth = _saved_truth(stored, library_dir)
+    draft = _new_draft(out_dir, stored, truth)
+    with _drafts_lock:
+        return {**_calibration_view(stored, truth, library_dir), "truth_view": _draft_view(draft)}
+
+
 def open_calibration(data_dir, out_dir, coords_file=DEFAULT_COORDS_FILE, library_dir=CALIBRATION_LIBRARY):
     """Detect the mites of a calibration session and keep them in `out_dir`.
 
@@ -540,7 +638,7 @@ def open_calibration(data_dir, out_dir, coords_file=DEFAULT_COORDS_FILE, library
     }
     (Path(out_dir) / CALIBRATION_SESSION_NAME).write_text(json.dumps(stored), encoding="utf-8")
 
-    return _calibration_view(stored, _saved_truth(stored, library_dir), library_dir)
+    return _opened_calibration(stored, out_dir, library_dir)
 
 
 def calibration_clip(out_dir, recording, zone_id, library_dir=CALIBRATION_LIBRARY):
@@ -677,6 +775,90 @@ def update_ground_truth(out_dir, changes, library_dir=CALIBRATION_LIBRARY):
     for mite_id, changed in changes.items():
         truth[mite_id] = calibration.apply_changes(truth.get(mite_id), changed, len(stored["times"]))
     return _write_ground_truth(stored, truth, out_dir, library_dir)
+
+
+# --- the ground truth being entered
+#
+# The changes made on the ground-truth page wait here, one draft per calibration
+# session (keyed by its folder), until they are saved: saving also brings the
+# library's copy of the recordings up to date, which is too slow to do on every
+# click. What the page shows is always what saving them will store (see
+# classes/truth_draft.py). Every view carries a version, higher for every view
+# made, so the page can tell which reply is the latest.
+
+_drafts = {}
+_drafts_lock = threading.Lock()
+_truth_versions = itertools.count(1)
+
+
+def _draft_key(out_dir):
+    return str(Path(out_dir).resolve())
+
+
+def _new_draft(out_dir, stored, truth):
+    draft = TruthDraft(stored["mites"], stored["zones"], len(stored["times"]), truth)
+    with _drafts_lock:
+        _drafts[_draft_key(out_dir)] = draft
+    return draft
+
+
+def _draft(out_dir, library_dir):
+    with _drafts_lock:
+        draft = _drafts.get(_draft_key(out_dir))
+    if draft is None:  # e.g. the server restarted: start again from what is saved
+        stored = _read_calibration_session(out_dir)
+        draft = _new_draft(out_dir, stored, _saved_truth(stored, library_dir))
+    return draft
+
+
+def _draft_view(draft, changed=False):
+    """The draft's view (TruthDraft.view()), its version, and whether what is shown
+    changed. Called holding _drafts_lock."""
+    return {**draft.view(), "version": next(_truth_versions), "changed": changed}
+
+
+def truth_view(out_dir, library_dir=CALIBRATION_LIBRARY):
+    """The ground truth of a calibration session as saved now, which another
+    window or the analysis (marking a detection "not a mite") may have changed,
+    with the changes not saved yet on top."""
+    draft = _draft(out_dir, library_dir)
+    with _drafts_lock:
+        saves = draft.saves
+    saved = load_calibration_truth(out_dir, library_dir)
+    with _drafts_lock:
+        # A save that landed while this was read already brought newer truth.
+        changed = draft.load(saved) if draft.saves == saves else False
+        return _draft_view(draft, changed)
+
+
+def edit_truth(out_dir, action, mite=None, zone=None, recording=0, backwards=False, kind=None, library_dir=CALIBRATION_LIBRARY):
+    """A change on the ground-truth page, not saved yet: "cycle" a `mite` to its
+    next status in `recording` (its previous one with `backwards`), or "fill" the
+    unlabelled mites of a `zone` in `recording` by `kind` (see TruthDraft.fill)."""
+    draft = _draft(out_dir, library_dir)
+    with _drafts_lock:
+        if action == "cycle":
+            draft.cycle(str(mite), int(recording), bool(backwards))
+        elif action == "fill":
+            draft.fill(int(zone), int(recording), kind)
+        else:
+            raise ValueError(f"Unknown change {action!r}.")
+        return _draft_view(draft, changed=True)
+
+
+def save_truth(out_dir, library_dir=CALIBRATION_LIBRARY):
+    """Save the changes made on the ground-truth page on top of what is saved
+    (update_ground_truth()); changes made while saving wait for the next save."""
+    draft = _draft(out_dir, library_dir)
+    with _drafts_lock:
+        sent = draft.unsaved_now()
+    changed = False
+    if sent:
+        saved = update_ground_truth(out_dir, sent, library_dir)
+        with _drafts_lock:
+            changed = draft.saved_as(sent, saved)
+    with _drafts_lock:
+        return _draft_view(draft, changed)
 
 
 def load_calibration_truth(out_dir, library_dir=CALIBRATION_LIBRARY):
@@ -880,7 +1062,7 @@ def open_saved_calibration(dataset, out_dir, library_dir=CALIBRATION_LIBRARY):
 
     # Read like every other load and save does, the file next to the recordings
     # first: it can hold changes the dataset missed, e.g. marks made before a run.
-    return _calibration_view(stored, _saved_truth(stored, library_dir), library_dir)
+    return _opened_calibration(stored, out_dir, library_dir)
 
 
 def dataset_preview(dataset, library_dir=CALIBRATION_LIBRARY):
@@ -1188,7 +1370,11 @@ def evaluate_calibration(out_dir, datasets, metric=None, params=None, library_di
         ],
         "observations": rows,
         "zones": _calibration_by_zone(rows),
+        # where the calls at the threshold in use go wrong, for the test report's map
+        "error_map": ErrorMap(rows).describe(),
     }
+    # each outcome as a fraction of its row, for the confusion matrices and the ROC curve
+    result["rates"] = {key: None if result[key] is None else calibration.outcome_rates(result[key]) for key in ("current", "best")}
     Path(out_dir).mkdir(parents=True, exist_ok=True)
     result["excel"] = reporting.write_calibration_excel(result, out_dir)
     return result
@@ -1227,6 +1413,10 @@ def save_movement_score(metric, params, threshold):
 # after every recording.
 
 CameraError = live_camera.CameraError  # the camera or Vimba X cannot be used
+
+
+class LiveRunNotOpen(ValueError):
+    """No live run is open by that id: closed, or the server restarted since."""
 LIVE_SETTINGS_FILE = APP_DIR / "settings.txt"
 SETTINGS_FILENAME = ".settings.txt"
 RUN_INFO_NAME = "run.json"
@@ -1259,6 +1449,7 @@ def live_options(settings_path=LIVE_SETTINGS_FILE, recordings_root=RECORDINGS_RO
         "camera_error": camera_error,
         "serial_ports": serial_ports(),
         "settings": Settings.from_file(settings_path).as_dict(),
+        "plan": Settings.from_file(settings_path).plan(),
         "ranges": _setting_ranges(),
         "run_name": default_run_name(recordings_root),
         "recordings_root": str(recordings_root),
@@ -1310,6 +1501,12 @@ def save_live_settings(values, live_id=None, settings_path=LIVE_SETTINGS_FILE):
         if fps_changed:
             run.source.set_fps(settings.fps)
     return settings.as_dict()
+
+
+def live_plan(settings):
+    """Settings.plan() of `settings` (name -> value): how long each recording and
+    the whole test run take."""
+    return Settings.from_dict(settings).plan()
 
 
 def open_live(live_id, out_dir, run_name, source="camera", camera_id=None, replay_dir=None, replay_fps=None,
@@ -1385,7 +1582,7 @@ def open_live(live_id, out_dir, run_name, source="camera", camera_id=None, repla
 def _get_live(live_id):
     run = _live.get(live_id)
     if run is None:
-        raise ValueError("This live run is not open any more.")
+        raise LiveRunNotOpen("This live run is not open any more.")
     return run
 
 
@@ -1485,7 +1682,7 @@ def live_preview(live_id, out_dir=None):
         frame = as_analysis_image(frame)
     out_dir = Path(out_dir or run.out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
-    cv2.imwrite(str(out_dir / PREVIEW_NAME), frame, [cv2.IMWRITE_JPEG_QUALITY, 85])
+    _write_preview(frame, out_dir)
     zone_manager = _build_zone_manager(run.coords_file)
     detect_mites(zone_manager, frame, Analyzer())
     return _session_view(zone_manager, frame, run.run_dir, run.source.completed, run.library_dir)
@@ -1539,16 +1736,11 @@ def start_live(live_id, labels=None):
 
 def mites_alive(results, death_minutes):
     """How many of the results' mites are alive in their last recording, by the
-    rule of the Mites alive charts (isAlive() in app.js): a mite that moved in it,
+    rule of the Mites alive charts (classes/survival.py): a mite that moved in it,
     or has not yet been still for `death_minutes` since its last movement (since
     the first recording if it never moved)."""
-    times = results["times"]
-    alive = 0
-    for mite in results["mites"]:
-        last = max((index for index, moving in enumerate(mite["moving"]) if moving), default=-1)
-        if last == len(times) - 1 or times[-1] - times[max(last, 0)] < death_minutes:
-            alive += 1
-    return alive
+    survival = SurvivalAnalysis(results["times"], death_minutes)
+    return survival.alive_count([mite["moving"] for mite in results["mites"]], len(results["times"]) - 1)
 
 
 def live_status(live_id):
@@ -1557,7 +1749,7 @@ def live_status(live_id):
     alive = None
     if results is not None:
         alive = {"alive": mites_alive(results, death_minutes(run.run_dir)), "mites": len(results["mites"])}
-    return {
+    status = {
         **run.session.status(),
         "live_id": live_id,
         "run_name": run.run_dir.name,
@@ -1568,6 +1760,8 @@ def live_status(live_id):
         "save_frames": run.save_frames,
         "alive": alive,  # the mites alive now, of all mites; None before the first results
     }
+    # the progress bar over the live result pages
+    return {**status, "progress": RunProgress(status).describe()}
 
 
 def live_results(live_id):
@@ -1575,16 +1769,6 @@ def live_results(live_id):
     analysed), and their version, which changes with every update."""
     run = _get_live(live_id)
     return {"version": run.session.version, "results": run.session.results}
-
-
-def live_death_minutes(live_id):
-    """death_minutes() of a live run's folder."""
-    return death_minutes(_get_live(live_id).run_dir)
-
-
-def live_controls(live_id):
-    """load_controls() of a live run's folder."""
-    return load_controls(_get_live(live_id).run_dir)
 
 
 def live_refresh(live_id):
@@ -1695,8 +1879,24 @@ def list_recordings(recordings_root=RECORDINGS_ROOT, results_root=RESULTS_ROOT, 
             _logger.exception("Could not describe the recording %s", folder)
             continue
         if described is not None:
-            listed.append({**described, "recording_now": folder.resolve() in recording_now})
+            now = folder.resolve() in recording_now
+            listed.append({**described, "recording_now": now, "state": RecordingInfo.state(described["run"], now)})
     return sorted(listed, key=lambda entry: entry["started"], reverse=True)
+
+
+def plan_upload(name, files, uploads_root=RECORDINGS_ROOT):
+    """Which files of the folder `name` dropped into the page to copy, of `files`
+    ([{path, size}], every file in it): {name (of the folder they go to in
+    `uploads_root`), data_dir (that folder), missing ([{path (as dropped),
+    target (in that folder)}])}. See classes/upload_plan.py."""
+    plan = UploadPlan(name, files)
+    folder = Path(uploads_root) / plan.name
+
+    def size_of(target):
+        path = folder.joinpath(*target.split("/"))
+        return path.stat().st_size if path.is_file() else None
+
+    return {"name": plan.name, "data_dir": str(folder), "missing": plan.missing(size_of)}
 
 
 def describe_recording(data_dir, results_root=RESULTS_ROOT, library_dir=CALIBRATION_LIBRARY):
@@ -1726,17 +1926,22 @@ def describe_recording(data_dir, results_root=RESULTS_ROOT, library_dir=CALIBRAT
     labelled = sum(1 for value in truth
                    if not calibration.is_rejected(value) and any(calibration.per_recording(value, len(recordings))))
     workbook = results_dir(data_dir, results_root) / reporting.EXCEL_NAME
+    started = DataLoader.parse_start_time(first)
+    # as the Discobox app saved them; None for a folder without .settings.txt
+    settings = {name: loader.settings[name] for name in ("recording_count", *SETTING_RANGES) if name in loader.settings} or None
     return {
         "name": data_dir.name,
         "path": str(data_dir.resolve()),
-        "started": DataLoader.parse_start_time(first).isoformat(timespec="seconds"),
+        "started": started.isoformat(timespec="seconds"),
         "ended": ended.isoformat(timespec="seconds"),
+        # between the times shown, to the second
+        "seconds": (ended.replace(microsecond=0) - started.replace(microsecond=0)).total_seconds(),
         "n_recordings": len(recordings),
+        "planned": RecordingInfo.planned(run, settings),
         "frames": frames,
         "fps": fps,
-        # as the Discobox app saved them; None for a folder without .settings.txt
-        "settings": {name: loader.settings[name] for name in ("recording_count", *SETTING_RANGES)
-                     if name in loader.settings} or None,
+        "settings": settings,
+        "lights": RecordingInfo.lights(settings),
         "run": run,
         "n_labelled_plates": len(groups),
         "groups": sorted(set(groups)),

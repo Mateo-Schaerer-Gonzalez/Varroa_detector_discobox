@@ -368,9 +368,7 @@ th:first-child, td:first-child { padding-left: 0; }
 th { font-weight: 600; color: var(--ink); border-bottom: 1px solid var(--rule-strong); }
 td.num, th.num { text-align: right; }
 table.clickable tbody tr { cursor: pointer; }
-table.clickable tbody tr.pooled, table.clickable tbody tr.control-row { cursor: default; }
-tr.pooled td, tr.control-row td { font-weight: 600; }
-tr.control-row td { border-bottom: 1px solid var(--rule); }
+tr.control-row td { font-weight: 600; border-bottom: 1px solid var(--rule); }
 table.clickable tbody tr:hover, table.clickable tbody tr:focus-visible { background: var(--wash); outline: none; }
 
 .files { margin: 0; padding: 0; list-style: none; font-size: 13px; }
@@ -455,18 +453,41 @@ table.clickable tbody tr:hover, table.clickable tbody tr:focus-visible { backgro
 .mode-title { font-weight: 600; color: var(--ink); }
 .mode-option .hint { grid-column: 2; margin: 0; }
 
-/* Ground truth: recording tabs over the zone crop, with a clickable ring per mite. */
+/* The recording slider over a clip: the same size however many recordings there
+   are. On the ground-truth page a strip under the track marks the labelled ones. */
 .rec-bar { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 10px; }
-.rec-tabs { display: flex; flex-wrap: wrap; gap: 4px; }
-.rec-tab {
-  padding: 3px 9px; font-size: 12px; color: var(--text);
-  border: 1px solid var(--rule); border-radius: 2px;
+.rec-tabs { flex: 1; min-width: 0; display: flex; }
+.rec-slider { --thumb: 14px; flex: 1; min-width: 0; display: flex; align-items: center; gap: 14px; }
+.rec-track { flex: 1; min-width: 120px; }
+.rec-track input[type="range"] {
+  -webkit-appearance: none; appearance: none;
+  display: block; width: 100%; height: 20px; margin: 0;
+  background: transparent; cursor: pointer;
 }
-.rec-tab:hover { background: var(--wash); text-decoration: none; }
-.rec-tab.done { color: var(--ink); }
-.rec-tab.done span { color: var(--ink); margin-right: 4px; }
-.rec-tab.current { color: #fff; background: var(--ink); border-color: var(--ink); }
-.rec-tab.current span { color: #fff; }
+.rec-track input[type="range"]:disabled { cursor: default; opacity: 0.5; }
+.rec-track input[type="range"]:focus { outline: none; }
+.rec-track input[type="range"]::-webkit-slider-runnable-track { height: 3px; background: var(--rule); }
+.rec-track input[type="range"]::-moz-range-track { height: 3px; background: var(--rule); }
+.rec-track input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: var(--thumb); height: var(--thumb); margin-top: calc((3px - var(--thumb)) / 2);
+  border-radius: 50%; background: var(--ink); border: 2px solid var(--paper); box-shadow: 0 0 0 1px var(--ink);
+}
+.rec-track input[type="range"]::-moz-range-thumb {
+  box-sizing: border-box; width: var(--thumb); height: var(--thumb);
+  border-radius: 50%; background: var(--ink); border: 2px solid var(--paper); box-shadow: 0 0 0 1px var(--ink);
+}
+.rec-track input[type="range"]:focus-visible::-webkit-slider-thumb { box-shadow: 0 0 0 1px var(--ink), 0 0 0 4px var(--rule); }
+.rec-track input[type="range"]:focus-visible::-moz-range-thumb { box-shadow: 0 0 0 1px var(--ink), 0 0 0 4px var(--rule); }
+/* One cell per recording, each centred under the thumb's place for it. The strip
+   runs from the first thumb centre to the last, so the end cells are half cells. */
+.rec-done { display: flex; height: 4px; margin: 1px calc(var(--thumb) / 2) 0; }
+.rec-done i { flex: 1; background: var(--wash); }
+.rec-done i:first-child, .rec-done i:last-child { flex: 0.5; }
+.rec-done i.done { background: var(--ink); }
+.rec-readout { flex: none; min-width: 150px; font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.rec-readout b { color: var(--ink); font-weight: 600; margin-right: 6px; }
+.rec-tick { color: var(--ink); margin-left: 6px; }
 .truth-crop .crop { max-height: 68vh; }
 #clip-status { min-height: 1.5em; }
 .truth-progress { margin: 12px 0 0; max-width: none; }

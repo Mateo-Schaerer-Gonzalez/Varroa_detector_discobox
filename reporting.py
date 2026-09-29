@@ -5,6 +5,7 @@ Runs head-less (the Agg backend) so it behaves the same from the CLI and the ser
 """
 
 import json
+import math
 
 import matplotlib
 
@@ -208,8 +209,14 @@ def _summary(mite_data):
         "n_moving_last": int(_last_recording(mite_data)["moving"].sum()),
         "n_observations": int(len(mite_data)),
         "n_groups": int(mite_data["group"].nunique()),
-        "groups": summary.round(3).to_dict(orient="records"),
+        "groups": [_without_nan(row) for row in summary.round(3).to_dict(orient="records")],
     }
+
+
+def _without_nan(row):
+    """A NaN, e.g. the SD of a group seen once, as None: JSON cannot hold NaN, so a
+    page asking for results with one would get an error instead."""
+    return {key: None if isinstance(value, float) and math.isnan(value) else value for key, value in row.items()}
 
 
 CALIBRATION_EXCEL_NAME = "calibration.xlsx"
