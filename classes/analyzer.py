@@ -169,8 +169,8 @@ class Analyzer:
         dx -= (w - 1) / 2
         dist = np.hypot(dx, dy)
         dist[dist == 0] = np.inf
-        vx = (pixel_variance * dx / dist).mean()
-        vy = (pixel_variance * dy / dist).mean()
+        vx = (pixel_variance * dx / dist).sum()
+        vy = (pixel_variance * dy / dist).sum()
         return float(np.hypot(vx, vy))
 
     
