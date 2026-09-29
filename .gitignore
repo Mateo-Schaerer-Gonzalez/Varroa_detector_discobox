@@ -7,8 +7,8 @@ server.pid
 update.log
 
 # what the app keeps: the frames of every recording, and the results of each
-recordings/
-results/
+/recordings/
+/results/
 # the saved test-run settings
 settings.txt
 vimbax.config
