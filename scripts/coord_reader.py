@@ -57,4 +57,4 @@ def convert_yolo_to_coords(input_file, output_file, image_path):
 
     print(f"Conversion complete! Output saved to {output_file}")
 
-convert_yolo_to_coords(coord_path, SCRIPT_DIR / "coords_pixel.txt", SCRIPT_DIR / "sample_image.bmp")
+convert_yolo_to_coords(coord_path, SCRIPT_DIR / "coords_pixel.txt", "sample_image.bmp")
