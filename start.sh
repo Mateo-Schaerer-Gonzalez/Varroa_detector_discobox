@@ -53,7 +53,8 @@ if [ -z "$DISCOBOX_UPDATED" ] && [ -d .git ] && command -v git >/dev/null; then
             DISCOBOX_UPDATED=1 DISCOBOX_ENV_CHANGED=$env_changed exec bash "$0" "$@"
         fi
     else
-        notify-send "Varroa discobox" "Could not update, starting the current version (see update.log)." 2>/dev/null
+        notify-send "Varroa discobox" "Could not update, starting the current version:
+$(tail -n 3 update.log)" 2>/dev/null
     fi
 fi
 
