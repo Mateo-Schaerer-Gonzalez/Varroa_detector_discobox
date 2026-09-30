@@ -40,16 +40,32 @@ class TextZoneStyle:
 @dataclass
 class MiteConfig:
     radius: int
-    motion_threshold: float
     metric: str
     moving_color: tuple
     still_color: tuple
     # metric name -> its parameters, e.g. {"topN_variability": {"n": 10}}; a metric
     # or parameter left out uses the default in its Analyzer function.
     metric_params: dict = field(default_factory=dict)
+    # metric name -> its movement threshold, on that metric's scale, e.g.
+    # {"topN_variability": 14.17}.
+    metric_thresholds: dict = field(default_factory=dict)
+    # The threshold of a metric missing from metric_thresholds (older config files).
+    # After loading it is the threshold of `metric`.
+    motion_threshold: Optional[float] = None
+
+    def __post_init__(self):
+        self._fallback_threshold = self.motion_threshold
+        self.motion_threshold = self.threshold_for(self.metric)
 
     def params_for(self, metric):
         return dict((self.metric_params or {}).get(metric) or {})
+
+    def threshold_for(self, metric):
+        """The movement threshold saved for `metric`."""
+        value = (self.metric_thresholds or {}).get(metric, self._fallback_threshold)
+        if value is None:
+            raise ValueError(f"No threshold for metric {metric!r}: add it to mite.metric_thresholds in config.yaml.")
+        return float(value)
 
 
 @dataclass
@@ -110,7 +126,8 @@ def get_default_config() -> "AppConfig":
 
 
 def save_motion_threshold(value: float, config_path: Optional[str | Path] = None) -> float:
-    """Write a new `mite.motion_threshold` into the config file and reload it.
+    """Write a new threshold for the metric in use into `mite.metric_thresholds`
+    of the config file and reload it.
 
     Only that one line is rewritten, so the comments and layout of the file are
     kept. Every AppConfig built afterwards, including the shared default one,
@@ -120,7 +137,10 @@ def save_motion_threshold(value: float, config_path: Optional[str | Path] = None
     text = path.read_text(encoding="utf-8")
 
     value = round(float(value), 3)
-    path.write_text(_set_threshold_line(text, value, path), encoding="utf-8")
+    metric = (yaml.safe_load(text) or {}).get("mite", {}).get("metric")
+    if not metric:
+        raise ValueError(f"No mite.metric line found in {path}")
+    path.write_text(_set_metric_entry(text, "metric_thresholds", metric, value, path), encoding="utf-8")
     _forget_loaded_config()
     return value
 
@@ -132,11 +152,30 @@ def _forget_loaded_config():
     _default_config = None
 
 
-def _set_threshold_line(text, value, path):
-    pattern = re.compile(r"^(\s+motion_threshold:\s*)[-+0-9.eE]+", re.MULTILINE)
-    if not pattern.search(text):
-        raise ValueError(f"No mite.motion_threshold line found in {path}")
-    return pattern.sub(lambda match: f"{match.group(1)}{value}", text, count=1)
+_METRIC_LINE = re.compile(r"^([ \t]+)metric:[ \t]*(\"[^\"]*\"|'[^']*'|[^\s#]+)", re.MULTILINE)
+
+
+def _set_metric_entry(text, key, metric, value, path):
+    """Set `mite.<key>[metric] = value`, keeping the entries of the other metrics.
+
+    `mite.<key>` is one flow-style line, e.g. `metric_thresholds: {variability: 15.6}`,
+    added under `metric:` if the file has none yet.
+    """
+    mite = (yaml.safe_load(text) or {}).get("mite", {})
+    entries = dict(mite.get(key) or {})
+    entries[metric] = value
+    flow = yaml.safe_dump(entries, default_flow_style=True, sort_keys=False, width=10_000).strip()
+
+    line = re.compile(rf"^[ \t]+{key}:[ \t]*(\{{.*\}}|[^\s#]*)", re.MULTILINE)
+    match = line.search(text)
+    if match:
+        return text[:match.start(1)] + flow + text[match.end(1):]
+    match = _METRIC_LINE.search(text)
+    if not match:
+        raise ValueError(f"No mite.metric line found in {path}")
+    end = text.find("\n", match.end())
+    end = len(text) if end < 0 else end
+    return text[:end] + f"\n{match.group(1)}{key}: {flow}" + text[end:]
 
 
 def save_movement_score(metric: str, params: dict, threshold: float,
@@ -145,36 +184,20 @@ def save_movement_score(metric: str, params: dict, threshold: float,
     goes with it into the config file, and reload it.
 
     They are saved together because a threshold only means something on the scale
-    of one metric. The parameters of the other metrics are kept. Only the three
-    lines concerned are rewritten, so comments and layout survive; the parameters
-    are one flow-style line, `metric_params: {topN_variability: {n: 10}}`, added
-    under `metric:` if the file has none yet.
+    of one metric. The parameters and thresholds of the other metrics are kept, so
+    switching `metric` back later picks up that metric's own threshold. Only the
+    lines concerned are rewritten, so comments and layout survive.
     """
     path = Path(config_path) if config_path is not None else DEFAULT_CONFIG_PATH
     text = path.read_text(encoding="utf-8")
     threshold = round(float(threshold), 3)
-    text = _set_threshold_line(text, threshold, path)
 
-    metric_line = re.compile(r"^([ \t]+)metric:[ \t]*(\"[^\"]*\"|'[^']*'|[^\s#]+)", re.MULTILINE)
-    match = metric_line.search(text)
+    match = _METRIC_LINE.search(text)
     if not match:
         raise ValueError(f"No mite.metric line found in {path}")
     text = text[:match.start(2)] + f'"{metric}"' + text[match.end(2):]
-
-    mite = (yaml.safe_load(text) or {}).get("mite", {})
-    all_params = dict(mite.get("metric_params") or {})
-    all_params[metric] = dict(params)
-    flow = yaml.safe_dump(all_params, default_flow_style=True, sort_keys=False, width=10_000).strip()
-
-    params_line = re.compile(r"^[ \t]+metric_params:[ \t]*(\{.*\}|[^\s#]*)", re.MULTILINE)
-    match = params_line.search(text)
-    if match:
-        text = text[:match.start(1)] + flow + text[match.end(1):]
-    else:
-        match = metric_line.search(text)
-        end = text.find("\n", match.end())
-        end = len(text) if end < 0 else end
-        text = text[:end] + f"\n{match.group(1)}metric_params: {flow}" + text[end:]
+    text = _set_metric_entry(text, "metric_params", metric, dict(params), path)
+    text = _set_metric_entry(text, "metric_thresholds", metric, threshold, path)
 
     path.write_text(text, encoding="utf-8")
     _forget_loaded_config()

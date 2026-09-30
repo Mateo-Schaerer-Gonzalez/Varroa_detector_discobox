@@ -148,13 +148,23 @@ def test_has_both_classes():
 
 def test_save_motion_threshold_keeps_the_rest_of_the_file(tmp_path):
     path = tmp_path / "config.yaml"
-    path.write_text("mite:\n  radius: 8\n  motion_threshold: 15.654   # tuned by hand\n  metric: \"variability\"\n")
+    path.write_text('mite:\n  radius: 8\n  metric: "variability"\n'
+                    "  metric_thresholds: {variability: 15.654, optical_flow: 0.5}   # tuned by hand\n")
 
     assert app_config.save_motion_threshold(9.12345, path) == 9.123
 
     text = path.read_text()
-    assert "motion_threshold: 9.123   # tuned by hand" in text
+    assert "metric_thresholds: {variability: 9.123, optical_flow: 0.5}   # tuned by hand" in text
     assert "radius: 8" in text and 'metric: "variability"' in text
+
+
+def test_the_threshold_follows_the_metric():
+    mite = app_config.MiteConfig(radius=8, metric="optical_flow", moving_color=(0, 0, 0), still_color=(0, 0, 0),
+                                 metric_thresholds={"variability": 15.6, "optical_flow": 0.5})
+    assert mite.motion_threshold == 0.5
+    assert mite.threshold_for("variability") == 15.6
+    with pytest.raises(ValueError):
+        mite.threshold_for("max_diff")
 
 
 def test_save_motion_threshold_refuses_a_file_without_one(tmp_path):
@@ -166,12 +176,13 @@ def test_save_motion_threshold_refuses_a_file_without_one(tmp_path):
 
 def test_save_movement_score_writes_metric_params_and_threshold(tmp_path):
     path = tmp_path / "config.yaml"
-    path.write_text('mite:\n  radius: 8\n  motion_threshold: 15.6   # tuned\n  metric: "variability"  # which score\nother: 1\n')
+    path.write_text('mite:\n  radius: 8\n  metric: "variability"  # which score\n'
+                    '  metric_thresholds: {variability: 15.6}   # tuned\nother: 1\n')
     saved = app_config.save_movement_score("topN_variability", {"n": 20}, 3.21, path)
     assert saved == {"metric": "topN_variability", "params": {"n": 20}, "threshold": 3.21}
     text = path.read_text()
     assert 'metric: "topN_variability"  # which score' in text
-    assert "motion_threshold: 3.21   # tuned" in text
+    assert "metric_thresholds: {variability: 15.6, topN_variability: 3.21}   # tuned" in text
     assert yaml.safe_load(text)["mite"]["metric_params"] == {"topN_variability": {"n": 20}}
 
     # saving another metric keeps the parameters of the first
@@ -179,4 +190,5 @@ def test_save_movement_score_writes_metric_params_and_threshold(tmp_path):
     saved = yaml.safe_load(path.read_text())
     assert saved["mite"]["metric"] == "optical_flow"
     assert saved["mite"]["metric_params"] == {"topN_variability": {"n": 20}, "optical_flow": {"window": 3, "n": 10}}
+    assert saved["mite"]["metric_thresholds"] == {"variability": 15.6, "topN_variability": 3.21, "optical_flow": 0.5}
     assert saved["other"] == 1

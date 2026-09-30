@@ -221,7 +221,7 @@ def main():
     best = results[0]
     params = {k: best[k] for k in names}
     print("\nFor config.yaml (or save it from the calibration report):")
-    print(f"  metric: \"{METRIC}\"\n  motion_threshold: {best['threshold']:.4g}")
+    print(f"  metric: \"{METRIC}\"\n  metric_thresholds: {{..., {METRIC}: {best['threshold']:.4g}}}")
     print(f"  metric_params: {{..., {METRIC}: {params}}}")
 
     out = pipeline.CALIBRATION_REPORTS / f"optical_flow_tuning_{datetime.now():%Y-%m-%d_%H-%M-%S}.csv"

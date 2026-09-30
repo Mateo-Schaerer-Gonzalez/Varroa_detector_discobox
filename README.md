@@ -81,7 +81,8 @@ To analyse a folder, in *Analysis*:
 
 The camera only sees movement, so that is all the app reports. A mite is
 *moving* in a recording when its motion score in that recording reaches
-`mite.motion_threshold` in `config.yaml`, and *still* otherwise. Each recording
+the threshold of the metric in use, `mite.metric_thresholds[mite.metric]` in
+`config.yaml`, and *still* otherwise. Each recording
 is judged on its own; the app makes no call about a mite being alive or dead.
 
 ### Calibration
