@@ -144,6 +144,8 @@ class EvaluateRequest(BaseModel):
     # the movement score to try; by default the one in config.yaml
     metric: Optional[str] = None
     params: Optional[dict[str, float]] = None
+    # follow a shaking plate; by default as in config.yaml
+    stabilize: Optional[bool] = None
 
 
 class ThresholdRequest(BaseModel):
@@ -154,6 +156,8 @@ class MovementScoreRequest(BaseModel):
     metric: str
     params: dict[str, float] = {}
     threshold: float
+    # plate stabilization, saved with the threshold; left as it is when None
+    stabilize: Optional[bool] = None
 
 
 def safe_join(root: Path, relative: str) -> Path:
@@ -454,7 +458,8 @@ def evaluate_calibration(session_id: str, request: EvaluateRequest):
     session = get_session(session_id)
     datasets = request.datasets if request.datasets is not None else [session["dataset_id"]]
     try:
-        return pipeline.evaluate_calibration(session["out_dir"], datasets, request.metric, request.params)
+        return pipeline.evaluate_calibration(session["out_dir"], datasets, request.metric, request.params,
+                                             stabilize=request.stabilize)
     except (FileNotFoundError, ValueError) as error:
         raise HTTPException(status_code=400, detail=str(error))
 
@@ -472,7 +477,7 @@ def save_threshold(request: ThresholdRequest):
 def save_movement_score(request: MovementScoreRequest):
     """Make a metric, its parameters and its threshold the default for every later analysis."""
     try:
-        return pipeline.save_movement_score(request.metric, request.params, request.threshold)
+        return pipeline.save_movement_score(request.metric, request.params, request.threshold, request.stabilize)
     except ValueError as error:
         raise HTTPException(status_code=400, detail=str(error))
 

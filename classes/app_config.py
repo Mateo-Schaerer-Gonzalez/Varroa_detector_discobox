@@ -182,14 +182,16 @@ def _set_metric_entry(text, key, metric, value, path):
 
 
 def save_movement_score(metric: str, params: dict, threshold: float,
-                        config_path: Optional[str | Path] = None) -> dict:
+                        config_path: Optional[str | Path] = None, stabilize_plate: Optional[bool] = None) -> dict:
     """Write the movement score (metric and its parameters) and the threshold that
     goes with it into the config file, and reload it.
 
     They are saved together because a threshold only means something on the scale
     of one metric. The parameters and thresholds of the other metrics are kept, so
     switching `metric` back later picks up that metric's own threshold. Only the
-    lines concerned are rewritten, so comments and layout survive.
+    lines concerned are rewritten, so comments and layout survive. With
+    `stabilize_plate`, `mite.stabilize_plate` is set too: the threshold was
+    chosen on scores cut with or without it.
     """
     path = Path(config_path) if config_path is not None else DEFAULT_CONFIG_PATH
     text = path.read_text(encoding="utf-8")
@@ -201,7 +203,29 @@ def save_movement_score(metric: str, params: dict, threshold: float,
     text = text[:match.start(2)] + f'"{metric}"' + text[match.end(2):]
     text = _set_metric_entry(text, "metric_params", metric, dict(params), path)
     text = _set_metric_entry(text, "metric_thresholds", metric, threshold, path)
+    if stabilize_plate is not None:
+        text = _set_stabilize_plate(text, bool(stabilize_plate), path)
 
     path.write_text(text, encoding="utf-8")
     _forget_loaded_config()
-    return {"metric": metric, "params": dict(params), "threshold": threshold}
+    saved = {"metric": metric, "params": dict(params), "threshold": threshold}
+    if stabilize_plate is not None:
+        saved["stabilize_plate"] = bool(stabilize_plate)
+    return saved
+
+
+_STABILIZE_LINE = re.compile(r"^[ \t]+stabilize_plate:[ \t]*([^\s#]*)", re.MULTILINE)
+
+
+def _set_stabilize_plate(text, value, path):
+    """Set `mite.stabilize_plate`, added under `metric:` if the file has none yet."""
+    flag = "true" if value else "false"
+    match = _STABILIZE_LINE.search(text)
+    if match:
+        return text[:match.start(1)] + flag + text[match.end(1):]
+    match = _METRIC_LINE.search(text)
+    if not match:
+        raise ValueError(f"No mite.metric line found in {path}")
+    end = text.find("\n", match.end())
+    end = len(text) if end < 0 else end
+    return text[:end] + f"\n{match.group(1)}stabilize_plate: {flag}" + text[end:]

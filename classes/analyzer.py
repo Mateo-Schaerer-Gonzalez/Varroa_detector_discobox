@@ -206,7 +206,7 @@ class Analyzer:
 
     @staticmethod
     def dense_optical_flow(roi, window=5, n=10, step=1, winsize=5, levels=1,
-                           iterations=3, poly_n=5, poly_sigma=1.1, pad=0, stabilize=0):
+                           iterations=3, poly_n=5, poly_sigma=1.1, pad=0):
         """Local Farneback flow strength (pixels per `step` frames), averaged over
         every pair of frames `step` apart.
 
@@ -227,13 +227,8 @@ class Analyzer:
         last frames are compared instead, so a short recording or pool still gets
         a score rather than NaN.
 
-        With `stabilize` 1 a shaking plate doesn't make every mite look like it
-        moves: the second frame of each pair is first shifted back onto the first
-        (see _register()), and what the shift missed (see _plate_motion()) is
-        then taken off the flow. Near the patch's edge Farneback has nothing
-        beyond it to compare and its flow fades to 0, which after taking the
-        plate's motion off would read as the shake reversed; so that border,
-        `winsize` // 2 wide but never more than `pad`, is left out."""
+        A shaking plate is taken out before any metric sees the ROI, see
+        PlateStabilizer."""
 
         # Farneback wants 8-bit single-channel frames
         gray = np.clip(roi.mean(axis=-1), 0, 255).astype(np.uint8)
@@ -242,52 +237,15 @@ class Analyzer:
         # and the averaging window small or the flow is smeared over the edges.
         magnitudes = []
         for prev, nxt in zip(gray[:-step], gray[step:]):
-            if stabilize:
-                nxt = Analyzer._register(prev, nxt)
             flow = cv2.calcOpticalFlowFarneback(
                 prev, nxt, None,
                 pyr_scale=0.5, levels=levels, winsize=winsize,
                 iterations=iterations, poly_n=poly_n, poly_sigma=poly_sigma, flags=0,
             )
-            if stabilize:
-                border = min(winsize // 2, pad)
-                if border:
-                    flow = flow[border:-border, border:-border]
-                    prev = prev[border:-border, border:-border]
-                flow = flow - Analyzer._plate_motion(prev, flow)
             local = cv2.blur(flow, (window, window))
             strength = np.linalg.norm(local, axis=-1).ravel()
             magnitudes.append(np.sort(strength)[-n:].mean())
         return float(np.mean(magnitudes))
-
-    @staticmethod
-    def _register(frame, moved):
-        """`moved` shifted so the patch lines up with `frame` again, the shift
-        found by phase correlation.
-
-        Farneback's error grows with the distance moved, so taking a shake off
-        its flow afterwards leaves much of it behind; lining the frames up first
-        leaves it only the leg movement to follow. Phase correlation finds the
-        shift of the patch as a whole, which the thin legs barely pull on."""
-        window = cv2.createHanningWindow(frame.shape[::-1], cv2.CV_32F)
-        (dx, dy), _response = cv2.phaseCorrelate(frame.astype(np.float32), moved.astype(np.float32), window)
-        shift = np.float32([[1, 0, dx], [0, 1, dy]])
-        return cv2.warpAffine(moved, shift, moved.shape[::-1],
-                              flags=cv2.INTER_LINEAR | cv2.WARP_INVERSE_MAP, borderMode=cv2.BORDER_REFLECT101)
-
-    @staticmethod
-    def _plate_motion(frame, flow):
-        """How the whole patch moved between two frames: the median flow of its
-        most textured quarter of pixels.
-
-        Farneback's flow is only reliable where there is texture -- the mite's
-        outline, plate edges -- not on a flat background. The outline moves with
-        the plate; the thin legs are too few to pull the median, so their motion
-        is kept."""
-        gradient = np.hypot(cv2.Sobel(frame, cv2.CV_32F, 1, 0), cv2.Sobel(frame, cv2.CV_32F, 0, 1))
-        textured = gradient >= np.percentile(gradient, 75)
-        return np.median(flow[textured], axis=0)
-
 
     @staticmethod
     def _topN_temporal_range(roi, n=10):

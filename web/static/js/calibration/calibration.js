@@ -203,6 +203,7 @@ class Calibration {
     const [report] = await Promise.all([
       post(`/api/calibration/${this.id}/evaluate`, {
         datasets: this.selected, metric: this.metric?.name ?? null, params: this.metric?.params ?? null,
+        stabilize: this.metric?.stabilize ?? null,
       }),
       this.fetchDatasets().catch(() => this.datasets),
       this.fetchScores().catch(() => this.scores),

@@ -265,26 +265,3 @@ class TestOpticalFlowShortStacks:
         roi = np.random.default_rng(0).uniform(0, 255, (5, 20, 20, 3)).astype(np.float32)
         assert Analyzer._motion_score(roi, "optical_flow", {"step": 10}) == \
             Analyzer._motion_score(roi, "optical_flow", {"step": 4})
-
-
-class TestOpticalFlowStabilize:
-    @staticmethod
-    def shaken_patch(offsets):
-        """A still, textured patch in frames each moved by one of `offsets`."""
-        base = cv2.GaussianBlur(np.random.default_rng(1).uniform(0, 255, (60, 60)).astype(np.float32), (0, 0), 2)
-        frames = [cv2.warpAffine(base, np.float32([[1, 0, dx], [0, 1, dy]]), (60, 60), borderMode=cv2.BORDER_REFLECT101)
-                  for dx, dy in offsets]
-        return np.stack([f[12:48, 12:48] for f in frames])[..., None].repeat(3, axis=-1)
-
-    PARAMS = {"step": 1, "winsize": 9, "window": 5, "pad": 8}
-
-    def test_a_still_patch_on_a_shaking_plate_scores_low_when_stabilized(self):
-        roi = self.shaken_patch([(0, 0), (2, -1), (-1, 2), (1, 1)])
-        shaking = Analyzer._motion_score(roi, "optical_flow", self.PARAMS)
-        stabilized = Analyzer._motion_score(roi, "optical_flow", {**self.PARAMS, "stabilize": 1})
-        assert shaking > 1
-        assert stabilized < 0.2 * shaking
-
-    def test_stabilize_keeps_a_still_plate_still(self):
-        roi = self.shaken_patch([(0, 0)] * 4)
-        assert Analyzer._motion_score(roi, "optical_flow", {**self.PARAMS, "stabilize": 1}) < 0.05

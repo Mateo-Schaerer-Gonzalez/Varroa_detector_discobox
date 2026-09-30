@@ -1151,12 +1151,11 @@ def _score_mites(dataset, metric, recordings_dir, params=None, stabilize=False):
     return scores
 
 
-def _dataset_scores(key, dataset, metric, params, library_dir):
+def _dataset_scores(key, dataset, metric, params, library_dir, stabilize=False):
     """The dataset's mites scored with `metric` and `params`, from the cache when
-    exactly this metric, with these parameters and this scoring code, has scored
-    them before. The cache is only a shortcut: deleting it just means decoding
-    the recordings again."""
-    stabilize = get_default_config().mite.stabilize_plate
+    exactly this metric, with these parameters, this plate stabilization and
+    this scoring code, has scored them before. The cache is only a shortcut:
+    deleting it just means decoding the recordings again."""
     version = _metric_version(metric, params, dataset["mites"], stabilize)
     cache = _dataset_dir(key, library_dir) / SCORES_DIRNAME / f"{version}.json"
     if cache.is_file():
@@ -1268,6 +1267,7 @@ def _in_use(mite):
         "metric": mite.metric,
         "params": Analyzer.check_metric_params(mite.metric, mite.params_for(mite.metric)),
         "threshold": float(mite.motion_threshold),
+        "stabilize_plate": bool(mite.stabilize_plate),
     }
 
 
@@ -1282,16 +1282,19 @@ def _resolve_metric(metric, params):
     return metric, Analyzer.check_metric_params(metric, {**mite.params_for(metric), **(params or {})})
 
 
-def evaluate_calibration(out_dir, datasets, metric=None, params=None, library_dir=CALIBRATION_LIBRARY):
+def evaluate_calibration(out_dir, datasets, metric=None, params=None, library_dir=CALIBRATION_LIBRARY,
+                         stabilize=None):
     """Score the saved mites with a metric and compare the scores with the
     movement the user saw, pooled over the saved datasets whose ids are in
     `datasets`.
 
     The metric is the one in config.yaml unless `metric` is given, with its
     parameters overridden by `params` (e.g. {"n": 20} for topN_variability), so
-    other movement scores can be tried without editing the file. The threshold
-    "in use" is always config.yaml's; it only fits these scores when the metric
-    and parameters are config.yaml's too, which `threshold_fits` says.
+    other movement scores can be tried without editing the file; likewise
+    `stabilize` (following a shaking plate, see PlateStabilizer) is config.yaml's
+    mite.stabilize_plate unless given. The threshold "in use" is always
+    config.yaml's; it only fits these scores when the metric, parameters and
+    stabilization are config.yaml's too, which `threshold_fits` says.
 
     Each (mite, recording) labelled moving or still is one observation; the
     detector calls it moving when that recording's score reaches the threshold.
@@ -1312,13 +1315,14 @@ def evaluate_calibration(out_dir, datasets, metric=None, params=None, library_di
     loaded = [_read_dataset(key, library_dir) for key in ids]
     metric, params = _resolve_metric(metric, params)
     in_use = _in_use(get_default_config().mite)
+    stabilize = in_use["stabilize_plate"] if stabilize is None else bool(stabilize)
     current = in_use["threshold"]
     times = _pooled_times(loaded)
     n_recordings = len(times)
 
     rows, n_rejected, n_unlabelled, summaries = [], 0, 0, []
     for key, dataset in zip(ids, loaded):
-        scores = _dataset_scores(key, dataset, metric, params, library_dir)
+        scores = _dataset_scores(key, dataset, metric, params, library_dir, stabilize)
         here, rejected, unlabelled = _observations(dataset, key, scores)
         rows += here
         n_rejected += rejected
@@ -1369,8 +1373,10 @@ def evaluate_calibration(out_dir, datasets, metric=None, params=None, library_di
     result = {
         "metric": metric,
         "metric_params": params,
+        "stabilize_plate": stabilize,
         "in_use": in_use,
-        "threshold_fits": metric == in_use["metric"] and params == in_use["params"],
+        "threshold_fits": (metric == in_use["metric"] and params == in_use["params"]
+                           and stabilize == in_use["stabilize_plate"]),
         "datasets": summaries,
         "times": times,
         "threshold": current,
@@ -1410,13 +1416,14 @@ def save_threshold(value):
     return save_motion_threshold(value)
 
 
-def save_movement_score(metric, params, threshold):
+def save_movement_score(metric, params, threshold, stabilize=None):
     """Make `metric` with `params`, and `threshold` on its scale, the movement
-    score of every analysis from now on."""
+    score of every analysis from now on; with `stabilize`, plate stabilization
+    on or off too (left as it is when None)."""
     metric, params = _resolve_metric(metric, params)
     if not float(threshold) > 0:
         raise ValueError("The threshold must be positive.")
-    return app_config.save_movement_score(metric, params, threshold)
+    return app_config.save_movement_score(metric, params, threshold, stabilize_plate=stabilize)
 
 
 # --- live runs ----------------------------------------------------------------------

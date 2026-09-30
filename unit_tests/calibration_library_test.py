@@ -49,8 +49,11 @@ def scorer(monkeypatch):
         scores = {}
         calls = []
 
-        def __call__(self, dataset, metric, _recordings_dir, params=None, _stabilize=False):
+        stabilized = []
+
+        def __call__(self, dataset, metric, _recordings_dir, params=None, stabilize=False):
             self.calls.append((dataset["name"], metric, params))
+            self.stabilized.append(stabilize)
             return self.scores[dataset["name"]]
 
     stub = Scorer()
@@ -270,6 +273,25 @@ def test_another_movement_score_can_be_tried_without_editing_the_config(tmp_path
 
     in_use = pipeline.evaluate_calibration(tmp_path / "report", ids, library_dir=library)
     assert in_use["threshold_fits"]
+
+
+def test_plate_stabilization_can_be_tried_without_editing_the_config(tmp_path, library, scorer):
+    data_dir, out_dir = make_session(tmp_path, "a", 1)
+    scorer.scores = {"a": {"0": [1, 9]}}
+    scorer.stabilized = []
+    pipeline.save_ground_truth(out_dir, {"0": ["still", "moving"]}, library_dir=library)
+    ids = [pipeline.dataset_id(data_dir)]
+    in_config = get_default_config().mite.stabilize_plate
+
+    result = pipeline.evaluate_calibration(tmp_path / "report", ids, library_dir=library)
+    assert result["stabilize_plate"] == result["in_use"]["stabilize_plate"] == in_config
+    assert result["threshold_fits"]
+
+    other = pipeline.evaluate_calibration(tmp_path / "report", ids, library_dir=library, stabilize=not in_config)
+    assert other["stabilize_plate"] == (not in_config)
+    assert not other["threshold_fits"]
+    # scored again, not taken from the cache
+    assert scorer.stabilized == [in_config, not in_config]
 
 
 def test_bad_movement_scores_are_refused(tmp_path, library, scorer):

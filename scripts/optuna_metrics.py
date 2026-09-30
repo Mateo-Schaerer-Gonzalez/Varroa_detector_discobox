@@ -72,7 +72,6 @@ def _optical_flow(trial):
         "levels": trial.suggest_int("levels", 1, 4),
         "poly_n": trial.suggest_categorical("poly_n", [5, 7]),
         "iterations": trial.suggest_int("iterations", 1, 6),
-        "stabilize": trial.suggest_categorical("stabilize", [0, 1]),
     }
     params["poly_sigma"] = POLY_SIGMA[params["poly_n"]]
     return params

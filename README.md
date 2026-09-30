@@ -142,7 +142,9 @@ still mite look like it moves, with any metric. With `stabilize_plate: true`
 once, the median of their shifts, so a few walking mites don't pull it, and
 each mite's patch is cut shifted back before it is scored
 (`classes/plate_stabilizer.py`). On a still plate it changes nothing, so a
-threshold calibrated on still ground truth holds on a shaking plate.
+threshold calibrated on still ground truth holds on a shaking plate. The
+*Stabilize plate* checkbox next to the metric on the calibration report tries
+it on or off with *Score again*; saving a threshold saves it with the metric.
 `python scripts/shake_robustness.py` shakes the saved ground truth by
 0.5 to 2 px and reports each metric's accuracy at its unshaken threshold, with
 and without stabilization.

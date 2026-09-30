@@ -192,3 +192,20 @@ def test_save_movement_score_writes_metric_params_and_threshold(tmp_path):
     assert saved["mite"]["metric_params"] == {"topN_variability": {"n": 20}, "optical_flow": {"window": 3, "n": 10}}
     assert saved["mite"]["metric_thresholds"] == {"variability": 15.6, "topN_variability": 3.21, "optical_flow": 0.5}
     assert saved["other"] == 1
+
+
+def test_save_movement_score_sets_plate_stabilization(tmp_path):
+    path = tmp_path / "config.yaml"
+    path.write_text('mite:\n  radius: 8\n  metric: "variability"\n')
+    saved = app_config.save_movement_score("variability", {}, 3.0, path, stabilize_plate=True)
+    assert saved["stabilize_plate"] is True
+    assert yaml.safe_load(path.read_text())["mite"]["stabilize_plate"] is True
+
+    app_config.save_movement_score("variability", {}, 3.0, path, stabilize_plate=False)
+    assert yaml.safe_load(path.read_text())["mite"]["stabilize_plate"] is False
+    assert path.read_text().count("stabilize_plate") == 1
+
+    # left as it is when not given
+    saved = app_config.save_movement_score("variability", {}, 3.0, path)
+    assert "stabilize_plate" not in saved
+    assert yaml.safe_load(path.read_text())["mite"]["stabilize_plate"] is False

@@ -18,7 +18,7 @@ when the metric's pad parameter is set.
 
 --shake PX moves the whole plate by a random offset (standard deviation PX
 pixels) in every frame, the same for every mite, before the patches are cut: a
-still mite on a shaking plate should stay still, which `stabilize` 1 is for.
+still mite on a shaking plate should stay still, which --stabilize-plate 1 is for.
 
 The ranking is written to calibration_data/reports/optical_flow_tuning_<time>.csv.
 """
@@ -57,7 +57,6 @@ GRID = {
     "levels": [1, 2],
     "poly_n": [5, 7],
     "iterations": [3],
-    "stabilize": [0, 1],
 }
 POLY_SIGMA = {5: 1.1, 7: 1.5}
 
