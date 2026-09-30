@@ -136,6 +136,17 @@ skip decoding again; it can be deleted at any time.
 parameters of each metric (`{topN_variability: {n: 10}}`); one left out uses the
 default in `classes/analyzer.py`.
 
+**A shaking plate.** A shake of half a pixel, too small to see, makes every
+still mite look like it moves, with any metric. With `stabilize_plate: true`
+(the default) the plate's shift in each frame is measured on all the mites at
+once, the median of their shifts, so a few walking mites don't pull it, and
+each mite's patch is cut shifted back before it is scored
+(`classes/plate_stabilizer.py`). On a still plate it changes nothing, so a
+threshold calibrated on still ground truth holds on a shaking plate.
+`python scripts/shake_robustness.py` shakes the saved ground truth by
+0.5 to 2 px and reports each metric's accuracy at its unshaken threshold, with
+and without stabilization.
+
 A detection marked *not a mite* is removed from every later analysis of that
 folder: `run_analysis` drops it before scoring, so it appears in no count,
 curve or figure.

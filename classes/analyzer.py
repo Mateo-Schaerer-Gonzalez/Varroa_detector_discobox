@@ -3,6 +3,7 @@ from typing import Optional
 import cv2
 from classes.app_config import AppConfig, get_default_config
 from classes.mite import Mite
+from classes.plate_stabilizer import PlateStabilizer
 import numpy as np
 
 
@@ -55,20 +56,24 @@ class Analyzer:
         """Given mites and the frames (by recording), records one motion score per
         recording on each mite; whether it moved follows from those scores."""
         for recording, _times in image_bursts:
-            for mite in mites:
-                mite_roi = mite.get_ROI(recording, self.roi_padding(mite.metric, mite.metric_params))
-                mite.record_motion(self._motion_score(mite_roi, mite.metric, mite.metric_params))
+            self.score_pool(mites, recording)
 
     def score_pool(self, mites, frames):
         """Records one motion score on each mite for one pool of frames: `frames`
-        is a list of (H, W, C) frames, in order.
+        is a list, or a stack, of (H, W, C) frames, in order.
 
-        Each mite's ROI is cut from each frame and the cuts stacked, which gives
-        the same (N, h, w, C) array classify_motility() cuts from a stack of the
-        frames, without ever holding a second copy of the frames."""
+        Each mite's ROI is cut from each frame and the cuts stacked, without
+        ever holding a second copy of the frames. With mite.stabilize_plate the
+        cuts follow the plate as it shakes (see PlateStabilizer)."""
+        shifts = None
+        if self.config.mite.stabilize_plate:
+            shifts = PlateStabilizer().shifts(frames, [tuple(mite) for mite in mites])
         for mite in mites:
             pad = self.roi_padding(mite.metric, mite.metric_params)
-            mite_roi = np.stack([mite.get_ROI(frame, pad) for frame in frames])
+            if shifts is None:
+                mite_roi = np.stack([mite.get_ROI(frame, pad) for frame in frames])
+            else:
+                mite_roi = PlateStabilizer.cut(frames, tuple(mite), pad, shifts)
             mite.record_motion(self._motion_score(mite_roi, mite.metric, mite.metric_params))
 
     @staticmethod

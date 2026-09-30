@@ -52,6 +52,9 @@ class MiteConfig:
     # The threshold of a metric missing from metric_thresholds (older config files).
     # After loading it is the threshold of `metric`.
     motion_threshold: Optional[float] = None
+    # Take a shaking plate out of the frames before scoring (see
+    # classes/plate_stabilizer.py). It works with every metric.
+    stabilize_plate: bool = False
 
     def __post_init__(self):
         self._fallback_threshold = self.motion_threshold

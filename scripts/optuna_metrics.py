@@ -188,10 +188,12 @@ def main():
     parser.add_argument("--jobs", type=int, default=os.cpu_count(), help="worker processes")
     parser.add_argument("--shake", type=float, default=0.0, help="shake the plate by this many pixels (std) per frame")
     parser.add_argument("--seed", type=int, default=0)
+    parser.add_argument("--stabilize-plate", type=int, choices=[0, 1], default=None,
+                        help="follow a shaking plate (default: config.yaml's mite.stabilize_plate)")
     args = parser.parse_args()
 
     print("Loading labelled observations...")
-    rois, moving, mites, _recordings = load_observations(PADS, args.shake, args.seed)
+    rois, moving, mites, _recordings = load_observations(PADS, args.shake, args.seed, args.stabilize_plate)
     if not calibration.has_both_classes(moving):
         sys.exit("Need both moving and still labels in calibration_data/ to tune anything.")
     print(f"{len(moving)} observations ({moving.sum()} moving, {(~moving).sum()} still), {len(set(mites))} mites")

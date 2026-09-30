@@ -49,7 +49,7 @@ def scorer(monkeypatch):
         scores = {}
         calls = []
 
-        def __call__(self, dataset, metric, _recordings_dir, params=None):
+        def __call__(self, dataset, metric, _recordings_dir, params=None, _stabilize=False):
             self.calls.append((dataset["name"], metric, params))
             return self.scores[dataset["name"]]
 

@@ -43,6 +43,7 @@ from classes import calibration
 from classes.analyzer import Analyzer
 from classes.app_config import get_default_config
 from classes.data_loader import DataLoader
+from classes.plate_stabilizer import PlateStabilizer
 
 METRIC = "optical_flow"
 
@@ -71,24 +72,37 @@ def combinations(samples, seed):
     return combos
 
 
+SENSOR_ZOOM = 4
+
+
 def shaken(frames, shake, rng):
     """The frames with the whole plate moved by a random offset in each: a
-    shaking plate. Edges are mirrored in, so no black border appears."""
+    shaking plate. Edges are mirrored in, so no black border appears.
+
+    Each frame is moved as a camera would see it: enlarged SENSOR_ZOOM times,
+    moved by whole enlarged pixels, and each camera pixel then averaged over
+    its area. Moving the frame itself by a fraction of a pixel would instead
+    blur it by an amount that changes with every frame, a change no camera
+    makes."""
     out = np.empty_like(frames)
     for i, frame in enumerate(frames):
-        dx, dy = rng.normal(0, shake, 2)
-        warp = np.float32([[1, 0, dx], [0, 1, dy]])
-        out[i] = cv2.warpAffine(frame, warp, frame.shape[1::-1], flags=cv2.INTER_LINEAR,
-                                borderMode=cv2.BORDER_REFLECT101)
+        dx, dy = np.round(rng.normal(0, shake, 2) * SENSOR_ZOOM)
+        big = cv2.resize(frame, None, fx=SENSOR_ZOOM, fy=SENSOR_ZOOM, interpolation=cv2.INTER_CUBIC)
+        big = cv2.warpAffine(big, np.float32([[1, 0, dx], [0, 1, dy]]), big.shape[1::-1],
+                             flags=cv2.INTER_NEAREST, borderMode=cv2.BORDER_REFLECT101)
+        out[i] = cv2.resize(big, frame.shape[1::-1], interpolation=cv2.INTER_AREA)
     return out
 
 
-def load_observations(pads, shake=0.0, seed=0):
+def load_observations(pads, shake=0.0, seed=0, stabilize=None):
     """For every labelled (mite, recording) of every saved dataset whose
     recordings can still be read: its ROI cut at each padding in `pads`
     ({pad: [roi, ...]}), whether it moved, which mite it is ("<dataset>/<mite>")
     and the recording's index in its dataset. With `shake`, the plate is shaken
-    first (see shaken())."""
+    first (see shaken()). With `stabilize` (by default, config.yaml's
+    mite.stabilize_plate) the ROIs follow the plate as an analysis run cuts them."""
+    if stabilize is None:
+        stabilize = get_default_config().mite.stabilize_plate
     rng = np.random.default_rng(seed)
     rois, moving, mites, recording_index = {pad: [] for pad in pads}, [], [], []
     for summary in pipeline.list_calibration_datasets():
@@ -106,26 +120,32 @@ def load_observations(pads, shake=0.0, seed=0):
         if not labelled:
             continue
 
-        # The same boxes as pipeline._score_mites() cuts, at the largest padding.
+        # The same boxes as pipeline._score_mites() cuts, at the largest padding,
+        # with room around them for the shake and the stabilizer.
+        margin = pipeline.STABILIZE_MARGIN if (shake or stabilize) else 0
         boxes = pipeline.mite_boxes([m for m, _states in labelled.values()], max(pads))
-        x0 = max(0, min(b[0] for b in boxes.values()))
-        y0 = max(0, min(b[1] for b in boxes.values()))
-        x_end = max(b[2] for b in boxes.values())
-        y_end = max(b[3] for b in boxes.values())
+        x0 = max(0, min(b[0] for b in boxes.values()) - margin)
+        y0 = max(0, min(b[1] for b in boxes.values()) - margin)
+        x_end = max(b[2] for b in boxes.values()) + margin
+        y_end = max(b[3] for b in boxes.values()) + margin
+        local = {mite_id: (x1 - x0, y1 - y0, x2 - x0, y2 - y0) for mite_id, (x1, y1, x2, y2)
+                 in pipeline.mite_boxes([m for m, _states in labelled.values()]).items()}
 
         loader = DataLoader(recordings_dir, grayscale=False)
         for index, recording in enumerate(dataset["recordings"]):
             frames = loader.load_recording_region(recording["name"], x0, y0, x_end, y_end)
             if shake:
                 frames = shaken(frames, shake, rng)
-            for mite_id, (x1, y1, x2, y2) in boxes.items():
+            shifts = PlateStabilizer().shifts(frames, list(local.values())) if stabilize else None
+            for mite_id, (x1, y1, x2, y2) in local.items():
                 state = labelled[mite_id][1][index]
                 if state not in (calibration.MOVING, calibration.STILL):
                     continue
                 for pad in pads:
-                    shrink = max(pads) - pad
-                    cut = frames[:, max(0, y1 + shrink) - y0:y2 - shrink - y0,
-                                 max(0, x1 + shrink) - x0:x2 - shrink - x0]
+                    if shifts is None:
+                        cut = frames[:, max(0, y1 - pad):y2 + pad, max(0, x1 - pad):x2 + pad]
+                    else:
+                        cut = PlateStabilizer.cut(frames, (x1, y1, x2, y2), pad, shifts)
                     rois[pad].append(np.ascontiguousarray(cut))
                 moving.append(state == calibration.MOVING)
                 mites.append(f"{summary['id']}/{mite_id}")
@@ -166,6 +186,8 @@ def main():
     parser.add_argument("--jobs", type=int, default=os.cpu_count(), help="worker processes")
     parser.add_argument("--shake", type=float, default=0.0, help="shake the plate by this many pixels (std) per frame")
     parser.add_argument("--seed", type=int, default=0)
+    parser.add_argument("--stabilize-plate", type=int, choices=[0, 1], default=None,
+                        help="follow a shaking plate (default: config.yaml's mite.stabilize_plate)")
     parser.add_argument("--top", type=int, default=15, help="rows of the ranking to print")
     args = parser.parse_args()
 
@@ -174,7 +196,7 @@ def main():
     baseline_pad = Analyzer.roi_padding(config.metric, baseline_params)
 
     print("Loading labelled observations...")
-    rois, moving, mites, _recordings = load_observations(sorted({*GRID["pad"], baseline_pad}), args.shake, args.seed)
+    rois, moving, mites, _recordings = load_observations(sorted({*GRID["pad"], baseline_pad}), args.shake, args.seed, args.stabilize_plate)
     if not calibration.has_both_classes(moving):
         sys.exit("Need both moving and still labels in calibration_data/ to tune anything.")
     print(f"{len(moving)} observations ({moving.sum()} moving, {(~moving).sum()} still), {len(set(mites))} mites")

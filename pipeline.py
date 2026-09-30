@@ -79,6 +79,8 @@ from classes import calibration
 from classes.analyzer import Analyzer
 from classes import app_config
 from classes.app_config import get_default_config, save_motion_threshold
+from classes import plate_stabilizer
+from classes.plate_stabilizer import PlateStabilizer
 from classes.data_loader import DataLoader
 from classes.error_map import ErrorMap
 from classes.frame_source import FolderSource, as_analysis_image
@@ -124,6 +126,9 @@ RESULTS_ROOT = APP_DIR / "results"
 CALIBRATION_LIBRARY = APP_DIR / "calibration_data"
 # One folder per calibration session, for its report.
 CALIBRATION_REPORTS = CALIBRATION_LIBRARY / "reports"
+# Pixels read around the mites when the plate is stabilized: the shift measure
+# looks 8 past each box, and the shake plus Lanczos reach a few more.
+STABILIZE_MARGIN = 16
 DATASET_NAME = "dataset.json"
 SCORES_DIRNAME = "scores"
 RECORDINGS_DIRNAME = "recordings"
@@ -1087,11 +1092,13 @@ def delete_calibration_dataset(dataset, library_dir=CALIBRATION_LIBRARY):
 # --- evaluation -------------------------------------------------------------------------
 
 
-def _metric_version(metric, params, mites):
+def _metric_version(metric, params, mites, stabilize=False):
     """Changes whenever the scores of these mites could: another metric, other
-    parameters, an edit to the scoring code, or other mites."""
-    source = inspect.getsource(Analyzer)
-    key = json.dumps([metric, params, source, [[m["id"], m["x"], m["y"], m["r"]] for m in mites]], sort_keys=True)
+    parameters, plate stabilization switched, an edit to the scoring code, or
+    other mites."""
+    source = inspect.getsource(Analyzer) + inspect.getsource(plate_stabilizer)
+    key = json.dumps([metric, params, source, [[m["id"], m["x"], m["y"], m["r"]] for m in mites]]
+                     + ([True] if stabilize else []), sort_keys=True)
     return hashlib.sha1(key.encode("utf-8")).hexdigest()[:12]
 
 
@@ -1106,11 +1113,13 @@ def mite_boxes(mites, pad=0):
     }
 
 
-def _score_mites(dataset, metric, recordings_dir, params=None):
+def _score_mites(dataset, metric, recordings_dir, params=None, stabilize=False):
     """Score every mite of a dataset in every recording with `metric` and its
     `params`: mite id to
     one score per recording. Slow: every frame is decoded, one recording at a
-    time, and only the part of the image holding mites is kept."""
+    time, and only the part of the image holding mites is kept. With
+    `stabilize`, the cuts follow a shaking plate, as mite.stabilize_plate makes
+    an analysis run cut them."""
     if not Path(recordings_dir).is_dir():
         raise FileNotFoundError(
             f"The recordings of {dataset['name']} are no longer at {dataset['data_dir']} and the "
@@ -1118,17 +1127,26 @@ def _score_mites(dataset, metric, recordings_dir, params=None):
             "Move them back and save its ground truth again, or leave this dataset out."
         )
     loader = DataLoader(recordings_dir, grayscale=False)
-    boxes = mite_boxes(dataset["mites"], Analyzer.roi_padding(metric, params))
-    x0 = max(0, min(box[0] for box in boxes.values()))
-    y0 = max(0, min(box[1] for box in boxes.values()))
-    x_end = max(box[2] for box in boxes.values())
-    y_end = max(box[3] for box in boxes.values())
+    pad = Analyzer.roi_padding(metric, params)
+    boxes = mite_boxes(dataset["mites"], pad)
+    # Stabilizing reads a little around each cut; keep real pixels there.
+    margin = STABILIZE_MARGIN if stabilize else 0
+    x0 = max(0, min(box[0] for box in boxes.values()) - margin)
+    y0 = max(0, min(box[1] for box in boxes.values()) - margin)
+    x_end = max(box[2] for box in boxes.values()) + margin
+    y_end = max(box[3] for box in boxes.values()) + margin
+    local = {mite_id: (x1 - x0, y1 - y0, x2 - x0, y2 - y0)
+             for mite_id, (x1, y1, x2, y2) in mite_boxes(dataset["mites"]).items()}
 
     scores = {mite_id: [] for mite_id in boxes}
     for recording in dataset["recordings"]:
         frames = loader.load_recording_region(recording["name"], x0, y0, x_end, y_end)
+        shifts = PlateStabilizer().shifts(frames, list(local.values())) if stabilize else None
         for mite_id, (x1, y1, x2, y2) in boxes.items():
-            roi = frames[:, max(0, y1) - y0:y2 - y0, max(0, x1) - x0:x2 - x0]
+            if shifts is None:
+                roi = frames[:, max(0, y1) - y0:y2 - y0, max(0, x1) - x0:x2 - x0]
+            else:
+                roi = PlateStabilizer.cut(frames, local[mite_id], pad, shifts)
             scores[mite_id].append(round(float(Analyzer._motion_score(roi, metric, params)), 3))
     return scores
 
@@ -1138,11 +1156,12 @@ def _dataset_scores(key, dataset, metric, params, library_dir):
     exactly this metric, with these parameters and this scoring code, has scored
     them before. The cache is only a shortcut: deleting it just means decoding
     the recordings again."""
-    version = _metric_version(metric, params, dataset["mites"])
+    stabilize = get_default_config().mite.stabilize_plate
+    version = _metric_version(metric, params, dataset["mites"], stabilize)
     cache = _dataset_dir(key, library_dir) / SCORES_DIRNAME / f"{version}.json"
     if cache.is_file():
         return json.loads(cache.read_text(encoding="utf-8"))["scores"]
-    scores = _score_mites(dataset, metric, _recordings_dir(dataset["data_dir"], library_dir), params)
+    scores = _score_mites(dataset, metric, _recordings_dir(dataset["data_dir"], library_dir), params, stabilize)
     cache.parent.mkdir(parents=True, exist_ok=True)
     cache.write_text(json.dumps({"metric": metric, "params": params, "scores": scores}), encoding="utf-8")
     return scores
