@@ -86,10 +86,11 @@ def shaken(frames, shake, rng):
 def load_observations(pads, shake=0.0, seed=0):
     """For every labelled (mite, recording) of every saved dataset whose
     recordings can still be read: its ROI cut at each padding in `pads`
-    ({pad: [roi, ...]}), whether it moved, and which mite it is. With `shake`,
-    the plate is shaken first (see shaken())."""
+    ({pad: [roi, ...]}), whether it moved, which mite it is ("<dataset>/<mite>")
+    and the recording's index in its dataset. With `shake`, the plate is shaken
+    first (see shaken())."""
     rng = np.random.default_rng(seed)
-    rois, moving, mites = {pad: [] for pad in pads}, [], []
+    rois, moving, mites, recording_index = {pad: [] for pad in pads}, [], [], []
     for summary in pipeline.list_calibration_datasets():
         dataset = pipeline._read_dataset(summary["id"], pipeline.CALIBRATION_LIBRARY)
         recordings_dir = pipeline._recordings_dir(dataset["data_dir"], pipeline.CALIBRATION_LIBRARY)
@@ -128,8 +129,9 @@ def load_observations(pads, shake=0.0, seed=0):
                     rois[pad].append(np.ascontiguousarray(cut))
                 moving.append(state == calibration.MOVING)
                 mites.append(f"{summary['id']}/{mite_id}")
+                recording_index.append(index)
         print(f"  {dataset['name']}: {len(labelled)} mites")
-    return rois, np.array(moving), mites
+    return rois, np.array(moving), mites, recording_index
 
 
 def score_all(rois, metric, params):
@@ -172,7 +174,7 @@ def main():
     baseline_pad = Analyzer.roi_padding(config.metric, baseline_params)
 
     print("Loading labelled observations...")
-    rois, moving, mites = load_observations(sorted({*GRID["pad"], baseline_pad}), args.shake, args.seed)
+    rois, moving, mites, _recordings = load_observations(sorted({*GRID["pad"], baseline_pad}), args.shake, args.seed)
     if not calibration.has_both_classes(moving):
         sys.exit("Need both moving and still labels in calibration_data/ to tune anything.")
     print(f"{len(moving)} observations ({moving.sum()} moving, {(~moving).sum()} still), {len(set(mites))} mites")
