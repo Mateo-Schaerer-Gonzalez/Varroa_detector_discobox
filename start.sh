@@ -34,7 +34,18 @@ if [ -z "$DISCOBOX_UPDATED" ] && [ -d .git ] && command -v git >/dev/null; then
     old=$(git rev-parse HEAD)
     # chmod +x must not count as a local change, or git refuses to pull.
     git config core.fileMode false
-    if GIT_TERMINAL_PROMPT=0 timeout 30 git pull --ff-only > update.log 2>&1; then
+    : > update.log
+    # Files changed here (e.g. config.yaml saved from the calibration page) make
+    # git refuse the pull: put them aside in a stash, which keeps them
+    # (`git stash list`, `git stash show -p`). The -c: stash needs a name, which
+    # the Discobox may not have set.
+    if ! git diff --quiet HEAD; then
+        echo "Local changes put aside before updating:" >> update.log
+        git diff --stat HEAD >> update.log
+        git -c user.name=discobox -c user.email=discobox@localhost \
+            stash push -m "local changes before update $(date '+%F %T')" >> update.log 2>&1
+    fi
+    if GIT_TERMINAL_PROMPT=0 timeout 30 git pull --ff-only >> update.log 2>&1; then
         new=$(git rev-parse HEAD)
         if [ "$old" != "$new" ]; then
             git diff --quiet "$old" "$new" -- discobox_env.yaml || env_changed=1
