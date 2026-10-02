@@ -224,8 +224,8 @@ CALIBRATION_EXCEL_NAME = "calibration.xlsx"
 
 def write_calibration_excel(result, out_dir):
     """Write a calibration's summary, the datasets pooled, every labelled (mite,
-    recording) observation, the fraction moving per recording and, when there is
-    one, the ROC curve."""
+    recording) observation, the survival curves by the labels and the detector,
+    the fraction moving per recording and, when there is one, the ROC curve."""
     path = Path(out_dir) / CALIBRATION_EXCEL_NAME
 
     summary = pd.DataFrame(
@@ -257,10 +257,35 @@ def write_calibration_excel(result, out_dir):
         ignore_index=True,
     )
 
+    def survival_rows(level, name, curves):
+        return pd.concat([
+            pd.DataFrame(
+                {
+                    "level": level,
+                    "name": name,
+                    "curve": {"truth": "labels", "current": "detector_in_use", "suggested": "detector_suggested"}[source],
+                    "n_mites": curve["n_mites"],
+                    "n_left_out_never_moving": curve["n_left_out"],
+                    "time": result["times"],
+                    "survival_percent": curve["alive"],
+                    "ci_low": curve["low"],
+                    "ci_high": curve["high"],
+                }
+            )
+            for source, curve in curves.items()
+        ], ignore_index=True)
+
+    survival = pd.concat(
+        [survival_rows("all", "all", result["survival"])]
+        + [survival_rows("group", group["group"], group["survival"]) for group in result["groups"]],
+        ignore_index=True,
+    )
+
     with pd.ExcelWriter(path, engine="openpyxl") as writer:
         summary.to_excel(writer, sheet_name="summary", index=False)
         pd.DataFrame(result["datasets"]).to_excel(writer, sheet_name="datasets", index=False)
         observations.to_excel(writer, sheet_name="observations", index=False)
+        survival.to_excel(writer, sheet_name="survival", index=False)
         over_time.to_excel(writer, sheet_name="moving_over_time", index=False)
         if result["roc"]:
             pd.DataFrame(result["roc"]).to_excel(writer, sheet_name="roc", index=False)

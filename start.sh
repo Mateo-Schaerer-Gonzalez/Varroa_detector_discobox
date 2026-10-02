@@ -58,6 +58,19 @@ $(tail -n 3 update.log)" 2>/dev/null
     fi
 fi
 
+# config.yaml is no longer in git (the update to that version removes it): take
+# back the one last saved here from the newest stash that changed it. Without
+# one, the app makes it from config.default.yaml.
+if [ ! -f config.yaml ] && [ -d .git ] && command -v git >/dev/null; then
+    for stash in $(git stash list --format=%gd 2>/dev/null); do
+        if ! git diff --quiet "$stash^1" "$stash" -- config.yaml 2>/dev/null; then
+            git show "$stash:config.yaml" > config.yaml \
+                && echo "config.yaml taken back from $stash" >> update.log
+            break
+        fi
+    done
+fi
+
 # 1 if a live test run is going on the running server.
 live_running() {
     exec 3<>/dev/tcp/127.0.0.1/$PORT || return

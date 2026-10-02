@@ -43,8 +43,19 @@ class ReportPage {
     return `Every possible threshold, from the highest (bottom left) to the lowest (top right). AUC ${ReportPage.aucText(r)}. Hover the curve for the threshold at each step.`;
   }
 
-  static overTimeCaption(r) {
-    return `Fraction of the labelled mites moving in each recording: by the ground truth (black) and as called by the detector.${ReportPage.poolNote(r, r.moving_over_time.n)}`;
+  // Who is left out of a survival curve, by the labels and by the detector's calls.
+  static leftOutText(curves, marks) {
+    const parts = [`${curves.truth.n_left_out} never labelled moving`,
+      ...marks.map((mark) => `${curves[mark.key].n_left_out} never called moving at the threshold ${mark.name}`)];
+    return `Left out: ${parts.join(", ")}.`;
+  }
+
+  static survivalCaption(r, marks) {
+    return `The Kaplan–Meier survival rate of the labelled mites: by the ground truth (black, with its 95% confidence band) and as the detector's calls
+    would have it. A mite counts as alive up to the last recording in which it moved and as dead from the next labelled one on; a mite moving in its last
+    labelled recording is right-censored there. Only mites seen moving at least once are in the study, each curve by its own calls, as a mite never
+    seen moving may have been dead from the start. ${ReportPage.leftOutText(r.survival, marks)} The closer the dashed curves follow the black one,
+    the better the threshold gives the true survival. Hover for the numbers.${ReportPage.poolNote(r)}`;
   }
 
   // Pooled datasets need not cover every recording, e.g. recordings of different
@@ -55,7 +66,7 @@ class ReportPage {
     const range = known.length && Math.min(...known) !== Math.max(...known)
       ? ` (here from ${Math.min(...known)} to ${Math.max(...known)})` : "";
     return ` <b>Pooled:</b> not every recording has the same number of mites${range}, e.g. when the datasets have recordings of different lengths,
-    so later recordings may rest on fewer mites. Hover a point for its count.`;
+    so later recordings may rest on fewer mites${counts ? ". Hover a point for its count." : ": a mite of a shorter dataset is censored at its last recording."}`;
   }
 
   // The thresholds to show: the one in use and, when there is one, the suggestion,
@@ -106,8 +117,9 @@ class ReportPage {
       <code>${esc(scoreText(r.metric, r.metric_params, r.stabilize_plate))}</code>, on another scale, so figures "in use" say little:
       look at the suggested threshold, and save it with this movement score to use it.</div>`}
     ${testing ? this.testReport(r) : this.calibrateReport(r)}
-    ${testing ? section("Mites moving per group", `<div id="group-legend" class="legend"></div><div id="group-moving" class="group-cards"></div>
-      <p class="caption">Each group's fraction of mites moving in each recording, by the ground truth and as called by the detector, on the same mites. Groups are the plate labels.${poolNote(r)}</p>`) : ""}
+    ${testing ? section("Survival rate per group", `<div id="group-legend" class="legend"></div><div id="group-moving" class="group-cards"></div>
+      <p class="caption">Each group's Kaplan–Meier survival rate, by the ground truth and as the detector's calls at the threshold in use would have it, as in Fig. 2;
+        the number is the group's mites in the study by the ground truth. Groups are the plate labels.${poolNote(r)}</p>`) : ""}
     ${section("Files", `<ul class="files">
       <li><a href="${cal.fileUrl(r.excel)}" download>${esc(r.excel)}</a>
         <span class="muted">every labelled mite-recording with its score and outcome, the fraction moving per recording, the ROC curve and the summary</span></li></ul>`)}`;
@@ -123,7 +135,7 @@ class ReportPage {
     // Groups matter to a test of the threshold, not to finding one.
     if (testing) {
       this.drawTestFigures(r);
-      this.figures.drawGroupMoving(r, ReportPage.thresholdMarks(r).slice(0, 1));
+      this.figures.drawGroupSurvival(r, ReportPage.thresholdMarks(r).slice(0, 1));
     } else {
       this.drawCalibrateFigures(r);
     }
@@ -272,7 +284,7 @@ class ReportPage {
   // --- calibrate: pick a threshold and save it
 
   calibrateReport(r) {
-    const { thr, oneClassNote, overTimeCaption, rocCaption, scoreText, CONFUSION_CAPTION, STRIP_CAPTION } = ReportPage;
+    const { thr, oneClassNote, survivalCaption, rocCaption, scoreText, CONFUSION_CAPTION, STRIP_CAPTION } = ReportPage;
     const { stat, figure, section } = Markup;
     if (r.suggested_threshold == null) {
       return `<div class="banner">${oneClassNote(r)}</div>
@@ -284,7 +296,7 @@ class ReportPage {
       </div>
       <div class="grid-2">
         ${figure("confusion", 1, "Confusion matrix at the threshold in use", CONFUSION_CAPTION)}
-        ${figure("chart-over-time", 2, "Mites moving: ground truth and the detector", overTimeCaption(r))}
+        ${figure("chart-survival", 2, "Survival rate: ground truth and the detector", survivalCaption(r, ReportPage.thresholdMarks(r)))}
       </div>`;
     }
     const same = Math.abs(r.suggested_threshold - r.threshold) < 0.005;
@@ -323,7 +335,7 @@ class ReportPage {
     </div>
 
     <div class="grid-2">
-      ${figure("chart-over-time", 2, "Mites moving: ground truth and the detector", overTimeCaption(r))}
+      ${figure("chart-survival", 2, "Survival rate: ground truth and the detector", survivalCaption(r, ReportPage.thresholdMarks(r)))}
       ${figure("chart-roc", 3, "ROC curve", rocCaption(r))}
     </div>
 
@@ -346,7 +358,7 @@ class ReportPage {
   drawCalibrateFigures(r) {
     const marks = ReportPage.thresholdMarks(r);
     const { figures } = this;
-    figures.drawOverTime($("chart-over-time"), r.moving_over_time, r.times, marks);
+    figures.drawSurvival($("chart-survival"), r.survival, r.times, marks);
     const matrix = (shown) => (shown === "current" ? figures.confusionTable(r.current, r.rates.current) : figures.confusionTable(r.best, r.rates.best));
     if (r.suggested_threshold == null) {
       $("confusion").innerHTML = matrix("current");
@@ -394,7 +406,7 @@ class ReportPage {
   // --- test: how good is the threshold in use, and where does it go wrong
 
   testReport(r) {
-    const { thr, aucText, oneClassNote, overTimeCaption, rocCaption, pooled, CONFUSION_CAPTION, STRIP_CAPTION } = ReportPage;
+    const { thr, aucText, oneClassNote, survivalCaption, rocCaption, pooled, CONFUSION_CAPTION, STRIP_CAPTION } = ReportPage;
     const { stat, figure, section } = Markup;
     const c = r.current;
     return `
@@ -407,7 +419,7 @@ class ReportPage {
 
     <div class="grid-2">
       ${figure("confusion", 1, "Confusion matrix at the threshold in use", CONFUSION_CAPTION)}
-      ${figure("chart-over-time", 2, "Mites moving: ground truth and the detector", overTimeCaption(r))}
+      ${figure("chart-survival", 2, "Survival rate: ground truth and the detector", survivalCaption(r, ReportPage.thresholdMarks(r).slice(0, 1)))}
     </div>
 
     <div class="grid-2">
@@ -442,7 +454,7 @@ class ReportPage {
     const marks = ReportPage.thresholdMarks(r).slice(0, 1);
     const { figures } = this;
     $("confusion").innerHTML = figures.confusionTable(r.current, r.rates.current);
-    figures.drawOverTime($("chart-over-time"), r.moving_over_time, r.times, marks);
+    figures.drawSurvival($("chart-survival"), r.survival, r.times, marks);
     const drawMap = () => {
       if ($("map-dataset")) cal.mapDataset = $("map-dataset").value;
       figures.drawOutcomeMap(r, figures.mapDataset(r), $("map-recording").value);

@@ -30,7 +30,7 @@ class SurvivalTable {
     if (!test.n_control_mites) {
       table.hidden = true;
       caption.innerHTML = test.controls.length
-        ? "The zones ticked as negative control hold no mites, so there is nothing to compare with."
+        ? "The zones ticked as negative control hold no mite seen moving, so there is nothing to compare with."
         : `No zone is ticked as negative control. On the <a href="${ctx.href("label")}">label page</a>, click a plate and tick <i>negative control</i>
         to compare the survival of every group with it.`;
       return;
@@ -51,7 +51,7 @@ class SurvivalTable {
     caption.innerHTML = `The survival of each group's mites, pooling every zone with that label, against that of the negative control's, pooled, by the log-rank test.
     Zones ticked as negative control are left out of their group's row.
     ${this.page.deathRule()} A mite alive in the last recording counts as alive at least until then.
-    <b>Dead</b> is how many of the group's mites died; <b>expected dead</b> how many would have, had they died at the rate of the control's.
+    <b>Mites</b> are those in the study. <b>Dead</b> is how many of the group's mites died; <b>expected dead</b> how many would have, had they died at the rate of the control's.
     <b>LT50</b> is the time from the first recording by which half the mites are dead: the first recording in which the Kaplan–Meier curve of Fig. 2
     is at 50% or below, with its 95% confidence interval from where the curve's band first reaches 50%; <i>&gt;</i> marks one not reached by the last recording.
     The p values are not corrected for testing several groups.${this.page.timeDomain() ? " While the run goes on, the test takes the recordings so far." : ""}

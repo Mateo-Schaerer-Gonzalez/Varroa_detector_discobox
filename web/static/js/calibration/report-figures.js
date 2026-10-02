@@ -1,4 +1,4 @@
-// The calibration report's figures: the confusion matrix, the mites moving over
+// The calibration report's figures: the confusion matrix, the survival rate over
 // time (and per group), the scores against the thresholds, the ROC curve, and
 // where on the plate the errors are. Every observation, from whichever dataset,
 // opens its mite in its recording.
@@ -47,57 +47,74 @@ class ReportFigures {
   </table>`;
   }
 
-  // The ground truth (black) against the detector's calls, one line per threshold.
-  // The labels' line comes last so it is drawn on top where the lines coincide.
-  overTimeSeries(curves, marks, { legend = true } = {}) {
-    const asPercent = (values) => values.map((v) => (v == null ? null : v * 100));
+  // The Kaplan-Meier curve of the ground truth (black, with its confidence band)
+  // against those of the detector's calls, one per threshold (the server's,
+  // calibration.survival_curves). The labels' curve comes last so it is drawn on
+  // top where the curves coincide.
+  survivalSeries(curves, marks, { legend = true } = {}) {
     return [
       ...marks.map((mark) => ({
         name: `detector, ${mark.name} ${ReportPage.thr(mark.value)}`,
-        values: asPercent(curves[mark.key]),
-        color: mark.color, dashed: true, legend,
+        values: curves[mark.key].alive,
+        color: mark.color, dashed: true, step: true, markers: false, legend,
       })),
-      { name: "ground truth", values: asPercent(curves.truth), color: token("--ink"), width: 2.25, legend },
+      {
+        name: "ground truth", values: curves.truth.alive, band: { low: curves.truth.low, high: curves.truth.high },
+        color: token("--ink"), width: 2.25, step: true, markers: false, legend,
+      },
     ];
   }
 
-  drawOverTime(container, curves, times, marks) {
+  // How many mites each curve rests on, for the tooltip.
+  survivalNote(curves, marks) {
+    const count = (name, curve) => `<div class="tip-note">${name}: ${curve.n_mites} mites, ${curve.n_dead} dead, ${curve.n_left_out} left out</div>`;
+    return [count("ground truth", curves.truth), ...marks.map((mark) => count(`detector, ${mark.name}`, curves[mark.key]))].join("");
+  }
+
+  drawSurvival(container, curves, times, marks) {
     Charts.line(container, {
       x: times,
-      yLabel: "Mites moving (%)",
+      yLabel: "Survival rate (%)",
       yMin: 0, yMax: 100,
       yFormat: (v) => `${Math.round(v)}`,
       noDirectLabels: true,
-      series: this.overTimeSeries(curves, marks),
-      tooltipExtra: (i) => `<div class="tip-note">${curves.n[i]} mites labelled</div>`,
+      series: this.survivalSeries(curves, marks),
+      tooltipExtra: () => this.survivalNote(curves, marks),
     });
   }
 
   // Small multiples: one chart per group, sharing one legend.
-  drawGroupMoving(r, marks) {
-    $("group-legend").innerHTML = Charts.legendHtml(this.overTimeSeries(r.moving_over_time, marks).map((s) => ({
+  drawGroupSurvival(r, marks) {
+    $("group-legend").innerHTML = Charts.legendHtml(this.survivalSeries(r.survival, marks).map((s) => ({
       name: s.name, color: s.color, ...(s.dashed ? { dashed: true } : { shape: "line" }),
     })));
     const container = $("group-moving");
     r.groups.forEach((group, index) => {
+      const curves = group.survival;
+      const n = curves.truth.n_mites;
+      const leftOut = curves.truth.n_left_out;
       const card = document.createElement("div");
       card.className = "group-card fig";
       const id = `group-moving-${index}`;
       card.innerHTML = `<div class="group-card-head">${Markup.groupTag(group.group, token(group.group === "unlabeled" ? "--series-other" : "--muted"))}
-      <span class="hint">${group.n_mites} mite${group.n_mites === 1 ? "" : "s"}</span>
-      ${ChartDownloads.buttons(id, `Mites moving · ${group.group} (${group.n_mites} mites)`, "group-legend")}</div>`;
+      <span class="hint">${n} mite${n === 1 ? "" : "s"}${leftOut ? `, ${leftOut} never moving left out` : ""}</span>
+      ${ChartDownloads.buttons(id, `Survival rate · ${group.group} (${n} mites)`, "group-legend")}</div>`;
       const plot = document.createElement("div");
       plot.id = id;
       card.appendChild(plot);
       container.appendChild(card);
+      if (!curves.truth.n_mites && marks.every((mark) => !curves[mark.key].n_mites)) {
+        plot.innerHTML = `<p class="muted">No mite of this group was seen moving, by the labels or the detector, so none is in the study.</p>`;
+        return;
+      }
       Charts.line(plot, {
         x: r.times,
         height: 190,
-        yLabel: "Moving (%)",
+        yLabel: "Survival rate (%)",
         yMin: 0, yMax: 100,
         yFormat: (v) => `${Math.round(v)}`,
-        series: this.overTimeSeries(group, marks, { legend: false }),
-        tooltipExtra: (i) => `<div class="tip-note">${group.n[i]} mites labelled</div>`,
+        series: this.survivalSeries(curves, marks, { legend: false }),
+        tooltipExtra: () => this.survivalNote(curves, marks),
       });
     });
   }

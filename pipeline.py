@@ -1305,7 +1305,8 @@ def evaluate_calibration(out_dir, datasets, metric=None, params=None, library_di
 
     Returns the confusion counts at the threshold in use and, when there are
     both moving and still labels, the ROC curve and the suggested threshold with
-    its confusion counts; the fraction of mites moving per recording by the
+    its confusion counts; the fraction of mites moving per recording and the
+    Kaplan-Meier survival curves (of the mites seen moving at least once) by the
     labels and by the detector; and every observation with its outcome.
     Everything is also written to calibration.xlsx in `out_dir`.
     """
@@ -1360,6 +1361,11 @@ def evaluate_calibration(out_dir, datasets, metric=None, params=None, library_di
         curves = calibration.moving_over_time(subset, n_recordings, thresholds)
         return {key: values if key == "n" else _rounded(values) for key, values in curves.items()}
 
+    def survival(subset):
+        curves = calibration.survival_curves(subset, times, thresholds)
+        return {name: {key: _rounded(value, 2) if isinstance(value, list) else value for key, value in curve.items()}
+                for name, curve in curves.items()}
+
     roc = None
     if both:
         fpr, tpr, roc_thresholds = calibration.roc_curve(scores, is_moving)
@@ -1391,11 +1397,14 @@ def evaluate_calibration(out_dir, datasets, metric=None, params=None, library_di
         "current": calibration.confusion(scores, is_moving, current),
         "best": calibration.confusion(scores, is_moving, suggested) if suggested is not None else None,
         "moving_over_time": over_time(rows),
+        # the survival curves by the labels and by the detector, see calibration.survival_curves()
+        "survival": survival(rows),
         "groups": [
             {
                 "group": group,
                 "n_mites": _n_mites([row for row in rows if row["group"] == group]),
                 **over_time([row for row in rows if row["group"] == group]),
+                "survival": survival([row for row in rows if row["group"] == group]),
             }
             for group in sorted({row["group"] for row in rows})
         ],
@@ -1767,12 +1776,13 @@ def start_live(live_id, labels=None):
 
 
 def mites_alive(results, death_minutes):
-    """How many of the results' mites are alive in their last recording, by the
-    rule of the Mites alive charts (classes/survival.py): a mite that moved in it,
-    or has not yet been still for `death_minutes` since its last movement (since
-    the first recording if it never moved)."""
+    """{alive, mites}: of the results' mites in the study (seen moving at least
+    once), how many are alive in their last recording, by the rule of the
+    survival charts (classes/survival.py): a mite that moved in it, or has not
+    yet been still for `death_minutes` since its last movement."""
     survival = SurvivalAnalysis(results["times"], death_minutes)
-    return survival.alive_count([mite["moving"] for mite in results["mites"]], len(results["times"]) - 1)
+    movings = SurvivalAnalysis.study([mite["moving"] for mite in results["mites"]])
+    return {"alive": survival.alive_count(movings, len(results["times"]) - 1), "mites": len(movings)}
 
 
 def live_status(live_id):
@@ -1780,7 +1790,7 @@ def live_status(live_id):
     results = run.session.results
     alive = None
     if results is not None:
-        alive = {"alive": mites_alive(results, death_minutes(run.run_dir)), "mites": len(results["mites"])}
+        alive = mites_alive(results, death_minutes(run.run_dir))
     status = {
         **run.session.status(),
         "live_id": live_id,
@@ -1790,7 +1800,7 @@ def live_status(live_id):
         "pool_size": run.pool_size,
         "pool_size_text": describe_pool_size(run.pool_size),
         "save_frames": run.save_frames,
-        "alive": alive,  # the mites alive now, of all mites; None before the first results
+        "alive": alive,  # the mites alive now, of those in the study; None before the first results
     }
     # the progress bar over the live result pages
     return {**status, "progress": RunProgress(status).describe()}

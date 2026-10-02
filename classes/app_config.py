@@ -1,4 +1,5 @@
 import re
+import shutil
 from dataclasses import dataclass, field
 from functools import lru_cache
 from pathlib import Path
@@ -6,7 +7,21 @@ from typing import Any, Optional
 
 import yaml
 
+# config.yaml is this machine's own and not in git, so an update never changes
+# the metric saved from the calibration page. A new copy of the app makes it
+# from config.default.yaml, which is in git.
 DEFAULT_CONFIG_PATH = Path(__file__).resolve().parent.parent / "config.yaml"
+TEMPLATE_CONFIG_PATH = DEFAULT_CONFIG_PATH.with_name("config.default.yaml")
+
+
+def _config_file(config_path: Optional[str | Path] = None) -> Path:
+    """The config file to read or write: `config_path`, or config.yaml, made
+    from config.default.yaml if there is none yet."""
+    if config_path is not None:
+        return Path(config_path)
+    if not DEFAULT_CONFIG_PATH.exists():
+        shutil.copyfile(TEMPLATE_CONFIG_PATH, DEFAULT_CONFIG_PATH)
+    return DEFAULT_CONFIG_PATH
 
 
 @lru_cache(maxsize=None)
@@ -93,7 +108,7 @@ class AppConfig:
     """Loads configuration and exposes strongly-typed style/domain sections."""
 
     def __init__(self, config_path: Optional[str | Path] = None):
-        self.config_path = Path(config_path) if config_path is not None else DEFAULT_CONFIG_PATH
+        self.config_path = _config_file(config_path)
         self._raw_config = _load_yaml_cached(self.config_path)
 
         visual_styles = self._raw_config.get("visual_styles", {})
@@ -136,7 +151,7 @@ def save_motion_threshold(value: float, config_path: Optional[str | Path] = None
     kept. Every AppConfig built afterwards, including the shared default one,
     sees the new value.
     """
-    path = Path(config_path) if config_path is not None else DEFAULT_CONFIG_PATH
+    path = _config_file(config_path)
     text = path.read_text(encoding="utf-8")
 
     value = round(float(value), 3)
@@ -193,7 +208,7 @@ def save_movement_score(metric: str, params: dict, threshold: float,
     `stabilize_plate`, `mite.stabilize_plate` is set too: the threshold was
     chosen on scores cut with or without it.
     """
-    path = Path(config_path) if config_path is not None else DEFAULT_CONFIG_PATH
+    path = _config_file(config_path)
     text = path.read_text(encoding="utf-8")
     threshold = round(float(threshold), 3)
 

@@ -106,7 +106,7 @@ class LivePanel {
     const finished = s.state === "finished";
     $("run-bar-fill").style.width = `${fraction * 100}%`;
     $("run-bar").className = `run-bar ${s.state}${untilAllDead ? " alive-bar" : ""}`;
-    $("run-bar").setAttribute("aria-label", untilAllDead ? "Mites alive" : "The test run");
+    $("run-bar").setAttribute("aria-label", untilAllDead ? "Survival rate" : "The test run");
     $("run-bar").setAttribute("aria-valuenow", String(Math.round(fraction * 100)));
 
     this.drawMarks(marks);
@@ -115,7 +115,7 @@ class LivePanel {
     const more = untilAllDead && !finished;
     const parts = [`Recording ${s.recording} of ${more ? "at least " : ""}${s.recordings}`];
     if (untilAllDead) {
-      parts.unshift(s.alive ? `${s.alive.alive} of ${s.alive.mites} mites alive` : "Mites alive: once the first recording is analysed");
+      parts.unshift(s.alive ? `Survival rate: ${s.alive.alive} of ${s.alive.mites} mites alive` : "Survival rate: once the first recording is analysed");
     }
     if (s.recording_name) parts.push(`capturing frame ${s.frame}${s.frames ? ` of ${s.frames}` : ""}`);
     parts.push(`${s.analysed} analysed`);

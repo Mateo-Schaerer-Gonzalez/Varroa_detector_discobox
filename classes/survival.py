@@ -8,9 +8,13 @@ settings or the results page), it counts as dead from then on only once it has
 been seen still for that long after it (or from the start, if it never moved);
 until then it may yet move, so it counts as alive.
 
+Only the mites seen moving at least once are in the study: one never seen
+moving may have been dead from the start, or no live mite at all, so it is left
+out of every survival number (SurvivalAnalysis.in_study).
+
 SurvivalAnalysis applies that rule; SurvivalReport describes it for the result
-pages: the mites alive over time per group and per zone, and every group, its
-zones pooled, tested against the negative controls.
+pages: the survival rate over time per group and per zone, each mite's lifeline,
+and every group, its zones pooled, tested against the negative controls.
 """
 
 import warnings
@@ -34,11 +38,47 @@ class LogRank:
     p: float | None
 
 
+def kaplan_meier(survivals, times, confidence=0.95):
+    """The Kaplan-Meier curve of `survivals` ((time, dead) pairs, see
+    SurvivalAnalysis.survival()) at `times`, in percent, with its confidence
+    interval: scipy's, by Greenwood's formula on the log-log scale, which keeps it
+    within 0-100%. Where the interval is undefined (all or none alive) it is the
+    estimate itself. {alive, low, high}, each None throughout without survivals."""
+    if not survivals:
+        return {"alive": [None] * len(times), "low": [None] * len(times), "high": [None] * len(times)}
+    curve = stats.ecdf(SurvivalAnalysis.censored(survivals)).sf
+    with warnings.catch_warnings():
+        # Where it is undefined, scipy warns and gives NaN.
+        warnings.simplefilter("ignore", RuntimeWarning)
+        interval = curve.confidence_interval(confidence, method="log-log")
+    estimate = curve.evaluate(times)
+    low = interval.low.evaluate(times)
+    high = interval.high.evaluate(times)
+    low = np.where(np.isnan(low), estimate, low)
+    high = np.where(np.isnan(high), estimate, high)
+
+    def percent(values):
+        return [100 * float(value) for value in values]
+
+    return {"alive": percent(estimate), "low": percent(low), "high": percent(high)}
+
+
 class SurvivalAnalysis:
     def __init__(self, times, death_minutes=0):
         """`times`: the recordings' times in minutes, in order."""
         self.times = list(times)
         self.death_minutes = death_minutes or 0
+
+    @staticmethod
+    def in_study(moving):
+        """Whether a mite counts in the survival numbers: only once it has been
+        seen moving, so it is known to have been alive."""
+        return any(moving)
+
+    @classmethod
+    def study(cls, movings):
+        """The mites of `movings` in the study, see in_study()."""
+        return [moving for moving in movings if cls.in_study(moving)]
 
     @staticmethod
     def last_movement(moving):
@@ -73,22 +113,10 @@ class SurvivalAnalysis:
         """The confidence interval of alive_percent() in each recording, in percent,
         as {low, high}. With the mites censored only at the end, alive_percent()
         is the Kaplan-Meier estimate; the interval is scipy's, by Greenwood's
-        formula on the log-log scale, which keeps it within 0-100%. Where all
-        or none of the mites are alive it is undefined, and taken as the estimate
-        itself. None throughout without mites."""
-        if not movings:
-            return {"low": [None] * len(self.times), "high": [None] * len(self.times)}
-        curve = stats.ecdf(self.censored([self.survival(moving) for moving in movings])).sf
-        with warnings.catch_warnings():
-            # Where it is undefined, scipy warns and gives NaN.
-            warnings.simplefilter("ignore", RuntimeWarning)
-            interval = curve.confidence_interval(confidence, method="log-log")
-        estimate = curve.evaluate(self.times)
-        low = interval.low.evaluate(self.times)
-        high = interval.high.evaluate(self.times)
-        low = np.where(np.isnan(low), estimate, low)
-        high = np.where(np.isnan(high), estimate, high)
-        return {"low": [100 * float(value) for value in low], "high": [100 * float(value) for value in high]}
+        formula on the log-log scale (see kaplan_meier()). None throughout
+        without mites."""
+        curve = kaplan_meier([self.survival(moving) for moving in movings], self.times, confidence)
+        return {"low": curve["low"], "high": curve["high"]}
 
     def lt50(self, movings):
         """LT50, the time by which half the mites are dead: the first recording in
@@ -189,15 +217,25 @@ class SurvivalReport:
         self.controls = sorted(set(controls))
 
     def movings(self, zone_ids):
+        """The movement of the mites of the zones `zone_ids` in the study."""
+        return SurvivalAnalysis.study(self.all_movings(zone_ids))
+
+    def all_movings(self, zone_ids):
         return [mite["moving"] for mite in self.groups.mites_in(zone_ids)]
 
     def describe(self):
         """Plain data for the result pages:
 
             death_minutes   the time a mite must be still to count as dead
-            groups          [{group, alive, alive_ci}]: each group's mites alive (%) per
-                            recording, with its 95% confidence interval (see alive_ci())
-            zones           {zone id: {alive, alive_ci, n_alive}}: the same per zone, and how many
+            groups          [{group, alive, alive_ci, n_mites, n_left_out}]: each group's
+                            survival rate (%) per recording, with its 95% confidence
+                            interval (see alive_ci()), of its n_mites in the study;
+                            n_left_out were never seen moving
+            zones           {zone id: {alive, alive_ci, n_alive, n_mites, n_left_out}}: the
+                            same per zone, and how many are alive
+            mites           {mite id: {in_study, time, dead}}: each mite's lifeline, see
+                            lifeline()
+            n_left_out      the mites never seen moving, left out
             log_rank        the groups against the negative controls, see log_rank()
         """
         analysis = self.analysis
@@ -208,17 +246,38 @@ class SurvivalReport:
                 "alive": analysis.alive_percent(movings),
                 "alive_ci": analysis.alive_ci(movings),
                 "n_alive": [analysis.alive_count(movings, recording) for recording in range(len(analysis.times))],
+                **self.counts([zone["id"]]),
             }
         groups = []
         for group, group_zones in self.groups.rows():
-            movings = self.movings([zone["id"] for zone in group_zones])
-            groups.append({"group": group, "alive": analysis.alive_percent(movings), "alive_ci": analysis.alive_ci(movings)})
+            zone_ids = [zone["id"] for zone in group_zones]
+            movings = self.movings(zone_ids)
+            groups.append({"group": group, "alive": analysis.alive_percent(movings), "alive_ci": analysis.alive_ci(movings),
+                           **self.counts(zone_ids)})
+        mites = self.groups.mites_in([zone["id"] for zone in self.groups.zones])
         return {
             "death_minutes": analysis.death_minutes,
             "groups": groups,
             "zones": zones,
+            "mites": {mite["id"]: self.lifeline(mite["moving"]) for mite in mites},
+            "n_left_out": sum(1 for mite in mites if not SurvivalAnalysis.in_study(mite["moving"])),
             "log_rank": self.log_rank(),
         }
+
+    def counts(self, zone_ids):
+        """{n_mites, n_left_out}: the mites of the zones in the study, and those not."""
+        n_all = len(self.all_movings(zone_ids))
+        n_mites = len(self.movings(zone_ids))
+        return {"n_mites": n_mites, "n_left_out": n_all - n_mites}
+
+    def lifeline(self, moving):
+        """{in_study, time, dead}: when a mite in the study died, or the last
+        recording's time when it is still alive (right-censored, dead False);
+        time and dead None for a mite left out."""
+        if not SurvivalAnalysis.in_study(moving):
+            return {"in_study": False, "time": None, "dead": None}
+        time, dead = self.analysis.survival(moving)
+        return {"in_study": True, "time": time, "dead": dead}
 
     def log_rank(self):
         """Every group, its zones pooled, against the zones ticked as negative
@@ -228,7 +287,8 @@ class SurvivalReport:
             control_zones     those of them with mites
             control_groups    their groups
             n_control_mites, n_control_dead, control_lt50
-            rows              [{group, zones, n_mites, lt50, observed, expected, chi2, p}]:
+                              of the control mites in the study
+            rows             [{group, zones, n_mites, lt50, observed, expected, chi2, p}]:
                                 one per group of the zones not ticked; none
                                 without control mites
         LT50s as SurvivalAnalysis.lt50() gives them.

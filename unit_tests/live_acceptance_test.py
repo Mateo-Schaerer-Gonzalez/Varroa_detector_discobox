@@ -76,7 +76,7 @@ def test_a_replayed_live_run_gives_folder_mode_results_and_the_reference(tmp_pat
 def small_session(tmp_path):
     """A few frames of sample_data, labelled, with one detection marked not a mite."""
     session = reference.make_small_session(tmp_path / "small_session")
-    labels = {"1": "control", "4": "control", "10": "venom"}  # zones with mites
+    labels = {"4": "control", "7": "control", "13": "venom"}  # zones with mites
     (session / "labels.json").write_text(json.dumps(labels))
     mite = next(m for m in reference.load("folder_sample_data")["results"]["mites"] if m["id"] == reference.REJECTED_MITE)
     (session / "ground_truth.json").write_text(json.dumps([{"x": mite["x"], "y": mite["y"], "truth": ["not_a_mite"]}]))
@@ -147,7 +147,7 @@ def test_labels_changed_during_a_run_show_at_once(tmp_path, small_session):
     run = live["run"]
     pipeline._live[run.live_id] = run
     try:
-        pipeline.save_labels(run.run_dir, {"1": "renamed"})
+        pipeline.save_labels(run.run_dir, {"4": "renamed"})
         pipeline.live_refresh(run.live_id)
         groups = {g["group"] for g in pipeline.live_results(run.live_id)["results"]["summary"]["groups"]}
     finally:

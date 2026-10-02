@@ -10,7 +10,8 @@
  *   xLabel, yLabel, xMin, xMax, yMin, yMax, height
  *   square      height follows the width (up to `height`), for ROC curves
  *   xFormat, yFormat   value -> tick text
- *   yCategories [{ value, label }] named rows instead of numeric y ticks
+ *   yCategories [{ value, label, muted }] named rows instead of numeric y ticks; a
+ *               muted one is greyed out, e.g. a row left out of the numbers
  *   boxes       [{ y, lo, q1, median, q3, hi, color, halfHeight, tip }] box and
  *               whiskers along x, centred on row y, drawn behind the points
  *   notes       [{ y, text }] a word on a row with nothing drawn in it
@@ -96,10 +97,10 @@ class ScatterChart {
     const axes = el("g", {}, svg);
     const bottom = pad.top + plotH;
     const yTicks = options.yCategories || niceTicks(yMin, yMax).filter((t) => inside(t, yMin, yMax)).map((value) => ({ value, label: yFormat(value) }));
-    for (const { value, label } of yTicks) {
+    for (const { value, label, muted } of yTicks) {
       el("line", { x1: pad.left, x2: pad.left + plotW, y1: sy(value), y2: sy(value) }, grid);
       el("line", { x1: pad.left - 4, x2: pad.left, y1: sy(value), y2: sy(value), class: "tick-mark" }, axes);
-      el("text", { x: pad.left - 7, y: sy(value) + 4, "text-anchor": "end", class: "tick" }, axes).textContent = label;
+      el("text", { x: pad.left - 7, y: sy(value) + 4, "text-anchor": "end", class: muted ? "tick muted-tick" : "tick" }, axes).textContent = label;
     }
     for (const t of niceTicks(xMin, xMax, 6).filter((t) => inside(t, xMin, xMax))) {
       el("line", { x1: sx(t), x2: sx(t), y1: pad.top, y2: bottom }, grid);

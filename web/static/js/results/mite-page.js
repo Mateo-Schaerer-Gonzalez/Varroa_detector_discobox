@@ -1,4 +1,5 @@
-// One mite: its key figures, a close-up playing the recording shown, its motion
+// One mite: its key figures (its survival among them; a mite never seen moving is
+// left out of the survival numbers), a close-up playing the recording shown, its motion
 // score over time and a table of its recordings.
 
 class MitePage extends ResultsPage {
@@ -18,8 +19,9 @@ class MitePage extends ResultsPage {
     ${this.staleBanner()}
     <header class="page-head">
       <div>
-        <h1>Mite ${esc(mite.id)}</h1>
+        <h1>Mite ${this.miteId(mite)}</h1>
         <p class="meta">${movingBadge(mite.moving[ctx.lastIndex()])} in the last recording · <a href="${ctx.href(`zone/${zone.id}`)}">Zone ${zone.id}</a> · ${Markup.groupTag(zone.label || "unlabeled", color)}</p>
+        ${this.inStudy(mite) ? "" : `<p class="meta">Never seen moving, so left out of the survival numbers: it may have been dead from the start, or no live mite at all.</p>`}
       </div>
       ${Markup.pager(siblings, siblings.indexOf(mite), (m) => this.miteHref(m), (m) => `Mite ${m.id}`)}
     </header>
@@ -27,8 +29,8 @@ class MitePage extends ResultsPage {
     <div class="stats">
       ${stat("Moving in", `${mite.n_moving}/${times.length}`, "recordings above the threshold")}
       ${stat("Last movement", this.lastMovementText(mite), mite.n_moving ? "last recording with movement" : "no movement in any recording")}
-      ${stat("Max motion score", score(mite.max_score), `threshold ${score(results.threshold)}`)}
-      ${stat("Mean motion score", score(mite.mean_score))}
+      ${stat("Survival", this.survivalText(mite), this.inStudy(mite) ? (this.lifeline(mite).dead ? "time of death" : "right-censored") : "")}
+      ${stat("Max motion score", score(mite.max_score), `mean ${score(mite.mean_score)} · threshold ${score(results.threshold)}`)}
     </div>
 
     <div class="grid-mite">

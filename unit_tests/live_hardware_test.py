@@ -615,6 +615,7 @@ def test_the_mites_alive_are_counted_as_the_charts_count_them():
         {"moving": [False] * 5},                         # never moved: still 20 min
         {"moving": [False, False, False, False, True]},  # moving now
     ]}
-    assert pipeline.mites_alive(results, 10) == 2
-    assert pipeline.mites_alive(results, 30) == 4
-    assert pipeline.mites_alive(results, 0) == 1
+    # The mite that never moved is left out.
+    assert pipeline.mites_alive(results, 10) == {"alive": 2, "mites": 3}
+    assert pipeline.mites_alive(results, 30) == {"alive": 3, "mites": 3}
+    assert pipeline.mites_alive(results, 0) == {"alive": 1, "mites": 3}

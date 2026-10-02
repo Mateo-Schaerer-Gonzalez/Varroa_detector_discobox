@@ -4,10 +4,13 @@ For each mite and each recording the user labels what the camera can show:
 whether the mite moves ("moving") or not ("still"). The detector calls a mite
 moving in a recording when that recording's score reaches the threshold. Every
 comparison here is between those two, one (mite, recording) at a time; moving is
-the positive class.
+the positive class. survival_curves() compares them a mite at a time instead:
+the survival the labels show against the survival the detector's calls show.
 """
 
 import numpy as np
+
+from classes.survival import kaplan_meier
 
 MOVING = "moving"
 STILL = "still"
@@ -200,6 +203,52 @@ def outcome_rates(counts):
             key = f"{truth}_called_{call}"
             rates[key] = None if total == 0 else counts[key] / total
     return rates
+
+
+def mite_survival(rows, times, is_moving):
+    """(time, dead) for one mite from its labelled rows, by the rule of the result
+    pages (classes/survival.py) with no time to count as dead: dead at the first
+    labelled recording after its last movement, else censored at its last labelled
+    recording. None when it never moved: it is left out of the study.
+
+    `rows` have "recording"; `is_moving(row)` says whether the mite moved in it,
+    by the labels or as called by the detector."""
+    rows = sorted(rows, key=lambda row: row["recording"])
+    moved = [index for index, row in enumerate(rows) if is_moving(row)]
+    if not moved:
+        return None
+    after = rows[moved[-1] + 1:]
+    if after:
+        return times[after[0]["recording"]], True
+    return times[rows[-1]["recording"]], False
+
+
+def survival_curves(rows, times, thresholds):
+    """The Kaplan-Meier survival curves of the labelled mites: by the labels
+    ("truth") and as called by the detector at each of `thresholds` ({name:
+    value}), each on the mites that source saw moving at least once.
+
+    `rows` have "dataset", "mite_id", "recording", "movement" and "score".
+    Returns {source: {alive, low, high (percent per recording, see
+    kaplan_meier()), n_mites (in the study), n_left_out, n_dead}}."""
+    by_mite = {}
+    for row in rows:
+        by_mite.setdefault((row["dataset"], row["mite_id"]), []).append(row)
+    sources = {"truth": lambda row: row["movement"] == MOVING}
+    for name, threshold in thresholds.items():
+        sources[name] = lambda row, threshold=threshold: row["score"] >= threshold
+
+    curves = {}
+    for name, is_moving in sources.items():
+        survivals = [mite_survival(mite_rows, times, is_moving) for mite_rows in by_mite.values()]
+        study = [survival for survival in survivals if survival is not None]
+        curves[name] = {
+            **kaplan_meier(study, times),
+            "n_mites": len(study),
+            "n_left_out": len(survivals) - len(study),
+            "n_dead": sum(1 for _time, dead in study if dead),
+        }
+    return curves
 
 
 def moving_over_time(rows, n_recordings, thresholds):

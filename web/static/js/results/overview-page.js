@@ -1,5 +1,5 @@
 // The results overview: key figures, the plate map playing the recording shown,
-// the mites alive by group, the survival against the negative control, movement
+// the survival rate by group, the survival against the negative control, movement
 // per zone, the group summary and the score figures.
 
 class OverviewPage extends ResultsPage {
@@ -35,8 +35,9 @@ class OverviewPage extends ResultsPage {
     </div>
 
     <div class="block">
-      ${figure("chart-group-alive", 2, "Mites alive by group",
-        `Fraction of each group's mites alive in each recording, pooling every zone with that label. ${this.aliveBandNote()} ${this.deathRule()}${this.aliveLiveNote()}
+      ${figure("chart-group-alive", 2, "Survival rate by group",
+        `Survival rate of each group's mites in each recording, pooling every zone with that label. ${this.aliveBandNote()} ${this.deathRule()}
+        ${this.leftOutNote(results.survival.n_left_out)}${this.aliveLiveNote()}
         Click a time to show that recording.${this.stillToCome()}`, "", this.deathControl())}
     </div>
 
@@ -72,11 +73,11 @@ class OverviewPage extends ResultsPage {
     this.wire(body);
 
     this.timeChart($("chart-group-alive"), {
-      yLabel: "Mites alive (%)",
+      yLabel: "Survival rate (%)",
       yMin: 0, yMax: 100,
       yFormat: (v) => `${Math.round(v)}`,
-      series: results.survival.groups.map(({ group, alive, alive_ci }) => ({
-        name: group,
+      series: results.survival.groups.map(({ group, alive, alive_ci, n_mites: n }) => ({
+        name: `${group} (${n})`,
         values: alive,
         band: alive_ci,
         color: groupColor(group, groups),

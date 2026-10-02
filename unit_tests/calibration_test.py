@@ -11,10 +11,12 @@ from classes.calibration import (
     has_both_classes,
     is_rejected,
     match_ground_truth,
+    mite_survival,
     moving_over_time,
     outcome,
     per_recording,
     roc_curve,
+    survival_curves,
 )
 
 # Three still observations that barely score and three moving ones that do, with
@@ -139,6 +141,34 @@ def test_moving_over_time_compares_labels_and_detector_on_the_same_rows():
     assert result["n"] == [2, 1, 0]
     assert result["truth"] == [1.0, 0.0, None]
     assert result["current"] == [0.5, 0.0, None]
+
+
+def survival_rows(mite_id, labels, scores):
+    return [{"dataset": "d", "mite_id": mite_id, "recording": recording, "movement": label, "score": score}
+            for recording, (label, score) in enumerate(zip(labels, scores)) if label is not None]
+
+
+def test_a_mite_dies_at_the_first_labelled_recording_after_its_last_movement():
+    times = [0, 10, 20, 30]
+    by_label = lambda row: row["movement"] == "moving"
+    assert mite_survival(survival_rows("a", ["moving", "still", "still", "still"], [0] * 4), times, by_label) == (10, True)
+    # The recording after its last movement unlabelled: dead at the next labelled one.
+    assert mite_survival(survival_rows("a", ["moving", None, "still", None], [0] * 4), times, by_label) == (20, True)
+    # Moving in its last labelled recording: censored there.
+    assert mite_survival(survival_rows("a", ["still", "moving", None, None], [0] * 4), times, by_label) == (10, False)
+    assert mite_survival(survival_rows("a", ["still"] * 4, [0] * 4), times, by_label) is None
+
+
+def test_survival_curves_by_the_labels_and_the_detector_leave_out_mites_never_moving():
+    times = [0, 10, 20]
+    rows = (survival_rows("a", ["moving", "still", "still"], [20, 5, 5])      # dies at 10 either way
+            + survival_rows("b", ["moving", "moving", "moving"], [20, 20, 5])  # alive by labels, dies at 20 as called
+            + survival_rows("c", ["still", "still", "still"], [20, 5, 5]))     # never moving by labels; dies at 10 as called
+    curves = survival_curves(rows, times, {"current": 10})
+    assert curves["truth"]["alive"] == [100.0, 50.0, 50.0]
+    assert (curves["truth"]["n_mites"], curves["truth"]["n_left_out"], curves["truth"]["n_dead"]) == (2, 1, 1)
+    assert curves["current"]["alive"] == [100.0, pytest.approx(100 / 3), 0.0]
+    assert (curves["current"]["n_mites"], curves["current"]["n_left_out"], curves["current"]["n_dead"]) == (3, 0, 3)
 
 
 def test_has_both_classes():

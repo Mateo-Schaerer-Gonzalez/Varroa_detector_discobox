@@ -95,13 +95,46 @@ class ResultsPage {
     const wait = this.results.death_minutes || 0;
     return wait
       ? `A mite counts as dead once it has been still for ${minutes(wait)}, from the recording after its last movement on; until it has been still that long, it counts as alive, as it may yet move.
-      A mite never seen moving counts as dead from the start once the recordings span ${minutes(wait)}.`
-      : "A mite counts as alive up to the last recording in which it moved, and as dead from the next one on; a mite never seen moving counts as dead throughout.";
+      ${ResultsPage.LEFT_OUT_RULE}`
+      : `A mite counts as alive up to the last recording in which it moved, and as dead from the next one on. ${ResultsPage.LEFT_OUT_RULE}`;
   }
 
-  // The shaded band of the charts of mites alive (results.survival: alive_ci).
+  // --- in the study or left out
+
+  static LEFT_OUT_RULE = `Only the mites seen moving at least once are in the survival numbers: a mite never seen moving
+    may have been dead from the start, or no live mite at all, so it is left out, its id greyed out and struck through.`;
+
+  // A mite's lifeline, the server's (results.survival.mites): {in_study, time, dead}.
+  lifeline(mite) {
+    return this.results.survival.mites?.[mite.id] || { in_study: true, time: null, dead: null };
+  }
+
+  inStudy(mite) {
+    return this.lifeline(mite).in_study;
+  }
+
+  // "died at 10 min", "alive at 20 min (censored)" or "left out: never seen moving".
+  survivalText(mite) {
+    const { in_study: inStudy, time, dead } = this.lifeline(mite);
+    if (!inStudy) return "left out: never seen moving";
+    if (time == null) return "–";
+    return dead ? `died at ${minutes(time)}` : `alive at ${minutes(time)} (censored)`;
+  }
+
+  // The mite's id, as a link when `href`, greyed out and struck through when left out.
+  miteId(mite, href = "") {
+    const text = href ? `<a href="${href}">${esc(mite.id)}</a>` : esc(mite.id);
+    return this.inStudy(mite) ? text : `<span class="left-out-id" title="Never seen moving: left out of the survival numbers">${text}</span>`;
+  }
+
+  // "2 mites never seen moving are left out. " for `n` of them; "" for none.
+  leftOutNote(n) {
+    return n ? `${n} mite${n === 1 ? "" : "s"} never seen moving ${n === 1 ? "is" : "are"} left out. ` : "";
+  }
+
+  // The shaded band of the survival rate charts (results.survival: alive_ci).
   aliveBandNote() {
-    return `The shaded band around a curve is its 95% confidence interval (Kaplan–Meier, Greenwood's formula on the log-log scale);
+    return `The survival rate is the Kaplan–Meier estimate. The shaded band around a curve is its 95% confidence interval (Greenwood's formula on the log-log scale);
       the fewer the mites, the wider it is, and it has no width where all or none of them are alive.`;
   }
 
@@ -190,7 +223,7 @@ class ResultsPage {
   // A ring around a mite, coloured by its movement in the recording shown. The
   // whole disc inside the ring is its hover and click target; the label is not.
   miteMarker(svg, mite, radius, { withLabel = true, onClick = null } = {}) {
-    const g = PlateView.svgEl("g", { class: `mite-marker ${this.movingShown(mite) ? "moving" : "still"}` });
+    const g = PlateView.svgEl("g", { class: `mite-marker ${this.movingShown(mite) ? "moving" : "still"}${this.inStudy(mite) ? "" : " left-out"}` });
     g.append(
       PlateView.svgEl("circle", { cx: mite.x, cy: mite.y, r: radius + 3, class: "hit" }),
       PlateView.svgEl("circle", { cx: mite.x, cy: mite.y, r: radius, class: "ring" }),
@@ -205,7 +238,7 @@ class ResultsPage {
       g.addEventListener("click", onClick);
       g.addEventListener("mousemove", (event) => Charts.showTooltip(event,
         `<div class="tip-title">Mite ${esc(mite.id)}</div>${Markup.movingBadge(this.movingShown(mite))} at ${this.shownTime()}
-       ${this.movementGlyphs(mite)}<div class="tip-hint">Click to open</div>`));
+       ${this.movementGlyphs(mite)}<div class="tip-note">${this.survivalText(mite)}</div><div class="tip-hint">Click to open</div>`));
       g.addEventListener("mouseleave", Charts.hideTooltip);
     }
     svg.appendChild(g);

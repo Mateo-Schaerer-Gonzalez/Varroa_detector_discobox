@@ -149,12 +149,12 @@ RESULTS = results_with({
 def test_the_groups_alive_over_time_in_the_order_the_pages_list_them():
     report = SurvivalReport(RESULTS).describe()
     assert [row["group"] for row in report["groups"]] == ["Buffer", "venom", "unlabeled"]
-    assert report["groups"][1]["alive"] == [200 / 3, 100 / 3, 0.0]
-    assert report["zones"][1]["alive"] == [50.0, 0.0, 0.0]
-    assert report["zones"][1]["n_alive"] == [1, 0, 0]
+    assert report["groups"][0]["alive"] == [100.0, 100.0, 50.0]
+    assert report["zones"][4]["alive"] == [100.0, 100.0, 0.0]
+    assert report["zones"][4]["n_alive"] == [1, 1, 0]
     # Each curve with its confidence interval, the group's of its zones pooled.
-    assert report["zones"][1]["alive_ci"] == SurvivalAnalysis(TIMES).alive_ci([NEVER, FIRST_ONLY])
-    assert report["groups"][1]["alive_ci"] == SurvivalAnalysis(TIMES).alive_ci([NEVER, FIRST_ONLY, FIRST_TWO])
+    assert report["zones"][1]["alive_ci"] == SurvivalAnalysis(TIMES).alive_ci([FIRST_ONLY])
+    assert report["groups"][1]["alive_ci"] == SurvivalAnalysis(TIMES).alive_ci([FIRST_ONLY, FIRST_TWO])
     assert 5 not in report["zones"]  # nothing to show in a zone without mites
 
 
@@ -168,14 +168,14 @@ def test_every_group_against_the_controls():
     # One row per group, its zones pooled; "unlabeled" last.
     assert [(row["group"], row["zones"]) for row in log_rank["rows"]] == [("venom", [1, 4]), ("unlabeled", [2])]
     venom = log_rank["rows"][0]
-    assert venom["n_mites"] == 3
-    assert venom["observed"] == 3
-    assert venom["lt50"] == SurvivalAnalysis(TIMES).lt50([NEVER, FIRST_ONLY, FIRST_TWO])
+    assert venom["n_mites"] == 2  # the mite never seen moving is left out
+    assert venom["observed"] == 2
+    assert venom["lt50"] == SurvivalAnalysis(TIMES).lt50([FIRST_ONLY, FIRST_TWO])
     assert set(venom) == {"group", "zones", "n_mites", "lt50", "observed", "expected", "chi2", "p"}
 
 
 def test_a_groups_zones_ticked_as_control_are_left_out_of_its_row():
-    results = results_with({(1, "venom"): [NEVER], (2, "venom"): [ALWAYS], (3, "venom"): [FIRST_ONLY]})
+    results = results_with({(1, "venom"): [FIRST_TWO], (2, "venom"): [ALWAYS], (3, "venom"): [FIRST_ONLY]})
     [row] = SurvivalReport(results, controls=[2]).describe()["log_rank"]["rows"]
     assert (row["group"], row["zones"], row["n_mites"]) == ("venom", [1, 3], 2)
 
@@ -191,5 +191,26 @@ def test_the_death_time_changes_the_numbers():
 
 
 def test_the_live_page_counts_the_mites_alive_by_the_same_rule():
-    assert pipeline.mites_alive(RESULTS, 0) == 2
-    assert pipeline.mites_alive(RESULTS, 25) == 6
+    # Of the 6 mites, the one never seen moving is left out.
+    assert pipeline.mites_alive(RESULTS, 0) == {"alive": 2, "mites": 5}
+    assert pipeline.mites_alive(RESULTS, 25) == {"alive": 5, "mites": 5}
+
+
+def test_a_mite_never_seen_moving_is_left_out():
+    report = SurvivalReport(RESULTS).describe()
+    # Zone 1 holds NEVER and FIRST_ONLY: only FIRST_ONLY counts.
+    assert report["zones"][1]["alive"] == [100.0, 0.0, 0.0]
+    assert (report["zones"][1]["n_mites"], report["zones"][1]["n_left_out"]) == (1, 1)
+    venom = report["groups"][1]
+    assert venom["alive"] == [100.0, 50.0, 0.0]
+    assert (venom["n_mites"], venom["n_left_out"]) == (2, 1)
+    assert report["n_left_out"] == 1
+    log_rank = SurvivalReport(RESULTS, controls=[3]).describe()["log_rank"]
+    assert log_rank["rows"][0]["n_mites"] == 2  # venom
+
+
+def test_each_mites_lifeline():
+    mites = SurvivalReport(RESULTS).describe()["mites"]
+    assert mites["0"] == {"in_study": False, "time": None, "dead": None}  # NEVER
+    assert mites["1"] == {"in_study": True, "time": 10, "dead": True}  # FIRST_ONLY: dies at 10
+    assert mites["2"] == {"in_study": True, "time": 20, "dead": False}  # ALWAYS: censored at the end

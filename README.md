@@ -134,7 +134,9 @@ skip decoding again; it can be deleted at any time.
 
 `config.yaml` holds the metric in use and, under `metric_params`, the
 parameters of each metric (`{topN_variability: {n: 10}}`); one left out uses the
-default in `classes/analyzer.py`.
+default in `classes/analyzer.py`. It belongs to the machine and is not in git,
+so updating never changes the metric saved there. A new copy of the app makes it
+from `config.default.yaml`; change the defaults for everyone there.
 
 **A shaking plate.** A shake of half a pixel, too small to see, makes every
 still mite look like it moves, with any metric. With `stabilize_plate: true`

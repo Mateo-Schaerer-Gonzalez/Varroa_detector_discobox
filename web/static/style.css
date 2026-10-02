@@ -344,6 +344,9 @@ button.secondary:hover, .button.secondary:hover { background: var(--wash); borde
 .mite-marker.still .ring { stroke: #ffb52e; }
 .mite-marker text { fill: #fff; font-weight: 600; paint-order: stroke; stroke: #000; stroke-width: 3px; font-family: var(--sans); pointer-events: none; }
 .mite-marker:hover .ring { stroke-width: 4.5; }
+/* A mite never seen moving, left out of the survival numbers: its id greyed out. */
+.mite-marker.left-out text { fill: #c4c8cd; font-style: italic; }
+.left-out-id, .left-out-id a { color: var(--muted); font-style: italic; text-decoration: line-through; }
 
 /* The recording shown on the result pages, played over the first frame. */
 .crop-wrap.loading .crop image, .plate.loading img { opacity: 0.45; }
@@ -396,6 +399,7 @@ table.clickable tbody tr:hover, table.clickable tbody tr:focus-visible { backgro
 .chart .series.faint.hover path:not(.hit) { opacity: 1; stroke-width: 2.5; }
 .chart .box.hover .box-body { fill-opacity: 1; }
 .chart .row-note { fill: var(--muted); font-size: 11.5px; font-style: italic; }
+.chart .tick.muted-tick { fill: var(--muted); font-style: italic; text-decoration: line-through; }
 
 /* A live run's axis covers the whole run: the part not recorded yet is shaded. */
 .pending { fill: var(--wash); }
