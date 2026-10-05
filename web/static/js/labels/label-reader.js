@@ -30,7 +30,8 @@ class LabelReader {
     const { available } = ctx.session.label_reading;
     $("read-labels").checked = this.wanted(ctx.session);
     $("read-labels").disabled = !available;
-    $("read-labels-hint").textContent = available
+    // Why the box is greyed out, or what it does, shows when the pointer rests on it.
+    $("read-labels").parentElement.title = available
       ? "Google Gemini reads the writing beside each plate with no name yet (it takes the internet). Check what it read."
       : "Takes a free Google Gemini API key (aistudio.google.com/apikey): put GEMINI_API_KEY=… in the file .env in the app's folder and start the app again.";
   }
