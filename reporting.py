@@ -22,6 +22,12 @@ EXCEL_NAME = "results.xlsx"
 DETECTIONS_NAME = "detections.jpg"
 
 
+def _observed(mite_data):
+    """The rows in which the mite was there: without those of the recordings in
+    which the user marked it gone (classes/call_corrections.py)."""
+    return mite_data[~mite_data["censored"]] if "censored" in mite_data else mite_data
+
+
 def _last_recording(mite_data):
     """Each mite's row from the final recording of the session."""
     return mite_data[mite_data["time"] == mite_data["time"].max()]
@@ -71,12 +77,13 @@ def moving_table(mite_data):
 
 
 def write_excel(mite_data, out_dir):
-    """Write the long-form measurements, the per-group summary and movement over time."""
+    """Write the long-form measurements, the per-group summary and movement over
+    time; the last two without the recordings in which a mite was marked gone."""
     path = Path(out_dir) / EXCEL_NAME
     with pd.ExcelWriter(path, engine="openpyxl") as writer:
         mite_data.to_excel(writer, sheet_name="measurements", index=False)
-        summarise_by_group(mite_data).to_excel(writer, sheet_name="group_summary", index=False)
-        moving_table(mite_data).to_excel(writer, sheet_name="moving", index=False)
+        summarise_by_group(_observed(mite_data)).to_excel(writer, sheet_name="group_summary", index=False)
+        moving_table(_observed(mite_data)).to_excel(writer, sheet_name="moving", index=False)
     return path.name
 
 
@@ -91,7 +98,7 @@ FIGURES = [
 
 def write_figures(mite_data, out_dir):
     """Save every figure as a PNG and return their filenames, most useful first."""
-    plotter = Plotter(mite_data)
+    plotter = Plotter(_observed(mite_data))
     figures = {name: getattr(plotter, method)() for name, method in FIGURES}
 
     names = []
@@ -103,7 +110,8 @@ def write_figures(mite_data, out_dir):
 
 
 def _floats(values, digits=3):
-    return [round(float(value), digits) for value in values]
+    """Rounded numbers; None where there is none, e.g. a time at which every mite was gone."""
+    return [None if pd.isna(value) else round(float(value), digits) for value in values]
 
 
 def describe_mites(mite_data):
@@ -138,6 +146,7 @@ def describe_zones(mite_data, zones, times):
 
     Zones with no mites are kept (with n_mites 0) so the plate map stays complete.
     """
+    mite_data = _observed(mite_data)
     described = []
     for zone in zones:
         rows = mite_data[mite_data["zone_id"] == zone["id"]]
@@ -159,7 +168,7 @@ def describe_groups(mite_data, times):
     """Fraction of mites moving per group over time, for the overview chart."""
     return [
         {"group": group, "moving": _moving_series(rows, times)}
-        for group, rows in sorted(mite_data.groupby("group"), key=lambda item: item[0])
+        for group, rows in sorted(_observed(mite_data).groupby("group"), key=lambda item: item[0])
     ]
 
 
@@ -203,6 +212,7 @@ def _check_not_empty(mite_data):
 
 
 def _summary(mite_data):
+    mite_data = _observed(mite_data)
     summary = summarise_by_group(mite_data)
     return {
         "n_mites": int(mite_data["mite_ID"].nunique()),

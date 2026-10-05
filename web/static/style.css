@@ -129,6 +129,7 @@ button.secondary:hover, .button.secondary:hover { background: var(--wash); borde
 .status { white-space: nowrap; }
 .status.moving { color: var(--moving); }
 .status.still { color: var(--still); }
+.status.gone { color: var(--muted); }
 
 .spinner {
   display: inline-block; width: 11px; height: 11px; vertical-align: -1px;
@@ -345,6 +346,10 @@ button.secondary:hover, .button.secondary:hover { background: var(--wash); borde
 .mite-marker:hover .ring { stroke-width: 4.5; }
 /* A call corrected by hand: the ring dashed, "corrected" beside the call. */
 .mite-marker.corrected .ring { stroke-dasharray: 6 3; }
+/* A mite marked gone in the recording shown, e.g. fallen off. */
+.mite-marker.gone .ring { stroke: #b9bdc2; stroke-dasharray: 1 3; stroke-linecap: round; }
+.tip-glyphs .gone { color: var(--muted); }
+.state-select { font: inherit; font-size: 12px; padding: 3px 6px; color: var(--ink); background: var(--paper); border: 1px solid var(--rule); border-radius: 3px; }
 .corrected-mark { color: var(--muted); font-size: 0.85em; white-space: nowrap; }
 .tip-glyphs .corrected { outline: 1px solid currentColor; border-radius: 2px; }
 /* A mite never seen moving, left out of the survival numbers: its id greyed out. */

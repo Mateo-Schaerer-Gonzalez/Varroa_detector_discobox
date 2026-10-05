@@ -142,7 +142,7 @@ class OverviewPage extends ResultsPage {
     // A dot per mite: moving or still in the recording shown.
     results.mites.forEach((mite) => {
       const dot = document.createElement("span");
-      dot.className = `mite-dot ${this.movingShown(mite) ? "moving" : "still"}`;
+      dot.className = `mite-dot ${mite.censored[ctx.shown] ? "rejected" : this.movingShown(mite) ? "moving" : "still"}`;
       dot.style.left = percent(mite.x, results.image.width);
       dot.style.top = percent(mite.y, results.image.height);
       plate.appendChild(dot);

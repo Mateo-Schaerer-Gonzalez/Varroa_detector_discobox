@@ -1,9 +1,16 @@
 """The detector's calls the user corrected by hand on the result pages.
 
 The detector calls a mite moving in a recording when its score there reaches the
-threshold. Where the user sees it got one wrong, a click on the mite changes that
-one call, and every number of the results follows: the correction replaces the
-detector's call in the mite score table, before anything is worked out from it.
+threshold. Where the user sees it got one wrong, they change that one call on
+the mite's page, and every number of the results follows: the correction
+replaces the detector's call in the mite score table, before anything is worked
+out from it.
+
+A mite can also be marked gone, e.g. one that fell off the plate: in one
+recording, or from a recording on. In a recording in which it is gone the mite
+is censored: it counts neither as moving nor as still, and a mite gone from a
+recording on leaves the survival numbers there, alive as far as is known
+(classes/survival.py).
 
 The corrections are kept next to the recordings, in corrections.json, so they
 survive a restart and another run. Like the ground truth they go by the mite's
@@ -11,13 +18,20 @@ position, not its id, so they still apply after a change of detector settings
 renumbers the mites. They are kept per pool size, as a recording's index means
 another stretch of frames with another one:
 
-    {"recording": [{"x": 412.5, "y": 230.0, "moving": {"3": true}}], "30": [...]}
+    {"recording": [{"x": 412.5, "y": 230.0, "moving": {"3": true}, "gone": [1], "gone_from": 5}], "30": [...]}
 """
 
 import json
 from pathlib import Path
 
 import numpy as np
+
+MOVING = "moving"
+STILL = "still"
+GONE = "gone"            # gone in one recording
+GONE_FROM = "gone_from"  # gone from a recording on
+# A click on the mite steps through these.
+CYCLE = (MOVING, STILL, GONE, GONE_FROM)
 
 
 class CallCorrections:
@@ -40,14 +54,25 @@ class CallCorrections:
         return saved if isinstance(saved, dict) else {}
 
     def entries(self):
-        """The corrections of this pool size: [{x, y, moving: {recording: call}}]."""
-        entries = self._read().get(self.key, [])
-        return [entry for entry in entries if isinstance(entry, dict) and isinstance(entry.get("moving"), dict)
-                and "x" in entry and "y" in entry] if isinstance(entries, list) else []
+        """The corrections of this pool size, one entry per mite:
+        [{x, y, moving: {recording: call}, gone: [recording, ...], gone_from: recording or None}]."""
+        saved = self._read().get(self.key, [])
+        entries = []
+        for entry in saved if isinstance(saved, list) else []:
+            if not isinstance(entry, dict) or "x" not in entry or "y" not in entry:
+                continue
+            moving, gone, since = entry.get("moving"), entry.get("gone"), entry.get("gone_from")
+            entries.append({
+                "x": entry["x"], "y": entry["y"],
+                "moving": moving if isinstance(moving, dict) else {},
+                "gone": sorted({r for r in gone if isinstance(r, int)}) if isinstance(gone, list) else [],
+                "gone_from": since if isinstance(since, int) else None,
+            })
+        return entries
 
     def _write(self, entries):
         saved = self._read()
-        saved[self.key] = [entry for entry in entries if entry["moving"]]
+        saved[self.key] = [entry for entry in entries if entry["moving"] or entry["gone"] or entry["gone_from"] is not None]
         if not saved[self.key]:
             del saved[self.key]
         self.path.write_text(json.dumps(saved), encoding="utf-8")
@@ -60,51 +85,105 @@ class CallCorrections:
 
     # --- changes
 
-    def toggle(self, x, y, recording, detected):
-        """Change the call of the mite at (x, y) in `recording` to the other one:
-        moving to still, still to moving. `detected` is the detector's call there;
-        a change back to it takes the correction away. Returns the call now."""
+    @staticmethod
+    def _state(entry, recording, detected):
+        """What an entry's mite is in `recording`, one of CYCLE."""
+        since = entry["gone_from"]
+        if since == recording:
+            return GONE_FROM
+        if recording in entry["gone"] or (since is not None and recording > since):
+            return GONE
+        return MOVING if entry["moving"].get(str(recording), detected) else STILL
+
+    def change(self, x, y, recording, detected, state=None):
+        """Make the mite at (x, y) `state` in `recording`: "moving" or "still" (its
+        call), "gone" (in this recording) or "gone_from" (from this recording on);
+        without `state`, the one after what it is now in CYCLE. `detected` is the
+        detector's call there: a call changed back to it is no correction any more.
+
+        A mite gone from an earlier recording on that is given another state here
+        is seen again from here on: the recordings in between stay gone, one by one.
+        Returns the state now."""
         entries = self.entries()
         entry = self._nearest(entries, x, y)
         if entry is None:
-            entry = {"x": float(x), "y": float(y), "moving": {}}
+            entry = {"x": float(x), "y": float(y), "moving": {}, "gone": [], "gone_from": None}
             entries.append(entry)
-        shown = bool(entry["moving"].get(str(recording), detected))
-        if shown == bool(detected):
-            entry["moving"][str(recording)] = not shown
+        if state is None:
+            state = CYCLE[(CYCLE.index(self._state(entry, recording, detected)) + 1) % len(CYCLE)]
+        if state not in CYCLE:
+            raise ValueError(f"Unknown state {state!r}.")
+
+        gone, since = set(entry["gone"]), entry["gone_from"]
+        if since is not None and recording >= since and state != GONE_FROM:
+            gone.update(range(since, recording))
+            since = None
+        if state == GONE_FROM:
+            since = recording
+            gone = {r for r in gone if r < recording}
+        elif state == GONE:
+            gone.add(recording)
         else:
-            entry["moving"].pop(str(recording), None)
+            gone.discard(recording)
+            if (state == MOVING) == bool(detected):
+                entry["moving"].pop(str(recording), None)
+            else:
+                entry["moving"][str(recording)] = state == MOVING
+        entry["gone"], entry["gone_from"] = sorted(gone), since
         self._write(entries)
-        return not shown
+        return state
 
     # --- for the results
 
     def apply(self, mite_data):
         """The mite score table (ZoneManager.get_mite_scores()) with the corrected
-        calls in place of the detector's, and the corrections that apply to it:
-        {mite id: [recording, ...]}. With any, the table has a `corrected` column
-        too, true in the rows whose call is the user's."""
+        calls in place of the detector's, and what was changed in it, to add to
+        the results (nothing without changes):
+
+            corrections   {mite id: [recording, ...]}: the calls that are the user's
+            censored      {mite id: [recording, ...]}: the recordings in which the mite is gone
+            gone_from     {mite id: recording}: the mites gone from a recording on
+
+        With corrections the table has a `corrected` column, with mites gone a
+        `censored` one, true in those rows; a censored row is not moving."""
         entries = self.entries()
         if not entries or mite_data.empty:
             return mite_data, {}
         data = mite_data.copy()
         times = sorted(data["time"].unique())
-        recording = data["time"].map({time: index for index, time in enumerate(times)})
-        corrected = np.zeros(len(data), dtype=bool)
+        recording = data["time"].map({time: index for index, time in enumerate(times)}).to_numpy()
+        ids = data["mite_ID"].to_numpy()
         moving = data["moving"].to_numpy(dtype=bool).copy()
-        corrections = {}
+        corrected = np.zeros(len(data), dtype=bool)
+        censored = np.zeros(len(data), dtype=bool)
+        changes = {"corrections": {}, "censored": {}, "gone_from": {}}
         for mite in data.drop_duplicates("mite_ID").itertuples():
             entry = self._nearest(entries, mite.x, mite.y)
             if entry is None:
                 continue
-            for index, call in entry["moving"].items():
-                rows = ((data["mite_ID"] == mite.mite_ID) & (recording == int(index))).to_numpy()
-                if rows.any():
-                    moving[rows] = bool(call)
-                    corrected[rows] = True
-                    corrections.setdefault(str(mite.mite_ID), []).append(int(index))
-        if not corrections:
+            mite_id = str(mite.mite_ID)
+            since = entry["gone_from"]
+            gone = {r for r in entry["gone"] if r < len(times)} | set(range(since, len(times)) if since is not None else ())
+            calls = {int(r): bool(call) for r, call in entry["moving"].items() if int(r) not in gone and 0 <= int(r) < len(times)}
+            for index, call in calls.items():
+                rows = (ids == mite.mite_ID) & (recording == index)
+                moving[rows] = call
+                corrected[rows] = True
+            rows = (ids == mite.mite_ID) & np.isin(recording, sorted(gone))
+            moving[rows] = False
+            censored[rows] = True
+            if calls:
+                changes["corrections"][mite_id] = sorted(calls)
+            if gone:
+                changes["censored"][mite_id] = sorted(gone)
+            if since is not None and since < len(times):
+                changes["gone_from"][mite_id] = since
+        changes = {key: value for key, value in changes.items() if value}
+        if not changes:
             return mite_data, {}
         data["moving"] = moving
-        data["corrected"] = corrected
-        return data, {mite_id: sorted(indices) for mite_id, indices in corrections.items()}
+        if "corrections" in changes:
+            data["corrected"] = corrected
+        if "censored" in changes:
+            data["censored"] = censored
+        return data, changes

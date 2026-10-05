@@ -160,7 +160,11 @@ folder and of a live run alike: on the mite's page, click the mite in the
 recording shown, or the button of a recording in the table, and its call changes
 from *moving* to *still* or back. Every number, chart and the workbook (its `corrected`
 column) follow at once, and the mite's ring is dashed. Clicking again brings back the
-detector's call. The corrections are saved by mite position to
+detector's call. A mite that is not there any more, e.g. one that fell off the
+plate, can be marked *gone* the same way, in one recording or from a recording
+on: it is censored there, counting neither as moving nor as still, and a mite
+gone from a recording on leaves the survival numbers at the recording before,
+alive as far as is known (right-censored). The corrections are saved by mite position to
 `corrections.json` next to the recordings, so later runs keep them; they are
 apart from the calibration's ground truth, which they do not change.
 

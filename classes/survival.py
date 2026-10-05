@@ -12,6 +12,13 @@ Only the mites seen moving at least once are in the study: one never seen
 moving may have been dead from the start, or no live mite at all, so it is left
 out of every survival number (SurvivalAnalysis.in_study).
 
+A mite the user marked gone in a recording, e.g. fallen off the plate
+(classes/call_corrections.py), has None there instead of a call. It is followed
+up to the last recording in which it was there (SurvivalAnalysis.followed): one
+gone from a recording on, and not dead by then, is right-censored at the
+recording before, known only to have lived that long. A recording in which it
+was gone in between says nothing: the mite did not move in it, as far as is known.
+
 SurvivalAnalysis applies that rule; SurvivalReport describes it for the result
 pages: the survival rate over time per group and per zone, each mite's lifeline,
 and every group, its zones pooled, tested against the negative controls.
@@ -58,7 +65,7 @@ def kaplan_meier(survivals, times, confidence=0.95):
     high = np.where(np.isnan(high), estimate, high)
 
     def percent(values):
-        return [100 * float(value) for value in values]
+        return [None if np.isnan(value) else 100 * float(value) for value in values]
 
     return {"alive": percent(estimate), "low": percent(low), "high": percent(high)}
 
@@ -90,13 +97,24 @@ class SurvivalAnalysis:
         last = self.last_movement(moving)
         return None if last < 0 else self.times[last]
 
+    @staticmethod
+    def followed(moving):
+        """The last recording in which a mite was there (not None): the end of
+        its follow-up, the last recording unless it is gone by then; -1 when it
+        never was there."""
+        return max((index for index, value in enumerate(moving) if value is not None), default=-1)
+
     def is_alive(self, moving, recording):
-        """Whether a mite that moved as `moving` (one bool per recording) counts
-        as alive in recording `recording`."""
+        """Whether a mite that moved as `moving` (one call per recording, None
+        where it was gone) counts as alive in recording `recording`; not after
+        the end of its follow-up, where nothing is known of it."""
         last = self.last_movement(moving)
         if recording <= last:
             return True
-        still_for = self.times[-1] - self.times[max(last, 0)]
+        end = self.followed(moving)
+        if recording > end:
+            return False
+        still_for = self.times[end] - self.times[max(last, 0)]
         return still_for < self.death_minutes
 
     def alive_count(self, movings, recording):
@@ -104,9 +122,13 @@ class SurvivalAnalysis:
 
     def alive_percent(self, movings):
         """The share of the mites alive in each recording, in percent; None
-        throughout without mites."""
+        throughout without mites. With a mite gone before the last recording it
+        is the Kaplan-Meier estimate, which takes that mite out of the count
+        from then on instead of counting it as dead."""
         if not movings:
             return [None] * len(self.times)
+        if any(self.followed(moving) < len(self.times) - 1 for moving in movings):
+            return kaplan_meier([self.survival(moving) for moving in movings], self.times)["alive"]
         return [100 * self.alive_count(movings, recording) / len(movings) for recording in range(len(self.times))]
 
     def alive_ci(self, movings, confidence=0.95):
@@ -140,12 +162,14 @@ class SurvivalAnalysis:
 
     def survival(self, moving):
         """(time, dead): when a mite died, at the first recording in which it no
-        longer counts as alive. One alive in the last recording is censored there:
-        all that is known is that it lived at least that long."""
-        for recording, time in enumerate(self.times):
+        longer counts as alive. One alive at the end of its follow-up (the last
+        recording, or the last before it was gone) is censored there: all that
+        is known is that it lived at least that long."""
+        end = self.followed(moving)
+        for recording, time in enumerate(self.times[:end + 1]):
             if not self.is_alive(moving, recording):
                 return time, True
-        return self.times[-1], False
+        return self.times[max(end, 0)], False
 
     def dead_count(self, movings):
         return sum(1 for moving in movings if self.survival(moving)[1])
@@ -221,7 +245,7 @@ class SurvivalReport:
         return SurvivalAnalysis.study(self.all_movings(zone_ids))
 
     def all_movings(self, zone_ids):
-        return [mite["moving"] for mite in self.groups.mites_in(zone_ids)]
+        return [self.groups.seen(mite) for mite in self.groups.mites_in(zone_ids)]
 
     def describe(self):
         """Plain data for the result pages:
@@ -233,8 +257,8 @@ class SurvivalReport:
                             n_left_out were never seen moving
             zones           {zone id: {alive, alive_ci, n_alive, n_mites, n_left_out}}: the
                             same per zone, and how many are alive
-            mites           {mite id: {in_study, time, dead}}: each mite's lifeline, see
-                            lifeline()
+            mites           {mite id: {in_study, time, dead, lost}}: each mite's lifeline,
+                            see lifeline()
             n_left_out      the mites never seen moving, left out
             log_rank        the groups against the negative controls, see log_rank()
         """
@@ -259,8 +283,8 @@ class SurvivalReport:
             "death_minutes": analysis.death_minutes,
             "groups": groups,
             "zones": zones,
-            "mites": {mite["id"]: self.lifeline(mite["moving"]) for mite in mites},
-            "n_left_out": sum(1 for mite in mites if not SurvivalAnalysis.in_study(mite["moving"])),
+            "mites": {mite["id"]: self.lifeline(self.groups.seen(mite)) for mite in mites},
+            "n_left_out": sum(1 for mite in mites if not SurvivalAnalysis.in_study(self.groups.seen(mite))),
             "log_rank": self.log_rank(),
         }
 
@@ -271,13 +295,15 @@ class SurvivalReport:
         return {"n_mites": n_mites, "n_left_out": n_all - n_mites}
 
     def lifeline(self, moving):
-        """{in_study, time, dead}: when a mite in the study died, or the last
-        recording's time when it is still alive (right-censored, dead False);
-        time and dead None for a mite left out."""
+        """{in_study, time, dead, lost}: when a mite in the study died, or the
+        time of the last recording of its follow-up when it is still alive then
+        (right-censored, dead False): the last recording, or with `lost` the last
+        before the mite was gone. time and dead None for a mite left out."""
         if not SurvivalAnalysis.in_study(moving):
-            return {"in_study": False, "time": None, "dead": None}
+            return {"in_study": False, "time": None, "dead": None, "lost": False}
         time, dead = self.analysis.survival(moving)
-        return {"in_study": True, "time": time, "dead": dead}
+        lost = not dead and SurvivalAnalysis.followed(moving) < len(moving) - 1
+        return {"in_study": True, "time": time, "dead": dead, "lost": lost}
 
     def log_rank(self):
         """Every group, its zones pooled, against the zones ticked as negative

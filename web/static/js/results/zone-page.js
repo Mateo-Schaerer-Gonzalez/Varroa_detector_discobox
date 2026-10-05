@@ -42,7 +42,7 @@ class ZonePage extends ResultsPage {
     <div class="clip-block">
       ${this.clipFigure("zone-crop", 1, `Zone ${zone.id} · recording at ${this.shownTime()}`,
         `The recording, looped, with each detected mite ${movingBadge(true)} or ${movingBadge(false)} in it. Hover a mite for every recording, select it to open it;
-        a call that is wrong can be corrected on the mite's page, and its ring is then dashed here.`, "crop-wrap truth-crop")}
+        a call that is wrong can be corrected on the mite's page, and its ring is then dashed here. A mite marked gone there, e.g. fallen off, has a grey dotted ring.`, "crop-wrap truth-crop")}
     </div>
 
     ${mites.length ? `<div class="block">${figure("chart-zone-moving", 2, "Mites moving", `Fraction of this zone's mites moving in each recording, with the whole group for comparison where the group spans several zones. Click a time to show that recording.${this.stillToCome()}`)}</div>` : ""}
@@ -93,12 +93,12 @@ class ZonePage extends ResultsPage {
       yMin: 0, yMax: 100,
       yFormat: (v) => `${Math.round(v)}`,
       series: [
-        { name: `Zone ${zone.id}`, values: zone.moving.map((v) => v * 100), color },
+        { name: `Zone ${zone.id}`, values: zone.moving.map((v) => (v == null ? null : v * 100)), color },
         ...(groupCurve && spansZones
           ? [{ name: `all “${group}”`, values: groupCurve.moving.map((v) => (v == null ? null : v * 100)), color: token("--muted"), dashed: true, markers: false }]
           : []),
       ],
-      tooltipExtra: (i) => `<div class="tip-note">${zone.n_moving[i]} of ${mites.length} mites moving</div>`,
+      tooltipExtra: (i) => `<div class="tip-note">${zone.n_moving[i]} of ${zone.n_seen[i]} mites moving${zone.n_seen[i] < mites.length ? `, ${mites.length - zone.n_seen[i]} gone` : ""}</div>`,
     });
   }
 
@@ -165,7 +165,7 @@ class ZonePage extends ResultsPage {
       xFormat: (v) => `${+v.toFixed(1)}`,
       legend: [
         { name: "died", color: token("--ink"), shape: "cross" },
-        { name: "alive at the end (censored)", color, shape: "ring" },
+        { name: "alive at the end, or when it was gone (censored)", color, shape: "ring" },
         { name: "moved", color: token("--moving"), shape: "circle" },
       ],
     });

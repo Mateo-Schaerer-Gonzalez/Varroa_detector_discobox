@@ -9,7 +9,7 @@ can never reach into the analysis internals.
     set_rejected(...)          mark a detection as not a mite, or take the mark back
     mark_detection(...)        the same from the label page, which it tells how many mites each zone has left
     run_analysis(...)          the full pipeline, writing Excel and figures to out_dir
-    correct_call(...)          change one mite's call in one recording by hand; the results follow
+    correct_call(...)          change one mite's call in one recording by hand, or mark it gone; the results follow
     analysis_clip(...)         frames of one recording, of one zone or the whole plate
     describe_movement(...)     each mite's, zone's and group's movement numbers, for the pages
     describe_survival(...)     the mites alive over time and the log-rank tests against the
@@ -448,30 +448,32 @@ _runs = {}
 _runs_lock = threading.Lock()
 
 
-def _toggle_call(zone_manager, corrections, mite_id, recording):
-    """Change the call of the mite `mite_id` in `recording` to the other one
-    (CallCorrections.toggle())."""
+def _change_call(zone_manager, corrections, mite_id, recording, state):
+    """Make the mite `mite_id` `state` in `recording`, or step it to its next
+    state without one (CallCorrections.change())."""
     mite = next((m for zone in zone_manager.zones for m in zone.mites if m.text == str(mite_id)), None)
     if mite is None:
         raise ValueError(f"No mite {mite_id} in these results.")
     if not 0 <= recording < len(mite.moving):
         raise ValueError(f"No recording {recording} in these results.")
-    corrections.toggle((mite.x1 + mite.x2) / 2, (mite.y1 + mite.y2) / 2, recording, bool(mite.moving[recording]))
+    corrections.change((mite.x1 + mite.x2) / 2, (mite.y1 + mite.y2) / 2, recording, bool(mite.moving[recording]), state)
 
 
-def correct_call(out_dir, mite_id, recording):
-    """Change by hand the call of one mite in one recording of the last run written
-    to `out_dir`: moving to still, or still to moving; changed again, it is the
-    detector's once more. The correction is saved next to the recordings (see
-    classes/call_corrections.py), so later runs keep it. Returns the results as
-    run_analysis() does, every number following the change, and writes the
-    workbook and the figures again."""
+def correct_call(out_dir, mite_id, recording, state=None):
+    """Change by hand what one mite is in one recording of the last run written to
+    `out_dir`: `state` is "moving" or "still" (its call; the detector's again is
+    no correction any more), "gone" (the mite is not there in this recording,
+    e.g. it fell off) or "gone_from" (nor in any later one); without `state`,
+    the next of these. A mite gone is censored there. The change is saved next
+    to the recordings (see classes/call_corrections.py), so later runs keep it.
+    Returns the results as run_analysis() does, every number following the
+    change, and writes the workbook and the figures again."""
     with _runs_lock:
         kept = _runs.get(_draft_key(out_dir))
         if kept is None:
             raise ValueError("Run the analysis again to correct its calls.")
         run, labels, corrections = kept
-        _toggle_call(run.zone_manager, corrections, mite_id, int(recording))
+        _change_call(run.zone_manager, corrections, mite_id, int(recording), state)
         return _results(run, out_dir, labels, corrections=corrections)
 
 
@@ -516,13 +518,14 @@ def _results(run, out_dir, labels, write_files=True, corrections=None):
     workbook, the figures, the annotated first frame and the preview are written
     to `out_dir` too. A live run describes its results this same way after every
     pool, so its pages are drawn from exactly what a folder run returns. The calls
-    corrected by hand (`corrections`, a CallCorrections) replace the detector's;
-    with any, the results say which: "corrections", {mite id: [recording, ...]}."""
+    corrected by hand (`corrections`, a CallCorrections) replace the detector's,
+    and the mites marked gone are censored; with any, the results say which
+    ("corrections", "censored", "gone_from", see CallCorrections.apply())."""
     burst_minutes = run.burst_minutes
     mite_data = run.zone_manager.get_mite_scores(burst_minutes)
-    corrected = {}
+    changes = {}
     if corrections is not None:
-        mite_data, corrected = corrections.apply(mite_data)
+        mite_data, changes = corrections.apply(mite_data)
 
     if write_files:
         _write_preview(run.first_frame, out_dir)
@@ -543,8 +546,7 @@ def _results(run, out_dir, labels, write_files=True, corrections=None):
             "groups": reporting.describe_groups(mite_data, burst_minutes),
         }
     )
-    if corrected:
-        results["corrections"] = corrected
+    results.update(changes)
     return results
 
 
@@ -1862,13 +1864,13 @@ def live_results(live_id):
     return {"version": run.session.version, "results": run.session.results}
 
 
-def live_correct_call(live_id, mite_id, recording):
+def live_correct_call(live_id, mite_id, recording, state=None):
     """correct_call() for a live run: the results published next, at once, follow
     the change. Once the run is over, the workbook and the figures are written
     again too; before, they are after every recording anyway."""
     run = _get_live(live_id)
     with run.session.lock:
-        _toggle_call(run.analysis.zone_manager, CallCorrections(run.run_dir, run.pool_size), mite_id, int(recording))
+        _change_call(run.analysis.zone_manager, CallCorrections(run.run_dir, run.pool_size), mite_id, int(recording), state)
     run.session.publish(write_files=run.session.state == "finished")
     return live_results(live_id)
 

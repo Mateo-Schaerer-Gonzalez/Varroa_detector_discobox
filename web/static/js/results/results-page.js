@@ -32,21 +32,38 @@ class ResultsPage {
     return mite.moving[ctx.shown];
   }
 
-  // The mite's call in a recording, marked when it is the user's, not the detector's.
+  // What a mite is in a recording, set by hand on its page: "moving" or "still"
+  // (its call), "gone" (not there in this recording, e.g. fallen off: censored) or
+  // "gone_from" (the recording from which it is gone for good). A click on the
+  // mite steps through them in this order, the server's (classes/call_corrections.py).
+  static STATES = ["moving", "still", "gone", "gone_from"];
+  static STATE_NAMES = { moving: "moving", still: "still", gone: "gone in this recording", gone_from: "gone from this recording on" };
+
+  callState(mite, recording) {
+    if (mite.gone_from === recording) return "gone_from";
+    return mite.censored[recording] ? "gone" : mite.moving[recording] ? "moving" : "still";
+  }
+
+  // The mite's call in a recording, marked when it is the user's, not the
+  // detector's; "gone" where the user marked the mite gone.
   callBadge(mite, recording) {
+    if (mite.censored[recording]) {
+      const since = mite.gone_from != null && recording >= mite.gone_from ? ` from ${minutes(this.results.times[mite.gone_from])} on` : "";
+      return `<span class="status gone" title="Marked gone by hand${since}: censored, it counts neither as moving nor as still"><span aria-hidden="true">–</span> gone</span>`;
+    }
     return Markup.movingBadge(mite.moving[recording]) + (mite.corrected[recording]
       ? ` <span class="corrected-mark" title="Corrected by hand; change it again for the detector's call">corrected</span>` : "");
   }
 
-  // Change the call of a mite in a recording by hand, moving to still or back
-  // (classes/call_corrections.py): the server saves it and sends the results
-  // again, every number following the change.
-  async correctCall(mite, recording = ctx.shown) {
+  // Change by hand what a mite is in a recording, to `state` or, without one, to
+  // its next state (classes/call_corrections.py): the server saves it and sends
+  // the results again, every number following the change.
+  async correctCall(mite, recording = ctx.shown, state = null) {
     const workspace = ctx;
     const { sessionId } = workspace;
     Charts.hideTooltip();
     try {
-      const answer = await post(`/api/session/${sessionId}/correct`, { mite: mite.id, recording });
+      const answer = await post(`/api/session/${sessionId}/correct`, { mite: mite.id, recording, state });
       if (workspace.sessionId !== sessionId) return;  // another folder or run by now
       workspace.results = answer.results;
       if (workspace.mode === "live" && answer.version != null) live.version = answer.version;
@@ -132,9 +149,9 @@ class ResultsPage {
   static LEFT_OUT_RULE = `Only the mites seen moving at least once are in the survival numbers: a mite never seen moving
     may have been dead from the start, or no live mite at all, so it is left out, its id greyed out and struck through.`;
 
-  // A mite's lifeline, the server's (results.survival.mites): {in_study, time, dead}.
+  // A mite's lifeline, the server's (results.survival.mites): {in_study, time, dead, lost}.
   lifeline(mite) {
-    return this.results.survival.mites?.[mite.id] || { in_study: true, time: null, dead: null };
+    return this.results.survival.mites?.[mite.id] || { in_study: true, time: null, dead: null, lost: false };
   }
 
   inStudy(mite) {
@@ -143,8 +160,9 @@ class ResultsPage {
 
   // "died at 10 min", "alive at 20 min (censored)" or "left out: never seen moving".
   survivalText(mite) {
-    const { in_study: inStudy, time, dead } = this.lifeline(mite);
+    const { in_study: inStudy, time, dead, lost } = this.lifeline(mite);
     if (!inStudy) return "left out: never seen moving";
+    if (lost) return `alive at ${minutes(time)}, then gone (censored)`;
     if (time == null) return "–";
     return dead ? `died at ${minutes(time)}` : `alive at ${minutes(time)} (censored)`;
   }
@@ -242,20 +260,23 @@ class ResultsPage {
     return PlateView.crop(x, y, w, h, ctx.fileUrl(this.results.preview), this.results.image);
   }
 
-  // ● and ○ per recording, the one on screen underlined, those corrected by hand boxed.
+  // ● and ○ per recording, – where the mite is gone, the one on screen underlined,
+  // those corrected by hand boxed.
   movementGlyphs(mite) {
-    return `<div class="tip-glyphs">${mite.moving.map((moving, i) =>
-      `<span class="${moving ? "moving" : "still"}${i === ctx.shown ? " current" : ""}${mite.corrected[i] ? " corrected" : ""}">${moving ? "●" : "○"}</span>`).join("")}</div>`;
+    return `<div class="tip-glyphs">${mite.moving.map((moving, i) => {
+      const state = mite.censored[i] ? "gone" : moving ? "moving" : "still";
+      return `<span class="${state}${i === ctx.shown ? " current" : ""}${mite.corrected[i] ? " corrected" : ""}">${{ moving: "●", still: "○", gone: "–" }[state]}</span>`;
+    }).join("")}</div>`;
   }
 
   // A ring around a mite, coloured by its movement in the recording shown, dashed
-  // when that call was corrected by hand. The whole disc inside the ring is its
+  // when that call was corrected by hand, grey and dotted when the mite is gone. The whole disc inside the ring is its
   // hover and click target; the label is not. `hint` says what `onClick` does.
   miteMarker(svg, mite, radius, { withLabel = true, onClick = null, hint = "" } = {}) {
-    const moving = this.movingShown(mite);
+    const state = mite.censored[ctx.shown] ? "gone" : this.movingShown(mite) ? "moving" : "still";
     const corrected = mite.corrected[ctx.shown];
     const g = PlateView.svgEl("g", {
-      class: `mite-marker ${moving ? "moving" : "still"}${corrected ? " corrected" : ""}${this.inStudy(mite) ? "" : " left-out"}`,
+      class: `mite-marker ${state}${corrected ? " corrected" : ""}${this.inStudy(mite) ? "" : " left-out"}`,
     });
     g.append(
       PlateView.svgEl("circle", { cx: mite.x, cy: mite.y, r: radius + 3, class: "hit" }),

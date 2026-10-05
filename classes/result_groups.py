@@ -17,6 +17,7 @@ def group_order(group):
 class ResultGroups:
     def __init__(self, results):
         self.zones = [zone for zone in results["zones"] if zone["n_mites"]]
+        self._censored = results.get("censored", {})
         self._mites = {}
         for mite in results["mites"]:
             self._mites.setdefault(mite["zone_id"], []).append(mite)
@@ -28,6 +29,16 @@ class ResultGroups:
     def mites_in(self, zone_ids):
         """The mites of the zones `zone_ids`, zone by zone."""
         return [mite for zone_id in zone_ids for mite in self._mites.get(zone_id, [])]
+
+    def censored(self, mite):
+        """Per recording, whether the user marked the mite gone in it, e.g. fallen
+        off (classes/call_corrections.py)."""
+        gone = set(self._censored.get(mite["id"], []))
+        return [recording in gone for recording in range(len(mite["moving"]))]
+
+    def seen(self, mite):
+        """The mite's movement per recording, None in those in which it was gone."""
+        return [None if gone else moving for moving, gone in zip(mite["moving"], self.censored(mite))]
 
     def rows(self, zones=None):
         """(group, [zone, ...]) for the zones with mites (or `zones`), in group

@@ -117,6 +117,8 @@ class DeathRequest(BaseModel):
 class CorrectRequest(BaseModel):
     mite: str       # the mite's id in the results
     recording: int  # the recording whose call to change
+    # "moving", "still", "gone" (in this recording) or "gone_from" (from it on); the next of these without
+    state: Optional[str] = None
 
 
 class RejectRequest(BaseModel):
@@ -318,15 +320,15 @@ def run_analysis(session_id: str, request: LabelsRequest):
 
 @app.post("/api/session/{session_id}/correct")
 def correct_call(session_id: str, request: CorrectRequest):
-    """Change by hand one mite's call in one recording, moving to still or back
-    (pipeline.correct_call): the results come back, every number following it. A
-    live run's come with their version."""
+    """Change by hand one mite's call in one recording, or mark it gone, e.g. fallen
+    off (pipeline.correct_call): the results come back, every number following
+    it. A live run's come with their version."""
     session = get_session(session_id)
     if session.get("live"):
-        answer = live_call(pipeline.live_correct_call, session_id, request.mite, request.recording)
+        answer = live_call(pipeline.live_correct_call, session_id, request.mite, request.recording, request.state)
         return {**answer, "results": for_pages(session_id, answer["results"])}
     try:
-        results = pipeline.correct_call(session["out_dir"], request.mite, request.recording)
+        results = pipeline.correct_call(session["out_dir"], request.mite, request.recording, request.state)
     except ValueError as error:
         raise HTTPException(status_code=400, detail=str(error))
     session["results"] = results

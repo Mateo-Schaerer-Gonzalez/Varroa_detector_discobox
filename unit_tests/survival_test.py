@@ -211,6 +211,6 @@ def test_a_mite_never_seen_moving_is_left_out():
 
 def test_each_mites_lifeline():
     mites = SurvivalReport(RESULTS).describe()["mites"]
-    assert mites["0"] == {"in_study": False, "time": None, "dead": None}  # NEVER
-    assert mites["1"] == {"in_study": True, "time": 10, "dead": True}  # FIRST_ONLY: dies at 10
-    assert mites["2"] == {"in_study": True, "time": 20, "dead": False}  # ALWAYS: censored at the end
+    assert mites["0"] == {"in_study": False, "time": None, "dead": None, "lost": False}  # NEVER
+    assert mites["1"] == {"in_study": True, "time": 10, "dead": True, "lost": False}  # FIRST_ONLY: dies at 10
+    assert mites["2"] == {"in_study": True, "time": 20, "dead": False, "lost": False}  # ALWAYS: censored at the end
