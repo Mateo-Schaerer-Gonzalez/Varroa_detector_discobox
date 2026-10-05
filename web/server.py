@@ -114,6 +114,10 @@ class DeathRequest(BaseModel):
     minutes: float
 
 
+class ZonesRequest(BaseModel):
+    zones_per_plate: int  # 1 or 2
+
+
 class CorrectRequest(BaseModel):
     mite: str       # the mite's id in the results
     recording: int  # the recording whose call to change
@@ -302,6 +306,23 @@ def save_death_minutes(session_id: str, request: DeathRequest):
     except ValueError as error:
         raise HTTPException(status_code=400, detail=str(error))
     return {"death_minutes": death, "survival": survival_now(session_id)}
+
+
+@app.post("/api/session/{session_id}/zones")
+def save_zones_per_plate(session_id: str, request: ZonesRequest):
+    """Cut each plate into one zone or two, saved with the recordings for every
+    later analysis of them. The label page gets the session again, with the new
+    zones and their mites; the results of the other zones are let go."""
+    session = get_session(session_id)
+    if session.get("live"):
+        raise HTTPException(status_code=400, detail="A test run's zones per plate are among its settings, before it starts.")
+    try:
+        opened = pipeline.save_zones_per_plate(session["data_dir"], session["out_dir"], request.zones_per_plate)
+    except (FileNotFoundError, ValueError) as error:
+        raise HTTPException(status_code=400, detail=str(error))
+    session["mites"] = opened["mites"]
+    session.pop("results", None)
+    return {"session_id": session_id, "results_dir": str(session["out_dir"]), **opened}
 
 
 @app.post("/api/session/{session_id}/run")

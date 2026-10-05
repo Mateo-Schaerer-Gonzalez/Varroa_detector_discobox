@@ -35,6 +35,15 @@ class DataLoader:
                 settings[key] = value
         return settings
 
+    @staticmethod
+    def save_setting(path, name, value):
+        """Make `name=value` a line of the settings file `path`, added or
+        replaced, every other line kept as it is."""
+        path = Path(path)
+        lines = path.read_text(encoding="utf-8").splitlines() if path.is_file() else []
+        lines = [line for line in lines if line.split("=", 1)[0].strip() != name]
+        path.write_text("".join(f"{line}\n" for line in [*lines, f"{name}={value}"]), encoding="utf-8")
+
     @property
     def recording_dirs(self):
         dirs = [d for d in self.data_dir.iterdir() if d.is_dir() and self.TIMESTAMP_RE.match(d.name)]

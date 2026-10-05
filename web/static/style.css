@@ -71,6 +71,7 @@ code, kbd { font-family: var(--mono); font-size: 12px; color: var(--ink); backgr
 .brand { display: flex; align-items: baseline; gap: 14px; min-width: 0; padding: 14px 0; }
 .brand-name { font-weight: 600; font-size: 15px; color: var(--ink); }
 .folder-name { font-family: var(--mono); font-size: 12px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.quit-btn { align-self: center; flex: none; white-space: nowrap; }
 
 .steps { display: flex; gap: 24px; }
 .steps a {
@@ -662,6 +663,9 @@ td.num.error { color: var(--critical); font-weight: 600; }
 }
 .number-input:focus { outline: none; border-color: var(--ink); }
 #pool-option .number-input { margin-top: 4px; }
+.zones-option { display: grid; grid-template-columns: minmax(0, 1fr) 84px; gap: 4px 10px; align-items: center; margin-top: 20px; }
+.zones-option label { font-size: 12.5px; color: var(--ink); font-weight: 500; }
+.zones-option .hint { grid-column: 1 / -1; margin: 0; font-size: 12px; }
 .live-heading { margin-top: 22px; padding-top: 14px; border-top: 1px solid var(--rule); }
 .live-settings { display: grid; grid-template-columns: minmax(0, 1fr) 84px; gap: 6px 10px; align-items: center; }
 .live-settings .live-check { grid-column: 1 / -1; }

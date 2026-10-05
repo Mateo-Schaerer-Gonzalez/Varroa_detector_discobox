@@ -10,7 +10,8 @@ mite alive at the end of the experiment can still be told from a dead one. With
 (but kept, for when `death_reset` is switched off again) and the run goes on
 until no mite has moved for `death_minutes`, so every mite is dead at its end. Each recording is a burst of `frame_count` frames
 at `fps`, with the fan (`vent`) and the two LEDs switched on at their intensity
-(0-255) for their duration in seconds, ending with the burst.
+(0-255) for their duration in seconds, ending with the burst. `zones_per_plate`
+is how many zones each plate is cut into for the analysis (classes/zone_layout.py).
 
 The file is `key=value` lines, the format DataLoader reads from a session's
 .settings.txt, so a live run's settings are written next to its recordings. It
@@ -36,6 +37,7 @@ RANGES = {
     "vent": ("Fan intensity", "", 0, 255),
     "led1": ("LED 1 intensity", "", 0, 255),
     "led2": ("LED 2 intensity", "", 0, 255),
+    "zones_per_plate": ("Zones per plate", "", 1, 2),
 }
 
 
@@ -53,6 +55,7 @@ class Settings:
     vent: int = 255
     led1: int = 255
     led2: int = 255
+    zones_per_plate: int = 1
 
     @classmethod
     def from_dict(cls, values):

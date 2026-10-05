@@ -143,6 +143,21 @@ class Calibration {
     await open();
   }
 
+  // The Back button: close the dataset or the pooled report, after saving or
+  // dropping the unsaved changes. What was saved stays in the saved ground truth.
+  async quit() {
+    try {
+      await this.saveOrDropChanges();
+    } catch (error) {
+      alert(`Not closed: the last changes could not be saved (${error.message}).`);
+      return;
+    }
+    Object.assign(this, { id: null, data: null, datasetId: null, selected: [], report: null, reportStale: false, zoneId: null, recording: 0 });
+    groundTruth.load(null);
+    router.setFolder("cal", "");
+    router.go("#/cal/open");
+  }
+
   openFolder(dataDir) {
     return this.openWithTruthSaved($("cal-open-status"), async () => {
       const status = $("cal-open-status");

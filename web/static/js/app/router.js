@@ -11,15 +11,27 @@
 class Router {
   constructor() {
     // Each mode keeps its own folder in the header and the page it was left on,
-    // which its tab goes back to.
+    // which its tab goes back to. `quit` says what the Back button closes.
     this.modes = {
-      live: { page: "#/live/open", folder: "", path: "", title: "Live" },
-      analysis: { page: "#/open", folder: "", path: "", title: "Analysis" },
-      cal: { page: "#/cal/open", folder: "", path: "", title: "Calibration" },
+      live: { page: "#/live/open", folder: "", path: "", title: "Live", quit: "Close this test run and go back to the camera" },
+      analysis: { page: "#/open", folder: "", path: "", title: "Analysis", quit: "Close this folder and go back to the recordings" },
+      cal: { page: "#/cal/open", folder: "", path: "", title: "Calibration", quit: "Close this calibration and go back to the calibration data" },
     };
     this.home = this.modes.live.page;
     this.shownMode = null;
     window.addEventListener("hashchange", () => this.route());
+    $("quit-btn").addEventListener("click", () => this.quit());
+  }
+
+  // The Back button: quit what the mode shown has open and go back to its first page.
+  async quit() {
+    const button = $("quit-btn");
+    button.disabled = true;
+    try {
+      await { live, analysis, cal }[this.shownMode].quit();
+    } finally {
+      button.disabled = false;
+    }
   }
 
   static modeOf(hash) {
@@ -52,12 +64,15 @@ class Router {
     });
   }
 
-  // The folder a mode has open; the header shows the one of the mode on screen.
+  // The folder a mode has open; the header shows the one of the mode on screen,
+  // with the Back button that closes it.
   setFolder(mode, name, path = "") {
     Object.assign(this.modes[mode], { folder: name, path });
     if (mode === this.shownMode) {
       $("folder-name").textContent = name;
       $("folder-name").title = path;
+      $("quit-btn").hidden = !name;
+      $("quit-btn").title = this.modes[mode].quit;
     }
   }
 

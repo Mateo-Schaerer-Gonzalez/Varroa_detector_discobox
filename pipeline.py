@@ -6,6 +6,7 @@ list, string or number -- never a Zone, Mite, DataFrame or image array -- so the
 can never reach into the analysis internals.
 
     open_session(...)          cheap: the zones to label, their mites and a preview image
+    save_zones_per_plate(...)  cut each plate into one zone or two, for this recording from now on
     set_rejected(...)          mark a detection as not a mite, or take the mark back
     mark_detection(...)        the same from the label page, which it tells how many mites each zone has left
     run_analysis(...)          the full pipeline, writing Excel and figures to out_dir
@@ -101,6 +102,7 @@ from classes.recording_info import RecordingInfo
 from classes.survival import SurvivalAnalysis, SurvivalReport
 from classes.truth_draft import TruthDraft
 from classes.upload_plan import UploadPlan
+from classes.zone_layout import ZoneLayout
 from classes.zones import UNLABELED, ZoneManager
 
 _logger = logging.getLogger(__name__)
@@ -109,7 +111,10 @@ _logger = logging.getLogger(__name__)
 ZONE_TYPES = {"0": "label", "1": "mite"}
 EXCLUDED_TYPES = ["label"]
 
+# One zone per plate. Which file a recording uses is saved with it (classes/zone_layout.py).
 DEFAULT_COORDS_FILE = "coords_pixel.txt"
+# With two zones per plate these are labels_2.json and controls_2.json: a zone id
+# is another plate there.
 LABELS_FILENAME = "labels.json"
 CONTROLS_FILENAME = "controls.json"  # the zones ticked as negative controls
 GROUND_TRUTH_FILENAME = "ground_truth.json"
@@ -145,6 +150,33 @@ def _build_zone_manager(coords_file):
     )
 
 
+def _coords_file(data_dir, coords_file=None):
+    """The zones of the recordings in `data_dir`: those of the layout saved with
+    them, unless a `coords_file` is given."""
+    return coords_file or ZoneLayout.of_folder(data_dir).coords_file
+
+
+def zones_per_plate(data_dir):
+    """How many zones each plate of the recordings in `data_dir` is cut into."""
+    return ZoneLayout.of_folder(data_dir).zones_per_plate
+
+
+def save_zones_per_plate(data_dir, out_dir, zones, library_dir=CALIBRATION_LIBRARY):
+    """Cut each plate of the recordings in `data_dir` into `zones` zones (1 or 2),
+    for this and every later analysis of them: saved in their .settings.txt.
+    Returns the session as open_session() does, with the new zones and the mites
+    found in them. The last run of `out_dir` is of the other zones, so its calls
+    can no longer be corrected; run the analysis again."""
+    ZoneLayout(zones).save(data_dir)
+    with _runs_lock:
+        _runs.pop(_draft_key(out_dir), None)
+    return open_session(data_dir, out_dir, library_dir=library_dir)
+
+
+def _layout_file(data_dir, name):
+    return Path(data_dir) / ZoneLayout.of_folder(data_dir).filename(name)
+
+
 def _describe_zones(zone_manager, labels):
     """The plates in reading order, as plain rectangles in image pixels."""
     labels = {str(key): value for key, value in (labels or {}).items()}
@@ -170,7 +202,7 @@ def _describe_zones(zone_manager, labels):
 
 def load_labels(data_dir):
     """Read previously saved zone labels for this recording session, if any."""
-    path = Path(data_dir) / LABELS_FILENAME
+    path = _layout_file(data_dir, LABELS_FILENAME)
     if not path.is_file():
         return {}
     return json.loads(path.read_text(encoding="utf-8"))
@@ -178,7 +210,7 @@ def load_labels(data_dir):
 
 def save_labels(data_dir, labels):
     """Store zone labels next to the recordings so they survive a restart."""
-    path = Path(data_dir) / LABELS_FILENAME
+    path = _layout_file(data_dir, LABELS_FILENAME)
     path.write_text(json.dumps(labels, indent=2), encoding="utf-8")
     return str(path)
 
@@ -186,14 +218,14 @@ def save_labels(data_dir, labels):
 def load_controls(data_dir):
     """The ids of the zones ticked as negative controls, which the survival of
     every other zone is compared with; none if nothing was ticked."""
-    ids = _read_json(Path(data_dir) / CONTROLS_FILENAME, [])
+    ids = _read_json(_layout_file(data_dir, CONTROLS_FILENAME), [])
     return sorted({i for i in ids if isinstance(i, int)}) if isinstance(ids, list) else []
 
 
 def save_controls(data_dir, controls):
     """Store the negative-control zones next to the recordings, beside the labels."""
     ids = sorted({int(i) for i in controls})
-    (Path(data_dir) / CONTROLS_FILENAME).write_text(json.dumps(ids), encoding="utf-8")
+    _layout_file(data_dir, CONTROLS_FILENAME).write_text(json.dumps(ids), encoding="utf-8")
     return ids
 
 
@@ -227,14 +259,16 @@ def _clear_clips(out_dir):
     shutil.rmtree(Path(out_dir) / CLIPS_DIRNAME, ignore_errors=True)
 
 
-def open_session(data_dir, out_dir, coords_file=DEFAULT_COORDS_FILE, library_dir=CALIBRATION_LIBRARY):
+def open_session(data_dir, out_dir, coords_file=None, library_dir=CALIBRATION_LIBRARY):
     """Describe a recording session so its zones can be labelled.
 
     Decodes a single frame, writes it to `out_dir` as a JPEG, and returns the zone
     rectangles in image pixel coordinates, each with the number of mites detected
     in it -- detection only needs that first frame, so the UI can offer only the
     zones with mites for labelling. Drawing is left to the caller: the UI gets
-    numbers, not a picture with boxes burnt into it.
+    numbers, not a picture with boxes burnt into it. The zones are those of the
+    layout saved with the recordings (one or two per plate), unless a
+    `coords_file` is given.
     """
     data_dir = Path(data_dir)
     if not data_dir.is_dir():
@@ -252,7 +286,7 @@ def open_session(data_dir, out_dir, coords_file=DEFAULT_COORDS_FILE, library_dir
     frame = loader.load_preview_frame()
     _write_preview(frame, out_dir)
 
-    zone_manager = _build_zone_manager(coords_file)
+    zone_manager = _build_zone_manager(_coords_file(data_dir, coords_file))
     # The same detection as an analysis run, on the same first frame.
     detect_mites(zone_manager, frame, Analyzer())
     return _session_view(zone_manager, frame, data_dir, n_recordings, library_dir)
@@ -286,6 +320,8 @@ def _session_view(zone_manager, frame, data_dir, n_recordings, library_dir):
         "preview": PREVIEW_NAME,
         "image": {"width": int(frame.shape[1]), "height": int(frame.shape[0])},
         "n_recordings": n_recordings,
+        "zones_per_plate": zones_per_plate(data_dir),
+        "zone_layouts": ZoneLayout.choices(),
         "zones": zones,
         "mites": mites,
     }
@@ -376,7 +412,7 @@ def _detect_and_score(data_dir, coords_file, labels=None, reject=True, score=Tru
     With `reject`, detections marked "not a mite" in the session's ground truth
     are dropped, so they appear nowhere in the results.
     """
-    analysis = MotionAnalysis(_build_zone_manager(coords_file), score=score)
+    analysis = MotionAnalysis(_build_zone_manager(_coords_file(data_dir, coords_file)), score=score)
     analysis.run(FolderSource(data_dir).events(), pool_size)
     _arrange(analysis, data_dir, labels, reject, library_dir)
     return _run_view(analysis)
@@ -425,7 +461,7 @@ def _write_preview(frame, out_dir):
             time.sleep(0.05)
 
 
-def run_analysis(data_dir, out_dir, labels=None, coords_file=DEFAULT_COORDS_FILE, library_dir=CALIBRATION_LIBRARY,
+def run_analysis(data_dir, out_dir, labels=None, coords_file=None, library_dir=CALIBRATION_LIBRARY,
                  pool_size=None):
     """Run the whole pipeline and write its results to `out_dir`.
 
@@ -507,9 +543,7 @@ def save_death_minutes(data_dir, minutes):
     if value != minutes or not lowest <= value <= highest:
         raise ValueError(f"{label} must be a whole number of {unit} between {lowest} and {highest}.")
     path = Path(data_dir) / SETTINGS_FILENAME
-    lines = path.read_text(encoding="utf-8").splitlines() if path.is_file() else []
-    lines = [line for line in lines if line.split("=", 1)[0].strip() != "death_minutes"]
-    path.write_text("".join(f"{line}\n" for line in [*lines, f"death_minutes={value}"]), encoding="utf-8")
+    DataLoader.save_setting(path, "death_minutes", value)
     return value
 
 
@@ -648,7 +682,7 @@ def _opened_calibration(stored, out_dir, library_dir):
         return {**_calibration_view(stored, truth, library_dir), "truth_view": _draft_view(draft)}
 
 
-def open_calibration(data_dir, out_dir, coords_file=DEFAULT_COORDS_FILE, library_dir=CALIBRATION_LIBRARY):
+def open_calibration(data_dir, out_dir, coords_file=None, library_dir=CALIBRATION_LIBRARY):
     """Detect the mites of a calibration session and keep them in `out_dir`.
 
     Slow: every frame is decoded. Nothing is scored here, so the page cannot show
@@ -769,7 +803,7 @@ def _write_clip(loader, recording_name, fps, box, out_dir, name, max_width=None,
 PLATE_CLIP_WIDTH = 1400  # the whole plate is scaled down to this width in its clip
 
 
-def analysis_clip(data_dir, out_dir, recording, zone_id=None, coords_file=DEFAULT_COORDS_FILE, pool_size=None):
+def analysis_clip(data_dir, out_dir, recording, zone_id=None, coords_file=None, pool_size=None):
     """Frames of one recording of an analysis session: of one zone, or with no
     `zone_id` of the whole plate, scaled down. Like calibration_clip(), written
     to `out_dir` once and reused after.
@@ -793,7 +827,7 @@ def analysis_clip(data_dir, out_dir, recording, zone_id=None, coords_file=DEFAUL
     if zone_id is None:
         box, name, max_width = (0, 0, 10**6, 10**6), f"clip_r{recording}{tag}_plate", PLATE_CLIP_WIDTH
     else:
-        zone = next((z for z in _build_zone_manager(coords_file).labelled_zones if z.id == zone_id), None)
+        zone = next((z for z in _build_zone_manager(_coords_file(data_dir, coords_file)).labelled_zones if z.id == zone_id), None)
         if zone is None:
             raise ValueError(f"No zone {zone_id} in this session.")
         box = (zone.x1 - CLIP_MARGIN, zone.y1 - CLIP_MARGIN, zone.x2 + CLIP_MARGIN, zone.y2 + CLIP_MARGIN)
@@ -1589,6 +1623,8 @@ def save_live_settings(values, live_id=None, settings_path=LIVE_SETTINGS_FILE):
         run.source.settings = settings
         if fps_changed:
             run.source.set_fps(settings.fps)
+        if settings.zones_per_plate != run.layout.zones_per_plate:
+            _set_live_layout(run, ZoneLayout(settings.zones_per_plate))
     return settings.as_dict()
 
 
@@ -1601,7 +1637,7 @@ def live_plan(settings):
 def open_live(live_id, out_dir, run_name, source="camera", camera_id=None, replay_dir=None, replay_fps=None,
               replay_gap=2.0, serial_port="auto", save_frames=True, pool_size=None, settings_path=LIVE_SETTINGS_FILE,
               settings=None, recordings_root=RECORDINGS_ROOT, results_root=RESULTS_ROOT,
-              coords_file=DEFAULT_COORDS_FILE, library_dir=CALIBRATION_LIBRARY):
+              coords_file=None, library_dir=CALIBRATION_LIBRARY):
     """Open the camera, with the fan and LEDs (or a replay of `replay_dir`), for a
     live run called `run_name`, whose recordings go to recordings_root/run_name and
     whose results go to `out_dir` (by default results_root/run_name). The live
@@ -1611,7 +1647,8 @@ def open_live(live_id, out_dir, run_name, source="camera", camera_id=None, repla
     unless that one is running.
 
     The test run's settings are those saved in `settings_path`, with `settings`
-    (name -> value, e.g. {"fps": 30}) overriding them for this run only."""
+    (name -> value, e.g. {"fps": 30}) overriding them for this run only. Its
+    zones per plate are among them; a replay takes its folder's."""
     pool_size = check_pool_size(pool_size)
     with _live_lock:
         for other_id, other in list(_live.items()):
@@ -1625,10 +1662,12 @@ def open_live(live_id, out_dir, run_name, source="camera", camera_id=None, repla
             camera_id = live_camera.choose_camera(camera_id)
             lights = open_lights(serial_port)
             live_source = CameraSource(camera_id, settings, lights)
+            layout = ZoneLayout(settings.zones_per_plate)
         elif source == "replay":
             if not replay_dir or not Path(replay_dir).is_dir():
                 raise FileNotFoundError(f"Recording folder not found: {replay_dir}")
             live_source = ReplaySource(replay_dir, fps=replay_fps, gap=replay_gap)
+            layout = ZoneLayout.of_folder(replay_dir)
         else:
             raise ValueError(f"Unknown live source {source!r}.")
 
@@ -1644,7 +1683,8 @@ def open_live(live_id, out_dir, run_name, source="camera", camera_id=None, repla
             raise
         if source == "replay":
             # A replay keeps the folder's labels, "not a mite" marks and corrected calls, so it gives its results.
-            for name in (LABELS_FILENAME, CONTROLS_FILENAME, GROUND_TRUTH_FILENAME, CallCorrections.FILENAME):
+            for name in (*ZoneLayout.filenames(LABELS_FILENAME), *ZoneLayout.filenames(CONTROLS_FILENAME),
+                         GROUND_TRUTH_FILENAME, CallCorrections.FILENAME):
                 if (Path(replay_dir) / name).is_file():
                     shutil.copy2(Path(replay_dir) / name, run_dir / name)
         # Without its LEDs the Discobox is dark: they stay on, for the camera's
@@ -1653,19 +1693,35 @@ def open_live(live_id, out_dir, run_name, source="camera", camera_id=None, repla
 
         out_dir = results_dir(run_dir, results_root) if out_dir is None else Path(out_dir)
         _clear_clips(out_dir)
-        analysis = MotionAnalysis(_build_zone_manager(coords_file))
+        # With the run's folder from the start: its plate labels go by the layout.
+        layout.save(run_dir)
         run = SimpleNamespace(
-            live_id=live_id, source=live_source, lights=lights, analysis=analysis, run_dir=run_dir,
+            live_id=live_id, source=live_source, lights=lights, run_dir=run_dir,
             out_dir=out_dir, pool_size=pool_size, save_frames=bool(save_frames), library_dir=library_dir,
-            coords_file=coords_file, feed=(None, None), feed_lock=threading.Lock(), started_at=None,
+            coords_file=coords_file, layout=layout, feed=(None, None), feed_lock=threading.Lock(), started_at=None,
             movement=(0, -1),
         )
+        run.analysis = analysis = MotionAnalysis(_live_zone_manager(run))
         if source == "camera":
             live_source.movement = lambda: run.movement
         run.session = LiveSession(live_source, analysis, pool_size, publish=lambda session, write: _publish_live(run, write),
                                   on_finish=lambda session: _write_run_info(run, ended=True))
         _live[live_id] = run
     return live_status(live_id)
+
+
+def _live_zone_manager(run):
+    return _build_zone_manager(run.coords_file or run.layout.coords_file)
+
+
+def _set_live_layout(run, layout):
+    """Cut the plates of a live run not started yet into other zones: nothing is
+    analysed yet, so its analysis starts again on them."""
+    with run.session.lock:
+        run.layout = layout
+        layout.save(run.run_dir)
+        run.analysis = run.session.analysis = MotionAnalysis(_live_zone_manager(run))
+    _clear_clips(run.out_dir)
 
 
 def _get_live(live_id):
@@ -1775,7 +1831,7 @@ def live_preview(live_id, out_dir=None):
     out_dir = Path(out_dir or run.out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
     _write_preview(frame, out_dir)
-    zone_manager = _build_zone_manager(run.coords_file)
+    zone_manager = _live_zone_manager(run)
     detect_mites(zone_manager, frame, Analyzer())
     return _session_view(zone_manager, frame, run.run_dir, run.source.completed, run.library_dir)
 
@@ -1812,6 +1868,7 @@ def start_live(live_id, labels=None):
     text = run.source.settings_text
     if text:
         (run.run_dir / SETTINGS_FILENAME).write_text(text, encoding="utf-8")
+        run.layout.save(run.run_dir)  # a replayed folder's settings may not say
     run.session.recorder = Recorder(run.run_dir) if run.save_frames else None
     # Before the start: a quick replay can be over before start() returns.
     run.started_at = datetime.now().isoformat(timespec="seconds")
@@ -1851,6 +1908,7 @@ def live_status(live_id):
         "pool_size": run.pool_size,
         "pool_size_text": describe_pool_size(run.pool_size),
         "save_frames": run.save_frames,
+        "zones_per_plate": run.layout.zones_per_plate,
         "alive": alive,  # the mites alive now, of those in the study; None before the first results
     }
     # the progress bar over the live result pages
@@ -2023,7 +2081,7 @@ def describe_recording(data_dir, results_root=RESULTS_ROOT, library_dir=CALIBRAT
         run["pool_size_text"] = describe_pool_size(run.get("pool_size"))
     else:
         run = None
-    labels = _read_json(data_dir / LABELS_FILENAME, {})
+    labels = _read_json(_layout_file(data_dir, LABELS_FILENAME), {})
     groups = [str(group).strip() for group in labels.values() if str(group).strip()] if isinstance(labels, dict) else []
     truth = [entry.get("truth") for entry in _folder_truth(data_dir, library_dir) if isinstance(entry, dict)]
     rejected = sum(calibration.is_rejected(value) for value in truth)
@@ -2032,7 +2090,9 @@ def describe_recording(data_dir, results_root=RESULTS_ROOT, library_dir=CALIBRAT
     workbook = results_dir(data_dir, results_root) / reporting.EXCEL_NAME
     started = DataLoader.parse_start_time(first)
     # as the Discobox app saved them; None for a folder without .settings.txt
-    settings = {name: loader.settings[name] for name in ("recording_count", *SETTING_RANGES) if name in loader.settings} or None
+    # the zones per plate are the analysis's, told apart below
+    settings = {name: loader.settings[name] for name in ("recording_count", *SETTING_RANGES)
+                if name in loader.settings and name != ZoneLayout.SETTING} or None
     return {
         "name": data_dir.name,
         "path": str(data_dir.resolve()),
@@ -2045,6 +2105,7 @@ def describe_recording(data_dir, results_root=RESULTS_ROOT, library_dir=CALIBRAT
         "frames": frames,
         "fps": fps,
         "settings": settings,
+        "zones_per_plate": zones_per_plate(data_dir),
         "lights": RecordingInfo.lights(settings),
         "run": run,
         "n_labelled_plates": len(groups),

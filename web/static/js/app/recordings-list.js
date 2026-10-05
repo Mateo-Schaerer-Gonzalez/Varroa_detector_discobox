@@ -121,7 +121,8 @@ class RecordingsList {
   // The Discobox settings it was recorded with: each recording, the time between
   // them, and the fan and LEDs, as the Discobox app's settings window has them.
   settingsText(r) {
-    const burst = `${plural(r.frames, "frame")} at ${r.fps} fps (${+(r.frames / r.fps).toFixed(1)} s)`;
+    const zones = r.zones_per_plate > 1 ? `, ${r.zones_per_plate} zones per plate` : "";
+    const burst = `${plural(r.frames, "frame")} at ${r.fps} fps (${+(r.frames / r.fps).toFixed(1)} s)${zones}`;
     const s = r.settings;
     if (!s) return `${burst}<span class="sub">no settings saved with it</span>`;
     const every = s.recording_timeout != null ? `, every ${s.recording_timeout} min` : "";

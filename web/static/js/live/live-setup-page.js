@@ -4,7 +4,7 @@
 // run takes comes from the server (Settings.plan in classes/live/settings.py).
 
 class LiveSetupPage {
-  static FIELDS = ["run_minutes", "death_minutes", "death_reset", "recording_timeout", "vent_time", "led1_time", "led2_time", "frame_count", "fps"];
+  static FIELDS = ["run_minutes", "death_minutes", "death_reset", "recording_timeout", "vent_time", "led1_time", "led2_time", "frame_count", "fps", "zones_per_plate"];
   static DEVICES = [["vent", "Fan"], ["led1", "LED 1"], ["led2", "LED 2"]];
 
   constructor() {
@@ -62,6 +62,14 @@ class LiveSetupPage {
         <input id="live-set-${name}" data-setting="${name}" type="checkbox"${settings[name] ? " checked" : ""}>${esc(label)}
         <span class="hint">Each time a mite moves, the time it takes to count as dead starts again, so the run ends only once no mite has moved for that long.</span>
       </label>`;
+      }
+      if (name === "zones_per_plate") {
+        // One or the other, nothing in between: each plate whole, or its two halves.
+        const options = [];
+        for (let zones = min; zones <= max; zones += 1) options.push(`<option value="${zones}"${zones === settings[name] ? " selected" : ""}>${zones}</option>`);
+        return `<label for="live-set-${name}">${esc(label)}</label>
+      <select id="live-set-${name}" data-setting="${name}" class="number-input"
+        title="Analyse each plate as one zone, or as two: its upper and its lower half. Saved with the run's recordings.">${options.join("")}</select>`;
       }
       return `<label for="live-set-${name}">${esc(label)}${unit ? ` <span class="muted">(${unit})</span>` : ""}</label>
       <input id="live-set-${name}" data-setting="${name}" type="number" min="${min}" max="${max}" step="1"
@@ -140,6 +148,11 @@ class LiveSetupPage {
       status.className = "hint";
       status.textContent = "Saved to settings.txt.";
       this.drawRecordingTime();
+      // The plates labelled so far were of the other zones: label them again.
+      if (name === "zones_per_plate" && live.id && !live.started && live.workspace.session) {
+        live.workspace.session = null;
+        live.drawSteps();
+      }
       // A device switched on to check it follows its slider at once.
       const device = input.dataset.device;
       if (device && live.id && live.status.lights && live.status.lights[device].on) {

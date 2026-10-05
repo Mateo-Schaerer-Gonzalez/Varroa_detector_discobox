@@ -172,6 +172,18 @@ class LiveRun {
     this.forget();
   }
 
+  // The Back button: disconnect, stopping the test run first if one is going on.
+  async quit() {
+    if (this.running && !confirm("A test run is being recorded. Stop it and go back?\n\n"
+      + "The recording being captured ends with the frames already in; it is analysed and the results are written.")) return;
+    if (this.running) {
+      $("live-open-status").className = "hint";
+      $("live-open-status").innerHTML = `<span class="spinner"></span> Stopping the test run…`;
+      if (this.onResultsPage) $("live-error").textContent = "Stopping the test run…";
+    }
+    await this.close();
+  }
+
   // The server no longer has the run, e.g. it restarted after an update: say so,
   // and go back to connecting. Its recordings are kept in recordings/.
   lost() {

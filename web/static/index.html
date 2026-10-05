@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Varroa discobox</title>
-<link rel="stylesheet" href="style.css?v=19">
+<link rel="stylesheet" href="style.css?v=21">
 </head>
 <body>
 
@@ -19,6 +19,8 @@
       <a id="analysis-link" href="#/open" data-mode="analysis">Analysis</a>
       <a id="cal-link" href="#/cal/open" data-mode="cal">Calibration</a>
     </nav>
+    <!-- Quits what the mode shown has open: a folder, a calibration, a test run. -->
+    <button id="quit-btn" type="button" class="secondary small quit-btn" hidden>&larr; Back</button>
     <span id="folder-name" class="folder-name"></span>
   </div>
   <!-- The three stages of each mode. Each is a link, so the browser's back button works. -->
@@ -95,6 +97,13 @@
       </p>
       <div id="zone-editor-slot" class="zone-editor-slot"></div>
       <ul id="group-list" class="group-list"></ul>
+      <!-- Analysis only: a live run's is among its test run settings. -->
+      <div id="zones-option" class="zones-option">
+        <label for="zones-per-plate">Zones per plate</label>
+        <select id="zones-per-plate" class="number-input"></select>
+        <p class="hint">Analyse each plate as one zone, or as two: its upper and its lower half.
+          Saved with this recording, for every later analysis of it.</p>
+      </div>
       <details id="pool-option" class="path-option">
         <summary>Frames per pool</summary>
         <p class="hint">How many consecutive frames are scored together. Left empty, a whole recording, as always.</p>

@@ -10,7 +10,7 @@ import cv2
 from classes.zones import Zone
 
 SCRIPT_DIR = Path(__file__).resolve().parent
-coord_path = SCRIPT_DIR / "coords_yolo.txt"
+coord_path = SCRIPT_DIR / "coords_yolo_2.txt"
 
 def convert_yolo_to_coords(input_file, output_file, image_path):
     """Convert YOLOv8 polygon format bounding boxes to pixel coordinates (x1, y1, x2, y2).
@@ -57,4 +57,4 @@ def convert_yolo_to_coords(input_file, output_file, image_path):
 
     print(f"Conversion complete! Output saved to {output_file}")
 
-convert_yolo_to_coords(coord_path, SCRIPT_DIR / "coords_pixel.txt", "sample_image.bmp")
+convert_yolo_to_coords(coord_path, SCRIPT_DIR / "coords_pixel_2.txt", "sample_image.bmp")

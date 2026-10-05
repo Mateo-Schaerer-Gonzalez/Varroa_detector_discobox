@@ -331,6 +331,15 @@ plate and type `0` is a printed-label area that is masked out before detection.
 Plates are numbered 0-14 in reading order (left to right, top to bottom), and that
 id is what a typed label attaches to.
 
+`coords_pixel_2.txt` cuts each plate, and its label area, into an upper and a lower
+half: two zones per plate. *Zones per plate* (1 or 2) chooses between the two files:
+on the label page for a folder, among the test run settings for a live run. The
+choice is saved with the recordings, as the `zones_per_plate` line of their
+`.settings.txt`, so every later analysis and calibration of them uses the same
+zones (`classes/zone_layout.py`). A zone id is another plate in the other layout,
+so the labels and negative controls of two zones per plate are kept apart, in
+`labels_2.json` and `controls_2.json`.
+
 ## Tests
 
 ```
