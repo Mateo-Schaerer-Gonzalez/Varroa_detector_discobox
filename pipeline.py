@@ -9,6 +9,8 @@ can never reach into the analysis internals.
     save_zones_per_plate(...)  cut each plate into one zone or two, for this recording from now on
     set_rejected(...)          mark a detection as not a mite, or take the mark back
     mark_detection(...)        the same from the label page, which it tells how many mites each zone has left
+    read_labels(...)           read the names written beside the plates (Google Gemini), to fill in
+    save_label_reading(...)    whether the label page reads them: its box, saved in config.yaml
     run_analysis(...)          the full pipeline, writing Excel and figures to out_dir
     correct_call(...)          change one mite's call in one recording by hand, or mark it gone; the results follow
     analysis_clip(...)         frames of one recording, of one zone or the whole plate
@@ -38,6 +40,7 @@ can never reach into the analysis internals.
     live_plan(...)             how long a test run with some settings takes, and its recordings
     open_live(...)             open the camera (or a replay of a folder) for a live run
     live_preview(...)          detect the mites on the newest frame, to label the plates
+    live_read_labels(...)      read_labels() for a live run
     set_live_light(...)        switch the fan or an LED, to check the settings
     start_live(...)            start the test run; it is analysed as it is captured
     live_status(...)           how capture and analysis are going
@@ -88,6 +91,7 @@ from classes.plate_stabilizer import PlateStabilizer
 from classes.data_loader import DataLoader
 from classes.error_map import ErrorMap
 from classes.frame_source import FolderSource, as_analysis_image
+from classes.label_reader import LabelReader, LabelReadError
 from classes.live import camera as live_camera
 from classes.live.lights import DEVICES, open_lights, serial_ports
 from classes.live.progress import RunProgress
@@ -215,6 +219,47 @@ def save_labels(data_dir, labels):
     return str(path)
 
 
+def label_reading():
+    """Whether the names written beside the plates can be read (it takes a Google
+    Gemini API key, see classes/label_reader.py), and whether the label page
+    does so: its box, off until ticked (save_label_reading)."""
+    return {"available": LabelReader.saved_key() is not None, "enabled": bool(get_default_config().label_reader.enabled)}
+
+
+def save_label_reading(enabled):
+    """Read the names from the plates from now on, or stop: the tick of the label
+    page's box, saved in config.yaml."""
+    app_config.save_label_reading(bool(enabled))
+    return label_reading()
+
+
+def read_labels(data_dir, out_dir, mites, coords_file=None):
+    """Read the names written by hand beside the plates of the recordings in
+    `data_dir`, on the preview picture in `out_dir`: {zone id (a string): name},
+    for the zones with a detection among the label page's `mites` and no name
+    saved yet, where something is written. Nothing is saved: the page fills them
+    in for the user to check. Raises LabelReadError without a key or the internet."""
+    return _read_labels(_build_zone_manager(_coords_file(data_dir, coords_file)), data_dir, out_dir, mites)
+
+
+def _read_labels(zone_manager, data_dir, out_dir, mites):
+    frame = cv2.imread(str(Path(out_dir) / PREVIEW_NAME))
+    if frame is None:
+        raise FileNotFoundError("There is no picture of the plates to read the names from; open the folder again.")
+    saved = {str(key): str(value).strip() for key, value in load_labels(data_dir).items()}
+    with_mites = {mite["zone_id"] for mite in mites}
+    areas = {}  # a label area and the zones it names: the two halves of a plate share one
+    for zone in zone_manager.labelled_zones:
+        area = zone_manager.text_zone_for(zone)
+        if zone.id in with_mites and not saved.get(str(zone.id)) and area is not None:
+            areas.setdefault(id(area), (area, []))[1].append(zone.id)
+    if not areas:
+        return {}
+    reader = LabelReader(model=get_default_config().label_reader.model)
+    names = reader.read(frame, [area for area, _zones in areas.values()], sorted(set(filter(None, saved.values()))))
+    return {str(zone_id): name for (_area, zone_ids), name in zip(areas.values(), names) if name for zone_id in zone_ids}
+
+
 def load_controls(data_dir):
     """The ids of the zones ticked as negative controls, which the survival of
     every other zone is compared with; none if nothing was ticked."""
@@ -322,6 +367,7 @@ def _session_view(zone_manager, frame, data_dir, n_recordings, library_dir):
         "n_recordings": n_recordings,
         "zones_per_plate": zones_per_plate(data_dir),
         "zone_layouts": ZoneLayout.choices(),
+        "label_reading": label_reading(),
         "zones": zones,
         "mites": mites,
     }
@@ -1834,6 +1880,12 @@ def live_preview(live_id, out_dir=None):
     zone_manager = _live_zone_manager(run)
     detect_mites(zone_manager, frame, Analyzer())
     return _session_view(zone_manager, frame, run.run_dir, run.source.completed, run.library_dir)
+
+
+def live_read_labels(live_id, out_dir, mites):
+    """read_labels() for a live run: the names on the picture live_preview() made."""
+    run = _get_live(live_id)
+    return _read_labels(_live_zone_manager(run), run.run_dir, out_dir or run.out_dir, mites)
 
 
 def set_live_light(live_id, device, on=None, level=None):

@@ -58,6 +58,14 @@ To analyse a folder, in *Analysis*:
    <kbd>Tab</kbd> saves and moves to the next plate. Labels are saved to
    `labels.json` automatically. Tick *negative control* under the name of the
    control plates; they are saved to `controls.json`.
+   With *Read the names from the plates* ticked (a setting, off until you tick
+   it and saved as `label_reader.enabled` in `config.yaml`), the names written
+   by hand beside the plates with no name yet are read by Google Gemini and
+   filled in, to be checked (`classes/label_reader.py`). It sends a picture of
+   each label area to Google, so it takes the internet and a free API key from
+   aistudio.google.com/apikey: put it in a file `.env` in the app's folder as
+   `GEMINI_API_KEY=...` (the file is this machine's own, not in git) and start
+   the app again. Without one the box is greyed out and names are typed as before.
 3. **Results**: an overview with the fraction of mites moving per group, the
    fraction alive per group with its 95% confidence interval (Kaplan-Meier,
    Greenwood's formula on the log-log scale; a mite counts as alive up to the

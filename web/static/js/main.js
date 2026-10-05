@@ -11,6 +11,7 @@ const player = new ClipPlayer();
 const recordings = new RecordingsList();
 
 const sessionLabels = new SessionLabels();
+const labelReader = new LabelReader();
 const labelPage = new LabelPage();
 const analysis = new AnalysisMode();
 const resultsView = new ResultsView();

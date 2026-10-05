@@ -104,6 +104,13 @@ class DetectorConfig:
     min_inertia_ratio: float
 
 
+@dataclass
+class LabelReaderConfig:
+    # A config.yaml made before the names were read has no label_reader section.
+    enabled: bool = False
+    model: str = "gemini-flash-lite-latest"
+
+
 class AppConfig:
     """Loads configuration and exposes strongly-typed style/domain sections."""
 
@@ -116,6 +123,7 @@ class AppConfig:
         self.text_zone_style = TextZoneStyle(**_tuplify(visual_styles.get("text_zone", {})))
         self.mite = MiteConfig(**_tuplify(self._raw_config.get("mite", {})))
         self.detector = DetectorConfig(**self._raw_config.get("detector", {}))
+        self.label_reader = LabelReaderConfig(**(self._raw_config.get("label_reader") or {}))
         self.zone_styles = {
             name: TextZoneStyle(**_tuplify(style))
             for name, style in visual_styles.get("Zones", {}).items()
@@ -244,3 +252,30 @@ def _set_stabilize_plate(text, value, path):
     end = text.find("\n", match.end())
     end = len(text) if end < 0 else end
     return text[:end] + f"\n{match.group(1)}stabilize_plate: {flag}" + text[end:]
+
+
+_LABEL_READER_SECTION = re.compile(r"^label_reader:[ \t]*(?:#.*)?$", re.MULTILINE)
+# The section's own `enabled:` line: only indented or empty lines lie between.
+_LABEL_READER_ENABLED = re.compile(
+    r"^label_reader:[ \t]*(?:#.*)?\n(?:[ \t]+.*\n|[ \t]*\n)*?[ \t]+enabled:[ \t]*([^\s#]*)", re.MULTILINE)
+
+
+def save_label_reading(enabled: bool, config_path: Optional[str | Path] = None) -> bool:
+    """Write whether the names written beside the plates are read
+    (`label_reader.enabled`) into the config file and reload it. Only that line
+    is rewritten; a file made before the names were read gets the section."""
+    path = _config_file(config_path)
+    text = path.read_text(encoding="utf-8")
+    flag = "true" if enabled else "false"
+
+    match = _LABEL_READER_ENABLED.search(text)
+    section = _LABEL_READER_SECTION.search(text)
+    if match:
+        text = text[:match.start(1)] + flag + text[match.end(1):]
+    elif section:
+        text = text[:section.end()] + f"\n  enabled: {flag}" + text[section.end():]
+    else:
+        text = text.rstrip("\n") + f"\n\nlabel_reader:\n  enabled: {flag}\n"
+    path.write_text(text, encoding="utf-8")
+    _forget_loaded_config()
+    return bool(enabled)

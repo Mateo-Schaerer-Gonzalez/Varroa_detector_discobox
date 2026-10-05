@@ -666,6 +666,9 @@ td.num.error { color: var(--critical); font-weight: 600; }
 .zones-option { display: grid; grid-template-columns: minmax(0, 1fr) 84px; gap: 4px 10px; align-items: center; margin-top: 20px; }
 .zones-option label { font-size: 12.5px; color: var(--ink); font-weight: 500; }
 .zones-option .hint { grid-column: 1 / -1; margin: 0; font-size: 12px; }
+.read-option { margin-top: 20px; }
+.read-option .control-check { margin-top: 0; font-size: 12.5px; font-weight: 500; }
+.read-option .hint { margin: 4px 0 0; font-size: 12px; }
 .live-heading { margin-top: 22px; padding-top: 14px; border-top: 1px solid var(--rule); }
 .live-settings { display: grid; grid-template-columns: minmax(0, 1fr) 84px; gap: 6px 10px; align-items: center; }
 .live-settings .live-check { grid-column: 1 / -1; }

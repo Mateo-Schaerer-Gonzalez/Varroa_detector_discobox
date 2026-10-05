@@ -22,6 +22,7 @@ class AnalysisMode {
       $("open-status").textContent = "";
       if (ctx.mode === "analysis") labelPage.showLoadedStatus();
       router.go("#/label");
+      labelReader.read(this.workspace);
     } catch (error) {
       $("open-status").className = "hint error";
       $("open-status").textContent = error.message;
@@ -58,6 +59,7 @@ class AnalysisMode {
       this.status("hint error", esc(error.message));
     }
     router.go("#/label");  // drawn again, with the zones saved
+    if (workspace.sessionId === sessionId) labelReader.read(workspace);
   }
 
   // Frames scored together, from the label page's option; null for a whole recording.

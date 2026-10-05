@@ -55,3 +55,10 @@ detector:
   min_convexity: 0.80
   filter_by_inertia: true
   min_inertia_ratio: 0.45
+
+# The names written beside the plates are read by Google Gemini and filled in on
+# the label page (classes/label_reader.py). It needs the internet and a free API
+# key, as GEMINI_API_KEY=... in the file .env in this folder.
+label_reader:
+  enabled: false                 # the label page's box "Read the names from the plates"; ticking it saves it here
+  model: "gemini-flash-lite-latest"

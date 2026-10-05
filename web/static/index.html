@@ -97,6 +97,10 @@
       </p>
       <div id="zone-editor-slot" class="zone-editor-slot"></div>
       <ul id="group-list" class="group-list"></ul>
+      <div class="read-option">
+        <label class="control-check"><input id="read-labels" type="checkbox"> Read the names from the plates</label>
+        <p id="read-labels-hint" class="hint"></p>
+      </div>
       <!-- Analysis only: a live run's is among its test run settings. -->
       <div id="zones-option" class="zones-option">
         <label for="zones-per-plate">Zones per plate</label>
@@ -346,6 +350,7 @@
 <script src="js/app/server-heartbeat.js"></script>
 <script src="js/labels/session-labels.js"></script>
 <script src="js/labels/zone-editor.js"></script>
+<script src="js/labels/label-reader.js"></script>
 <script src="js/labels/label-page.js"></script>
 <script src="js/results/results-page.js"></script>
 <script src="js/results/results-view.js"></script>

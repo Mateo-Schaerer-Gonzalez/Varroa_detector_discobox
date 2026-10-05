@@ -106,6 +106,10 @@ class LabelsRequest(BaseModel):
     pool_size: Optional[int] = None
 
 
+class LabelReadingRequest(BaseModel):
+    enabled: bool
+
+
 class ControlsRequest(BaseModel):
     controls: list[int] = []
 
@@ -232,6 +236,28 @@ def save_labels(session_id: str, request: LabelsRequest):
     if session.get("live"):
         pipeline.live_refresh(session_id)
     return {"saved": len(request.labels)}
+
+
+@app.post("/api/label-reading")
+def save_label_reading(request: LabelReadingRequest):
+    """The label page's box "Read the names from the plates", saved in config.yaml."""
+    return pipeline.save_label_reading(request.enabled)
+
+
+@app.post("/api/session/{session_id}/read-labels")
+def read_labels(session_id: str):
+    """Read the names written beside the plates with no name yet (Google Gemini),
+    for the label page to fill in. Nothing is saved until the page saves them."""
+    session = get_session(session_id)
+    mites = session.get("mites", [])
+    try:
+        if session.get("live"):
+            return {"labels": live_call(pipeline.live_read_labels, session_id, session["out_dir"], mites)}
+        return {"labels": pipeline.read_labels(session["data_dir"], session["out_dir"], mites)}
+    except pipeline.LabelReadError as error:
+        raise HTTPException(status_code=502, detail=str(error))
+    except (FileNotFoundError, ValueError) as error:
+        raise HTTPException(status_code=400, detail=str(error))
 
 
 def session_results(session_id):

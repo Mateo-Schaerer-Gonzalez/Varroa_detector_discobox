@@ -13,6 +13,8 @@ update.log
 settings.txt
 # this machine's metric and thresholds; made from config.default.yaml
 /config.yaml
+# this machine's Google Gemini API key, for reading the plates' names
+.env
 vimbax.config
 
 # where earlier versions kept them; the app moves them to the folders above

@@ -217,6 +217,7 @@ class LiveRun {
       if (location.hash.startsWith("#/live/label")) labelPage.draw();
     }
     this.drawSteps();
+    labelReader.read(this.workspace);
   }
 
   async labelPlates() {

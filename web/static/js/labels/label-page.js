@@ -136,6 +136,7 @@ class LabelPage {
     const living = ctx.mode === "live";
     $("pool-option").hidden = living;
     this.drawZonesOption(living);
+    labelReader.draw();
     if (living) live.drawRunButton();
     else {
       $("run-btn").textContent = "Run analysis";
