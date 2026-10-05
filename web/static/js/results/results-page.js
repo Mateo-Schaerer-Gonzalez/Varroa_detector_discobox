@@ -6,7 +6,7 @@
 // classes/survival.py.
 
 class ResultsPage {
-  static MOVING_NOTE = "A mite counts as moving in a recording when its motion score in that recording reaches the threshold.";
+  static MOVING_NOTE = "A mite counts as moving in a recording when its motion score in that recording reaches the threshold, unless its call there was corrected by hand (✎).";
 
   get results() {
     return ctx.results;
@@ -30,6 +30,34 @@ class ResultsPage {
 
   movingShown(mite) {
     return mite.moving[ctx.shown];
+  }
+
+  // The mite's call in a recording, marked when it is the user's, not the detector's.
+  callBadge(mite, recording) {
+    return Markup.movingBadge(mite.moving[recording]) + (mite.corrected[recording]
+      ? ` <span class="corrected-mark" title="Corrected by hand; change it again for the detector's call">✎ corrected</span>` : "");
+  }
+
+  // Change the call of a mite in a recording by hand, moving to still or back
+  // (classes/call_corrections.py): the server saves it and sends the results
+  // again, every number following the change.
+  async correctCall(mite, recording = ctx.shown) {
+    const workspace = ctx;
+    const { sessionId } = workspace;
+    Charts.hideTooltip();
+    try {
+      const answer = await post(`/api/session/${sessionId}/correct`, { mite: mite.id, recording });
+      if (workspace.sessionId !== sessionId) return;  // another folder or run by now
+      workspace.results = answer.results;
+      if (workspace.mode === "live" && answer.version != null) live.version = answer.version;
+      if (ctx === workspace && /^#\/(live\/)?(results|zone|mite)/.test(location.hash)) resultsView.draw();
+    } catch (error) {
+      const status = this.body.querySelector(".clip-status");
+      if (status) {
+        status.className = "hint clip-status error";
+        status.textContent = `Could not change the call: ${error.message}`;
+      }
+    }
   }
 
   // Time of the last recording in which the mite moved.
@@ -214,31 +242,36 @@ class ResultsPage {
     return PlateView.crop(x, y, w, h, ctx.fileUrl(this.results.preview), this.results.image);
   }
 
-  // ● and ○ per recording, the one on screen underlined.
+  // ● and ○ per recording, the one on screen underlined, those corrected by hand boxed.
   movementGlyphs(mite) {
     return `<div class="tip-glyphs">${mite.moving.map((moving, i) =>
-      `<span class="${moving ? "moving" : "still"}${i === ctx.shown ? " current" : ""}">${moving ? "●" : "○"}</span>`).join("")}</div>`;
+      `<span class="${moving ? "moving" : "still"}${i === ctx.shown ? " current" : ""}${mite.corrected[i] ? " corrected" : ""}">${moving ? "●" : "○"}</span>`).join("")}</div>`;
   }
 
-  // A ring around a mite, coloured by its movement in the recording shown. The
-  // whole disc inside the ring is its hover and click target; the label is not.
-  miteMarker(svg, mite, radius, { withLabel = true, onClick = null } = {}) {
-    const g = PlateView.svgEl("g", { class: `mite-marker ${this.movingShown(mite) ? "moving" : "still"}${this.inStudy(mite) ? "" : " left-out"}` });
+  // A ring around a mite, coloured by its movement in the recording shown, dashed
+  // when that call was corrected by hand. The whole disc inside the ring is its
+  // hover and click target; the label is not. `hint` says what `onClick` does.
+  miteMarker(svg, mite, radius, { withLabel = true, onClick = null, hint = "" } = {}) {
+    const moving = this.movingShown(mite);
+    const corrected = mite.corrected[ctx.shown];
+    const g = PlateView.svgEl("g", {
+      class: `mite-marker ${moving ? "moving" : "still"}${corrected ? " corrected" : ""}${this.inStudy(mite) ? "" : " left-out"}`,
+    });
     g.append(
       PlateView.svgEl("circle", { cx: mite.x, cy: mite.y, r: radius + 3, class: "hit" }),
       PlateView.svgEl("circle", { cx: mite.x, cy: mite.y, r: radius, class: "ring" }),
     );
     if (withLabel) {
       const text = PlateView.svgEl("text", { x: mite.x + radius + 4, y: mite.y - radius, "font-size": radius * 1.1 });
-      text.textContent = mite.id;
+      text.textContent = corrected ? `${mite.id} ✎` : mite.id;
       g.appendChild(text);
     }
     if (onClick) {
       g.style.cursor = "pointer";
       g.addEventListener("click", onClick);
       g.addEventListener("mousemove", (event) => Charts.showTooltip(event,
-        `<div class="tip-title">Mite ${esc(mite.id)}</div>${Markup.movingBadge(this.movingShown(mite))} at ${this.shownTime()}
-       ${this.movementGlyphs(mite)}<div class="tip-note">${this.survivalText(mite)}</div><div class="tip-hint">Click to open</div>`));
+        `<div class="tip-title">Mite ${esc(mite.id)}</div>${this.callBadge(mite, ctx.shown)} at ${this.shownTime()}
+       ${this.movementGlyphs(mite)}<div class="tip-note">${this.survivalText(mite)}</div><div class="tip-hint">${hint}</div>`));
       g.addEventListener("mouseleave", Charts.hideTooltip);
     }
     svg.appendChild(g);

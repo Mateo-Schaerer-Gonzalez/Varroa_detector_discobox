@@ -22,7 +22,7 @@ pytestmark = pytest.mark.slow
 
 @pytest.fixture(scope="module", autouse=True)
 def untouched_sample_data():
-    written = [name for name in ("labels.json", "ground_truth.json") if (reference.SAMPLE_DATA / name).exists()]
+    written = [name for name in ("labels.json", "ground_truth.json", "corrections.json") if (reference.SAMPLE_DATA / name).exists()]
     if written:
         pytest.skip(f"sample_data now holds {', '.join(written)} (written by the app), which the reference was made without.")
 

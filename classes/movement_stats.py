@@ -74,7 +74,9 @@ class MovementReport:
     def describe(self):
         """The results' mites and zones with their numbers added, and the groups:
 
-            mites        + n_moving, mean_score, max_score, last_movement (time, or None)
+            mites        + n_moving, mean_score, max_score, last_movement (time, or None),
+                           corrected (per recording: the call is the user's, not the
+                           detector's; see classes/call_corrections.py)
             zones        + n_moving (mites moving per recording), n_moving_observations,
                            n_never_moved, overall_mean_score and rests (see zone_rests());
                            None for a zone without mites
@@ -88,7 +90,9 @@ class MovementReport:
         }
 
     def mite_stats(self, mite):
+        corrected = set(self.results.get("corrections", {}).get(mite["id"], []))
         return {
+            "corrected": [recording in corrected for recording in range(len(mite["moving"]))],
             "n_moving": MovementStats.moving_count(mite["moving"]),
             "mean_score": MovementStats.mean(mite["scores"]),
             "max_score": max(mite["scores"], default=None),

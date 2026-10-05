@@ -155,6 +155,15 @@ A detection marked *not a mite* is removed from every later analysis of that
 folder: `run_analysis` drops it before scoring, so it appears in no count,
 curve or figure.
 
+A call the detector got wrong can be corrected by hand on the result pages, of a
+folder and of a live run alike: on the mite's page, click the mite in the
+recording shown, or the button of a recording in the table, and its call changes
+from *moving* to *still* or back. Every number, chart and the workbook (its `corrected`
+column) follow at once, and the mite is marked ✎. Clicking again brings back the
+detector's call. The corrections are saved by mite position to
+`corrections.json` next to the recordings, so later runs keep them; they are
+apart from the calibration's ground truth, which they do not change.
+
 Everything runs on `127.0.0.1` and no asset is fetched from the internet, so the
 app works with no network connection.
 

@@ -41,7 +41,8 @@ class ZonePage extends ResultsPage {
 
     <div class="clip-block">
       ${this.clipFigure("zone-crop", 1, `Zone ${zone.id} · recording at ${this.shownTime()}`,
-        `The recording, looped, with each detected mite ${movingBadge(true)} or ${movingBadge(false)} in it. Hover a mite for every recording, select it to open it.`, "crop-wrap truth-crop")}
+        `The recording, looped, with each detected mite ${movingBadge(true)} or ${movingBadge(false)} in it. Hover a mite for every recording, select it to open it;
+        a call that is wrong can be corrected on the mite's page, and is then marked ✎ here.`, "crop-wrap truth-crop")}
     </div>
 
     ${mites.length ? `<div class="block">${figure("chart-zone-moving", 2, "Mites moving", `Fraction of this zone's mites moving in each recording, with the whole group for comparison where the group spans several zones. Click a time to show that recording.${this.stillToCome()}`)}</div>` : ""}
@@ -79,7 +80,7 @@ class ZonePage extends ResultsPage {
     const crop = this.crop(zone.x1 - margin, zone.y1 - margin, zone.x2 - zone.x1 + 2 * margin, zone.y2 - zone.y1 + 2 * margin);
     crop.appendChild(this.zoneOutline(zone, color));
     const radius = PlateView.ringRadius(zone);
-    mites.forEach((mite) => this.miteMarker(crop, mite, radius, { onClick: () => resultsView.openMite(mite) }));
+    mites.forEach((mite) => this.miteMarker(crop, mite, radius, { onClick: () => resultsView.openMite(mite), hint: "Click to open" }));
     $("zone-crop").appendChild(crop);
     this.playClip(`/api/session/${ctx.sessionId}/clip/${ctx.shown}/${zone.id}`, $("zone-crop"), $("zone-crop").nextElementSibling,
       (clip) => ClipPlayer.onSvg(crop, clip));
@@ -199,7 +200,7 @@ class ZonePage extends ResultsPage {
     <tbody>${mites.map((mite) => `
       <tr data-href="${this.miteHref(mite)}" tabindex="0">
         <td>${this.miteId(mite, this.miteHref(mite))}</td>
-        <td>${Markup.movingBadge(this.movingShown(mite))}</td>
+        <td>${this.callBadge(mite, ctx.shown)}</td>
         <td class="num">${this.lastMovementText(mite)}</td>
         <td class="${this.inStudy(mite) ? "" : "muted"}">${this.survivalText(mite)}</td>
         <td class="num">${mite.n_moving}/${times.length}</td>

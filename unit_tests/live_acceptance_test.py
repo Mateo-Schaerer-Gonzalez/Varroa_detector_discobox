@@ -58,8 +58,8 @@ def assert_live_equals_folder(live, folder_run):
 
 @pytest.mark.slow
 def test_a_replayed_live_run_gives_folder_mode_results_and_the_reference(tmp_path):
-    if any((reference.SAMPLE_DATA / name).exists() for name in ("labels.json", "ground_truth.json")):
-        pytest.skip("sample_data holds labels or ground truth the reference was made without.")
+    if any((reference.SAMPLE_DATA / name).exists() for name in ("labels.json", "ground_truth.json", "corrections.json")):
+        pytest.skip("sample_data holds labels, ground truth or corrected calls the reference was made without.")
     live = replay(tmp_path, reference.SAMPLE_DATA)
     assert live["status"]["state"] == "finished" and live["status"]["error"] is None
     assert live["status"]["saved_frames"] == 180

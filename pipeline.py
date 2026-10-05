@@ -9,6 +9,7 @@ can never reach into the analysis internals.
     set_rejected(...)          mark a detection as not a mite, or take the mark back
     mark_detection(...)        the same from the label page, which it tells how many mites each zone has left
     run_analysis(...)          the full pipeline, writing Excel and figures to out_dir
+    correct_call(...)          change one mite's call in one recording by hand; the results follow
     analysis_clip(...)         frames of one recording, of one zone or the whole plate
     describe_movement(...)     each mite's, zone's and group's movement numbers, for the pages
     describe_survival(...)     the mites alive over time and the log-rank tests against the
@@ -40,6 +41,7 @@ can never reach into the analysis internals.
     start_live(...)            start the test run; it is analysed as it is captured
     live_status(...)           how capture and analysis are going
     live_results(...)          the results so far, as run_analysis() gives them
+    live_correct_call(...)     correct_call() for a live run
     live_frame(...)            the newest frame as a JPEG, for the live feed
     pause_live / resume_live / stop_live / close_live
 
@@ -77,6 +79,7 @@ import numpy as np
 import reporting
 from classes import calibration
 from classes.analyzer import Analyzer
+from classes.call_corrections import CallCorrections
 from classes import app_config
 from classes.app_config import get_default_config, save_motion_threshold
 from classes import plate_stabilizer
@@ -433,7 +436,43 @@ def run_analysis(data_dir, out_dir, labels=None, coords_file=DEFAULT_COORDS_FILE
     the UI browses.
     """
     run = _detect_and_score(data_dir, coords_file, labels, library_dir=library_dir, pool_size=pool_size)
-    return _results(run, out_dir, labels)
+    corrections = CallCorrections(data_dir, pool_size)
+    with _runs_lock:
+        _runs[_draft_key(out_dir)] = (run, labels, corrections)
+    return _results(run, out_dir, labels, corrections=corrections)
+
+
+# The last run of each results folder, so a call corrected by hand on its result
+# pages gives new results without decoding the recordings again.
+_runs = {}
+_runs_lock = threading.Lock()
+
+
+def _toggle_call(zone_manager, corrections, mite_id, recording):
+    """Change the call of the mite `mite_id` in `recording` to the other one
+    (CallCorrections.toggle())."""
+    mite = next((m for zone in zone_manager.zones for m in zone.mites if m.text == str(mite_id)), None)
+    if mite is None:
+        raise ValueError(f"No mite {mite_id} in these results.")
+    if not 0 <= recording < len(mite.moving):
+        raise ValueError(f"No recording {recording} in these results.")
+    corrections.toggle((mite.x1 + mite.x2) / 2, (mite.y1 + mite.y2) / 2, recording, bool(mite.moving[recording]))
+
+
+def correct_call(out_dir, mite_id, recording):
+    """Change by hand the call of one mite in one recording of the last run written
+    to `out_dir`: moving to still, or still to moving; changed again, it is the
+    detector's once more. The correction is saved next to the recordings (see
+    classes/call_corrections.py), so later runs keep it. Returns the results as
+    run_analysis() does, every number following the change, and writes the
+    workbook and the figures again."""
+    with _runs_lock:
+        kept = _runs.get(_draft_key(out_dir))
+        if kept is None:
+            raise ValueError("Run the analysis again to correct its calls.")
+        run, labels, corrections = kept
+        _toggle_call(run.zone_manager, corrections, mite_id, int(recording))
+        return _results(run, out_dir, labels, corrections=corrections)
 
 
 def death_minutes(data_dir):
@@ -472,13 +511,18 @@ def save_death_minutes(data_dir, minutes):
     return value
 
 
-def _results(run, out_dir, labels, write_files=True):
+def _results(run, out_dir, labels, write_files=True, corrections=None):
     """The results of a run as the UI browses them. With `write_files`, the
     workbook, the figures, the annotated first frame and the preview are written
     to `out_dir` too. A live run describes its results this same way after every
-    pool, so its pages are drawn from exactly what a folder run returns."""
+    pool, so its pages are drawn from exactly what a folder run returns. The calls
+    corrected by hand (`corrections`, a CallCorrections) replace the detector's;
+    with any, the results say which: "corrections", {mite id: [recording, ...]}."""
     burst_minutes = run.burst_minutes
     mite_data = run.zone_manager.get_mite_scores(burst_minutes)
+    corrected = {}
+    if corrections is not None:
+        mite_data, corrected = corrections.apply(mite_data)
 
     if write_files:
         _write_preview(run.first_frame, out_dir)
@@ -499,6 +543,8 @@ def _results(run, out_dir, labels, write_files=True):
             "groups": reporting.describe_groups(mite_data, burst_minutes),
         }
     )
+    if corrected:
+        results["corrections"] = corrected
     return results
 
 
@@ -1595,8 +1641,8 @@ def open_live(live_id, out_dir, run_name, source="camera", camera_id=None, repla
                 shutil.rmtree(run_dir, ignore_errors=True)
             raise
         if source == "replay":
-            # A replay keeps the folder's labels and "not a mite" marks, so it gives its results.
-            for name in (LABELS_FILENAME, CONTROLS_FILENAME, GROUND_TRUTH_FILENAME):
+            # A replay keeps the folder's labels, "not a mite" marks and corrected calls, so it gives its results.
+            for name in (LABELS_FILENAME, CONTROLS_FILENAME, GROUND_TRUTH_FILENAME, CallCorrections.FILENAME):
                 if (Path(replay_dir) / name).is_file():
                     shutil.copy2(Path(replay_dir) / name, run_dir / name)
         # Without its LEDs the Discobox is dark: they stay on, for the camera's
@@ -1655,11 +1701,14 @@ def _publish_live(run, write_files):
     After each recording (`write_files`), run.json says how far the run got."""
     labels = load_labels(run.run_dir)
     recordings = list(run.session.recordings)
-    if write_files:  # even if no results can be described, these recordings are analysed
+    # A call corrected after the run's end writes the files again, and nothing else.
+    going = write_files and run.session.state != "finished"
+    if going:  # even if no results can be described, these recordings are analysed
         run.movement = (len(recordings), run.movement[1])
     _arrange(run.analysis, run.run_dir, labels, True, run.library_dir)
-    results = _results(_run_view(run.analysis), run.out_dir, labels, write_files)
-    if write_files:
+    results = _results(_run_view(run.analysis), run.out_dir, labels, write_files,
+                       corrections=CallCorrections(run.run_dir, run.pool_size))
+    if going:
         run.movement = (len(recordings), _last_movement(results, recordings))
         _write_run_info(run)
     return results
@@ -1811,6 +1860,17 @@ def live_results(live_id):
     analysed), and their version, which changes with every update."""
     run = _get_live(live_id)
     return {"version": run.session.version, "results": run.session.results}
+
+
+def live_correct_call(live_id, mite_id, recording):
+    """correct_call() for a live run: the results published next, at once, follow
+    the change. Once the run is over, the workbook and the figures are written
+    again too; before, they are after every recording anyway."""
+    run = _get_live(live_id)
+    with run.session.lock:
+        _toggle_call(run.analysis.zone_manager, CallCorrections(run.run_dir, run.pool_size), mite_id, int(recording))
+    run.session.publish(write_files=run.session.state == "finished")
+    return live_results(live_id)
 
 
 def live_refresh(live_id):

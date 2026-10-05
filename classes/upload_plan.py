@@ -14,9 +14,9 @@ newer than the copy in the dropped folder.
 import re
 from pathlib import PurePosixPath
 
-KEPT = ("labels.json", "controls.json", "ground_truth.json")
+KEPT = ("labels.json", "controls.json", "ground_truth.json", "corrections.json")
 FRAME = re.compile(r"\.bmp$", re.IGNORECASE)
-APP_FILE = re.compile(r"(^|/)(\.settings\.txt|(labels|controls|ground_truth|run)\.json)$")
+APP_FILE = re.compile(r"(^|/)(\.settings\.txt|(labels|controls|ground_truth|corrections|run)\.json)$")
 SINGLE_RECORDING = re.compile(r"_fps-\d+")
 
 
