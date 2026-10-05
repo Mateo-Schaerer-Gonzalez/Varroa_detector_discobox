@@ -42,7 +42,7 @@ class ZonePage extends ResultsPage {
     <div class="clip-block">
       ${this.clipFigure("zone-crop", 1, `Zone ${zone.id} · recording at ${this.shownTime()}`,
         `The recording, looped, with each detected mite ${movingBadge(true)} or ${movingBadge(false)} in it. Hover a mite for every recording, select it to open it;
-        a call that is wrong can be corrected on the mite's page, and is then marked ✎ here.`, "crop-wrap truth-crop")}
+        a call that is wrong can be corrected on the mite's page, and its ring is then dashed here.`, "crop-wrap truth-crop")}
     </div>
 
     ${mites.length ? `<div class="block">${figure("chart-zone-moving", 2, "Mites moving", `Fraction of this zone's mites moving in each recording, with the whole group for comparison where the group spans several zones. Click a time to show that recording.${this.stillToCome()}`)}</div>` : ""}

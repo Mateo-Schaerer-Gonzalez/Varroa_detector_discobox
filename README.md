@@ -159,7 +159,7 @@ A call the detector got wrong can be corrected by hand on the result pages, of a
 folder and of a live run alike: on the mite's page, click the mite in the
 recording shown, or the button of a recording in the table, and its call changes
 from *moving* to *still* or back. Every number, chart and the workbook (its `corrected`
-column) follow at once, and the mite is marked ✎. Clicking again brings back the
+column) follow at once, and the mite's ring is dashed. Clicking again brings back the
 detector's call. The corrections are saved by mite position to
 `corrections.json` next to the recordings, so later runs keep them; they are
 apart from the calibration's ground truth, which they do not change.

@@ -6,7 +6,7 @@
 // classes/survival.py.
 
 class ResultsPage {
-  static MOVING_NOTE = "A mite counts as moving in a recording when its motion score in that recording reaches the threshold, unless its call there was corrected by hand (✎).";
+  static MOVING_NOTE = "A mite counts as moving in a recording when its motion score in that recording reaches the threshold, unless its call there was corrected by hand.";
 
   get results() {
     return ctx.results;
@@ -35,7 +35,7 @@ class ResultsPage {
   // The mite's call in a recording, marked when it is the user's, not the detector's.
   callBadge(mite, recording) {
     return Markup.movingBadge(mite.moving[recording]) + (mite.corrected[recording]
-      ? ` <span class="corrected-mark" title="Corrected by hand; change it again for the detector's call">✎ corrected</span>` : "");
+      ? ` <span class="corrected-mark" title="Corrected by hand; change it again for the detector's call">corrected</span>` : "");
   }
 
   // Change the call of a mite in a recording by hand, moving to still or back
@@ -263,7 +263,7 @@ class ResultsPage {
     );
     if (withLabel) {
       const text = PlateView.svgEl("text", { x: mite.x + radius + 4, y: mite.y - radius, "font-size": radius * 1.1 });
-      text.textContent = corrected ? `${mite.id} ✎` : mite.id;
+      text.textContent = mite.id;
       g.appendChild(text);
     }
     if (onClick) {

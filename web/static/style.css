@@ -343,7 +343,7 @@ button.secondary:hover, .button.secondary:hover { background: var(--wash); borde
 .mite-marker.still .ring { stroke: #ffb52e; }
 .mite-marker text { fill: #fff; font-weight: 600; paint-order: stroke; stroke: #000; stroke-width: 3px; font-family: var(--sans); pointer-events: none; }
 .mite-marker:hover .ring { stroke-width: 4.5; }
-/* A call corrected by hand: the ring dashed, ✎ beside the call. */
+/* A call corrected by hand: the ring dashed, "corrected" beside the call. */
 .mite-marker.corrected .ring { stroke-dasharray: 6 3; }
 .corrected-mark { color: var(--muted); font-size: 0.85em; white-space: nowrap; }
 .tip-glyphs .corrected { outline: 1px solid currentColor; border-radius: 2px; }
