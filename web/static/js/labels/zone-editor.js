@@ -1,6 +1,7 @@
-// The box for naming a plate on the label page, opened in the plate's label area,
-// with the tick for a negative control. One is open at a time; closing it saves
-// and redraws the page.
+// The box for naming a plate on the label page, with the tick for a negative
+// control. It opens beside the picture, so the writing on the glass stays readable;
+// the plate being named is outlined in the box's colour. One is open at a time;
+// closing it saves and redraws the page.
 
 class ZoneEditor {
   constructor(page) {
@@ -27,8 +28,14 @@ class ZoneEditor {
 
     const zone = ctx.session.zones.find((z) => z.id === zoneId);
     this.zoneId = zoneId;
-    box.classList.add("editing");
-    host.classList.add("editing");
+    // The plate, its label area and the box share one colour: the group's, or ink
+    // for a plate not named yet.
+    const label = zone.label.trim();
+    const color = label ? groupColor(label, ctx.labelGroups()) : token("--ink");
+    for (const element of [box, host]) {
+      element.classList.add("editing");
+      element.style.setProperty("--zone-color", color);
+    }
 
     const input = document.createElement("input");
     input.type = "text";
@@ -46,10 +53,14 @@ class ZoneEditor {
       sessionLabels.setControl(zone, event.target.checked);
       this.page.drawGroupList();
     });
+    const title = document.createElement("div");
+    title.className = "zone-editor-title";
+    title.innerHTML = `<i class="swatch"></i>Zone ${zone.id}`;
     const editor = document.createElement("div");
     editor.className = "zone-editor";
-    editor.append(input, control);
-    host.appendChild(editor);
+    editor.style.setProperty("--zone-color", color);
+    editor.append(title, input, control);
+    $("zone-editor-slot").replaceChildren(editor);
     input.focus();
     input.select();
 
@@ -59,6 +70,7 @@ class ZoneEditor {
       done = true;
       this.zoneId = null;
       this.finish = null;
+      editor.remove();
       if (save) sessionLabels.setLabel(zone, input.value);
       this.page.draw();
       if (next != null) this.start(next);

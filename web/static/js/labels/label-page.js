@@ -62,8 +62,6 @@ class LabelPage {
     text.dataset.zoneId = zone.id;
     Object.assign(text.style, place(rect.x1, rect.y1, rect.x2, rect.y2));
     if (color) text.style.setProperty("--zone-color", color);
-    // The editor may be wider than the label area; let it grow away from the plate.
-    text.classList.toggle("grows-left", rect.x2 <= (zone.x1 + zone.x2) / 2);
     // An unnamed plate shows nothing here, so the writing on the glass stays
     // readable; the area itself is what is clicked.
     const control = zone.control ? "<small>negative control</small>" : "";

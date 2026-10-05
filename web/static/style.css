@@ -178,7 +178,7 @@ button.secondary:hover, .button.secondary:hover { background: var(--wash); borde
 }
 .zone.empty { border-style: dashed; }
 .zone:hover, .zone.hot, .zone:focus-visible { outline: 2px solid var(--zone-color); outline-offset: 1px; }
-.zone.editing { outline: 2px solid var(--ink); outline-offset: 1px; }
+.zone.editing { outline: 3px solid var(--zone-color); outline-offset: 1px; }
 .zone-num {
   position: absolute; top: 0; left: 0;
   padding: 1px 5px;
@@ -199,7 +199,7 @@ button.secondary:hover, .button.secondary:hover { background: var(--wash); borde
 /* On the labelling page an unnamed plate's label area is blank, so the writing on
    the glass shows; hovering it outlines where to click. */
 #label-plate .text-zone:hover, #label-plate .text-zone.hot { outline: 1px dashed var(--zone-color); }
-#label-plate .text-zone.editing { outline: none; }
+#label-plate .text-zone.editing { outline: 2px solid var(--zone-color); }
 .text-tag {
   max-width: 100%;
   padding: 2px 5px;
@@ -214,29 +214,28 @@ button.secondary:hover, .button.secondary:hover { background: var(--wash); borde
 #result-plate .text-tag { padding: 1px 3px; font-size: 10px; border-left-width: 2px; }
 #result-plate .text-tag small { font-size: 10px; }
 
-/* The editor appears only while editing, in the label area. A narrow label
-   area lets it grow a little wider, but it stays clear of the plate's middle. */
+/* While a plate is named nothing lies over its label area, so the writing on the
+   glass shows: the editor is beside the picture, in the side panel, and only its
+   colour marks the plate. */
 .text-zone.editing .text-tag { display: none; }
-.text-zone.editing { justify-content: flex-start; }
-.text-zone.editing.grows-left { justify-content: flex-end; }
+.zone-editor-slot { min-height: 92px; margin-top: 18px; }
+.zone-editor-slot:empty::before { content: "No plate selected."; font-size: 13px; color: var(--muted); }
 .zone-editor {
-  position: relative; z-index: 2;
-  flex: none; width: max(100%, 140px); min-width: 0;
+  --zone-color: var(--ink);
+  padding: 8px 10px;
+  border-left: 4px solid var(--zone-color); background: var(--wash);
 }
+.zone-editor-title { display: flex; align-items: center; gap: 6px; margin-bottom: 6px; font-size: 12px; font-weight: 600; color: var(--ink); }
+.zone-editor-title .swatch { background: var(--zone-color); }
 .zone-editor input[type="text"] {
   width: 100%;
-  padding: 4px 6px; font-size: 12px; text-align: center;
-  border: 1px solid var(--ink); border-radius: 0;
-  box-shadow: 0 1px 6px rgba(0, 0, 0, 0.2);
+  padding: 4px 6px; font-size: 13px;
+  border: 1px solid var(--zone-color); border-radius: 0;
 }
-/* The negative-control tick hangs under the name, so the name stays in place. */
 .control-check {
-  position: absolute; top: 100%; left: 0; right: 0;
   display: flex; align-items: center; gap: 5px;
-  padding: 3px 6px;
-  font-size: 11px; white-space: nowrap; color: var(--ink);
-  background: var(--paper); border: 1px solid var(--ink); border-top: 0;
-  box-shadow: 0 3px 6px rgba(0, 0, 0, 0.2);
+  margin-top: 6px;
+  font-size: 12px; color: var(--ink);
   cursor: pointer;
 }
 .control-check input { margin: 0; }
