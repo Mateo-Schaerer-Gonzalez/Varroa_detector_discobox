@@ -476,27 +476,35 @@ class ReportPage {
       <p class="caption">Counts are mite-recordings, at the threshold in use. Select a zone to review its labels.</p>`)}`;
   }
 
-  // The detector at the threshold in use beside the Discobox's original software,
-  // on the same mite-recordings (the server's figures, calibration.calls_confusion).
+  // The detector at the threshold in use beside the Discobox's original software:
+  // how far each puts the mites' deaths from where the ground truth puts them, in
+  // recordings (the server's figures, calibration.death_errors).
   benchmarkTable(r) {
     const { thr, scoreText } = ReportPage;
     if (!r.benchmark) return `<p id="benchmark-status" class="hint">The benchmark has not been run on these datasets.</p>`;
-    const share = (value) => (value == null ? "–" : `${(value * 100).toFixed(1)}%`);
+    const share = (n, of) => (of ? `${n} <span class="muted">(${(100 * n / of).toFixed(0)}%)</span>` : "–");
+    const recordings = (value, signed = false) => (value == null ? "–" : `${signed && value > 0 ? "+" : ""}${value.toFixed(2)}`);
     const rows = [
-      [`Detector <span class="muted">${esc(scoreText(r.metric, r.metric_params, r))}</span>`, thr(r.threshold), r.current],
-      [`Benchmark <span class="muted">${esc(r.benchmark.name)}, the Discobox's original software</span>`, r.benchmark.threshold, r.benchmark],
+      [`Detector <span class="muted">${esc(scoreText(r.metric, r.metric_params, r))}</span>`, thr(r.threshold), r.death_error.current],
+      [`Benchmark <span class="muted">${esc(r.benchmark.name)}, the Discobox's original software</span>`, r.benchmark.threshold, r.death_error.benchmark],
     ];
     return `<div class="table-wrap"><table>
-    <thead><tr><th>Called by</th><th class="num">Threshold</th><th class="num">Precision</th><th class="num">Recall</th><th class="num">F1 score</th>
-      <th class="num">Called right</th><th class="num">Moving called still</th><th class="num">Still called moving</th></tr></thead>
-    <tbody>${rows.map(([name, threshold, c]) => `<tr>
+    <thead><tr><th>Called by</th><th class="num">Threshold</th>
+      <th class="num" title="Mean absolute error of the death time, in recordings">Death time off by (MAE)</th>
+      <th class="num" title="Mean error: positive when the mites die later than by the ground truth">Mean error</th>
+      <th class="num">Same recording</th><th class="num">One recording off</th><th class="num">Further off</th>
+      <th class="num">Too early</th><th class="num">Too late</th></tr></thead>
+    <tbody>${rows.map(([name, threshold, d]) => `<tr>
       <td>${name}</td><td class="num">${threshold}</td>
-      <td class="num">${share(c.precision)}</td><td class="num">${share(c.sensitivity)}</td><td class="num">${share(c.f1)}</td>
-      <td class="num">${share(c.accuracy)}</td><td class="num">${c.moving_called_still}</td><td class="num">${c.still_called_moving}</td></tr>`).join("")}</tbody>
+      <td class="num"><b>${recordings(d.mae)}</b></td><td class="num">${recordings(d.bias, true)}</td>
+      <td class="num">${share(d.n_exact, d.n_mites)}</td><td class="num">${share(d.n_one_off, d.n_mites)}</td><td class="num">${share(d.n_further, d.n_mites)}</td>
+      <td class="num">${d.n_early}</td><td class="num">${d.n_late}</td></tr>`).join("")}</tbody>
   </table></div>
-  <p class="caption">Both on the same ${r.n_moving + r.n_still} labelled mite-recordings, moving being the positive call.
-    <b>Precision</b>: of the calls "moving", the share labelled moving. <b>Recall</b>: of the labels "moving", the share called moving.
-    <b>F1 score</b>: their harmonic mean. The benchmark denoises each recording's frames, takes the difference of every frame to the first and
+  <p class="caption">How closely each follows the ground truth's survival curve (Fig. 2), mite by mite, on the same ${r.death_error.current.n_mites} labelled mites.
+    A mite dies at the recording after its last movement; <b>death time off by</b> is the mean absolute error of that recording against the ground truth's,
+    counted in recordings: 1 is one recording off on average. A mite never called moving is dead from its first recording, one still moving in its last
+    dies after it. <b>Mean error</b> is positive when the mites die later than by the ground truth, which a still mite called moving does, and negative when
+    earlier, which a missed last movement does. The benchmark denoises each recording's frames, takes the difference of every frame to the first and
     calls a mite moving when a difference above ${r.benchmark.threshold} lies on it; that threshold is fixed in its code, where the detector's is
     config.yaml's. Its survival curve is in Fig. 2 and in the groups' below.</p>`;
   }

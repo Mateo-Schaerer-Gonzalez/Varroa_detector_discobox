@@ -222,6 +222,9 @@ def test_a_report_with_the_benchmark_compares_it_on_the_same_observations(tmp_pa
     # mite 0 never stops by the benchmark; mite 1 moved once and is dead by the next recording
     assert result["survival"]["benchmark"]["alive"] == [100.0, 50.0, 50.0]
     assert "benchmark" in result["groups"][0]["survival"]
+    # so by the benchmark both die one recording later than by the labels; the detector is right
+    assert (result["death_error"]["benchmark"]["mae"], result["death_error"]["benchmark"]["n_late"]) == (1.0, 2)
+    assert (result["death_error"]["current"]["mae"], result["death_error"]["current"]["n_exact"]) == (0.0, 2)
 
     # Its calls are kept with the dataset, like the scores.
     pipeline.evaluate_calibration(tmp_path / "report", ids, library_dir=library, benchmark=True)
@@ -229,6 +232,7 @@ def test_a_report_with_the_benchmark_compares_it_on_the_same_observations(tmp_pa
 
     without = pipeline.evaluate_calibration(tmp_path / "report", ids, library_dir=library)
     assert without["benchmark"] is None and "benchmark" not in without["survival"]
+    assert set(without["death_error"]) == {"current", "suggested"}
     assert "benchmark_call" not in without["observations"][0]
 
 

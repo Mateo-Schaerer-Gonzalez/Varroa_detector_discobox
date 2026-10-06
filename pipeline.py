@@ -1578,13 +1578,15 @@ def evaluate_calibration(out_dir, datasets, metric=None, params=None, library_di
     both moving and still labels, the ROC curve and the suggested threshold with
     its confusion counts; the fraction of mites moving per recording and the
     Kaplan-Meier survival curves (of the mites seen moving at least once) by the
-    labels and by the detector; and every observation with its outcome.
+    labels and by the detector; how far the detector puts each mite's death from
+    where the labels put it, in recordings ("death_error", see
+    calibration.death_errors()); and every observation with its outcome.
     Everything is also written to calibration.xlsx in `out_dir`.
 
     With `benchmark`, the same observations are also called by the Discobox's
     original software (classes/benchmark.py): its confusion counts, with
     precision, recall and F1 as for the detector, come as "benchmark", and its
-    survival curve joins the others. Slow the first time a dataset meets it.
+    survival curve and its death errors join the others. Slow the first time a dataset meets it.
     """
     ids = list(dict.fromkeys(datasets))
     if not ids:
@@ -1692,6 +1694,11 @@ def evaluate_calibration(out_dir, datasets, metric=None, params=None, library_di
         "moving_over_time": over_time(rows),
         # the survival curves by the labels and by the detector, see calibration.survival_curves()
         "survival": survival(rows),
+        # how far the detector, and the benchmark, put each mite's death from the labels', in recordings
+        "death_error": {name: {key: value if value is None or isinstance(value, int) else round(value, 3)
+                               for key, value in errors.items()}
+                        for name, errors in calibration.death_errors(
+                            rows, thresholds, {"benchmark": "benchmark_call"} if benchmark else None).items()},
         "groups": [
             {
                 "group": group,

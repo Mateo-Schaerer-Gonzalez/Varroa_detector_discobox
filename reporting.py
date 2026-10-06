@@ -233,22 +233,29 @@ CALIBRATION_EXCEL_NAME = "calibration.xlsx"
 
 
 def write_calibration_excel(result, out_dir):
-    """Write a calibration's summary, the datasets pooled, every labelled (mite,
+    """Write a calibration's summary (the confusion counts and, as death_...
+    columns, how far the calls put the mites' deaths from the labels', in
+    recordings), the datasets pooled, every labelled (mite,
     recording) observation, the survival curves by the labels and the detector,
     the fraction moving per recording and, when there is one, the ROC curve.
     A calibration with the benchmark has it as a row of the summary, a column of
     the observations and a survival curve."""
     path = Path(out_dir) / CALIBRATION_EXCEL_NAME
 
+    def death(source):
+        """A source's death errors (calibration.death_errors()) as columns of its row."""
+        errors = (result.get("death_error") or {}).get(source) or {}
+        return {f"death_{key}": value for key, value in errors.items() if key != "n_mites"}
+
     summary = pd.DataFrame(
-        [{"threshold": "in use", **result["current"]}]
-        + ([{"threshold": "suggested", **result["best"]}] if result["best"] else [])
+        [{"threshold": "in use", **result["current"], **death("current")}]
+        + ([{"threshold": "suggested", **result["best"], **death("suggested")}] if result["best"] else [])
     )
     summary["auc"] = result["auc"]
     summary["metric"] = result["metric"]
     summary["metric_params"] = json.dumps(result.get("metric_params") or {})
     if result.get("benchmark"):
-        row = {key: value for key, value in result["benchmark"].items() if key != "name"}
+        row = {**{key: value for key, value in result["benchmark"].items() if key != "name"}, **death("benchmark")}
         row["metric"] = f"benchmark ({result['benchmark']['name']})"
         summary = pd.concat([summary, pd.DataFrame([row])], ignore_index=True)
 

@@ -235,6 +235,65 @@ def mite_survival(rows, times, is_moving):
     return times[rows[-1]["recording"]], False
 
 
+def _rows_by_mite(rows):
+    by_mite = {}
+    for row in rows:
+        by_mite.setdefault((row["dataset"], row["mite_id"]), []).append(row)
+    return by_mite
+
+
+def _sources(thresholds, calls=None):
+    """Who says whether a mite moved in a row: the labels ("truth"), the detector
+    at each of `thresholds` ({name: value}) and each of `calls` ({name: the key
+    of the rows holding that call, "moving" or "still"}, e.g. the benchmark's)."""
+    sources = {"truth": lambda row: row["movement"] == MOVING}
+    for name, threshold in thresholds.items():
+        sources[name] = lambda row, threshold=threshold: row["score"] >= threshold
+    for name, key in (calls or {}).items():
+        sources[name] = lambda row, key=key: row[key] == MOVING
+    return sources
+
+
+def death_recording(rows, is_moving):
+    """Where one mite dies among its labelled recordings, counted in them: the
+    one after its last movement, by the rule of mite_survival(). 0 for a mite
+    that never moved, dead from the first one on; the number of its recordings
+    for one still moving in the last, so not dead within them."""
+    rows = sorted(rows, key=lambda row: row["recording"])
+    moved = [index for index, row in enumerate(rows) if is_moving(row)]
+    return moved[-1] + 1 if moved else 0
+
+
+def death_errors(rows, thresholds, calls=None):
+    """How far each source of calls (see _sources()) puts the death of the
+    labelled mites from where the labels put it, in recordings: every mite's
+    death_recording() by the source minus the one by the labels.
+
+    Returns {source: {mae (the mean absolute error), bias (the mean error:
+    positive when the source has the mites die later), n_mites, n_exact,
+    n_one_off, n_further, n_early, n_late}}; mae and bias are None without mites."""
+    by_mite = _rows_by_mite(rows)
+    sources = _sources(thresholds, calls)
+    truth = [death_recording(mite_rows, sources["truth"]) for mite_rows in by_mite.values()]
+    errors = {}
+    for name, is_moving in sources.items():
+        if name == "truth":
+            continue
+        off = np.array([death_recording(mite_rows, is_moving) - at
+                        for mite_rows, at in zip(by_mite.values(), truth)], dtype=float)
+        errors[name] = {
+            "mae": float(np.abs(off).mean()) if off.size else None,
+            "bias": float(off.mean()) if off.size else None,
+            "n_mites": int(off.size),
+            "n_exact": int((off == 0).sum()),
+            "n_one_off": int((np.abs(off) == 1).sum()),
+            "n_further": int((np.abs(off) > 1).sum()),
+            "n_early": int((off < 0).sum()),
+            "n_late": int((off > 0).sum()),
+        }
+    return errors
+
+
 def survival_curves(rows, times, thresholds, calls=None):
     """The Kaplan-Meier survival curves of the labelled mites: by the labels
     ("truth"), as called by the detector at each of `thresholds` ({name:
@@ -245,17 +304,9 @@ def survival_curves(rows, times, thresholds, calls=None):
     `rows` have "dataset", "mite_id", "recording", "movement" and "score".
     Returns {source: {alive, low, high (percent per recording, see
     kaplan_meier()), n_mites (in the study), n_left_out, n_dead}}."""
-    by_mite = {}
-    for row in rows:
-        by_mite.setdefault((row["dataset"], row["mite_id"]), []).append(row)
-    sources = {"truth": lambda row: row["movement"] == MOVING}
-    for name, threshold in thresholds.items():
-        sources[name] = lambda row, threshold=threshold: row["score"] >= threshold
-    for name, key in (calls or {}).items():
-        sources[name] = lambda row, key=key: row[key] == MOVING
-
+    by_mite = _rows_by_mite(rows)
     curves = {}
-    for name, is_moving in sources.items():
+    for name, is_moving in _sources(thresholds, calls).items():
         survivals = [mite_survival(mite_rows, times, is_moving) for mite_rows in by_mite.values()]
         study = [survival for survival in survivals if survival is not None]
         curves[name] = {

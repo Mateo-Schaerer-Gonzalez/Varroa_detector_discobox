@@ -12,7 +12,7 @@ from classes.calibration import (
     has_both_classes,
     is_rejected,
     match_ground_truth,
-    mite_survival,
+    mite_survival, death_errors, death_recording,
     moving_over_time,
     outcome,
     per_recording,
@@ -185,6 +185,28 @@ def test_survival_curves_by_the_labels_and_the_detector_leave_out_mites_never_mo
     assert (curves["truth"]["n_mites"], curves["truth"]["n_left_out"], curves["truth"]["n_dead"]) == (2, 1, 1)
     assert curves["current"]["alive"] == [100.0, pytest.approx(100 / 3), 0.0]
     assert (curves["current"]["n_mites"], curves["current"]["n_left_out"], curves["current"]["n_dead"]) == (3, 0, 3)
+
+
+def test_death_errors_count_how_many_recordings_a_mites_death_is_off():
+    by_label = lambda row: row["movement"] == "moving"
+    assert death_recording(survival_rows("a", ["moving", "still", "still"], [0] * 3), by_label) == 1
+    assert death_recording(survival_rows("a", ["still"] * 3, [0] * 3), by_label) == 0        # dead from the start
+    assert death_recording(survival_rows("a", ["still", "moving", "moving"], [0] * 3), by_label) == 3  # not within them
+    # counted in the labelled recordings: the unlabelled one is not one of them
+    assert death_recording(survival_rows("a", ["moving", None, "moving", "still"], [0] * 4), by_label) == 2
+
+    rows = (survival_rows("a", ["moving", "still", "still"], [20, 5, 5])      # dies after the first either way
+            + survival_rows("b", ["moving", "moving", "moving"], [20, 20, 5])  # its last movement missed: one early
+            + survival_rows("c", ["still", "still", "still"], [20, 5, 5]))     # called moving once: one late
+    for row, call in zip(rows, ["moving"] * 3 + ["still"] * 3 + ["still"] * 3):
+        row["benchmark_call"] = call  # a never dies (2 late), b never moves (3 early), c is right
+    errors = death_errors(rows, {"current": 10}, {"benchmark": "benchmark_call"})
+    assert set(errors) == {"current", "benchmark"}
+    assert errors["current"] == {"mae": pytest.approx(2 / 3), "bias": 0.0, "n_mites": 3, "n_exact": 1, "n_one_off": 2,
+                                 "n_further": 0, "n_early": 1, "n_late": 1}
+    assert errors["benchmark"] == {"mae": pytest.approx(5 / 3), "bias": pytest.approx(-1 / 3), "n_mites": 3, "n_exact": 1,
+                                   "n_one_off": 0, "n_further": 2, "n_early": 1, "n_late": 1}
+    assert death_errors([], {"current": 10})["current"]["mae"] is None
 
 
 def test_survival_curves_of_calls_made_by_another_method():
