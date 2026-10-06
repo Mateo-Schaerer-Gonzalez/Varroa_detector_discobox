@@ -5,7 +5,10 @@ floor differs from mite to mite, mostly with how bright its patch is. One
 threshold for all then sits inside the noise of the mites with a high floor,
 which get called moving while still. Both corrections here are worked out from
 the whole run, so they are for a finished one (the Analysis window), and both
-keep the scale of the scores, so the threshold in use still applies.
+keep the scores on about the scale they had. Which of them a folder's analysis
+uses is in config.yaml (mite.normalize_brightness, mite.normalize_floor), saved
+there with the threshold from the calibration report, which puts each dataset's
+scores through the same.
 
     brightness   each score is scaled to the run's typical brightness: times the
                  median brightness of all patches, over the brightness of its
@@ -25,6 +28,7 @@ which a mite was marked gone (classes/call_corrections.py) count in neither.
 """
 
 import numpy as np
+import pandas as pd
 
 
 class ScoreNormalizer:
@@ -57,6 +61,20 @@ class ScoreNormalizer:
                 # a mite gone in every recording has no floor: its scores stay
                 scores = scores - mite_data["mite_ID"].map(floors).fillna(common) + common
         return scores
+
+    def by_mite(self, scores, brightness=None):
+        """The normalised scores of mites given as {mite id: one score per
+        recording}, with their `brightness` the same way: a calibration's
+        datasets, put through what a folder's analysis puts its table through."""
+        rows = [{"mite_ID": mite_id, "time": recording, "motion_score": value,
+                 "brightness": None if brightness is None else brightness[mite_id][recording]}
+                for mite_id, values in scores.items() for recording, value in enumerate(values)]
+        if not rows:
+            return {}
+        table = pd.DataFrame(rows)
+        table["motion_score"] = self.scores(table)
+        return {mite_id: [float(value) for value in table.loc[table["mite_ID"] == mite_id, "motion_score"]]
+                for mite_id in scores}
 
     def apply(self, mite_data, threshold):
         """The table with the normalised scores as `motion_score`, the scores as

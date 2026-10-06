@@ -80,6 +80,11 @@ class MiteConfig:
     # Take a shaking plate out of the frames before scoring (see
     # classes/plate_stabilizer.py). It works with every metric.
     stabilize_plate: bool = False
+    # Put the scores of a finished run on one scale for every mite (see
+    # classes/score_normalizer.py): scaled to the run's typical brightness, and
+    # each mite's own floor moved to the common one.
+    normalize_brightness: bool = False
+    normalize_floor: bool = False
 
     def __post_init__(self):
         self._fallback_threshold = self.motion_threshold
@@ -215,7 +220,8 @@ def _set_metric_entry(text, key, metric, value, path):
 
 
 def save_movement_score(metric: str, params: dict, threshold: float,
-                        config_path: Optional[str | Path] = None, stabilize_plate: Optional[bool] = None) -> dict:
+                        config_path: Optional[str | Path] = None, stabilize_plate: Optional[bool] = None,
+                        normalize_brightness: Optional[bool] = None, normalize_floor: Optional[bool] = None) -> dict:
     """Write the movement score (metric and its parameters) and the threshold that
     goes with it into the config file, and reload it.
 
@@ -224,7 +230,8 @@ def save_movement_score(metric: str, params: dict, threshold: float,
     switching `metric` back later picks up that metric's own threshold. Only the
     lines concerned are rewritten, so comments and layout survive. With
     `stabilize_plate`, `mite.stabilize_plate` is set too: the threshold was
-    chosen on scores cut with or without it.
+    chosen on scores cut with or without it. Likewise `normalize_brightness` and
+    `normalize_floor`, the normalisations the scores went through.
     """
     path = _config_file(config_path)
     text = path.read_text(encoding="utf-8")
@@ -236,24 +243,21 @@ def save_movement_score(metric: str, params: dict, threshold: float,
     text = text[:match.start(2)] + f'"{metric}"' + text[match.end(2):]
     text = _set_metric_entry(text, "metric_params", metric, dict(params), path)
     text = _set_metric_entry(text, "metric_thresholds", metric, threshold, path)
-    if stabilize_plate is not None:
-        text = _set_stabilize_plate(text, bool(stabilize_plate), path)
+    flags = {"stabilize_plate": stabilize_plate, "normalize_brightness": normalize_brightness,
+             "normalize_floor": normalize_floor}
+    flags = {key: bool(value) for key, value in flags.items() if value is not None}
+    for key, value in flags.items():
+        text = _set_flag(text, key, value, path)
 
     path.write_text(text, encoding="utf-8")
     _forget_loaded_config()
-    saved = {"metric": metric, "params": dict(params), "threshold": threshold}
-    if stabilize_plate is not None:
-        saved["stabilize_plate"] = bool(stabilize_plate)
-    return saved
+    return {"metric": metric, "params": dict(params), "threshold": threshold, **flags}
 
 
-_STABILIZE_LINE = re.compile(r"^[ \t]+stabilize_plate:[ \t]*([^\s#]*)", re.MULTILINE)
-
-
-def _set_stabilize_plate(text, value, path):
-    """Set `mite.stabilize_plate`, added under `metric:` if the file has none yet."""
+def _set_flag(text, key, value, path):
+    """Set `mite.<key>` to true or false, added under `metric:` if the file has none yet."""
     flag = "true" if value else "false"
-    match = _STABILIZE_LINE.search(text)
+    match = re.search(rf"^[ \t]+{key}:[ \t]*([^\s#]*)", text, re.MULTILINE)
     if match:
         return text[:match.start(1)] + flag + text[match.end(1):]
     match = _METRIC_LINE.search(text)
@@ -261,7 +265,7 @@ def _set_stabilize_plate(text, value, path):
         raise ValueError(f"No mite.metric line found in {path}")
     end = text.find("\n", match.end())
     end = len(text) if end < 0 else end
-    return text[:end] + f"\n{match.group(1)}stabilize_plate: {flag}" + text[end:]
+    return text[:end] + f"\n{match.group(1)}{key}: {flag}" + text[end:]
 
 
 _LABEL_READER_SECTION = re.compile(r"^label_reader:[ \t]*(?:#.*)?$", re.MULTILINE)

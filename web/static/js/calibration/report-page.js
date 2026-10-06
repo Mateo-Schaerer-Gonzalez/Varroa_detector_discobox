@@ -33,10 +33,13 @@ class ReportPage {
     return r.datasets.length > 1;
   }
 
-  // e.g. "topN_variability (n=10), plate stabilized"
-  static scoreText(metric, params, stabilized) {
+  // e.g. "topN_variability (n=10), plate stabilized, per-mite floor"; `how` holds
+  // stabilize_plate, normalize_brightness and normalize_floor: a report, the
+  // movement score in use, or what was just saved.
+  static scoreText(metric, params, how = {}) {
     const list = Object.entries(params || {}).map(([k, v]) => `${k}=${v}`).join(", ");
-    return (list ? `${metric} (${list})` : metric) + (stabilized ? ", plate stabilized" : "");
+    return (list ? `${metric} (${list})` : metric) + (how.stabilize_plate ? ", plate stabilized" : "")
+      + (how.normalize_brightness ? ", brightness normalised" : "") + (how.normalize_floor ? ", per-mite floor" : "");
   }
 
   static rocCaption(r) {
@@ -98,7 +101,7 @@ class ReportPage {
       <div>
         <h1>${testing ? "Threshold test" : "Calibration"}</h1>
         <p class="meta">${pooled(r) ? `${r.datasets.length} datasets pooled` : `<span title="${esc(r.datasets[0].data_dir)}">${esc(r.datasets[0].name)}</span>`} ·
-          movement score <code>${esc(scoreText(r.metric, r.metric_params, r.stabilize_plate))}</code> ·
+          movement score <code>${esc(scoreText(r.metric, r.metric_params, r))}</code> ·
           ${r.n_mites} mite${r.n_mites === 1 ? "" : "s"} over ${r.times.length} recordings ·
           ${r.n_moving} moving and ${r.n_still} still labels</p>
         ${left ? `<p class="meta">${left}</p>` : ""}
@@ -114,8 +117,8 @@ class ReportPage {
     ${section("Data used", this.datasetPicker(r))}
     ${section("Movement score", testing ? this.scoreTested(r) : this.scorePicker(r))}
     ${r.threshold_fits ? "" : `<div class="banner">The threshold in use, ${thr(r.threshold)}, was set for
-      <code>${esc(scoreText(r.in_use.metric, r.in_use.params, r.in_use.stabilize_plate))}</code>. These scores are
-      <code>${esc(scoreText(r.metric, r.metric_params, r.stabilize_plate))}</code>, on another scale, so figures "in use" say little:
+      <code>${esc(scoreText(r.in_use.metric, r.in_use.params, r.in_use))}</code>. These scores are
+      <code>${esc(scoreText(r.metric, r.metric_params, r))}</code>, on another scale, so figures "in use" say little:
       look at the suggested threshold, and save it with this movement score to use it.</div>`}
     ${testing ? this.testReport(r) : this.calibrateReport(r)}
     ${testing ? section("Survival rate per group", `<div id="group-legend" class="legend"></div><div id="group-moving" class="group-cards"></div>
@@ -225,11 +228,15 @@ class ReportPage {
       <span id="score-params" class="row"></span>
       <label class="param" title="Measure how the whole plate moved in each frame, from all the mites at once, and shift it back before scoring. Changes nothing on a still plate.">
         <input type="checkbox" id="score-stabilize" ${r.stabilize_plate ? "checked" : ""}> Stabilize plate</label>
+      <label class="param" title="Scale each score to the typical brightness of its dataset: camera noise, and with it the score of a still mite, grows with the light on its patch. The analysis of a folder then does the same over its run.">
+        <input type="checkbox" id="score-brightness" ${r.normalize_brightness ? "checked" : ""}> Normalise brightness</label>
+      <label class="param" title="Move each mite's own floor, the median of its scores over the recordings of its dataset, to the median floor of all mites. The analysis of a folder then does the same over its run. A mite moving in more than half of the recordings gets too high a floor.">
+        <input type="checkbox" id="score-floor" ${r.normalize_floor ? "checked" : ""}> Per-mite floor</label>
       <button type="button" id="score-apply" class="small">Score again</button>
       <button type="button" id="score-reset" class="small secondary" ${r.threshold_fits ? "hidden" : ""}>Back to config.yaml's</button>
     </div>
     <p id="score-description" class="hint"></p>
-    <p id="score-status" class="hint">In use for analyses: <code>${esc(scoreText(cal.scores.in_use.metric, cal.scores.in_use.params, cal.scores.in_use.stabilize_plate))}</code>
+    <p id="score-status" class="hint">In use for analyses: <code>${esc(scoreText(cal.scores.in_use.metric, cal.scores.in_use.params, cal.scores.in_use))}</code>
       with threshold ${thr(cal.scores.in_use.threshold)}. Try another here; saving a threshold below saves the movement score with it.</p>`;
   }
 
@@ -237,7 +244,7 @@ class ReportPage {
   // there would judge it by a threshold set for a different score.
   scoreTested(r) {
     const { thr, scoreText } = ReportPage;
-    return `<p class="hint">Tested: <code>${esc(scoreText(r.metric, r.metric_params, r.stabilize_plate))}</code> with the threshold in use, ${thr(r.threshold)}.
+    return `<p class="hint">Tested: <code>${esc(scoreText(r.metric, r.metric_params, r))}</code> with the threshold in use, ${thr(r.threshold)}.
       Try another movement score on the <b>Calibration</b> tab.</p>`;
   }
 
@@ -271,7 +278,10 @@ class ReportPage {
         params[input.dataset.param] = value;
       }
       const before = cal.metric;
-      cal.metric = { name: select.value, params, stabilize: $("score-stabilize").checked };
+      cal.metric = {
+        name: select.value, params, stabilize: $("score-stabilize").checked,
+        normalizeBrightness: $("score-brightness").checked, normalizeFloor: $("score-floor").checked,
+      };
       cal.reportAgain("score-status", () => { cal.metric = before; });
     });
     $("score-reset").addEventListener("click", () => {
@@ -340,7 +350,7 @@ class ReportPage {
           <input id="threshold-input" type="number" step="0.01" min="0" value="${thr(r.suggested_threshold)}">
           <button type="button" id="save-threshold">Save to config.yaml</button>
         </div>
-        <p id="save-status" class="hint">Saves the movement score <code>${esc(scoreText(r.metric, r.metric_params, r.stabilize_plate))}</code> along with the threshold.</p>
+        <p id="save-status" class="hint">Saves the movement score <code>${esc(scoreText(r.metric, r.metric_params, r))}</code> along with the threshold.</p>
         <p class="hint">The suggestion maximises the fraction of moving labels called moving plus the fraction of still labels called still,
           and sits halfway between the two nearest scores. Every analysis started after saving uses the new value.
           Check it with the <b>Test</b> report on a <em>different</em> recording: on this one it looks better than it will be.</p>
@@ -403,13 +413,14 @@ class ReportPage {
       const r = cal.report;
       const saved = await post("/api/movement-score", {
         metric: r.metric, params: r.metric_params, threshold: value, stabilize: r.stabilize_plate,
+        normalize_brightness: r.normalize_brightness, normalize_floor: r.normalize_floor,
       });
       if (cal.data) cal.data.threshold = saved.threshold;
       // Evaluate again, so "in use" is what was just saved.
       cal.takeReport(await cal.requestReport());
       this.draw();
       $("save-status").className = "hint";
-      $("save-status").textContent = `Saved ${scoreText(saved.metric, saved.params, saved.stabilize_plate)} with threshold ${thr(saved.threshold)} to config.yaml. Analyses started from now on use them.`;
+      $("save-status").textContent = `Saved ${scoreText(saved.metric, saved.params, saved)} with threshold ${thr(saved.threshold)} to config.yaml. Analyses started from now on use them.`;
     } catch (error) {
       status.className = "hint error";
       status.textContent = error.message;
@@ -472,7 +483,7 @@ class ReportPage {
     if (!r.benchmark) return `<p id="benchmark-status" class="hint">The benchmark has not been run on these datasets.</p>`;
     const share = (value) => (value == null ? "–" : `${(value * 100).toFixed(1)}%`);
     const rows = [
-      [`Detector <span class="muted">${esc(scoreText(r.metric, r.metric_params, r.stabilize_plate))}</span>`, thr(r.threshold), r.current],
+      [`Detector <span class="muted">${esc(scoreText(r.metric, r.metric_params, r))}</span>`, thr(r.threshold), r.current],
       [`Benchmark <span class="muted">${esc(r.benchmark.name)}, the Discobox's original software</span>`, r.benchmark.threshold, r.benchmark],
     ];
     return `<div class="table-wrap"><table>

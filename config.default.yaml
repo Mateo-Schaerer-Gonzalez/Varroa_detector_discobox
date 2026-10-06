@@ -10,6 +10,12 @@ mite:
   # Follow the plate when it shakes: each frame is shifted back by the plate's
   # movement before any metric scores it. Changes nothing on a still plate.
   stabilize_plate: true
+  # Put the scores of a finished run on one scale for every mite, in the Analysis
+  # window (classes/score_normalizer.py): scaled to the run's typical brightness,
+  # and each mite's own floor (the median of its scores) moved to the common one.
+  # Tried and saved with the threshold on the calibration report.
+  normalize_brightness: false
+  normalize_floor: false
   moving_color: [0, 255, 0]         # BGR: green for a mite moving in the latest recording
   still_color: [0, 0, 255]          # BGR: red for a mite still in the latest recording
 

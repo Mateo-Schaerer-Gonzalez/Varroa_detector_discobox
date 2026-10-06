@@ -8,6 +8,7 @@ import pytest
 
 import pipeline
 import reference
+from classes.app_config import get_default_config
 from classes.score_normalizer import ScoreNormalizer
 from classes.zones import MITE_SCORE_COLUMNS
 
@@ -76,16 +77,32 @@ def test_the_users_calls_and_the_recordings_a_mite_is_gone_in_are_left_alone():
     assert of(normalised, "0", "moving") == [True, False, False, False, False]
 
 
+def test_a_calibrations_scores_go_through_the_same():
+    scores = {"0": [2.0, 2.1, 5.0, 2.0, 2.2], "1": [2.5, 2.7, 2.6, 2.5, 2.8], "2": [2.2, 2.3, 2.2, 6.0, 2.1]}
+    normalised = ScoreNormalizer(floor=True).by_mite(scores)
+    assert normalised["1"] == pytest.approx([2.1, 2.3, 2.2, 2.1, 2.4]) and normalised["2"] == pytest.approx(scores["2"])
+    table = ScoreNormalizer(floor=True).apply(mite_data(scores), THRESHOLD)
+    assert all(normalised[mite_id] == pytest.approx(of(table, mite_id)) for mite_id in scores)
+
+    brightness = {"0": [80.0] * 5, "1": [120.0] * 5, "2": [100.0] * 5}
+    scaled = ScoreNormalizer(brightness=True).by_mite({"0": [2.0] * 5, "1": [3.0] * 5, "2": [4.0] * 5}, brightness)
+    assert scaled["0"] == pytest.approx([2.5] * 5) and scaled["1"] == pytest.approx([2.5] * 5)
+    assert ScoreNormalizer().by_mite({}) == {}
+
+
 @pytest.mark.slow
-def test_normalising_the_last_run_changes_its_results_and_is_saved_with_the_recordings(tmp_path):
+def test_the_analysis_of_a_folder_normalises_as_config_yaml_says(tmp_path, monkeypatch):
     session = reference.make_small_session(tmp_path / "small_session")
     out, library = tmp_path / "out", tmp_path / "library"
+    mite_config = get_default_config().mite
+    monkeypatch.setattr(mite_config, "normalize_floor", False)
+    monkeypatch.setattr(mite_config, "normalize_brightness", False)
     results = pipeline.run_analysis(session, out, library_dir=library)
     assert results["normalization"] == {"floor": False, "brightness": False}
 
-    normalised = pipeline.normalize_scores(session, out, floor=True)
+    monkeypatch.setattr(mite_config, "normalize_floor", True)
+    normalised = pipeline.run_analysis(session, out, library_dir=library)
     assert normalised["normalization"] == {"floor": True, "brightness": False}
-    assert pipeline.score_normalization(session) == {"floor": True, "brightness": False}
     assert [mite["scores"] for mite in normalised["mites"]] != [mite["scores"] for mite in results["mites"]]
     threshold = normalised["threshold"]
     assert all(mite["moving"] == [value >= threshold for value in mite["scores"]] for mite in normalised["mites"])
@@ -100,5 +117,7 @@ def test_normalising_the_last_run_changes_its_results_and_is_saved_with_the_reco
     assert pipeline.correct_call(out, mite["id"], 1, other)["corrections"] == {mite["id"]: [1]}
     assert pipeline.correct_call(out, mite["id"], 1, "moving" if mite["moving"][1] else "still") == normalised
 
-    assert pipeline.run_analysis(session, out, library_dir=library) == normalised  # another run keeps it
-    assert pipeline.normalize_scores(session, out, floor=False) == results
+    monkeypatch.setattr(mite_config, "normalize_brightness", True)
+    both = pipeline.run_analysis(session, out, library_dir=library)
+    assert both["normalization"] == {"floor": True, "brightness": True}
+    assert [mite["scores"] for mite in both["mites"]] != [mite["scores"] for mite in normalised["mites"]]

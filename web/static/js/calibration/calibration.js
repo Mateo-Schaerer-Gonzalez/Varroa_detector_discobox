@@ -219,6 +219,7 @@ class Calibration {
       post(`/api/calibration/${this.id}/evaluate`, {
         datasets: this.selected, metric: this.metric?.name ?? null, params: this.metric?.params ?? null,
         stabilize: this.metric?.stabilize ?? null,
+        normalize_brightness: this.metric?.normalizeBrightness ?? null, normalize_floor: this.metric?.normalizeFloor ?? null,
         // The test report compares with the benchmark, which is slow the first time.
         benchmark: this.mode === "test",
       }),

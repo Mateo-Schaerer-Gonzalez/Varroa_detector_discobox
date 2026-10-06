@@ -84,16 +84,9 @@ To analyse a folder, in *Analysis*:
    to see its close-up and score in each recording. Every chart has a tooltip,
    opens what it shows when clicked, and downloads as SVG or PNG. The browser's
    back button works throughout.
-   *Normalise the scores*, on the overview and on a mite's page, puts the scores
-   of the run on one scale for every mite (`classes/score_normalizer.py`):
-   *brightness* scales each score to the run's typical brightness, as camera
-   noise grows with the light on the mite's patch, and *per-mite floor* moves
-   each mite's own floor, the median of its scores over the run, to the median
-   floor of all mites. Both keep the scale of the scores, so the threshold in
-   use still applies; the calls and every number follow, with no need to run
-   the analysis again, and the choice is saved to the folder's `.settings.txt`.
-   A mite moving in more than half of the recordings gets too high a floor.
-   Both need the whole run, so a live run has neither until it is opened here.
+   When config.yaml says so (see *Scores on one scale per mite* below), the
+   scores of a folder are normalised over the run, and the pages' headings say
+   by what.
 
 ### Moving or still
 
@@ -168,6 +161,23 @@ it on or off with *Score again*; saving a threshold saves it with the metric.
 `python scripts/shake_robustness.py` shakes the saved ground truth by
 0.5 to 2 px and reports each metric's accuracy at its unshaken threshold, with
 and without stabilization.
+
+**Scores on one scale per mite.** A still mite does not score 0: camera noise
+gives it a floor, which differs from mite to mite, so one threshold sits inside
+the noise of some. Two normalisations put the scores of a finished run on one
+scale (`classes/score_normalizer.py`); both keep the scores on about the scale
+they had. `normalize_brightness: true` scales each score to the run's typical
+brightness, as camera noise grows with the light on the mite's patch.
+`normalize_floor: true` moves each mite's own floor, the median of its scores
+over the run, to the median floor of all mites; the median is the floor only of
+a mite still in most recordings, so one moving in more than half of them gets
+too high a floor and its weaker movements are lost. The *Normalise brightness*
+and *Per-mite floor* checkboxes next to the metric on the calibration report try
+them with *Score again*, on each dataset as on a run, and saving a threshold
+saves them with the metric. The analysis of a folder then uses them; a live run
+does not, as both need the whole run: open its folder in the Analysis window
+when it is over. With a ground truth of a few recordings in which most mites
+move, the per-mite floor cannot be told from movement, and the report shows it.
 
 A detection marked *not a mite* is removed from every later analysis of that
 folder: `run_analysis` drops it before scoring, so it appears in no count,

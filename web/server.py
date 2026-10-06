@@ -129,12 +129,6 @@ class CorrectRequest(BaseModel):
     state: Optional[str] = None
 
 
-class NormalizeRequest(BaseModel):
-    # the normalisations of the scores to switch on or off; one left out stays as it is
-    floor: Optional[bool] = None
-    brightness: Optional[bool] = None
-
-
 class RejectRequest(BaseModel):
     mite: str       # the detection's id, as the label page lists it
     rejected: bool
@@ -167,6 +161,9 @@ class EvaluateRequest(BaseModel):
     params: Optional[dict[str, float]] = None
     # follow a shaking plate; by default as in config.yaml
     stabilize: Optional[bool] = None
+    # put each dataset's scores on one scale per mite; by default as in config.yaml
+    normalize_brightness: Optional[bool] = None
+    normalize_floor: Optional[bool] = None
     # also call every observation with the Discobox's original software
     benchmark: bool = False
 
@@ -179,8 +176,11 @@ class MovementScoreRequest(BaseModel):
     metric: str
     params: dict[str, float] = {}
     threshold: float
-    # plate stabilization, saved with the threshold; left as it is when None
+    # plate stabilization and the normalisations of the scores, saved with the
+    # threshold; each left as it is when None
     stabilize: Optional[bool] = None
+    normalize_brightness: Optional[bool] = None
+    normalize_floor: Optional[bool] = None
 
 
 def safe_join(root: Path, relative: str) -> Path:
@@ -390,22 +390,6 @@ def correct_call(session_id: str, request: CorrectRequest):
     return {"results": for_pages(session_id, results)}
 
 
-@app.post("/api/session/{session_id}/normalize")
-def normalize_scores(session_id: str, request: NormalizeRequest):
-    """Put the scores of a folder's last run on one scale per mite, or back
-    (pipeline.normalize_scores), saved with the recordings: the results come
-    back, every number following, with no need to run the analysis again."""
-    session = get_session(session_id)
-    if session.get("live"):
-        raise HTTPException(status_code=400, detail="The scores of a test run are normalised in the Analysis window, once it is over.")
-    try:
-        results = pipeline.normalize_scores(session["data_dir"], session["out_dir"], request.floor, request.brightness)
-    except ValueError as error:
-        raise HTTPException(status_code=400, detail=str(error))
-    session["results"] = results
-    return {"results": for_pages(session_id, results)}
-
-
 @app.get("/api/session/{session_id}/clip/{recording}")
 @app.get("/api/session/{session_id}/clip/{recording}/{zone_id}")
 def analysis_clip(session_id: str, recording: int, zone_id: Optional[int] = None):
@@ -554,7 +538,9 @@ def evaluate_calibration(session_id: str, request: EvaluateRequest):
     datasets = request.datasets if request.datasets is not None else [session["dataset_id"]]
     try:
         return pipeline.evaluate_calibration(session["out_dir"], datasets, request.metric, request.params,
-                                             stabilize=request.stabilize, benchmark=request.benchmark)
+                                             stabilize=request.stabilize, benchmark=request.benchmark,
+                                             normalize_brightness=request.normalize_brightness,
+                                             normalize_floor=request.normalize_floor)
     except (FileNotFoundError, ValueError) as error:
         raise HTTPException(status_code=400, detail=str(error))
 
@@ -572,7 +558,8 @@ def save_threshold(request: ThresholdRequest):
 def save_movement_score(request: MovementScoreRequest):
     """Make a metric, its parameters and its threshold the default for every later analysis."""
     try:
-        return pipeline.save_movement_score(request.metric, request.params, request.threshold, request.stabilize)
+        return pipeline.save_movement_score(request.metric, request.params, request.threshold, request.stabilize,
+                                            request.normalize_brightness, request.normalize_floor)
     except ValueError as error:
         raise HTTPException(status_code=400, detail=str(error))
 

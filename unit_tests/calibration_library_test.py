@@ -337,6 +337,44 @@ def test_plate_stabilization_can_be_tried_without_editing_the_config(tmp_path, l
     assert scorer.stabilized == [in_config, not in_config]
 
 
+def test_the_normalisations_can_be_tried_without_editing_the_config(tmp_path, library, scorer, monkeypatch):
+    data_dir, out_dir = make_session(tmp_path, "a", 3, times=(0.0, 5.0, 10.0))
+    # mite 1 is still on a high floor; mite 2 was marked not a mite
+    scorer.scores = {"a": {"0": [2.0, 2.0, 5.0], "1": [2.6, 2.8, 2.6], "2": [9.0, 9.0, 9.0]}}
+    truth = {"0": ["still", "still", "moving"], "1": ["still", "still", "still"], "2": ["not_a_mite"] * 3}
+    pipeline.save_ground_truth(out_dir, truth, library_dir=library)
+    ids = [pipeline.dataset_id(data_dir)]
+    mite_config = get_default_config().mite
+    monkeypatch.setattr(mite_config, "normalize_floor", False)
+    monkeypatch.setattr(mite_config, "normalize_brightness", False)
+
+    def scores(result):
+        return {(row["mite_id"], row["recording"]): row["score"] for row in result["observations"]}
+
+    plain = pipeline.evaluate_calibration(tmp_path / "report", ids, library_dir=library)
+    assert (plain["normalize_floor"], plain["normalize_brightness"], plain["threshold_fits"]) == (False, False, True)
+    assert scores(plain)[("1", 1)] == 2.8
+
+    floor = pipeline.evaluate_calibration(tmp_path / "report", ids, library_dir=library, normalize_floor=True)
+    assert floor["normalize_floor"] and not floor["threshold_fits"]
+    # the floors, 2.0 and 2.6, both moved to 2.3; the detection that is no mite counts in neither
+    assert [scores(floor)[("1", r)] for r in range(3)] == pytest.approx([2.3, 2.5, 2.3])
+    assert [scores(floor)[("0", r)] for r in range(3)] == pytest.approx([2.3, 2.3, 5.3])
+
+    monkeypatch.setattr(pipeline, "_brightness_mites", lambda dataset, _dir, pad=0, stabilize=False:
+                        {"0": [100.0] * 3, "1": [130.0] * 3, "2": [50.0] * 3})
+    bright = pipeline.evaluate_calibration(tmp_path / "report", ids, library_dir=library, normalize_brightness=True)
+    assert bright["normalize_brightness"] and not bright["normalize_floor"]
+    # the typical brightness of the two mites is 115
+    assert scores(bright)[("0", 2)] == pytest.approx(5.75) and scores(bright)[("1", 0)] == pytest.approx(2.3)
+
+    # config.yaml's are used unless others are given
+    monkeypatch.setattr(mite_config, "normalize_floor", True)
+    in_use = pipeline.evaluate_calibration(tmp_path / "report", ids, library_dir=library)
+    assert in_use["normalize_floor"] and in_use["in_use"]["normalize_floor"] and in_use["threshold_fits"]
+    assert scores(in_use) == scores(floor)
+
+
 def test_bad_movement_scores_are_refused(tmp_path, library, scorer):
     data_dir, out_dir = make_session(tmp_path, "a", 1)
     scorer.scores = {"a": {"0": [1, 9]}}

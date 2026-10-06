@@ -18,7 +18,6 @@ class OverviewPage extends ResultsPage {
       <div>
         <h1>Results</h1>
         <p class="meta">${esc($("folder-name").textContent)} · ${results.n_recordings} recordings ${span} · movement threshold ${score(results.threshold)}${this.normalizedNote()}</p>
-        ${this.normalizeControl() ? `<div class="fig-controls">${this.normalizeControl()}</div>` : ""}
       </div>
     </header>
 

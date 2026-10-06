@@ -13,7 +13,6 @@ can never reach into the analysis internals.
     save_label_reading(...)    whether the label page reads them: its box, saved in config.yaml
     run_analysis(...)          the full pipeline, writing Excel and figures to out_dir
     correct_call(...)          change one mite's call in one recording by hand, or mark it gone; the results follow
-    normalize_scores(...)      put the last run's scores on one scale per mite, or back; the results follow
     analysis_clip(...)         frames of one recording, of one zone or the whole plate
     describe_movement(...)     each mite's, zone's and group's movement numbers, for the pages
     describe_survival(...)     the mites alive over time and the log-rank tests against the
@@ -523,53 +522,22 @@ def run_analysis(data_dir, out_dir, labels=None, coords_file=None, library_dir=C
     """
     run = _detect_and_score(data_dir, coords_file, labels, library_dir=library_dir, pool_size=pool_size)
     corrections = CallCorrections(data_dir, pool_size)
-    normalizer = ScoreNormalizer(**score_normalization(data_dir))
+    normalizer = _normalizer_in_use(run.analyzer.config.mite)
     with _runs_lock:
         _runs[_draft_key(out_dir)] = (run, labels, corrections, normalizer)
     return _results(run, out_dir, labels, corrections=corrections, normalizer=normalizer)
 
 
 # The last run of each results folder, so a call corrected by hand on its result
-# pages, or another normalisation of its scores, gives new results without
-# decoding the recordings again.
+# pages gives new results without decoding the recordings again.
 _runs = {}
 _runs_lock = threading.Lock()
 
-# In a folder's .settings.txt: which normalisations of classes/score_normalizer.py
-# its analysis uses, 1 or 0 each.
-NORMALIZATION_SETTINGS = {"floor": "normalize_floor", "brightness": "normalize_brightness"}
-
-
-def score_normalization(data_dir):
-    """Which normalisations the analysis of the recordings in `data_dir` puts
-    its scores through (classes/score_normalizer.py): {"floor", "brightness"},
-    from their .settings.txt; none without it."""
-    path = Path(data_dir) / SETTINGS_FILENAME
-    try:
-        saved = DataLoader._parse_settings_file(path) if path.is_file() else {}
-    except OSError:
-        saved = {}
-    return {name: saved.get(key) == 1 for name, key in NORMALIZATION_SETTINGS.items()}
-
-
-def normalize_scores(data_dir, out_dir, floor=None, brightness=None):
-    """Switch the normalisations of the scores on or off for the recordings in
-    `data_dir` (the ones left None stay as they are): saved in their
-    .settings.txt, so later runs keep them. Returns the results of the last run
-    written to `out_dir` as run_analysis() does, with the scores, the calls and
-    every number following, and writes the workbook and the figures again."""
-    chosen = score_normalization(data_dir)
-    chosen.update({name: bool(value) for name, value in (("floor", floor), ("brightness", brightness)) if value is not None})
-    with _runs_lock:
-        kept = _runs.get(_draft_key(out_dir))
-        if kept is None:
-            raise ValueError("Run the analysis again to normalise its scores.")
-        for name, key in NORMALIZATION_SETTINGS.items():
-            DataLoader.save_setting(Path(data_dir) / SETTINGS_FILENAME, key, int(chosen[name]))
-        run, labels, corrections, _normalizer = kept
-        normalizer = ScoreNormalizer(**chosen)
-        _runs[_draft_key(out_dir)] = (run, labels, corrections, normalizer)
-        return _results(run, out_dir, labels, corrections=corrections, normalizer=normalizer)
+def _normalizer_in_use(mite):
+    """The normalisations config.yaml puts the scores of a folder's analysis
+    through (mite.normalize_brightness and mite.normalize_floor), saved there
+    with the threshold from the calibration report."""
+    return ScoreNormalizer(floor=mite.normalize_floor, brightness=mite.normalize_brightness)
 
 
 def _change_call(zone_manager, corrections, mite_id, recording, state, detected=None):
@@ -672,8 +640,8 @@ def _results(run, out_dir, labels, write_files=True, corrections=None, normalize
     and the mites marked gone are censored; with any, the results say which
     ("corrections", "censored", "gone_from", see CallCorrections.apply()). With
     a `normalizer` (a ScoreNormalizer) the results say which normalisations the
-    scores went through ("normalization"): those of the folder's settings, none
-    for a live run."""
+    scores went through ("normalization"): config.yaml's for a folder, none for
+    a live run."""
     burst_minutes = run.burst_minutes
     mite_data, changes = _mite_table(run, corrections, normalizer)
 
@@ -1313,21 +1281,13 @@ def mite_boxes(mites, pad=0):
     }
 
 
-def _score_mites(dataset, metric, recordings_dir, params=None, stabilize=False):
-    """Score every mite of a dataset in every recording with `metric` and its
-    `params`: mite id to
-    one score per recording. Slow: every frame is decoded, one recording at a
-    time, and only the part of the image holding mites is kept. With
-    `stabilize`, the cuts follow a shaking plate, as mite.stabilize_plate makes
-    an analysis run cut them."""
-    if not Path(recordings_dir).is_dir():
-        raise FileNotFoundError(
-            f"The recordings of {dataset['name']} are no longer at {dataset['data_dir']} and the "
-            f"library has no copy, so its mites cannot be scored with {metric}. "
-            "Move them back and save its ground truth again, or leave this dataset out."
-        )
+def _mite_patches(dataset, recordings_dir, pad=0, stabilize=False):
+    """Per recording of a dataset, in order: (mite id, patch) for every mite,
+    the patch being its box grown by `pad` in every frame, as an analysis run
+    cuts it. Slow: every frame is decoded, one recording at a time, and only the
+    part of the image holding mites is kept. With `stabilize`, the cuts follow a
+    shaking plate, as mite.stabilize_plate makes an analysis run cut them."""
     loader = DataLoader(recordings_dir, grayscale=False)
-    pad = Analyzer.roi_padding(metric, params)
     boxes = mite_boxes(dataset["mites"], pad)
     # Stabilizing reads a little around each cut; keep real pixels there.
     margin = STABILIZE_MARGIN if stabilize else 0
@@ -1338,17 +1298,78 @@ def _score_mites(dataset, metric, recordings_dir, params=None, stabilize=False):
     local = {mite_id: (x1 - x0, y1 - y0, x2 - x0, y2 - y0)
              for mite_id, (x1, y1, x2, y2) in mite_boxes(dataset["mites"]).items()}
 
-    scores = {mite_id: [] for mite_id in boxes}
-    for recording in dataset["recordings"]:
-        frames = loader.load_recording_region(recording["name"], x0, y0, x_end, y_end)
+    def patches(frames):
         shifts = PlateStabilizer().shifts(frames, list(local.values())) if stabilize else None
         for mite_id, (x1, y1, x2, y2) in boxes.items():
             if shifts is None:
-                roi = frames[:, max(0, y1) - y0:y2 - y0, max(0, x1) - x0:x2 - x0]
+                yield mite_id, frames[:, max(0, y1) - y0:y2 - y0, max(0, x1) - x0:x2 - x0]
             else:
-                roi = PlateStabilizer.cut(frames, local[mite_id], pad, shifts)
+                yield mite_id, PlateStabilizer.cut(frames, local[mite_id], pad, shifts)
+
+    for recording in dataset["recordings"]:
+        yield patches(loader.load_recording_region(recording["name"], x0, y0, x_end, y_end))
+
+
+def _check_recordings(dataset, recordings_dir, what):
+    if not Path(recordings_dir).is_dir():
+        raise FileNotFoundError(
+            f"The recordings of {dataset['name']} are no longer at {dataset['data_dir']} and the "
+            f"library has no copy, so {what}. "
+            "Move them back and save its ground truth again, or leave this dataset out."
+        )
+
+
+def _score_mites(dataset, metric, recordings_dir, params=None, stabilize=False):
+    """Score every mite of a dataset in every recording with `metric` and its
+    `params`: mite id to one score per recording (see _mite_patches())."""
+    _check_recordings(dataset, recordings_dir, f"its mites cannot be scored with {metric}")
+    scores = {mite["id"]: [] for mite in dataset["mites"]}
+    for patches in _mite_patches(dataset, recordings_dir, Analyzer.roi_padding(metric, params), stabilize):
+        for mite_id, roi in patches:
             scores[mite_id].append(round(float(Analyzer._motion_score(roi, metric, params)), 3))
     return scores
+
+
+def _brightness_mites(dataset, recordings_dir, pad=0, stabilize=False):
+    """The brightness of every mite's patch in every recording, as an analysis
+    run records it with the score (Analyzer.score_pool()): mite id to one mean
+    pixel value per recording."""
+    _check_recordings(dataset, recordings_dir, "the brightness of its mites cannot be measured")
+    brightness = {mite["id"]: [] for mite in dataset["mites"]}
+    for patches in _mite_patches(dataset, recordings_dir, pad, stabilize):
+        for mite_id, roi in patches:
+            brightness[mite_id].append(round(float(np.asarray(roi, dtype=np.float32).mean()), 3))
+    return brightness
+
+
+def _dataset_brightness(key, dataset, pad, library_dir, stabilize=False):
+    """The brightness of the dataset's mites, from the cache when exactly these
+    patches were measured before."""
+    version = hashlib.sha1(json.dumps(
+        [inspect.getsource(plate_stabilizer), pad, bool(stabilize),
+         [[m["id"], m["x"], m["y"], m["r"]] for m in dataset["mites"]]]).encode("utf-8")).hexdigest()[:12]
+    cache = _dataset_dir(key, library_dir) / SCORES_DIRNAME / f"brightness-{version}.json"
+    if cache.is_file():
+        return json.loads(cache.read_text(encoding="utf-8"))["brightness"]
+    brightness = _brightness_mites(dataset, _recordings_dir(dataset["data_dir"], library_dir), pad, stabilize)
+    cache.parent.mkdir(parents=True, exist_ok=True)
+    cache.write_text(json.dumps({"brightness": brightness}), encoding="utf-8")
+    return brightness
+
+
+def _normalised_scores(key, dataset, scores, normalizer, pad, library_dir, stabilize):
+    """A dataset's scores as the analysis of a folder would have them with
+    `normalizer`: over the dataset's recordings, the mites marked not a mite
+    left out of it, as an analysis leaves them out."""
+    if not normalizer.active:
+        return scores
+    brightness = _dataset_brightness(key, dataset, pad, library_dir, stabilize) if normalizer.brightness else None
+    n_recordings = len(dataset["times"])
+    mites = [mite["id"] for mite in dataset["mites"]
+             if not calibration.is_rejected(calibration.per_recording(dataset["truth"].get(mite["id"]), n_recordings))]
+    normalised = normalizer.by_mite({mite_id: scores[mite_id] for mite_id in mites},
+                                    brightness and {mite_id: brightness[mite_id] for mite_id in mites})
+    return {**scores, **{mite_id: [round(value, 3) for value in values] for mite_id, values in normalised.items()}}
 
 
 def _dataset_scores(key, dataset, metric, params, library_dir, stabilize=False):
@@ -1513,6 +1534,8 @@ def _in_use(mite):
         "params": Analyzer.check_metric_params(mite.metric, mite.params_for(mite.metric)),
         "threshold": float(mite.motion_threshold),
         "stabilize_plate": bool(mite.stabilize_plate),
+        "normalize_brightness": bool(mite.normalize_brightness),
+        "normalize_floor": bool(mite.normalize_floor),
     }
 
 
@@ -1528,7 +1551,7 @@ def _resolve_metric(metric, params):
 
 
 def evaluate_calibration(out_dir, datasets, metric=None, params=None, library_dir=CALIBRATION_LIBRARY,
-                         stabilize=None, benchmark=False):
+                         stabilize=None, benchmark=False, normalize_brightness=None, normalize_floor=None):
     """Score the saved mites with a metric and compare the scores with the
     movement the user saw, pooled over the saved datasets whose ids are in
     `datasets`.
@@ -1537,9 +1560,12 @@ def evaluate_calibration(out_dir, datasets, metric=None, params=None, library_di
     parameters overridden by `params` (e.g. {"n": 20} for topN_variability), so
     other movement scores can be tried without editing the file; likewise
     `stabilize` (following a shaking plate, see PlateStabilizer) is config.yaml's
-    mite.stabilize_plate unless given. The threshold "in use" is always
-    config.yaml's; it only fits these scores when the metric, parameters and
-    stabilization are config.yaml's too, which `threshold_fits` says.
+    mite.stabilize_plate unless given, and `normalize_brightness` and
+    `normalize_floor` (the scores of each dataset put on one scale for every
+    mite, as the analysis of a folder does, see ScoreNormalizer) config.yaml's
+    too. The threshold "in use" is always config.yaml's; it only fits these
+    scores when the metric, parameters, stabilization and normalisations are
+    config.yaml's too, which `threshold_fits` says.
 
     Each (mite, recording) labelled moving or still is one observation; the
     detector calls it moving when that recording's score reaches the threshold.
@@ -1567,6 +1593,9 @@ def evaluate_calibration(out_dir, datasets, metric=None, params=None, library_di
     metric, params = _resolve_metric(metric, params)
     in_use = _in_use(get_default_config().mite)
     stabilize = in_use["stabilize_plate"] if stabilize is None else bool(stabilize)
+    normalizer = ScoreNormalizer(
+        floor=in_use["normalize_floor"] if normalize_floor is None else normalize_floor,
+        brightness=in_use["normalize_brightness"] if normalize_brightness is None else normalize_brightness)
     current = in_use["threshold"]
     times = _pooled_times(loaded)
     n_recordings = len(times)
@@ -1574,6 +1603,8 @@ def evaluate_calibration(out_dir, datasets, metric=None, params=None, library_di
     rows, n_rejected, n_unlabelled, summaries = [], 0, 0, []
     for key, dataset in zip(ids, loaded):
         scores = _dataset_scores(key, dataset, metric, params, library_dir, stabilize)
+        scores = _normalised_scores(key, dataset, scores, normalizer, Analyzer.roi_padding(metric, params),
+                                    library_dir, stabilize)
         here, rejected, unlabelled = _observations(
             dataset, key, scores, _dataset_benchmark(key, dataset, library_dir) if benchmark else None)
         rows += here
@@ -1632,9 +1663,13 @@ def evaluate_calibration(out_dir, datasets, metric=None, params=None, library_di
         "metric": metric,
         "metric_params": params,
         "stabilize_plate": stabilize,
+        "normalize_brightness": normalizer.brightness,
+        "normalize_floor": normalizer.floor,
         "in_use": in_use,
         "threshold_fits": (metric == in_use["metric"] and params == in_use["params"]
-                           and stabilize == in_use["stabilize_plate"]),
+                           and stabilize == in_use["stabilize_plate"]
+                           and normalizer.brightness == in_use["normalize_brightness"]
+                           and normalizer.floor == in_use["normalize_floor"]),
         "datasets": summaries,
         "times": times,
         "threshold": current,
@@ -1683,14 +1718,16 @@ def save_threshold(value):
     return save_motion_threshold(value)
 
 
-def save_movement_score(metric, params, threshold, stabilize=None):
+def save_movement_score(metric, params, threshold, stabilize=None, normalize_brightness=None, normalize_floor=None):
     """Make `metric` with `params`, and `threshold` on its scale, the movement
     score of every analysis from now on; with `stabilize`, plate stabilization
-    on or off too (left as it is when None)."""
+    on or off too, and with `normalize_brightness` and `normalize_floor` the
+    normalisations of a folder's scores (each left as it is when None)."""
     metric, params = _resolve_metric(metric, params)
     if not float(threshold) > 0:
         raise ValueError("The threshold must be positive.")
-    return app_config.save_movement_score(metric, params, threshold, stabilize_plate=stabilize)
+    return app_config.save_movement_score(metric, params, threshold, stabilize_plate=stabilize,
+                                          normalize_brightness=normalize_brightness, normalize_floor=normalize_floor)
 
 
 # --- live runs ----------------------------------------------------------------------

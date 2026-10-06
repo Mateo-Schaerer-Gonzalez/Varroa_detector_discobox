@@ -267,3 +267,17 @@ def test_save_movement_score_sets_plate_stabilization(tmp_path):
     saved = app_config.save_movement_score("variability", {}, 3.0, path)
     assert "stabilize_plate" not in saved
     assert yaml.safe_load(path.read_text())["mite"]["stabilize_plate"] is False
+
+
+def test_save_movement_score_sets_the_normalisations(tmp_path):
+    path = tmp_path / "config.yaml"
+    path.write_text('mite:\n  radius: 8\n  metric: "variability"\n  stabilize_plate: true\n')
+    saved = app_config.save_movement_score("variability", {}, 3.0, path, normalize_brightness=True, normalize_floor=False)
+    assert saved["normalize_brightness"] is True and saved["normalize_floor"] is False and "stabilize_plate" not in saved
+    mite = yaml.safe_load(path.read_text())["mite"]
+    assert (mite["normalize_brightness"], mite["normalize_floor"], mite["stabilize_plate"]) == (True, False, True)
+
+    app_config.save_movement_score("variability", {}, 3.0, path, normalize_floor=True)
+    mite = yaml.safe_load(path.read_text())["mite"]
+    assert (mite["normalize_brightness"], mite["normalize_floor"]) == (True, True)
+    assert path.read_text().count("normalize_floor") == 1
