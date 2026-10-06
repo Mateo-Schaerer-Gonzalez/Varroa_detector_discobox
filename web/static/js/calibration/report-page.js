@@ -1,9 +1,11 @@
 // The calibration or test report. Each (mite, recording) labelled moving or still
 // is compared with the detector's call: moving when that recording's score reaches
 // the mite's threshold, its own (an offset above the moving median of its scores
-// over a window of recordings) or the one of every mite. The numbers are the
-// server's (evaluate_calibration); this draws them, with pickers for the datasets
-// pooled and the movement score.
+// over a window of recordings, plus a number of their median absolute deviations)
+// or the one of every mite. A threshold is judged by the time each mite died by
+// its calls against the time by the labels. The numbers are the server's
+// (evaluate_calibration); this draws them, with pickers for the datasets pooled
+// and the movement score.
 
 class ReportPage {
   static CONFUSION_CAPTION =
@@ -27,18 +29,30 @@ class ReportPage {
 
   // How a mite is called moving: at one threshold for every mite or, with a window,
   // at its own, an offset above the moving median of its scores over that many
-  // recordings (classes/mite_threshold.py). `t` has window, centred and offset (or threshold).
+  // recordings plus `scale` MADs of them (classes/mite_threshold.py). `t` has
+  // window, centred, scale and offset (or threshold).
   static thresholdText(t) {
     const offset = ReportPage.thr(t.offset ?? t.threshold);
-    return t.window ? `own ${t.centred ? "" : "trailing "}median of ${t.window} + ${offset}` : offset;
+    if (!t.window) return offset;
+    return `own ${t.centred ? "" : "trailing "}median of ${t.window}${t.scale ? ` + ${t.scale} MAD` : ""} + ${offset}`;
   }
+
+  // A death-time error, in minutes.
+  static mins(value) {
+    return value == null ? "–" : `${value.toFixed(1)} min`;
+  }
+
+  // The distance between two survival curves, in percentage points.
+  static points(value) {
+    return value == null ? "–" : `${value.toFixed(1)} points`;
+  }
+
+  static DEATH_NOTE = `A mite's death time is the first labelled recording after the last one it moved in; one never moving died at its first recording,
+    and one moving in its last died one recording later, the earliest it can have. The <b>death-time error</b> is the mean distance, over the labelled mites,
+    between the time by the detector's calls and the time by the ground truth.`;
 
   static called(c, truth, call) {
     return c[`${truth}_called_${call}`];
-  }
-
-  static aucText(r) {
-    return r.auc == null ? "–" : r.auc.toFixed(3);
   }
 
   static oneClassNote(r) {
@@ -59,10 +73,10 @@ class ReportPage {
   // when its window is another one.
   static rocCaption(marks) {
     const main = marks[marks.length - 1];
-    const { window, centred } = main.call;
+    const { window, centred, scale } = main.call;
     const what = window ? "offset" : "threshold";
     const other = marks.find((mark) => !ReportFigures.sameWindow(mark, main));
-    return `Every possible ${what}${window ? ` above the mite's own ${centred ? "" : "trailing "}median of ${window} recordings` : ""}, from the highest (bottom left) to the lowest (top right).
+    return `Every possible ${what}${window ? ` above the mite's own ${centred ? "" : "trailing "}median of ${window} recordings${scale ? ` plus ${scale} MADs` : ""}` : ""}, from the highest (bottom left) to the lowest (top right).
       AUC ${main.roc.auc.toFixed(3)}. Hover the curve for the ${what} at each step.${other ? ` The thin curve is the one of the threshold ${other.name} (AUC ${other.roc.auc.toFixed(3)}).` : ""}`;
   }
 
@@ -79,7 +93,16 @@ class ReportPage {
     ${r.survival.benchmark ? "and the benchmark's " : ""}would have it. A mite counts as alive up to the last recording in which it moved and as dead from the next labelled one on; a mite moving in its last
     labelled recording is right-censored there. Only mites seen moving at least once are in the study, each curve by its own calls, as a mite never
     seen moving may have been dead from the start. ${ReportPage.leftOutText(r.survival, marks)} The closer the dashed curves follow the black one,
-    the better the threshold gives the true survival. Hover for the numbers.${ReportPage.poolNote(r)}`;
+    the better the threshold gives the true survival: ${ReportPage.gapText(r, marks)}. Hover for the numbers.${ReportPage.poolNote(r)}`;
+  }
+
+  // How far each caller's survival curve is from the ground truth's (the
+  // server's, calibration.curve_gap), and its death-time error.
+  static gapText(r, marks) {
+    const { points, mins } = ReportPage;
+    const callers = [...marks.map((mark) => [`the threshold ${mark.name}`, r.death_time[mark.key]]),
+      ...(r.death_time.benchmark ? [["the benchmark", r.death_time.benchmark]] : [])];
+    return callers.map(([name, d]) => `at ${name} the curve is on average ${points(d.km_gap)} from it, the mites' death times ${mins(d.mae)}`).join("; ");
   }
 
   // Pooled datasets need not cover every recording, e.g. recordings of different
@@ -153,7 +176,7 @@ class ReportPage {
         the number is the group's mites in the study by the ground truth. Groups are the plate labels.${poolNote(r)}</p>`) : ""}
     ${section("Files", `<ul class="files">
       <li><a href="${cal.fileUrl(r.excel)}" download>${esc(r.excel)}</a>
-        <span class="muted">every labelled mite-recording with its score, threshold and outcome, the fraction moving per recording, every window tried, the ROC curve and the summary</span></li></ul>`)}`;
+        <span class="muted">every labelled mite-recording with its score, threshold and outcome, every mite's death time by the labels and by the detector, the survival curves, the fraction moving per recording, every window tried, the ROC curve and the summary</span></li></ul>`)}`;
 
     body.querySelectorAll(".segmented [data-mode]").forEach((button) => button.addEventListener("click", () => {
       cal.setMode(button.dataset.mode);
@@ -327,14 +350,14 @@ class ReportPage {
   // --- calibrate: pick a window and an offset and save them
 
   calibrateReport(r) {
-    const { thr, thresholdText, oneClassNote, survivalCaption, rocCaption, stripCaption, scoreText, CONFUSION_CAPTION } = ReportPage;
+    const { thr, mins, thresholdText, oneClassNote, survivalCaption, rocCaption, stripCaption, scoreText, CONFUSION_CAPTION, DEATH_NOTE } = ReportPage;
     const { stat, figure, section } = Markup;
     const marks = ReportPage.thresholdMarks(r);
     const inUse = thresholdText(r.calls.current);
     if (!r.calls.suggested) {
       return `<div class="banner">${oneClassNote(r)}</div>
       <div class="stats">
-        ${stat("Called right", pct(r.current.accuracy), `threshold in use ${inUse}`)}
+        ${stat("Death-time error", mins(r.death_time.current.mae), `mean per mite · threshold in use ${inUse}`)}
         ${this.outcomeStat("Moving called moving", r.current, r.rates.current, "moving", "still")}
         ${this.outcomeStat("Still called still", r.current, r.rates.current, "still", "moving")}
         ${stat("AUC", "–", "needs moving and still labels")}
@@ -350,16 +373,17 @@ class ReportPage {
     const shown = cal.shownThreshold === "current" ? "current" : "best";
     return `
     <div class="stats">
-      ${stat("Suggested threshold", `median + ${thr(suggested.offset)}`,
-        `the mite's own median over ${suggested.window} recordings, ${suggested.centred ? "centred" : "trailing"} · ${suggestedText === inUse ? "the one in use" : `in use: ${inUse}`}`)}
-      ${stat("Called right", pct(r.best.accuracy), `in use: ${pct(r.current.accuracy)}`)}
+      ${stat("Suggested threshold", `median + ${suggested.scale ? `${suggested.scale} MAD + ` : ""}${thr(suggested.offset)}`,
+        `the mite's own median${suggested.scale ? " and MAD" : ""} over ${suggested.window} recordings, ${suggested.centred ? "centred" : "trailing"} · ${suggestedText === inUse ? "the one in use" : `in use: ${inUse}`}`)}
+      ${stat("Death-time error", mins(r.death_time.suggested.mae),
+        `mean per mite · ${r.death_time.suggested.n_exact} of ${r.death_time.suggested.n_mites} mites exact · in use: ${mins(r.death_time.current.mae)}`)}
       ${this.outcomeStat("Moving called moving", r.best, r.rates.best, "moving", "still", r.current)}
       ${this.outcomeStat("Still called still", r.best, r.rates.best, "still", "moving", r.current)}
     </div>
-    <p class="caption">Key figures at the suggested threshold, per mite-recording; "in use" is the threshold in config.yaml.</p>
-    ${single.accuracy > r.best.accuracy ? `<div class="banner"><span>On these labels one threshold for every mite (${thr(single.offset)}) calls ${pct(single.accuracy)} right,
-      the best own threshold ${pct(r.best.accuracy)}. A mite's median is only what it scores when still while it is still in most of the window:
-      see Fig. 2 and the wrong calls by how often the mite moves, below. To keep one threshold, choose the window <b>none</b> when saving.</span></div>` : ""}
+    <p class="caption">Key figures at the suggested threshold: the death-time error per mite, the others per mite-recording; "in use" is the threshold in config.yaml. ${DEATH_NOTE}</p>
+    ${r.death_time.single.mae < r.death_time.suggested.mae ? `<div class="banner"><span>On these labels one threshold for every mite (${thr(single.offset)}) gives the death times within ${mins(r.death_time.single.mae)},
+      the best own threshold within ${mins(r.death_time.suggested.mae)}. A mite's median is only what it scores when still while it is still in most of the window:
+      see the wrong calls by how often the mite moves, below. To keep one threshold, choose the window <b>none</b> when saving.</span></div>` : ""}
 
     <div class="grid-2">
       <figure class="fig">
@@ -381,27 +405,32 @@ class ReportPage {
             <option value="centred" ${suggested.centred ? "selected" : ""}>centred</option>
             <option value="trailing" ${suggested.centred ? "" : "selected"}>trailing</option>
           </select>
+          <label for="scale-input" title="How many median absolute deviations of the mite's scores over the window its threshold rises by: more for a noisier mite.">MADs</label>
+          <select id="scale-input">${r.scales.map((scale) =>
+            `<option value="${scale}" ${scale === suggested.scale ? "selected" : ""}>${scale || "0: none"}</option>`).join("")}</select>
           <label for="threshold-input" id="threshold-label">Offset</label>
           <input id="threshold-input" type="number" step="0.01" value="${thr(suggested.offset)}">
           <button type="button" id="save-threshold">Save to config.yaml</button>
         </div>
         <p id="window-note" class="hint"></p>
         <p id="save-status" class="hint">Saves the movement score <code>${esc(scoreText(r.metric, r.metric_params, r.stabilize_plate))}</code> along with the threshold.</p>
-        <p class="hint">A mite counts as moving in a recording when its score reaches its own threshold: the median of its scores over the window, plus the offset.
+        <p class="hint">A mite counts as moving in a recording when its score reaches its own threshold: the median of its scores over the window, plus so many
+          of their median absolute deviations (<b>MADs</b>: the noisier the mite, the higher its threshold), plus the offset.
           A <b>centred</b> window lies around the recording, a <b>trailing</b> one ends at it, so it needs no later recordings.
-          The suggestion is the window and offset that maximise the fraction of moving labels called moving plus the fraction of still labels called still;
-          the offset sits halfway between the two nearest scores. Choosing a window fills in its best offset. Every analysis started after saving uses the new values.
+          The suggestion is the window, number of MADs and offset whose calls give the mites' death times with the smallest mean error, since the death times
+          are what a survival curve is made of; of equally good ones, the one calling most labels right. The offset sits halfway between the two nearest scores.
+          Choosing a window fills in its best MADs and offset. Every analysis started after saving uses the new values.
           Check them with the <b>Test</b> report on a <em>different</em> recording: on this one they look better than they will be.</p>
         ${this.comparisonTable(r)}`)}
     </div>
 
     <div class="grid-2">
       ${figure("chart-windows", 2, "Window of the mite's own threshold",
-        `Each window, with its best offset, by the mean of the fraction of moving labels called moving and of still labels called still: what the suggestion maximises.
-        The dashed line is one threshold for every mite, at its best. Hover a point for its offset and counts; select it to fill it in above.`)}
-      ${figure("chart-offsets", 3, "Offset above the mite's own median",
-        `For the suggested window: the fraction of moving labels called moving and of still labels called still at each offset.
-        A higher offset calls fewer mites moving. Only the offsets where both fractions change are shown; hover for the numbers.`)}
+        `Each window, with its best number of MADs and offset, by its death-time error: what the suggestion minimises, so lower is better.
+        The dashed line is one threshold for every mite, at its best. Hover a point for its MADs, offset and counts; select it to fill it in above.`)}
+      ${figure("chart-offsets", 3, "Death-time error by the offset",
+        `For the suggested window and number of MADs: the death-time error at every offset that gives different calls.
+        A higher offset calls fewer mites moving, so they die earlier; a lower one keeps them alive longer. Hover for the numbers.`)}
     </div>
 
     <div class="grid-2">
@@ -416,21 +445,22 @@ class ReportPage {
 
   // The thresholds side by side, and how the choice holds on mites it never saw.
   comparisonTable(r) {
-    const { thr, thresholdText } = ReportPage;
+    const { thr, mins, points, thresholdText } = ReportPage;
     const single = r.windows[0];
-    const rows = [["in use", thresholdText(r.calls.current), r.current],
-      ...(r.best ? [["suggested", thresholdText(r.calls.suggested), r.best]] : []),
-      ...(single ? [["one for every mite", `${thr(single.offset)}, its best`, single]] : [])];
+    const rows = [["in use", thresholdText(r.calls.current), r.current, r.death_time.current],
+      ...(r.best ? [["suggested", thresholdText(r.calls.suggested), r.best, r.death_time.suggested]] : []),
+      ...(single ? [["one for every mite", `${thr(single.offset)}, its best`, single, r.death_time.single]] : [])];
     const held = r.held_out;
     return `<div class="table-wrap"><table>
-    <thead><tr><th>Threshold</th><th class="num">Called right</th>
-      <th class="num">Moving called still</th><th class="num">Still called moving</th></tr></thead>
-    <tbody>${rows.map(([name, value, c]) => `<tr>
-      <td>${name} <span class="muted">${value}</span></td><td class="num">${pct(c.accuracy)}</td>
-      <td class="num">${c.moving_called_still}</td><td class="num">${c.still_called_moving}</td></tr>`).join("")}</tbody>
+    <thead><tr><th>Threshold</th><th class="num">Death-time error</th><th class="num">Survival curve off by</th><th class="num">Called right</th></tr></thead>
+    <tbody>${rows.map(([name, value, c, d]) => `<tr>
+      <td>${name} <span class="muted">${value}</span></td><td class="num">${mins(d.mae)}</td><td class="num">${points(d.km_gap)}</td>
+      <td class="num">${pct(c.accuracy)}</td></tr>`).join("")}</tbody>
   </table></div>
-  ${held ? `<p class="hint"><b>On mites the choice never saw:</b> with window and offset chosen on half of the mites, ${pct(held.own)} of the other half's
-    mite-recordings are called right; one threshold for every mite, chosen the same way, calls ${pct(held.single)} right (means of ${held.repeats} random halves).</p>` : ""}`;
+  <p class="caption"><b>Survival curve off by</b>: the mean distance between the Kaplan–Meier curve by the detector's calls and the one by the ground truth, over the recordings.</p>
+  ${held ? `<p class="hint"><b>On mites the choice never saw:</b> chosen on half of the mites, the thresholds give the other half's death times within
+    ${mins(held.single)} with one threshold for every mite, ${mins(held.own)} with the mite's median plus an offset, and ${mins(held.scaled)} with
+    the median plus MADs plus an offset (means of ${held.repeats} random halves). Chosen and judged on the same mites, as above, every one looks better than it will be.</p>` : ""}`;
   }
 
   // Where a mite's own threshold goes wrong: its median is only its noise while it
@@ -465,28 +495,34 @@ class ReportPage {
       document.querySelectorAll("[data-shown]").forEach((b) => b.classList.toggle("secondary", b !== button));
       $("confusion").innerHTML = matrix(button.dataset.shown);
     }));
-    figures.drawWindows($("chart-windows"), r, marks, (choice) => this.chooseWindow(r, choice.window, choice.centred));
-    figures.drawOffsets($("chart-offsets"), marks);
+    figures.drawWindows($("chart-windows"), r, marks, (choice) => this.chooseWindow(r, choice.window, choice.centred, choice.scale));
+    figures.drawOffsets($("chart-offsets"), r, marks);
     figures.drawRoc($("chart-roc"), marks);
     figures.drawStrip($("chart-strip"), r, marks);
     const chosen = () => this.chooseWindow(r, Number($("window-input").value), $("align-input").value === "centred");
     $("window-input").addEventListener("change", chosen);
     $("align-input").addEventListener("change", chosen);
+    $("scale-input").addEventListener("change", () => this.chooseWindow(
+      r, Number($("window-input").value), $("align-input").value === "centred", Number($("scale-input").value)));
     this.describeWindow(r);
     $("save-threshold").addEventListener("click", () => this.saveThreshold());
   }
 
-  // The window tried by the server that the save form shows.
+  // The window and scale tried by the server that the save form shows.
   shownWindow(r) {
     const size = Number($("window-input").value);
     const centred = $("align-input").value === "centred";
-    return r.windows.find((w) => w.window === size && (!size || w.centred === centred));
+    const scale = Number($("scale-input").value);
+    return r.windows.find((w) => w.window === size && (!size || (w.centred === centred && w.scale === scale)));
   }
 
-  // Put a window in the save form, with its best offset.
-  chooseWindow(r, size, centred) {
+  // Put a window in the save form, with its best offset; without a `scale`,
+  // with the window's best number of MADs too (the server's, best_of_window).
+  chooseWindow(r, size, centred, scale = null) {
     $("window-input").value = String(size);
     if (size) $("align-input").value = centred ? "centred" : "trailing";
+    const best = r.windows.find((w) => w.window === size && (!size || w.centred === centred) && w.best_of_window);
+    $("scale-input").value = String(size ? scale ?? best?.scale ?? 0 : 0);
     const choice = this.shownWindow(r);
     if (choice) $("threshold-input").value = ReportPage.thr(choice.offset);
     this.describeWindow(r);
@@ -496,9 +532,10 @@ class ReportPage {
     const choice = this.shownWindow(r);
     const single = !Number($("window-input").value);
     $("align-input").disabled = single;
+    $("scale-input").disabled = single;
     $("threshold-label").textContent = single ? "Threshold" : "Offset";
     $("window-note").textContent = choice
-      ? `With its best ${single ? "threshold" : "offset"}, ${ReportPage.thr(choice.offset)}: ${pct(choice.accuracy)} called right, ${choice.moving_called_still} moving called still, ${choice.still_called_moving} still called moving.`
+      ? `With its best ${single ? "threshold" : "offset"}, ${ReportPage.thr(choice.offset)}: death times within ${ReportPage.mins(choice.mae)}, ${pct(choice.accuracy)} called right, ${choice.moving_called_still} moving called still, ${choice.still_called_moving} still called moving.`
       : "";
   }
 
@@ -518,7 +555,7 @@ class ReportPage {
       const r = cal.report;
       const saved = await post("/api/movement-score", {
         metric: r.metric, params: r.metric_params, threshold: value, stabilize: r.stabilize_plate,
-        window: size, centred: $("align-input").value === "centred",
+        window: size, centred: $("align-input").value === "centred", scale: size ? Number($("scale-input").value) : 0,
       });
       if (cal.data) cal.data.threshold = saved.threshold;
       // Evaluate again, so "in use" is what was just saved.
@@ -535,17 +572,20 @@ class ReportPage {
   // --- test: how good is the threshold in use, and where does it go wrong
 
   testReport(r) {
-    const { thresholdText, aucText, oneClassNote, survivalCaption, rocCaption, stripCaption, pooled, CONFUSION_CAPTION } = ReportPage;
+    const { mins, points, thresholdText, oneClassNote, survivalCaption, rocCaption, stripCaption, pooled, CONFUSION_CAPTION, DEATH_NOTE } = ReportPage;
     const { stat, figure, section } = Markup;
     const c = r.current;
+    const d = r.death_time.current;
     const marks = ReportPage.thresholdMarks(r).slice(0, 1);
     return `
     <div class="stats">
+      ${stat("Death-time error", mins(d.mae), `mean per mite · ${d.n_exact} of ${d.n_mites} mites exact · survival curve off by ${points(d.km_gap)}`)}
       ${stat("Called right", pct(c.accuracy), `${c.n_wrong} wrong · threshold ${thresholdText(r.calls.current)}`)}
       ${this.outcomeStat("Moving called moving", c, r.rates.current, "moving", "still")}
       ${this.outcomeStat("Still called still", c, r.rates.current, "still", "moving")}
-      ${stat("AUC", aucText(r), r.auc == null ? "needs moving and still labels" : "1 = perfect separation, 0.5 = chance")}
     </div>
+    <p class="caption">${DEATH_NOTE} The survival curve is off by the mean distance between the detector's Kaplan–Meier curve and the ground truth's (Fig. 2).
+      By the detector's calls the mites die ${d.bias > 0 ? "later" : "earlier"} than by the ground truth, by ${mins(Math.abs(d.bias))} on average.</p>
 
     <div class="grid-2">
       ${figure("confusion", 1, "Confusion matrix at the threshold in use", CONFUSION_CAPTION)}
@@ -585,22 +625,25 @@ class ReportPage {
   // The detector at the threshold in use beside the Discobox's original software,
   // on the same mite-recordings (the server's figures, calibration.calls_confusion).
   benchmarkTable(r) {
-    const { thresholdText, scoreText } = ReportPage;
+    const { mins, points, thresholdText, scoreText } = ReportPage;
     if (!r.benchmark) return `<p id="benchmark-status" class="hint">The benchmark has not been run on these datasets.</p>`;
     const share = (value) => (value == null ? "–" : `${(value * 100).toFixed(1)}%`);
     const rows = [
-      [`Detector <span class="muted">${esc(scoreText(r.metric, r.metric_params, r.stabilize_plate))}</span>`, thresholdText(r.calls.current), r.current],
-      [`Benchmark <span class="muted">${esc(r.benchmark.name)}, the Discobox's original software</span>`, r.benchmark.threshold, r.benchmark],
+      [`Detector <span class="muted">${esc(scoreText(r.metric, r.metric_params, r.stabilize_plate))}</span>`, thresholdText(r.calls.current), r.current, r.death_time.current],
+      [`Benchmark <span class="muted">${esc(r.benchmark.name)}, the Discobox's original software</span>`, r.benchmark.threshold, r.benchmark, r.death_time.benchmark],
     ];
     return `<div class="table-wrap"><table>
-    <thead><tr><th>Called by</th><th class="num">Threshold</th><th class="num">Precision</th><th class="num">Recall</th><th class="num">F1 score</th>
+    <thead><tr><th>Called by</th><th class="num">Threshold</th><th class="num">Death-time error</th><th class="num">Survival curve off by</th>
+      <th class="num">Precision</th><th class="num">Recall</th><th class="num">F1 score</th>
       <th class="num">Called right</th><th class="num">Moving called still</th><th class="num">Still called moving</th></tr></thead>
-    <tbody>${rows.map(([name, threshold, c]) => `<tr>
+    <tbody>${rows.map(([name, threshold, c, d]) => `<tr>
       <td>${name}</td><td class="num">${threshold}</td>
+      <td class="num">${mins(d.mae)}</td><td class="num">${points(d.km_gap)}</td>
       <td class="num">${share(c.precision)}</td><td class="num">${share(c.sensitivity)}</td><td class="num">${share(c.f1)}</td>
       <td class="num">${share(c.accuracy)}</td><td class="num">${c.moving_called_still}</td><td class="num">${c.still_called_moving}</td></tr>`).join("")}</tbody>
   </table></div>
   <p class="caption">Both on the same ${r.n_moving + r.n_still} labelled mite-recordings, moving being the positive call.
+    <b>Death-time error</b> and <b>survival curve off by</b>: as above, per mite and per recording.
     <b>Precision</b>: of the calls "moving", the share labelled moving. <b>Recall</b>: of the labels "moving", the share called moving.
     <b>F1 score</b>: their harmonic mean. The benchmark denoises each recording's frames, takes the difference of every frame to the first and
     calls a mite moving when a difference above ${r.benchmark.threshold} lies on it; that threshold is fixed in its code, where the detector's is

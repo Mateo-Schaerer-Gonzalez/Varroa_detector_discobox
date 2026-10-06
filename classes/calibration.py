@@ -156,14 +156,27 @@ def best_threshold(scores, moving):
     return float((lowest_moving + below.max()) / 2) if below.size else float(lowest_moving)
 
 
+def _windows(scores, window, centred):
+    """One mite's scores, in recording order, in a window of `window` recordings
+    around each one (`centred`) or ending at it; the window is shorter at the ends."""
+    scores = np.asarray(scores, dtype=float)
+    before = (window - 1) // 2 if centred else window - 1
+    return [scores[max(0, t - before):t - before + window] for t in range(len(scores))]
+
+
 def moving_median(scores, window, centred=True):
     """The median of one mite's scores, in recording order, in a window of
     `window` recordings around each one (`centred`) or ending at it; the window
     is shorter at the ends. A mite's own threshold is this plus an offset."""
-    scores = np.asarray(scores, dtype=float)
-    before = (window - 1) // 2 if centred else window - 1
-    return np.array([np.median(scores[max(0, t - before):t - before + window])
-                     for t in range(len(scores))])
+    return np.array([np.median(part) for part in _windows(scores, window, centred)])
+
+
+def moving_mad(scores, window, centred=True):
+    """The median absolute deviation of one mite's scores in the same windows as
+    moving_median(): the median distance of the window's scores from its median.
+    How much the mite's scores scatter when nothing happens, as long as it is
+    still in most of the window; a mite's own threshold can rise with it."""
+    return np.array([np.median(np.abs(part - np.median(part))) for part in _windows(scores, window, centred)])
 
 
 def outcome(is_moving, score, threshold):
@@ -255,7 +268,9 @@ def survival_curves(rows, times, thresholds, calls=None):
 
     `rows` have "dataset", "mite_id", "recording", "movement" and "score".
     Returns {source: {alive, low, high (percent per recording, see
-    kaplan_meier()), n_mites (in the study), n_left_out, n_dead}}."""
+    kaplan_meier()), n_mites (in the study), n_left_out, n_dead}}; every source
+    but the labels also has "gap", how far its curve is from theirs (see
+    curve_gap())."""
     by_mite = {}
     for row in rows:
         by_mite.setdefault((row["dataset"], row["mite_id"]), []).append(row)
@@ -275,7 +290,18 @@ def survival_curves(rows, times, thresholds, calls=None):
             "n_left_out": len(survivals) - len(study),
             "n_dead": sum(1 for _time, dead in study if dead),
         }
+    for name, curve in curves.items():
+        if name != "truth":
+            curve["gap"] = curve_gap(curve["alive"], curves["truth"]["alive"])
     return curves
+
+
+def curve_gap(alive, truth):
+    """How far a survival curve is from the one by the labels: the mean distance
+    between the two, in percentage points, over the recordings both have. 0 when
+    it follows the labels' curve exactly; None when they share no recording."""
+    gaps = [abs(a - b) for a, b in zip(alive, truth) if a is not None and b is not None]
+    return float(np.mean(gaps)) if gaps else None
 
 
 def moving_over_time(rows, n_recordings, thresholds, calls=None):

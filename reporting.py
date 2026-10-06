@@ -237,22 +237,29 @@ CALIBRATION_EXCEL_NAME = "calibration.xlsx"
 def write_calibration_excel(result, out_dir):
     """Write a calibration's summary, the datasets pooled, every labelled (mite,
     recording) observation, the survival curves by the labels and the detector,
-    the fraction moving per recording and, when there is one, the ROC curve.
+    the fraction moving per recording, every mite's death time and, when there
+    is one, the ROC curve.
     A calibration with the benchmark has it as a row of the summary, a column of
     the observations and a survival curve."""
     path = Path(out_dir) / CALIBRATION_EXCEL_NAME
 
+    def death_time(name):
+        """A caller's death-time error (minutes) and the gap of its survival curve."""
+        return {f"death_time_{key}": value for key, value in result["death_time"][name].items()}
+
     # `window` 0: one threshold (`offset`) for every mite; else each mite's own,
     # `offset` above the moving median of its scores over `window` recordings
+    # plus `scale` times their median absolute deviation
     summary = pd.DataFrame(
-        [{"calls": "in use", **result["calls"]["current"], **result["current"]}]
-        + ([{"calls": "suggested", **result["calls"]["suggested"], **result["best"]}] if result["best"] else [])
+        [{"calls": "in use", **result["calls"]["current"], **result["current"], **death_time("current")}]
+        + ([{"calls": "suggested", **result["calls"]["suggested"], **result["best"], **death_time("suggested")}]
+           if result["best"] else [])
     )
     summary["auc"] = [result["auc"]] + ([result["roc_suggested"]["auc"]] if result["best"] else [])
     summary["metric"] = result["metric"]
     summary["metric_params"] = json.dumps(result.get("metric_params") or {})
     if result.get("benchmark"):
-        row = {key: value for key, value in result["benchmark"].items() if key != "name"}
+        row = {**{key: value for key, value in result["benchmark"].items() if key != "name"}, **death_time("benchmark")}
         row["metric"] = f"benchmark ({result['benchmark']['name']})"
         summary = pd.concat([summary, pd.DataFrame([row])], ignore_index=True)
 
@@ -284,7 +291,7 @@ def write_calibration_excel(result, out_dir):
                     "level": level,
                     "name": name,
                     "curve": {"truth": "labels", "current": "detector_in_use", "suggested": "detector_suggested",
-                              "benchmark": "benchmark"}[source],
+                              "single": "detector_one_threshold", "benchmark": "benchmark"}[source],
                     "n_mites": curve["n_mites"],
                     "n_left_out_never_moving": curve["n_left_out"],
                     "time": result["times"],
@@ -308,6 +315,11 @@ def write_calibration_excel(result, out_dir):
         observations.to_excel(writer, sheet_name="observations", index=False)
         survival.to_excel(writer, sheet_name="survival", index=False)
         over_time.to_excel(writer, sheet_name="moving_over_time", index=False)
+        # each mite's death time in minutes, by the labels and by each caller
+        pd.DataFrame(result["death_times"]).rename(columns={
+            "labels": "death_time_labels", "current": "death_time_in_use", "suggested": "death_time_suggested",
+            "single": "death_time_one_threshold", "benchmark": "death_time_benchmark",
+        }).to_excel(writer, sheet_name="death_times", index=False)
         if result["windows"]:
             pd.DataFrame(result["windows"]).to_excel(writer, sheet_name="windows", index=False)
         if result["roc"]:

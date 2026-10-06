@@ -98,7 +98,10 @@ in `config.yaml`, the same for every mite, unless the metric has a window in
 own scores over that many recordings (around each recording, or up to it for a
 trailing window) plus the metric's threshold as an offset
 (`classes/mite_threshold.py`). A mite under a noisier light scores higher when
-still, and its median follows that. The median is only what a mite scores when
+still, and its median follows that. With a `scale` in the metric's window, the
+threshold also rises by that many median absolute deviations (MADs) of the same
+scores, so a mite whose scores scatter more needs to score further above its
+median to count as moving. Median and MAD are only what a mite scores when
 still as long as the mite is still in most of the window, so the window has to
 be longer than the mites keep moving. The mite page draws the mite's threshold
 beside its scores.
@@ -121,19 +124,28 @@ that with the detector:
    next to the recordings, so they survive a change in detector settings.
 3. **Report**: every labelled (mite, recording) is compared with the
    detector's call there, moving when that recording's score reaches the
-   mite's threshold. *Calibration* searches the mite's own threshold: for each
-   window (2 recordings up to the whole series, centred and trailing) the offset
-   that maximises sensitivity + specificity, and suggests the best window. It
-   draws every window against one threshold for every mite, what each offset of
-   the suggested window does to the moving and the still labels, its ROC curve,
-   and each score against its mite's threshold; it says how a window and offset
-   chosen on half of the mites call the other half, and counts the wrong calls
-   by how often the mite moves. Window, alignment and offset can be changed
-   before saving them to `config.yaml`; the window *none* keeps one threshold
-   for every mite. Its confusion matrix switches
+   mite's threshold. A threshold is judged by the **death-time error**: each
+   mite's death time by the detector's calls (the first labelled recording
+   after the last one it is called moving in; its first recording when it never
+   is, one recording after the last when it still is there) against the same by
+   the labels, as the mean distance over the mites, in minutes. The death times
+   are what a Kaplan-Meier curve is made of, so this says how well the detector
+   can follow the ground truth's curve; the mean distance between the two
+   curves, in percentage points, is given beside it. *Calibration* searches the
+   mite's own threshold: for each window (2 recordings up to the whole series,
+   centred and trailing) and each number of MADs the offset with the smallest
+   death-time error, and suggests the best of them. It draws every window
+   against one threshold for every mite, the error at each offset of the
+   suggested window, its ROC curve, and each score against its mite's
+   threshold; it gives the error of thresholds chosen on half of the mites on
+   the other half (one for every mite, the median plus an offset, and the
+   median plus MADs plus an offset), and counts the wrong calls by how often
+   the mite moves. Window, alignment, MADs and offset can be changed before
+   saving them to `config.yaml`; the window *none* keeps one threshold for
+   every mite. Its confusion matrix switches
    between the suggested threshold and the one in use. *Test* shows the
-   confusion matrix at the threshold in use, the ROC curve with AUC, and where on
-   the plate the errors are. Both show the fraction of mites moving per recording
+   death-time error and the confusion matrix at the threshold in use, the ROC
+   curve, and where on the plate the errors are. Both show the survival curve
    by the ground truth against the detector's; *Test* also shows it per group. Everything is
    also written to `calibration.xlsx`, in the session's folder in
    `calibration_data/reports/` (named by when it began and what it opened).
@@ -147,8 +159,10 @@ that with the detector:
    until you save a threshold, which saves the metric and parameters with it.
 
 Test a threshold on a different recording from the one it was calibrated on.
-`python scripts/tune_mite_threshold.py` runs the same search of window and
-offset from the command line, over many random halves of the mites.
+`python scripts/tune_mite_threshold.py` runs the same search from the command
+line, over many random halves of the mites, once with the plate stabilized and
+once without: it says whether a threshold that follows each mite's own noise
+does as well without stabilization.
 
 **Saved ground truth.** Every labelled recording is also kept in
 `calibration_data/<folder>-<hash>/`: its mites, ground truth, first frame and a

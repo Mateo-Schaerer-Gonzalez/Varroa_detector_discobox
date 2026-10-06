@@ -127,6 +127,12 @@ class TestMovement:
         assert mite.thresholds == pytest.approx([11.23, 11.48, 11.73, 11.73])
         assert mite.moving == [False, False, True, False]
 
+    def test_with_a_scale_the_threshold_rises_with_the_mites_own_noise(self, custom_config):
+        custom_config.mite.metric_windows = {"mean_diff": {"window": 3, "centred": False, "scale": 2}}
+        mite = self.record(custom_config, [10, 10.5, 12, 10.2])
+        # the MADs of up to 3 scores ending at each: 0, 0.25, 0.5, 0.3
+        assert mite.thresholds == pytest.approx([11.23, 11.98, 12.73, 12.33])
+
     def test_without_a_window_every_recording_has_the_one_threshold(self, custom_config):
         mite = self.record(custom_config, [5, 0.1])
         assert mite.thresholds == [1.23, 1.23]

@@ -1446,6 +1446,7 @@ def _in_use(mite):
         "params": Analyzer.check_metric_params(mite.metric, mite.params_for(mite.metric)),
         "threshold": float(mite.motion_threshold),
         **dict(zip(("window", "centred"), mite.window_for(mite.metric))),
+        "scale": mite.scale_for(mite.metric),
         "stabilize_plate": bool(mite.stabilize_plate),
     }
 
@@ -1478,25 +1479,34 @@ def evaluate_calibration(out_dir, datasets, metric=None, params=None, library_di
     Each (mite, recording) labelled moving or still is one observation; the
     detector calls it moving when that recording's score reaches the mite's
     threshold there: an offset above the moving median of the mite's scores over
-    a window of recordings, or, without a window, the same threshold for every
-    mite (classes/mite_threshold.py). The median is taken over all the mite's
+    a window of recordings, plus a number of their median absolute deviations
+    (the "scale"), or, without a window, the same threshold for every mite
+    (classes/mite_threshold.py). The median is taken over all the mite's
     recordings, labelled or not.
     Mites marked "not a mite" are left out entirely. Scoring decodes a dataset's
     recordings the first time it meets a version of the metric; later evaluations
     reuse those scores. Recordings are pooled by their order (first, second, ...)
     for the fraction moving over time.
 
+    The suggestion is the window, scale and offset whose calls give each mite's
+    death time with the smallest mean error (ThresholdSearch), since the death
+    times are what a survival curve is made of.
+
     Returns the confusion counts at the threshold in use and, when there are
-    both moving and still labels, the suggested window and offset with their
-    confusion counts ("calls" describes both), every window tried with its best
-    offset ("windows", the single threshold first), the ROC curve over the
-    offsets of the window in use ("roc") and of the suggested one
-    ("roc_suggested"), how a window and offset chosen on half of the mites call
-    the other half ("held_out") and the wrong calls by how often the mite moved
-    ("by_share_moving"); the fraction of mites moving per recording and the
-    Kaplan-Meier survival curves (of the mites seen moving at least once) by the
-    labels and by the detector; and every observation with its outcome.
-    Everything is also written to calibration.xlsx in `out_dir`.
+    both moving and still labels, the suggested window, scale and offset with
+    their confusion counts ("calls" describes both), every window and scale
+    tried with its best offset ("windows", the single threshold first), the
+    death-time error at every offset of the suggested ones ("offsets"), the ROC
+    curve over the offsets of the window in use ("roc") and of the suggested one
+    ("roc_suggested"), the death-time error of thresholds chosen on half of the
+    mites on the other half ("held_out") and the wrong calls by how often the
+    mite moved ("by_share_moving"); how far each caller's death times are from
+    the labels' and its survival curve from theirs ("death_time", see
+    ThresholdSearch.death_error() and calibration.curve_gap()) with every
+    mite's death times ("death_times"); the fraction of mites moving per
+    recording and the Kaplan-Meier survival curves (of the mites seen moving at
+    least once) by the labels and by the detector; and every observation with
+    its outcome. Everything is also written to calibration.xlsx in `out_dir`.
 
     With `benchmark`, the same observations are also called by the Discobox's
     original software (classes/benchmark.py): its confusion counts, with
@@ -1510,7 +1520,7 @@ def evaluate_calibration(out_dir, datasets, metric=None, params=None, library_di
     metric, params = _resolve_metric(metric, params)
     in_use = _in_use(get_default_config().mite)
     stabilize = in_use["stabilize_plate"] if stabilize is None else bool(stabilize)
-    current = MiteThreshold(in_use["threshold"], in_use["window"], in_use["centred"])
+    current = MiteThreshold(in_use["threshold"], in_use["window"], in_use["centred"], in_use["scale"])
     times = _pooled_times(loaded)
     n_recordings = len(times)
 
@@ -1541,10 +1551,12 @@ def evaluate_calibration(out_dir, datasets, metric=None, params=None, library_di
     is_moving = np.array([row["movement"] == calibration.MOVING for row in rows], dtype=bool)
     both = calibration.has_both_classes(is_moving)
     search = ThresholdSearch(series, [((row["dataset"], row["mite_id"]), row["recording"], moving)
-                                      for row, moving in zip(rows, is_moving)])
+                                      for row, moving in zip(rows, is_moving)], times)
     suggested = search.best() if both else None
     if suggested is not None:
         suggested.offset = round(suggested.offset, 3)
+    # one threshold for every mite, at its best: what a mite's own has to beat
+    single = search.fit(0, True) if both else None
 
     # Each row's threshold and call, in use and suggested: the calls are what the
     # curves over time, the survival curves and the error map are made from.
@@ -1552,7 +1564,7 @@ def evaluate_calibration(out_dir, datasets, metric=None, params=None, library_di
     if suggested is not None:
         called["suggested"] = ("_suggested", suggested)
     for name, (suffix, threshold) in called.items():
-        margins = search.above(threshold.window, threshold.centred) - threshold.offset
+        margins = search.above(threshold.window, threshold.centred, threshold.scale) - threshold.offset
         for row, margin, moving in zip(rows, margins, is_moving):
             row["threshold" + suffix] = round(float(row["score"] - margin), 3)
             # how far the score is above the mite's threshold: called moving from 0 on
@@ -1566,18 +1578,20 @@ def evaluate_calibration(out_dir, datasets, metric=None, params=None, library_di
         return {key: values if key == "n" else _rounded(values) for key, values in curves.items()}
 
     def survival(subset):
-        curves = calibration.survival_curves(subset, times, {},
+        curves = calibration.survival_curves(subset, times, {} if single is None else {"single": single.offset},
                                              {**calls, **({"benchmark": "benchmark_call"} if benchmark else {})})
         return {name: {key: _rounded(value, 2) if isinstance(value, list) else value for key, value in curve.items()}
                 for name, curve in curves.items()}
 
     def roc_of(threshold):
-        """The ROC curve over every offset of the threshold's window."""
-        fpr, tpr, offsets = search.roc(threshold.window, threshold.centred)
+        """The ROC curve over every offset of the threshold's window and scale."""
+        choice = (threshold.window, threshold.centred, threshold.scale)
+        fpr, tpr, offsets = search.roc(*choice)
         return {
             "window": threshold.window,
             "centred": threshold.centred,
-            "auc": search.auc(threshold.window, threshold.centred),
+            "scale": threshold.scale,
+            "auc": search.auc(*choice),
             "fpr": _rounded(fpr),
             "tpr": _rounded(tpr),
             "specificity": _rounded(1 - fpr),
@@ -1589,6 +1603,35 @@ def evaluate_calibration(out_dir, datasets, metric=None, params=None, library_di
         return {"threshold": threshold.offset, **search.confusion(threshold)}
 
     roc = roc_of(current) if both else None
+    survival_all = survival(rows)
+
+    # Who calls the observations, and how: the death times they give are compared
+    # with the labels'.
+    callers = {"current": search.calls(current)}
+    if suggested is not None:
+        callers["suggested"] = search.calls(suggested)
+        callers["single"] = search.calls(single)
+    if benchmark:
+        callers["benchmark"] = np.array([row["benchmark_call"] == calibration.MOVING for row in rows])
+    death_time = {}
+    for name, called_moving in callers.items():
+        error = search.death_error(called_moving)
+        gap = survival_all[name]["gap"]
+        death_time[name] = {**error, "mae": round(error["mae"], 3), "bias": round(error["bias"], 3),
+                            # how far its survival curve is from the labels', in percentage points
+                            "km_gap": None if gap is None else round(gap, 2)}
+    if single is not None:
+        death_time["single"]["threshold"] = round(single.offset, 3)
+    deaths = {name: search.death_times(called_moving) for name, called_moving in callers.items()}
+    death_times = [
+        {"dataset": dataset, "mite_id": mite_id, "labels": float(search.truth_death[number]),
+         **{name: float(values[number]) for name, values in deaths.items()}}
+        for number, (dataset, mite_id) in enumerate(search.by_mite)
+    ]
+    mae_by_offset = None
+    if suggested is not None:
+        offsets, maes = search.mae_curve(suggested.window, suggested.centred, suggested.scale)
+        mae_by_offset = {**suggested.describe(), "offset": _rounded(offsets), "mae": _rounded(maes)}
 
     result = {
         "metric": metric,
@@ -1601,10 +1644,18 @@ def evaluate_calibration(out_dir, datasets, metric=None, params=None, library_di
         "times": times,
         "threshold": current.offset,
         "suggested_threshold": None if suggested is None else suggested.offset,
-        # the window and offset in use and suggested, see MiteThreshold
+        # the window, scale and offset in use and suggested, see MiteThreshold
         "calls": {"current": current.describe(), "suggested": None if suggested is None else suggested.describe()},
-        "windows": [{**row, **{key: round(float(row[key]), 4) for key in ("offset", "balance")}}
+        "windows": [{**row, **{key: round(float(row[key]), 4) for key in ("offset", "balance", "mae")}}
                     for row in search.table()] if both else [],
+        # the MADs above the median the search tried
+        "scales": list(ThresholdSearch.SCALES),
+        # the death-time error (minutes) at every offset of the suggested window and scale
+        "offsets": mae_by_offset,
+        # how far each caller's death times and survival curve are from the labels'
+        "death_time": death_time,
+        # every labelled mite's death time (minutes), by the labels and by each caller
+        "death_times": death_times,
         "held_out": search.held_out() if both else None,
         "by_share_moving": search.by_share_moving(suggested or current),
         "auc": roc["auc"] if both else None,
@@ -1625,7 +1676,7 @@ def evaluate_calibration(out_dir, datasets, metric=None, params=None, library_di
         } if benchmark else None,
         "moving_over_time": over_time(rows),
         # the survival curves by the labels and by the detector, see calibration.survival_curves()
-        "survival": survival(rows),
+        "survival": survival_all,
         "groups": [
             {
                 "group": group,
@@ -1652,21 +1703,46 @@ def save_threshold(value):
     return save_motion_threshold(value)
 
 
-def save_movement_score(metric, params, threshold, stabilize=None, window=0, centred=True):
+def save_movement_score(metric, params, threshold, stabilize=None, window=0, centred=True, scale=0):
     """Make `metric` with `params`, and `threshold` on its scale, the movement
     score of every analysis from now on; with `stabilize`, plate stabilization
     on or off too (left as it is when None). With a `window`, `threshold` is
     the offset of each mite's own threshold above the moving median of its
-    scores over that many recordings (see MiteThreshold); else it is the one
-    threshold of every mite."""
+    scores over that many recordings plus `scale` times their median absolute
+    deviation (see MiteThreshold); else it is the one threshold of every mite."""
     metric, params = _resolve_metric(metric, params)
     window = int(window or 0)
     if window < 0 or window == 1:
         raise ValueError("The window must be at least 2 recordings, or 0 for one threshold for every mite.")
+    if float(scale or 0) < 0:
+        raise ValueError("The number of MADs cannot be negative.")
     if not window and not float(threshold) > 0:
         raise ValueError("The threshold must be positive.")
     return app_config.save_movement_score(metric, params, threshold, stabilize_plate=stabilize,
-                                          window=window, centred=centred)
+                                          window=window, centred=centred, scale=scale)
+
+
+def threshold_search(datasets=None, metric=None, params=None, stabilize=None, library_dir=CALIBRATION_LIBRARY):
+    """The ThresholdSearch over the saved datasets whose ids are in `datasets`
+    (all those whose recordings can be scored when None), scored as
+    evaluate_calibration() scores them, for the scripts that study the
+    threshold without a report."""
+    ids = list(dict.fromkeys(datasets)) if datasets else [
+        dataset["id"] for dataset in list_calibration_datasets(library_dir) if dataset["recordings_available"]]
+    if not ids:
+        raise ValueError("No saved ground truth to search a threshold on.")
+    loaded = [_read_dataset(key, library_dir) for key in ids]
+    metric, params = _resolve_metric(metric, params)
+    stabilize = get_default_config().mite.stabilize_plate if stabilize is None else bool(stabilize)
+    series, observations = {}, []
+    for key, dataset in zip(ids, loaded):
+        scores = _dataset_scores(key, dataset, metric, params, library_dir, stabilize)
+        series.update({(key, mite_id): mite_scores for mite_id, mite_scores in scores.items()})
+        rows, _rejected, _unlabelled = _observations(dataset, key, scores)
+        observations += [((key, row["mite_id"]), row["recording"], row["movement"] == calibration.MOVING) for row in rows]
+    if not observations:
+        raise ValueError("Mark at least one mite moving or still first.")
+    return ThresholdSearch(series, observations, _pooled_times(loaded))
 
 
 # --- live runs ----------------------------------------------------------------------

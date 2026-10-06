@@ -245,7 +245,8 @@ def test_save_movement_score_writes_metric_params_and_threshold(tmp_path):
     path.write_text('mite:\n  radius: 8\n  metric: "variability"  # which score\n'
                     '  metric_thresholds: {variability: 15.6}   # tuned\nother: 1\n')
     saved = app_config.save_movement_score("topN_variability", {"n": 20}, 3.21, path)
-    assert saved == {"metric": "topN_variability", "params": {"n": 20}, "threshold": 3.21, "window": 0, "centred": True}
+    assert saved == {"metric": "topN_variability", "params": {"n": 20}, "threshold": 3.21, "window": 0, "centred": True,
+                     "scale": 0.0}
     text = path.read_text()
     assert 'metric: "topN_variability"  # which score' in text
     assert "metric_thresholds: {variability: 15.6, topN_variability: 3.21}   # tuned" in text
@@ -272,10 +273,18 @@ def test_save_movement_score_writes_the_window_of_the_mites_own_threshold(tmp_pa
     assert mite().window_for("variability") == (5, False)
     assert mite().motion_threshold == 0.4
     assert mite().window_for("mean_diff") == (0, True)  # a metric saved before there were windows
+    assert mite().scale_for("variability") == 0
+
+    # the threshold rising with the mite's noise, by so many MADs
+    saved = app_config.save_movement_score("variability", {}, 0.4, path, window=5, scale=2)
+    assert saved["scale"] == 2
+    assert mite().scale_for("variability") == 2
+    assert mite().scale_for("mean_diff") == 0
 
     # back to one threshold for every mite
     app_config.save_movement_score("variability", {}, 3.0, path)
     assert mite().window_for("variability") == (0, True)
+    assert mite().scale_for("variability") == 0
     assert path.read_text().count("metric_windows") == 1
 
 

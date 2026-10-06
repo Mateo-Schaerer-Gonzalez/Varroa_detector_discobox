@@ -5,11 +5,12 @@ mite:
   # is used, so changing `metric` also changes the threshold.
   metric_thresholds: {max_diff: 14.0, mean_diff: 1.727, vector_diff: 117.7, vector_variance: 229.9, variability: 3.476, topN_variability: 3.476, optical_flow: 0.1004, topN_temporal_range: 28.4, topN_vector_temporal_range: 38.5, topN_binary_flux: 0.02296}
   # Per metric, the window of the mite's own threshold, e.g.
-  # {topN_variability: {window: 5, centred: true}}: the metric's threshold above is
-  # then an offset above the median of the mite's own scores over that many
-  # recordings, around each recording (centred) or up to it. A metric without an
-  # entry has the same threshold for every mite. Chosen and saved from the
-  # calibration report.
+  # {topN_variability: {window: 5, centred: true, scale: 2.0}}: the metric's
+  # threshold above is then an offset above the median of the mite's own scores
+  # over that many recordings, around each recording (centred) or up to it, plus
+  # `scale` times their median absolute deviation, so a noisier mite gets a higher
+  # threshold. A metric without an entry has the same threshold for every mite.
+  # Chosen and saved from the calibration report.
   metric_windows: {}
   # Per metric, parameters that override the defaults in classes/analyzer.py.
   # Chosen and saved from the calibration report, or edited here.

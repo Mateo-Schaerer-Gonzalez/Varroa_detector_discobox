@@ -1,5 +1,5 @@
-// The calibration report's figures: the confusion matrix, the windows and offsets
-// of the mite's own threshold, the survival rate over time (and per group), the
+// The calibration report's figures: the confusion matrix, the death-time error by
+// the window and offset of the mite's own threshold, the survival rate over time (and per group), the
 // scores against the thresholds, the ROC curve, and where on the plate the errors
 // are. Every observation, from whichever dataset, opens its mite in its recording.
 
@@ -16,9 +16,11 @@ class ReportFigures {
   }
 
   // Two thresholds (ReportPage.thresholdMarks) compare the scores with the same
-  // thing: one threshold for every mite, or the mite's median over the same window.
+  // thing: one threshold for every mite, or the mite's median over the same
+  // window plus the same number of MADs.
   static sameWindow(a, b) {
-    return a.call.window === b.call.window && (!a.call.window || a.call.centred === b.call.centred);
+    return a.call.window === b.call.window
+      && (!a.call.window || (a.call.centred === b.call.centred && a.call.scale === b.call.scale));
   }
 
   static percentFormat(v) {
@@ -170,32 +172,34 @@ class ReportFigures {
     });
   }
 
-  // Every window the server tried, with its best offset (ThresholdSearch.table):
-  // a line for the centred windows, one for the trailing ones, against one
-  // threshold for every mite. Selecting a point hands it to `onPick`.
+  // Every window the server tried, with its best number of MADs and offset
+  // (ThresholdSearch.table), by its death-time error: a line for the centred
+  // windows, one for the trailing ones, against one threshold for every mite.
+  // Selecting a point hands it to `onPick`.
   drawWindows(container, r, marks, onPick) {
-    const { thr } = ReportPage;
+    const { thr, mins } = ReportPage;
     const { percentFormat } = ReportFigures;
-    const rows = r.windows.filter((w) => w.window);
+    const rows = r.windows.filter((w) => w.window && w.best_of_window);
     const single = r.windows.find((w) => !w.window);
+    const unscaled = (w) => r.windows.find((other) => other.window === w.window && other.centred === w.centred && !other.scale);
     const kinds = [{ centred: true, name: "centred", color: token("--ink") }, { centred: false, name: "trailing", color: token("--series-4") }];
     Charts.scatter(container, {
       height: 300,
-      yMax: 1,
+      yMin: 0,
       xFormat: (v) => (Number.isInteger(v) ? `${v}` : ""),
-      yFormat: percentFormat,
       xLabel: "Window (recordings)",
-      yLabel: "Moving and still called right (mean)",
+      yLabel: "Death-time error (min, mean per mite)",
       lines: kinds.map((kind) => ({
-        points: rows.filter((w) => w.centred === kind.centred).map((w) => [w.window, w.balance]), color: kind.color, width: 2,
+        points: rows.filter((w) => w.centred === kind.centred).map((w) => [w.window, w.mae]), color: kind.color, width: 2,
       })),
       points: rows.map((w) => {
-        const mark = marks.find((m) => m.call.window === w.window && m.call.centred === w.centred);
+        const mark = marks.find((m) => m.call.window === w.window && m.call.centred === w.centred && m.call.scale === w.scale);
         return {
-          x: w.window, y: w.balance, r: mark ? 6 : 3.5, label: mark?.name,
+          x: w.window, y: w.mae, r: mark ? 6 : 3.5, label: mark?.name,
           color: mark ? mark.color : kinds.find((kind) => kind.centred === w.centred).color,
           tip: `<div class="tip-title">${w.window} recordings, ${w.centred ? "centred" : "trailing"}</div>
-          <div>best offset ${thr(w.offset)}</div>
+          <div>best: ${w.scale ? `${w.scale} MADs, ` : "no MADs, "}offset ${thr(w.offset)}</div>
+          <div>death times within ${mins(w.mae)}${w.scale ? ` · without the MADs ${mins(unscaled(w).mae)}` : ""}</div>
           <div>${percentFormat(w.sensitivity)} of moving labels called moving</div>
           <div>${percentFormat(w.specificity)} of still labels called still</div>
           <div class="tip-note">${percentFormat(w.accuracy)} called right · ${w.moving_called_still} moving called still, ${w.still_called_moving} still called moving</div>
@@ -203,7 +207,7 @@ class ReportFigures {
           onClick: () => onPick(w),
         };
       }),
-      refY: single ? [{ value: single.balance, label: `one threshold for every mite, ${thr(single.offset)}` }] : [],
+      refY: single ? [{ value: single.mae, label: `one threshold for every mite, ${thr(single.offset)}` }] : [],
       legend: [
         ...kinds.map((kind) => ({ name: `${kind.name} window`, color: kind.color, shape: "line" })),
         ...marks.filter((mark) => mark.call.window).map((mark) => ({ name: mark.name, color: mark.color, shape: "circle" })),
@@ -211,44 +215,31 @@ class ReportFigures {
     });
   }
 
-  // What each offset of the last mark's window does to the two kinds of label
-  // (its ROC curve, read against the offset). Offsets at which nearly every
-  // mite is called the same are left off, so the part that matters has the room.
-  drawOffsets(container, marks) {
-    const { thr } = ReportPage;
-    const { percentFormat, sameWindow } = ReportFigures;
+  // The death-time error at every offset of the suggested window and scale (the
+  // server's, ThresholdSearch.mae_curve): what the suggestion minimises. The
+  // thresholds comparing with the same median and MADs are marked on it.
+  drawOffsets(container, r, marks) {
+    const { thr, mins } = ReportPage;
     const main = marks[marks.length - 1];
-    const { tpr, specificity, thresholds } = main.roc;
-    const steps = thresholds.map((offset, i) => ({ offset, moving: tpr[i], still: specificity[i] })).filter((step) => step.offset != null);
-    const telling = steps.filter((step) => step.moving > 0.25 && step.still > 0.02);
-    const shown = telling.length > 1 ? telling : steps;
+    const { offset, mae } = r.offsets;
     const what = main.call.window ? "offset" : "threshold";
     Charts.scatter(container, {
       height: 300,
-      yMin: 0, yMax: 1,
-      yFormat: percentFormat,
-      xLabel: main.call.window ? "Offset above the mite's own median" : "Threshold",
-      yLabel: "Called right",
-      lines: [
-        { points: shown.map((step) => [step.offset, step.moving]), color: token("--moving"), width: 2 },
-        { points: shown.map((step) => [step.offset, step.still]), color: token("--still"), width: 2 },
-      ],
-      points: shown.flatMap((step) => ["moving", "still"].map((kind) => ({
-        x: step.offset, y: step[kind], r: 3, hidden: true,
-        tip: `<div class="tip-title">${what} ${thr(step.offset)}</div>
-        <div>${percentFormat(step.moving)} of moving labels called moving</div>
-        <div>${percentFormat(step.still)} of still labels called still</div>`,
-      }))),
-      refX: marks.filter((mark) => sameWindow(mark, main)).map((mark) => ({ value: mark.call.offset, label: `${mark.name} ${thr(mark.call.offset)}` })),
-      legend: [
-        { name: "moving called moving", color: token("--moving"), shape: "line" },
-        { name: "still called still", color: token("--still"), shape: "line" },
-      ],
+      yMin: 0,
+      xLabel: main.call.window ? `Offset above the mite's own median${main.call.scale ? ` + ${main.call.scale} MAD` : ""}` : "Threshold",
+      yLabel: "Death-time error (min, mean per mite)",
+      lines: [{ points: offset.map((value, i) => [value, mae[i]]), color: token("--ink"), width: 2 }],
+      points: offset.map((value, i) => ({
+        x: value, y: mae[i], r: 3, hidden: true,
+        tip: `<div class="tip-title">${what} ${thr(value)}</div><div>death times within ${mins(mae[i])}</div>`,
+      })),
+      refX: marks.filter((mark) => ReportFigures.sameWindow(mark, main))
+        .map((mark) => ({ value: mark.call.offset, label: `${mark.name} ${thr(mark.call.offset)}` })),
     });
   }
 
-  // The ROC curve of the last mark's window, over every offset; the curve of a
-  // mark with another window is drawn thin beside it, each mark on its own curve.
+  // The ROC curve of the last mark's window and scale, over every offset; the curve
+  // of a mark with another window is drawn thin beside it, each mark on its own curve.
   drawRoc(container, marks) {
     const { thr } = ReportPage;
     const { percentFormat, sameWindow } = ReportFigures;

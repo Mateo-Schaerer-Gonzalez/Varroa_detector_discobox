@@ -9,15 +9,17 @@ class ResultsPage {
   static MOVING_NOTE = "A mite counts as moving in a recording when its motion score in that recording reaches its threshold, unless its call there was corrected by hand.";
 
   // Each mite has its own threshold, an offset above the moving median of its
-  // scores (classes/mite_threshold.py); results from before that have one for all.
+  // scores plus a number of their median absolute deviations
+  // (classes/mite_threshold.py); results from before that have one for all.
   ownThreshold() {
     return this.results.own_threshold?.window ? this.results.own_threshold : null;
   }
 
-  // e.g. "3.48", or "own median of 5 + 0.32"
+  // e.g. "3.48", "own median of 5 + 0.32" or "own median of 5 + 2 MAD + 0.32"
   thresholdText() {
     const own = this.ownThreshold();
-    return own ? `own ${own.centred ? "" : "trailing "}median of ${own.window} + ${own.offset.toFixed(2)}` : score(this.results.threshold);
+    if (!own) return score(this.results.threshold);
+    return `own ${own.centred ? "" : "trailing "}median of ${own.window}${own.scale ? ` + ${own.scale} MAD` : ""} + ${own.offset.toFixed(2)}`;
   }
 
   get results() {

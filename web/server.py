@@ -179,6 +179,8 @@ class MovementScoreRequest(BaseModel):
     # moving median of its scores over that many recordings; 0: one threshold for all
     window: int = 0
     centred: bool = True
+    # the threshold also rises by this many median absolute deviations of those scores
+    scale: float = 0
 
 
 def safe_join(root: Path, relative: str) -> Path:
@@ -555,7 +557,7 @@ def save_movement_score(request: MovementScoreRequest):
     """Make a metric, its parameters and its threshold the default for every later analysis."""
     try:
         return pipeline.save_movement_score(request.metric, request.params, request.threshold, request.stabilize,
-                                            request.window, request.centred)
+                                            request.window, request.centred, request.scale)
     except ValueError as error:
         raise HTTPException(status_code=400, detail=str(error))
 

@@ -6343,6 +6343,7 @@
   "own_threshold": {
    "centred": true,
    "offset": 3.476,
+   "scale": 0.0,
    "window": 0
   },
   "preview": "preview.jpg",
