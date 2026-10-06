@@ -92,6 +92,7 @@ from classes import plate_stabilizer
 from classes.plate_stabilizer import PlateStabilizer
 from classes.data_loader import DataLoader
 from classes.error_map import ErrorMap
+from classes.mite_threshold import MiteThreshold, ThresholdSearch
 from classes.frame_source import FolderSource, as_analysis_image
 from classes.label_reader import LabelReader, LabelReadError
 from classes.live import camera as live_camera
@@ -621,6 +622,8 @@ def _results(run, out_dir, labels, write_files=True, corrections=None):
             "n_recordings": run.n_recordings,
             "times": [round(float(minute), 2) for minute in burst_minutes],
             "threshold": float(run.analyzer.config.mite.motion_threshold),
+            # with a window, each mite's own threshold: `threshold` above its moving median
+            "own_threshold": MiteThreshold.from_config(run.analyzer.config.mite).describe(),
             "preview": PREVIEW_NAME,
             "image": _image_size(run.first_frame),
             "zones": reporting.describe_zones(mite_data, _describe_zones(run.zone_manager, labels), burst_minutes),
@@ -1442,6 +1445,7 @@ def _in_use(mite):
         "metric": mite.metric,
         "params": Analyzer.check_metric_params(mite.metric, mite.params_for(mite.metric)),
         "threshold": float(mite.motion_threshold),
+        **dict(zip(("window", "centred"), mite.window_for(mite.metric))),
         "stabilize_plate": bool(mite.stabilize_plate),
     }
 
@@ -1472,15 +1476,24 @@ def evaluate_calibration(out_dir, datasets, metric=None, params=None, library_di
     stabilization are config.yaml's too, which `threshold_fits` says.
 
     Each (mite, recording) labelled moving or still is one observation; the
-    detector calls it moving when that recording's score reaches the threshold.
+    detector calls it moving when that recording's score reaches the mite's
+    threshold there: an offset above the moving median of the mite's scores over
+    a window of recordings, or, without a window, the same threshold for every
+    mite (classes/mite_threshold.py). The median is taken over all the mite's
+    recordings, labelled or not.
     Mites marked "not a mite" are left out entirely. Scoring decodes a dataset's
     recordings the first time it meets a version of the metric; later evaluations
     reuse those scores. Recordings are pooled by their order (first, second, ...)
     for the fraction moving over time.
 
     Returns the confusion counts at the threshold in use and, when there are
-    both moving and still labels, the ROC curve and the suggested threshold with
-    its confusion counts; the fraction of mites moving per recording and the
+    both moving and still labels, the suggested window and offset with their
+    confusion counts ("calls" describes both), every window tried with its best
+    offset ("windows", the single threshold first), the ROC curve over the
+    offsets of the window in use ("roc") and of the suggested one
+    ("roc_suggested"), how a window and offset chosen on half of the mites call
+    the other half ("held_out") and the wrong calls by how often the mite moved
+    ("by_share_moving"); the fraction of mites moving per recording and the
     Kaplan-Meier survival curves (of the mites seen moving at least once) by the
     labels and by the detector; and every observation with its outcome.
     Everything is also written to calibration.xlsx in `out_dir`.
@@ -1497,13 +1510,14 @@ def evaluate_calibration(out_dir, datasets, metric=None, params=None, library_di
     metric, params = _resolve_metric(metric, params)
     in_use = _in_use(get_default_config().mite)
     stabilize = in_use["stabilize_plate"] if stabilize is None else bool(stabilize)
-    current = in_use["threshold"]
+    current = MiteThreshold(in_use["threshold"], in_use["window"], in_use["centred"])
     times = _pooled_times(loaded)
     n_recordings = len(times)
 
-    rows, n_rejected, n_unlabelled, summaries = [], 0, 0, []
+    rows, n_rejected, n_unlabelled, summaries, series = [], 0, 0, [], {}
     for key, dataset in zip(ids, loaded):
         scores = _dataset_scores(key, dataset, metric, params, library_dir, stabilize)
+        series.update({(key, mite_id): mite_scores for mite_id, mite_scores in scores.items()})
         here, rejected, unlabelled = _observations(
             dataset, key, scores, _dataset_benchmark(key, dataset, library_dir) if benchmark else None)
         rows += here
@@ -1524,39 +1538,57 @@ def evaluate_calibration(out_dir, datasets, metric=None, params=None, library_di
     if not rows:
         raise ValueError("Mark at least one mite moving or still first.")
 
-    scores = np.array([row["score"] for row in rows])
     is_moving = np.array([row["movement"] == calibration.MOVING for row in rows], dtype=bool)
     both = calibration.has_both_classes(is_moving)
-    suggested = calibration.best_threshold(scores, is_moving) if both else None
-
-    thresholds = {"current": current}
+    search = ThresholdSearch(series, [((row["dataset"], row["mite_id"]), row["recording"], moving)
+                                      for row, moving in zip(rows, is_moving)])
+    suggested = search.best() if both else None
     if suggested is not None:
-        thresholds["suggested"] = suggested
-    for row in rows:
-        is_moving_row = row["movement"] == calibration.MOVING
-        row["outcome"] = calibration.outcome(is_moving_row, row["score"], current)
-        if suggested is not None:
-            row["outcome_suggested"] = calibration.outcome(is_moving_row, row["score"], suggested)
+        suggested.offset = round(suggested.offset, 3)
+
+    # Each row's threshold and call, in use and suggested: the calls are what the
+    # curves over time, the survival curves and the error map are made from.
+    called = {"current": ("", current)}
+    if suggested is not None:
+        called["suggested"] = ("_suggested", suggested)
+    for name, (suffix, threshold) in called.items():
+        margins = search.above(threshold.window, threshold.centred) - threshold.offset
+        for row, margin, moving in zip(rows, margins, is_moving):
+            row["threshold" + suffix] = round(float(row["score"] - margin), 3)
+            # how far the score is above the mite's threshold: called moving from 0 on
+            row["margin" + suffix] = round(float(margin), 3)
+            row["call" + suffix] = calibration.MOVING if margin >= 0 else calibration.STILL
+            row["outcome" + suffix] = f"{row['movement']}_called_{row['call' + suffix]}"
+    calls = {name: "call" + suffix for name, (suffix, _threshold) in called.items()}
 
     def over_time(subset):
-        curves = calibration.moving_over_time(subset, n_recordings, thresholds)
+        curves = calibration.moving_over_time(subset, n_recordings, {}, calls)
         return {key: values if key == "n" else _rounded(values) for key, values in curves.items()}
 
     def survival(subset):
-        curves = calibration.survival_curves(subset, times, thresholds,
-                                             {"benchmark": "benchmark_call"} if benchmark else None)
+        curves = calibration.survival_curves(subset, times, {},
+                                             {**calls, **({"benchmark": "benchmark_call"} if benchmark else {})})
         return {name: {key: _rounded(value, 2) if isinstance(value, list) else value for key, value in curve.items()}
                 for name, curve in curves.items()}
 
-    roc = None
-    if both:
-        fpr, tpr, roc_thresholds = calibration.roc_curve(scores, is_moving)
-        roc = {
+    def roc_of(threshold):
+        """The ROC curve over every offset of the threshold's window."""
+        fpr, tpr, offsets = search.roc(threshold.window, threshold.centred)
+        return {
+            "window": threshold.window,
+            "centred": threshold.centred,
+            "auc": search.auc(threshold.window, threshold.centred),
             "fpr": _rounded(fpr),
             "tpr": _rounded(tpr),
+            "specificity": _rounded(1 - fpr),
             # the first point is at an infinite threshold, which JSON cannot hold
-            "thresholds": [None if np.isinf(t) else round(float(t), 3) for t in roc_thresholds],
+            "thresholds": [None if np.isinf(t) else round(float(t), 3) for t in offsets],
         }
+
+    def confusion_of(threshold):
+        return {"threshold": threshold.offset, **search.confusion(threshold)}
+
+    roc = roc_of(current) if both else None
 
     result = {
         "metric": metric,
@@ -1567,17 +1599,24 @@ def evaluate_calibration(out_dir, datasets, metric=None, params=None, library_di
                            and stabilize == in_use["stabilize_plate"]),
         "datasets": summaries,
         "times": times,
-        "threshold": current,
-        "suggested_threshold": None if suggested is None else round(suggested, 3),
-        "auc": calibration.auc(scores, is_moving) if both else None,
+        "threshold": current.offset,
+        "suggested_threshold": None if suggested is None else suggested.offset,
+        # the window and offset in use and suggested, see MiteThreshold
+        "calls": {"current": current.describe(), "suggested": None if suggested is None else suggested.describe()},
+        "windows": [{**row, **{key: round(float(row[key]), 4) for key in ("offset", "balance")}}
+                    for row in search.table()] if both else [],
+        "held_out": search.held_out() if both else None,
+        "by_share_moving": search.by_share_moving(suggested or current),
+        "auc": roc["auc"] if both else None,
         "roc": roc,
+        "roc_suggested": roc_of(suggested) if both else None,
         "n_mites": _n_mites(rows),
         "n_moving": int(is_moving.sum()),
         "n_still": int((~is_moving).sum()),
         "n_not_a_mite": n_rejected,
         "n_unlabelled": n_unlabelled,
-        "current": calibration.confusion(scores, is_moving, current),
-        "best": calibration.confusion(scores, is_moving, suggested) if suggested is not None else None,
+        "current": confusion_of(current),
+        "best": confusion_of(suggested) if suggested is not None else None,
         # the same observations as called by the Discobox's original software
         "benchmark": {
             "name": Benchmark.NAME,
@@ -1613,14 +1652,21 @@ def save_threshold(value):
     return save_motion_threshold(value)
 
 
-def save_movement_score(metric, params, threshold, stabilize=None):
+def save_movement_score(metric, params, threshold, stabilize=None, window=0, centred=True):
     """Make `metric` with `params`, and `threshold` on its scale, the movement
     score of every analysis from now on; with `stabilize`, plate stabilization
-    on or off too (left as it is when None)."""
+    on or off too (left as it is when None). With a `window`, `threshold` is
+    the offset of each mite's own threshold above the moving median of its
+    scores over that many recordings (see MiteThreshold); else it is the one
+    threshold of every mite."""
     metric, params = _resolve_metric(metric, params)
-    if not float(threshold) > 0:
+    window = int(window or 0)
+    if window < 0 or window == 1:
+        raise ValueError("The window must be at least 2 recordings, or 0 for one threshold for every mite.")
+    if not window and not float(threshold) > 0:
         raise ValueError("The threshold must be positive.")
-    return app_config.save_movement_score(metric, params, threshold, stabilize_plate=stabilize)
+    return app_config.save_movement_score(metric, params, threshold, stabilize_plate=stabilize,
+                                          window=window, centred=centred)
 
 
 # --- live runs ----------------------------------------------------------------------

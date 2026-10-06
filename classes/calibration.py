@@ -120,8 +120,9 @@ def roc_curve(scores, moving):
         raise ValueError("A ROC curve needs both moving and still labels.")
 
     thresholds = np.unique(scores)[::-1]
-    tpr = np.array([(scores[moving] >= t).sum() for t in thresholds]) / moving.sum()
-    fpr = np.array([(scores[~moving] >= t).sum() for t in thresholds]) / (~moving).sum()
+    positives, negatives = np.sort(scores[moving]), np.sort(scores[~moving])
+    tpr = (len(positives) - np.searchsorted(positives, thresholds, side="left")) / len(positives)
+    fpr = (len(negatives) - np.searchsorted(negatives, thresholds, side="left")) / len(negatives)
     return (
         np.concatenate([[0.0], fpr]),
         np.concatenate([[0.0], tpr]),
@@ -153,6 +154,16 @@ def best_threshold(scores, moving):
     lowest_moving = thresholds[best]
     below = scores[scores < lowest_moving]
     return float((lowest_moving + below.max()) / 2) if below.size else float(lowest_moving)
+
+
+def moving_median(scores, window, centred=True):
+    """The median of one mite's scores, in recording order, in a window of
+    `window` recordings around each one (`centred`) or ending at it; the window
+    is shorter at the ends. A mite's own threshold is this plus an offset."""
+    scores = np.asarray(scores, dtype=float)
+    before = (window - 1) // 2 if centred else window - 1
+    return np.array([np.median(scores[max(0, t - before):t - before + window])
+                     for t in range(len(scores))])
 
 
 def outcome(is_moving, score, threshold):
@@ -267,23 +278,28 @@ def survival_curves(rows, times, thresholds, calls=None):
     return curves
 
 
-def moving_over_time(rows, n_recordings, thresholds):
-    """Fraction of the labelled mites moving in each recording, by the labels and
-    as called by the detector at each of `thresholds` ({name: value}).
+def moving_over_time(rows, n_recordings, thresholds, calls=None):
+    """Fraction of the labelled mites moving in each recording, by the labels,
+    as called by the detector at each of `thresholds` ({name: value}) and as
+    called by each of `calls` ({name: the key of the rows holding that call,
+    "moving" or "still"}, e.g. the calls at each mite's own threshold).
 
     `rows` have "recording", "movement" (the label) and "score". The detector is
     judged on exactly the same rows, so the curves compare point by point. A
     recording without rows gives None.
     """
-    result = {"n": [], "truth": [], **{name: [] for name in thresholds}}
+    calls = calls or {}
+    result = {"n": [], "truth": [], **{name: [] for name in [*thresholds, *calls]}}
     for recording in range(n_recordings):
         here = [row for row in rows if row["recording"] == recording]
         result["n"].append(len(here))
         if not here:
-            for key in ["truth", *thresholds]:
+            for key in ["truth", *thresholds, *calls]:
                 result[key].append(None)
             continue
         result["truth"].append(sum(row["movement"] == MOVING for row in here) / len(here))
         for name, threshold in thresholds.items():
             result[name].append(sum(row["score"] >= threshold for row in here) / len(here))
+        for name, key in calls.items():
+            result[name].append(sum(row[key] == MOVING for row in here) / len(here))
     return result

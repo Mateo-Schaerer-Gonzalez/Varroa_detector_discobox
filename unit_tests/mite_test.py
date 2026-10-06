@@ -120,6 +120,17 @@ class TestMovement:
         mite = self.record(custom_config, [0.1, 5, 0.1, 5])
         assert mite.moving == [False, True, False, True]
 
+    def test_with_a_window_each_score_is_compared_to_the_mites_own_median(self, custom_config):
+        custom_config.mite.metric_windows = {"mean_diff": {"window": 3, "centred": False}}
+        mite = self.record(custom_config, [10, 10.5, 12, 10.2])
+        # the medians of up to 3 scores ending at each: 10, 10.25, 10.5, 10.5
+        assert mite.thresholds == pytest.approx([11.23, 11.48, 11.73, 11.73])
+        assert mite.moving == [False, False, True, False]
+
+    def test_without_a_window_every_recording_has_the_one_threshold(self, custom_config):
+        mite = self.record(custom_config, [5, 0.1])
+        assert mite.thresholds == [1.23, 1.23]
+
     def test_color_follows_the_latest_recording(self, custom_config):
         mite = self.record(custom_config, [5])
         assert mite.color == (1, 2, 3)

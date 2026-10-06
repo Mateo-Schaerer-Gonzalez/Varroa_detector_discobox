@@ -12,6 +12,7 @@ class MitePage extends ResultsPage {
     const { times } = results;
     const color = groupColor(zone.label || "unlabeled", ctx.resultGroups());
     const { stat, figure, section, movingBadge } = Markup;
+    const own = mite.thresholds ? this.ownThreshold() : null;
     this.breadcrumb([["Results", ctx.href("results")], [this.zoneName(zone), ctx.href(`zone/${zone.id}`)], [`Mite ${mite.id}`, ""]]);
 
     const nCorrected = mite.corrected.filter(Boolean).length;
@@ -37,7 +38,7 @@ class MitePage extends ResultsPage {
       ${stat("Moving in", `${mite.n_moving}/${times.length - nGone}`, movingNote ? `recordings; ${movingNote}` : "recordings above the threshold")}
       ${stat("Last movement", this.lastMovementText(mite), mite.n_moving ? "last recording with movement" : "no movement in any recording")}
       ${stat("Survival", this.survivalText(mite), this.inStudy(mite) ? (this.lifeline(mite).dead ? "time of death" : this.lifeline(mite).lost ? "right-censored where it was last there" : "right-censored") : "")}
-      ${stat("Max motion score", score(mite.max_score), `mean ${score(mite.mean_score)} · threshold ${score(results.threshold)}`)}
+      ${stat("Max motion score", score(mite.max_score), `mean ${score(mite.mean_score)} · threshold ${this.thresholdText()}`)}
     </div>
 
     <div class="grid-mite">
@@ -46,15 +47,15 @@ class MitePage extends ResultsPage {
         Where that is wrong, click the mite to step through moving, still, gone in this recording (e.g. fallen off) and gone from this recording on,
         or choose one in the table below.`, "crop-wrap square")}
       ${figure("chart-mite", 2, "Motion score over time",
-        `${movingBadge(true)} at or above the threshold, ${movingBadge(false)} below it. ${ResultsPage.MOVING_NOTE} Click a time to show that recording.${this.stillToCome()}`)}
+        `${movingBadge(true)} at or above the threshold, ${movingBadge(false)} below it.${own ? ` The dashed line is this mite's own threshold: the median of its scores over ${own.window} recordings, ${own.centred ? "centred on each" : "up to each"}, plus ${own.offset.toFixed(2)}.` : ""} ${ResultsPage.MOVING_NOTE} Click a time to show that recording.${this.stillToCome()}`)}
     </div>
 
     ${section("Recordings", `<div class="table-wrap"><table class="clickable" id="recording-table">
-        <thead><tr><th class="num">Time</th><th class="num">Motion score</th><th>Movement</th><th></th></tr></thead>
+        <thead><tr><th class="num">Time</th><th class="num">Motion score</th>${own ? '<th class="num">Threshold</th>' : ""}<th>Movement</th><th></th></tr></thead>
         <tbody>${times.map((t, i) => `<tr data-recording-row="${i}" tabindex="0" class="${i === ctx.shown ? "current" : ""}"
           title="Show this recording above">
           <td class="num">${minutes(t)}</td>
-          <td class="num">${score(mite.scores[i])}</td>
+          <td class="num">${score(mite.scores[i])}</td>${own ? `<td class="num">${score(mite.thresholds[i])}</td>` : ""}
           <td>${this.callBadge(mite, i)}</td>
           <td><select class="state-select" data-correct="${i}" aria-label="Mite ${esc(mite.id)} at ${minutes(t)}"
             title="Set by hand what the mite is in this recording. Gone, e.g. fallen off: censored, in this recording or from it on.">
@@ -79,14 +80,17 @@ class MitePage extends ResultsPage {
     this.timeChart($("chart-mite"), {
       yLabel: "Motion score",
       noDirectLabels: true,
-      threshold: { value: results.threshold, label: "threshold" },
-      series: [{
-        name: `Mite ${mite.id}`,
-        values: mite.scores,
-        color: token("--ink"),
-        width: 1.5,
-        pointColors: mite.moving.map((moving, i) => token(mite.censored[i] ? "--muted" : moving ? "--moving" : "--still")),
-      }],
+      ...(own ? {} : { threshold: { value: results.threshold, label: "threshold" } }),
+      series: [
+        ...(own ? [{ name: "its threshold", values: mite.thresholds, color: token("--muted"), dashed: true, markers: false }] : []),
+        {
+          name: `Mite ${mite.id}`,
+          values: mite.scores,
+          color: token("--ink"),
+          width: 1.5,
+          pointColors: mite.moving.map((moving, i) => token(mite.censored[i] ? "--muted" : moving ? "--moving" : "--still")),
+        },
+      ],
       tooltipExtra: (i) => `<div class="tip-note">${mite.censored[i] ? "gone" : mite.moving[i] ? "moving" : "still"}${mite.corrected[i] ? ", corrected by hand" : ""}</div>`,
     });
   }

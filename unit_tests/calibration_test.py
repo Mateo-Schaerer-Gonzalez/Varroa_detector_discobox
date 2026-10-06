@@ -13,6 +13,7 @@ from classes.calibration import (
     is_rejected,
     match_ground_truth,
     mite_survival,
+    moving_median,
     moving_over_time,
     outcome,
     per_recording,
@@ -56,6 +57,13 @@ def test_best_threshold_maximises_sensitivity_plus_specificity():
     for candidate in np.linspace(0, 35, 200):
         other = confusion(SCORES, MOVING, candidate)
         assert other["sensitivity"] + other["specificity"] <= j + 1e-9
+
+
+def test_moving_median_centred_and_trailing_shorten_at_the_ends():
+    scores = [1, 9, 2, 8, 3]
+    assert moving_median(scores, 3).tolist() == [5, 2, 8, 3, 5.5]
+    assert moving_median(scores, 3, centred=False).tolist() == [1, 5, 2, 8, 3]
+    assert moving_median(scores, 1).tolist() == scores
 
 
 def test_confusion_counts():
@@ -237,7 +245,7 @@ def test_save_movement_score_writes_metric_params_and_threshold(tmp_path):
     path.write_text('mite:\n  radius: 8\n  metric: "variability"  # which score\n'
                     '  metric_thresholds: {variability: 15.6}   # tuned\nother: 1\n')
     saved = app_config.save_movement_score("topN_variability", {"n": 20}, 3.21, path)
-    assert saved == {"metric": "topN_variability", "params": {"n": 20}, "threshold": 3.21}
+    assert saved == {"metric": "topN_variability", "params": {"n": 20}, "threshold": 3.21, "window": 0, "centred": True}
     text = path.read_text()
     assert 'metric: "topN_variability"  # which score' in text
     assert "metric_thresholds: {variability: 15.6, topN_variability: 3.21}   # tuned" in text
@@ -250,6 +258,25 @@ def test_save_movement_score_writes_metric_params_and_threshold(tmp_path):
     assert saved["mite"]["metric_params"] == {"topN_variability": {"n": 20}, "optical_flow": {"window": 3, "n": 10}}
     assert saved["mite"]["metric_thresholds"] == {"variability": 15.6, "topN_variability": 3.21, "optical_flow": 0.5}
     assert saved["other"] == 1
+
+
+def test_save_movement_score_writes_the_window_of_the_mites_own_threshold(tmp_path):
+    path = tmp_path / "config.yaml"
+    path.write_text('mite:\n  radius: 8\n  metric: "variability"\n')
+
+    def mite():
+        return app_config.MiteConfig(moving_color=(0, 255, 0), still_color=(0, 0, 255), **yaml.safe_load(path.read_text())["mite"])
+
+    saved = app_config.save_movement_score("variability", {}, 0.4, path, window=5, centred=False)
+    assert (saved["window"], saved["centred"]) == (5, False)
+    assert mite().window_for("variability") == (5, False)
+    assert mite().motion_threshold == 0.4
+    assert mite().window_for("mean_diff") == (0, True)  # a metric saved before there were windows
+
+    # back to one threshold for every mite
+    app_config.save_movement_score("variability", {}, 3.0, path)
+    assert mite().window_for("variability") == (0, True)
+    assert path.read_text().count("metric_windows") == 1
 
 
 def test_save_movement_score_sets_plate_stabilization(tmp_path):

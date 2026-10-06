@@ -1,13 +1,21 @@
 // The calibration or test report. Each (mite, recording) labelled moving or still
 // is compared with the detector's call: moving when that recording's score reaches
-// the threshold. The numbers are the server's (evaluate_calibration); this draws
-// them, with pickers for the datasets pooled and the movement score.
+// the mite's threshold, its own (an offset above the moving median of its scores
+// over a window of recordings) or the one of every mite. The numbers are the
+// server's (evaluate_calibration); this draws them, with pickers for the datasets
+// pooled and the movement score.
 
 class ReportPage {
   static CONFUSION_CAPTION =
-    "The ground truth against the detector's call, which is moving when that recording's score reaches the threshold. One count per mite-recording; percentages are of each row.";
-  static STRIP_CAPTION =
-    "Each labelled mite-recording at its motion score. Everything right of a line is called moving at that threshold. Select a point to see that mite.";
+    "The ground truth against the detector's call, which is moving when that recording's score reaches the mite's threshold. One count per mite-recording; percentages are of each row.";
+
+  // The strip is drawn by the scores themselves while every threshold shown is the
+  // same for all mites, else by how far each score is above its mite's own.
+  static stripCaption(marks) {
+    return marks.some((mark) => mark.call.window)
+      ? `Each labelled mite-recording by how far its motion score is above its mite's own threshold (${esc(marks[marks.length - 1].name)}). Everything right of the line is called moving. Select a point to see that mite.`
+      : "Each labelled mite-recording at its motion score. Everything right of a line is called moving at that threshold. Select a point to see that mite.";
+  }
 
   constructor() {
     this.figures = new ReportFigures();
@@ -15,6 +23,14 @@ class ReportPage {
 
   static thr(value) {
     return Number(value).toFixed(2);
+  }
+
+  // How a mite is called moving: at one threshold for every mite or, with a window,
+  // at its own, an offset above the moving median of its scores over that many
+  // recordings (classes/mite_threshold.py). `t` has window, centred and offset (or threshold).
+  static thresholdText(t) {
+    const offset = ReportPage.thr(t.offset ?? t.threshold);
+    return t.window ? `own ${t.centred ? "" : "trailing "}median of ${t.window} + ${offset}` : offset;
   }
 
   static called(c, truth, call) {
@@ -39,8 +55,15 @@ class ReportPage {
     return (list ? `${metric} (${list})` : metric) + (stabilized ? ", plate stabilized" : "");
   }
 
-  static rocCaption(r) {
-    return `Every possible threshold, from the highest (bottom left) to the lowest (top right). AUC ${ReportPage.aucText(r)}. Hover the curve for the threshold at each step.`;
+  // The curve of the last mark; the one of the threshold in use is drawn beside it
+  // when its window is another one.
+  static rocCaption(marks) {
+    const main = marks[marks.length - 1];
+    const { window, centred } = main.call;
+    const what = window ? "offset" : "threshold";
+    const other = marks.find((mark) => !ReportFigures.sameWindow(mark, main));
+    return `Every possible ${what}${window ? ` above the mite's own ${centred ? "" : "trailing "}median of ${window} recordings` : ""}, from the highest (bottom left) to the lowest (top right).
+      AUC ${main.roc.auc.toFixed(3)}. Hover the curve for the ${what} at each step.${other ? ` The thin curve is the one of the threshold ${other.name} (AUC ${other.roc.auc.toFixed(3)}).` : ""}`;
   }
 
   // Who is left out of a survival curve, by the labels and by the detector's calls.
@@ -71,18 +94,25 @@ class ReportPage {
   }
 
   // The thresholds to show: the one in use and, when there is one, the suggestion,
-  // each with its confusion counts and their rates (from the server).
+  // each with its window and offset (`call`), its confusion counts and their rates,
+  // its ROC curve and the key of each observation's margin above it (from the server).
   static thresholdMarks(r) {
-    const marks = [{ key: "current", name: "in use", value: r.threshold, confusion: r.current, rates: r.rates.current, color: token("--series-1") }];
-    if (r.suggested_threshold != null) {
-      marks.push({ key: "suggested", name: "suggested", value: r.suggested_threshold, confusion: r.best, rates: r.rates.best, color: token("--series-2") });
+    const marks = [{
+      key: "current", name: "in use", call: r.calls.current, text: ReportPage.thresholdText(r.calls.current),
+      margin: "margin", roc: r.roc, confusion: r.current, rates: r.rates.current, color: token("--series-1"),
+    }];
+    if (r.calls.suggested) {
+      marks.push({
+        key: "suggested", name: "suggested", call: r.calls.suggested, text: ReportPage.thresholdText(r.calls.suggested),
+        margin: "margin_suggested", roc: r.roc_suggested, confusion: r.best, rates: r.rates.best, color: token("--series-2"),
+      });
     }
     return marks;
   }
 
   draw() {
     const r = cal.report;
-    const { thr, scoreText, pooled, poolNote } = ReportPage;
+    const { thresholdText, scoreText, pooled, poolNote } = ReportPage;
     const { section } = Markup;
     const testing = cal.mode === "test";
     const body = $("report-body");
@@ -113,7 +143,7 @@ class ReportPage {
     </header>
     ${section("Data used", this.datasetPicker(r))}
     ${section("Movement score", testing ? this.scoreTested(r) : this.scorePicker(r))}
-    ${r.threshold_fits ? "" : `<div class="banner">The threshold in use, ${thr(r.threshold)}, was set for
+    ${r.threshold_fits ? "" : `<div class="banner">The threshold in use, ${thresholdText(r.calls.current)}, was set for
       <code>${esc(scoreText(r.in_use.metric, r.in_use.params, r.in_use.stabilize_plate))}</code>. These scores are
       <code>${esc(scoreText(r.metric, r.metric_params, r.stabilize_plate))}</code>, on another scale, so figures "in use" say little:
       look at the suggested threshold, and save it with this movement score to use it.</div>`}
@@ -123,7 +153,7 @@ class ReportPage {
         the number is the group's mites in the study by the ground truth. Groups are the plate labels.${poolNote(r)}</p>`) : ""}
     ${section("Files", `<ul class="files">
       <li><a href="${cal.fileUrl(r.excel)}" download>${esc(r.excel)}</a>
-        <span class="muted">every labelled mite-recording with its score and outcome, the fraction moving per recording, the ROC curve and the summary</span></li></ul>`)}`;
+        <span class="muted">every labelled mite-recording with its score, threshold and outcome, the fraction moving per recording, every window tried, the ROC curve and the summary</span></li></ul>`)}`;
 
     body.querySelectorAll(".segmented [data-mode]").forEach((button) => button.addEventListener("click", () => {
       cal.setMode(button.dataset.mode);
@@ -215,7 +245,7 @@ class ReportPage {
   // Choose a metric and its parameters, and score again with them. Nothing is
   // written to config.yaml until a threshold is saved with them.
   scorePicker(r) {
-    const { thr, scoreText } = ReportPage;
+    const { thresholdText, scoreText } = ReportPage;
     if (!cal.scores) return `<p class="hint">Movement scores could not be listed.</p>`;
     const options = cal.scores.metrics.map((m) =>
       `<option value="${esc(m.name)}" ${m.name === r.metric ? "selected" : ""}>${esc(m.name)}${m.name === cal.scores.in_use.metric ? " (config.yaml)" : ""}</option>`).join("");
@@ -230,14 +260,14 @@ class ReportPage {
     </div>
     <p id="score-description" class="hint"></p>
     <p id="score-status" class="hint">In use for analyses: <code>${esc(scoreText(cal.scores.in_use.metric, cal.scores.in_use.params, cal.scores.in_use.stabilize_plate))}</code>
-      with threshold ${thr(cal.scores.in_use.threshold)}. Try another here; saving a threshold below saves the movement score with it.</p>`;
+      with threshold ${thresholdText(cal.scores.in_use)}. Try another here; saving a threshold below saves the movement score with it.</p>`;
   }
 
   // The test report only says which score it tests: scoring again with another one
   // there would judge it by a threshold set for a different score.
   scoreTested(r) {
-    const { thr, scoreText } = ReportPage;
-    return `<p class="hint">Tested: <code>${esc(scoreText(r.metric, r.metric_params, r.stabilize_plate))}</code> with the threshold in use, ${thr(r.threshold)}.
+    const { thresholdText, scoreText } = ReportPage;
+    return `<p class="hint">Tested: <code>${esc(scoreText(r.metric, r.metric_params, r.stabilize_plate))}</code> with the threshold in use, ${thresholdText(r.calls.current)}.
       Try another movement score on the <b>Calibration</b> tab.</p>`;
   }
 
@@ -294,78 +324,130 @@ class ReportPage {
     return Markup.stat(title, pct(called(rates, truth, truth)), note.join(" · "));
   }
 
-  // --- calibrate: pick a threshold and save it
+  // --- calibrate: pick a window and an offset and save them
 
   calibrateReport(r) {
-    const { thr, oneClassNote, survivalCaption, rocCaption, scoreText, CONFUSION_CAPTION, STRIP_CAPTION } = ReportPage;
+    const { thr, thresholdText, oneClassNote, survivalCaption, rocCaption, stripCaption, scoreText, CONFUSION_CAPTION } = ReportPage;
     const { stat, figure, section } = Markup;
-    if (r.suggested_threshold == null) {
+    const marks = ReportPage.thresholdMarks(r);
+    const inUse = thresholdText(r.calls.current);
+    if (!r.calls.suggested) {
       return `<div class="banner">${oneClassNote(r)}</div>
       <div class="stats">
-        ${stat("Called right", pct(r.current.accuracy), `threshold in use ${thr(r.threshold)}`)}
+        ${stat("Called right", pct(r.current.accuracy), `threshold in use ${inUse}`)}
         ${this.outcomeStat("Moving called moving", r.current, r.rates.current, "moving", "still")}
         ${this.outcomeStat("Still called still", r.current, r.rates.current, "still", "moving")}
         ${stat("AUC", "–", "needs moving and still labels")}
       </div>
       <div class="grid-2">
         ${figure("confusion", 1, "Confusion matrix at the threshold in use", CONFUSION_CAPTION)}
-        ${figure("chart-survival", 2, "Survival rate: ground truth and the detector", survivalCaption(r, ReportPage.thresholdMarks(r)))}
+        ${figure("chart-survival", 2, "Survival rate: ground truth and the detector", survivalCaption(r, marks))}
       </div>`;
     }
-    const same = Math.abs(r.suggested_threshold - r.threshold) < 0.005;
+    const { suggested } = r.calls;
+    const suggestedText = thresholdText(suggested);
+    const single = r.windows[0];
     const shown = cal.shownThreshold === "current" ? "current" : "best";
     return `
     <div class="stats">
-      ${stat("Suggested threshold", thr(r.suggested_threshold), same ? "the one in use" : `in use: ${thr(r.threshold)}`)}
+      ${stat("Suggested threshold", `median + ${thr(suggested.offset)}`,
+        `the mite's own median over ${suggested.window} recordings, ${suggested.centred ? "centred" : "trailing"} · ${suggestedText === inUse ? "the one in use" : `in use: ${inUse}`}`)}
       ${stat("Called right", pct(r.best.accuracy), `in use: ${pct(r.current.accuracy)}`)}
       ${this.outcomeStat("Moving called moving", r.best, r.rates.best, "moving", "still", r.current)}
       ${this.outcomeStat("Still called still", r.best, r.rates.best, "still", "moving", r.current)}
     </div>
     <p class="caption">Key figures at the suggested threshold, per mite-recording; "in use" is the threshold in config.yaml.</p>
+    ${single.accuracy > r.best.accuracy ? `<div class="banner"><span>On these labels one threshold for every mite (${thr(single.offset)}) calls ${pct(single.accuracy)} right,
+      the best own threshold ${pct(r.best.accuracy)}. A mite's median is only what it scores when still while it is still in most of the window:
+      see Fig. 2 and the wrong calls by how often the mite moves, below. To keep one threshold, choose the window <b>none</b> when saving.</span></div>` : ""}
 
     <div class="grid-2">
       <figure class="fig">
         <div class="fig-title fig-title-row">Confusion matrix
           <div class="segmented" role="group" aria-label="Threshold shown">
-            <button type="button" data-shown="best" class="small ${shown === "best" ? "" : "secondary"}">suggested ${thr(r.suggested_threshold)}</button>
-            <button type="button" data-shown="current" class="small ${shown === "current" ? "" : "secondary"}">in use ${thr(r.threshold)}</button>
+            <button type="button" data-shown="best" class="small ${shown === "best" ? "" : "secondary"}">suggested</button>
+            <button type="button" data-shown="current" class="small ${shown === "current" ? "" : "secondary"}">in use</button>
           </div>
         </div>
         <div id="confusion"></div>
-        <figcaption><b>Fig. 1.</b> ${CONFUSION_CAPTION}</figcaption>
+        <figcaption><b>Fig. 1.</b> ${CONFUSION_CAPTION} Suggested: ${suggestedText}; in use: ${inUse}.</figcaption>
       </figure>
       ${section("Save the threshold", `
         <div class="row save-threshold">
-          <label for="threshold-input">Movement threshold</label>
-          <input id="threshold-input" type="number" step="0.01" min="0" value="${thr(r.suggested_threshold)}">
+          <label for="window-input">Window</label>
+          <select id="window-input">${[...new Set(r.windows.map((w) => w.window))].map((size) =>
+            `<option value="${size}" ${size === suggested.window ? "selected" : ""}>${size ? `${size} recordings` : "none: one threshold for every mite"}</option>`).join("")}</select>
+          <select id="align-input" aria-label="Where the window lies">
+            <option value="centred" ${suggested.centred ? "selected" : ""}>centred</option>
+            <option value="trailing" ${suggested.centred ? "" : "selected"}>trailing</option>
+          </select>
+          <label for="threshold-input" id="threshold-label">Offset</label>
+          <input id="threshold-input" type="number" step="0.01" value="${thr(suggested.offset)}">
           <button type="button" id="save-threshold">Save to config.yaml</button>
         </div>
+        <p id="window-note" class="hint"></p>
         <p id="save-status" class="hint">Saves the movement score <code>${esc(scoreText(r.metric, r.metric_params, r.stabilize_plate))}</code> along with the threshold.</p>
-        <p class="hint">The suggestion maximises the fraction of moving labels called moving plus the fraction of still labels called still,
-          and sits halfway between the two nearest scores. Every analysis started after saving uses the new value.
-          Check it with the <b>Test</b> report on a <em>different</em> recording: on this one it looks better than it will be.</p>
+        <p class="hint">A mite counts as moving in a recording when its score reaches its own threshold: the median of its scores over the window, plus the offset.
+          A <b>centred</b> window lies around the recording, a <b>trailing</b> one ends at it, so it needs no later recordings.
+          The suggestion is the window and offset that maximise the fraction of moving labels called moving plus the fraction of still labels called still;
+          the offset sits halfway between the two nearest scores. Choosing a window fills in its best offset. Every analysis started after saving uses the new values.
+          Check them with the <b>Test</b> report on a <em>different</em> recording: on this one they look better than they will be.</p>
         ${this.comparisonTable(r)}`)}
     </div>
 
     <div class="grid-2">
-      ${figure("chart-survival", 2, "Survival rate: ground truth and the detector", survivalCaption(r, ReportPage.thresholdMarks(r)))}
-      ${figure("chart-roc", 3, "ROC curve", rocCaption(r))}
+      ${figure("chart-windows", 2, "Window of the mite's own threshold",
+        `Each window, with its best offset, by the mean of the fraction of moving labels called moving and of still labels called still: what the suggestion maximises.
+        The dashed line is one threshold for every mite, at its best. Hover a point for its offset and counts; select it to fill it in above.`)}
+      ${figure("chart-offsets", 3, "Offset above the mite's own median",
+        `For the suggested window: the fraction of moving labels called moving and of still labels called still at each offset.
+        A higher offset calls fewer mites moving. Only the offsets where both fractions change are shown; hover for the numbers.`)}
     </div>
 
-    ${figure("chart-strip", 4, "Motion score distribution", STRIP_CAPTION)}`;
+    <div class="grid-2">
+      ${figure("chart-survival", 4, "Survival rate: ground truth and the detector", survivalCaption(r, marks))}
+      ${figure("chart-roc", 5, "ROC curve", rocCaption(marks))}
+    </div>
+
+    ${figure("chart-strip", 6, "Motion score against the threshold", stripCaption(marks))}
+
+    ${section("Wrong calls by how often the mite moves", this.shareTable(r))}`;
   }
 
+  // The thresholds side by side, and how the choice holds on mites it never saw.
   comparisonTable(r) {
-    const { thr } = ReportPage;
-    // The values as shown everywhere else, so the same threshold never rounds two ways.
-    const rows = [["in use", r.threshold, r.current], ...(r.best ? [["suggested", r.suggested_threshold, r.best]] : [])];
+    const { thr, thresholdText } = ReportPage;
+    const single = r.windows[0];
+    const rows = [["in use", thresholdText(r.calls.current), r.current],
+      ...(r.best ? [["suggested", thresholdText(r.calls.suggested), r.best]] : []),
+      ...(single ? [["one for every mite", `${thr(single.offset)}, its best`, single]] : [])];
+    const held = r.held_out;
     return `<div class="table-wrap"><table>
-    <thead><tr><th>Threshold</th><th class="num">Value</th><th class="num">Called right</th>
+    <thead><tr><th>Threshold</th><th class="num">Called right</th>
       <th class="num">Moving called still</th><th class="num">Still called moving</th></tr></thead>
     <tbody>${rows.map(([name, value, c]) => `<tr>
-      <td>${name}</td><td class="num">${thr(value)}</td><td class="num">${pct(c.accuracy)}</td>
+      <td>${name} <span class="muted">${value}</span></td><td class="num">${pct(c.accuracy)}</td>
       <td class="num">${c.moving_called_still}</td><td class="num">${c.still_called_moving}</td></tr>`).join("")}</tbody>
-  </table></div>`;
+  </table></div>
+  ${held ? `<p class="hint"><b>On mites the choice never saw:</b> with window and offset chosen on half of the mites, ${pct(held.own)} of the other half's
+    mite-recordings are called right; one threshold for every mite, chosen the same way, calls ${pct(held.single)} right (means of ${held.repeats} random halves).</p>` : ""}`;
+  }
+
+  // Where a mite's own threshold goes wrong: its median is only its noise while it
+  // is still in most of the window (the server's, ThresholdSearch.by_share_moving).
+  shareTable(r) {
+    const rows = r.by_share_moving.filter((row) => row.n);
+    return `<div class="table-wrap"><table>
+    <thead><tr><th>Mite labelled moving in</th><th class="num">Mites</th><th class="num">Mite-recordings</th>
+      <th class="num">Called wrong</th><th class="num">Share wrong</th></tr></thead>
+    <tbody>${rows.map((row) => `<tr>
+      <td>${row.share === "never" ? "none of its recordings" : `${row.share} of its recordings`}</td>
+      <td class="num">${row.n_mites}</td><td class="num">${row.n}</td>
+      <td class="num${row.n_wrong ? " error" : ""}">${row.n_wrong}</td><td class="num">${pct(row.n_wrong / row.n)}</td></tr>`).join("")}</tbody>
+  </table></div>
+  <p class="caption">At the suggested threshold, ${ReportPage.thresholdText(r.calls.suggested)}. The median of a mite's scores is what it scores when still
+    only as long as it is still in most of the window: a mite moving in most recordings has a high median, and its movement no longer stands out above it.
+    Wrong calls gathering in the lower rows say the window is too short for how long these mites keep moving.</p>`;
   }
 
   drawCalibrateFigures(r) {
@@ -373,7 +455,7 @@ class ReportPage {
     const { figures } = this;
     figures.drawSurvival($("chart-survival"), r.survival, r.times, marks);
     const matrix = (shown) => (shown === "current" ? figures.confusionTable(r.current, r.rates.current) : figures.confusionTable(r.best, r.rates.best));
-    if (r.suggested_threshold == null) {
+    if (!r.calls.suggested) {
       $("confusion").innerHTML = matrix("current");
       return;
     }
@@ -383,18 +465,51 @@ class ReportPage {
       document.querySelectorAll("[data-shown]").forEach((b) => b.classList.toggle("secondary", b !== button));
       $("confusion").innerHTML = matrix(button.dataset.shown);
     }));
-    figures.drawRoc($("chart-roc"), r, marks);
+    figures.drawWindows($("chart-windows"), r, marks, (choice) => this.chooseWindow(r, choice.window, choice.centred));
+    figures.drawOffsets($("chart-offsets"), marks);
+    figures.drawRoc($("chart-roc"), marks);
     figures.drawStrip($("chart-strip"), r, marks);
+    const chosen = () => this.chooseWindow(r, Number($("window-input").value), $("align-input").value === "centred");
+    $("window-input").addEventListener("change", chosen);
+    $("align-input").addEventListener("change", chosen);
+    this.describeWindow(r);
     $("save-threshold").addEventListener("click", () => this.saveThreshold());
   }
 
+  // The window tried by the server that the save form shows.
+  shownWindow(r) {
+    const size = Number($("window-input").value);
+    const centred = $("align-input").value === "centred";
+    return r.windows.find((w) => w.window === size && (!size || w.centred === centred));
+  }
+
+  // Put a window in the save form, with its best offset.
+  chooseWindow(r, size, centred) {
+    $("window-input").value = String(size);
+    if (size) $("align-input").value = centred ? "centred" : "trailing";
+    const choice = this.shownWindow(r);
+    if (choice) $("threshold-input").value = ReportPage.thr(choice.offset);
+    this.describeWindow(r);
+  }
+
+  describeWindow(r) {
+    const choice = this.shownWindow(r);
+    const single = !Number($("window-input").value);
+    $("align-input").disabled = single;
+    $("threshold-label").textContent = single ? "Threshold" : "Offset";
+    $("window-note").textContent = choice
+      ? `With its best ${single ? "threshold" : "offset"}, ${ReportPage.thr(choice.offset)}: ${pct(choice.accuracy)} called right, ${choice.moving_called_still} moving called still, ${choice.still_called_moving} still called moving.`
+      : "";
+  }
+
   async saveThreshold() {
-    const { thr, scoreText } = ReportPage;
+    const { thresholdText, scoreText } = ReportPage;
     const value = Number($("threshold-input").value);
+    const size = Number($("window-input").value);
     const status = $("save-status");
-    if (!(value > 0)) {
+    if ($("threshold-input").value === "" || !Number.isFinite(value) || (!size && !(value > 0))) {
       status.className = "hint error";
-      status.textContent = "Enter a positive number.";
+      status.textContent = size ? "Enter a number." : "Enter a positive number.";
       return;
     }
     try {
@@ -403,13 +518,14 @@ class ReportPage {
       const r = cal.report;
       const saved = await post("/api/movement-score", {
         metric: r.metric, params: r.metric_params, threshold: value, stabilize: r.stabilize_plate,
+        window: size, centred: $("align-input").value === "centred",
       });
       if (cal.data) cal.data.threshold = saved.threshold;
       // Evaluate again, so "in use" is what was just saved.
       cal.takeReport(await cal.requestReport());
       this.draw();
       $("save-status").className = "hint";
-      $("save-status").textContent = `Saved ${scoreText(saved.metric, saved.params, saved.stabilize_plate)} with threshold ${thr(saved.threshold)} to config.yaml. Analyses started from now on use them.`;
+      $("save-status").textContent = `Saved ${scoreText(saved.metric, saved.params, saved.stabilize_plate)} with threshold ${thresholdText(saved)} to config.yaml. Analyses started from now on use them.`;
     } catch (error) {
       status.className = "hint error";
       status.textContent = error.message;
@@ -419,12 +535,13 @@ class ReportPage {
   // --- test: how good is the threshold in use, and where does it go wrong
 
   testReport(r) {
-    const { thr, aucText, oneClassNote, survivalCaption, rocCaption, pooled, CONFUSION_CAPTION, STRIP_CAPTION } = ReportPage;
+    const { thresholdText, aucText, oneClassNote, survivalCaption, rocCaption, stripCaption, pooled, CONFUSION_CAPTION } = ReportPage;
     const { stat, figure, section } = Markup;
     const c = r.current;
+    const marks = ReportPage.thresholdMarks(r).slice(0, 1);
     return `
     <div class="stats">
-      ${stat("Called right", pct(c.accuracy), `${c.n_wrong} wrong · threshold ${thr(r.threshold)}`)}
+      ${stat("Called right", pct(c.accuracy), `${c.n_wrong} wrong · threshold ${thresholdText(r.calls.current)}`)}
       ${this.outcomeStat("Moving called moving", c, r.rates.current, "moving", "still")}
       ${this.outcomeStat("Still called still", c, r.rates.current, "still", "moving")}
       ${stat("AUC", aucText(r), r.auc == null ? "needs moving and still labels" : "1 = perfect separation, 0.5 = chance")}
@@ -432,7 +549,7 @@ class ReportPage {
 
     <div class="grid-2">
       ${figure("confusion", 1, "Confusion matrix at the threshold in use", CONFUSION_CAPTION)}
-      ${figure("chart-survival", 2, "Survival rate: ground truth and the detector", survivalCaption(r, ReportPage.thresholdMarks(r).slice(0, 1)))}
+      ${figure("chart-survival", 2, "Survival rate: ground truth and the detector", survivalCaption(r, marks))}
     </div>
 
     ${section("Against the benchmark", this.benchmarkTable(r))}
@@ -456,10 +573,10 @@ class ReportPage {
           a mite called wrong at least once is coloured by its more frequent error. Hover a mite for its recordings, select it to see it.
           ${pooled(r) ? "One recording folder at a time: choose it above." : ""}</figcaption>
       </figure>
-      ${r.roc ? figure("chart-roc", 4, "ROC curve", rocCaption(r)) : section("ROC curve", `<p class="hint">${oneClassNote(r)}</p>`)}
+      ${r.roc ? figure("chart-roc", 4, "ROC curve", rocCaption(marks)) : section("ROC curve", `<p class="hint">${oneClassNote(r)}</p>`)}
     </div>
 
-    ${r.roc ? figure("chart-strip", 5, "Motion score distribution", STRIP_CAPTION) : ""}
+    ${r.roc ? figure("chart-strip", 5, "Motion score against the threshold", stripCaption(marks)) : ""}
 
     ${section("Per zone", `<div class="table-wrap"><table class="clickable" id="zone-errors"></table></div>
       <p class="caption">Counts are mite-recordings, at the threshold in use. Select a zone to review its labels.</p>`)}`;
@@ -468,11 +585,11 @@ class ReportPage {
   // The detector at the threshold in use beside the Discobox's original software,
   // on the same mite-recordings (the server's figures, calibration.calls_confusion).
   benchmarkTable(r) {
-    const { thr, scoreText } = ReportPage;
+    const { thresholdText, scoreText } = ReportPage;
     if (!r.benchmark) return `<p id="benchmark-status" class="hint">The benchmark has not been run on these datasets.</p>`;
     const share = (value) => (value == null ? "–" : `${(value * 100).toFixed(1)}%`);
     const rows = [
-      [`Detector <span class="muted">${esc(scoreText(r.metric, r.metric_params, r.stabilize_plate))}</span>`, thr(r.threshold), r.current],
+      [`Detector <span class="muted">${esc(scoreText(r.metric, r.metric_params, r.stabilize_plate))}</span>`, thresholdText(r.calls.current), r.current],
       [`Benchmark <span class="muted">${esc(r.benchmark.name)}, the Discobox's original software</span>`, r.benchmark.threshold, r.benchmark],
     ];
     return `<div class="table-wrap"><table>
@@ -503,7 +620,7 @@ class ReportPage {
     $("map-dataset")?.addEventListener("change", drawMap);
     drawMap();
     if (r.roc) {
-      figures.drawRoc($("chart-roc"), r, marks);
+      figures.drawRoc($("chart-roc"), marks);
       figures.drawStrip($("chart-strip"), r, marks);
     }
     figures.drawZoneErrors(r);

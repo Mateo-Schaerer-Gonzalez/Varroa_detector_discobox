@@ -64,6 +64,12 @@ class MiteConfig:
     # metric name -> its movement threshold, on that metric's scale, e.g.
     # {"topN_variability": 14.17}.
     metric_thresholds: dict = field(default_factory=dict)
+    # metric name -> the window of the mite's own threshold, e.g.
+    # {"topN_variability": {"window": 5, "centred": True}}: the metric's threshold
+    # is then an offset above the moving median of the mite's scores over that many
+    # recordings (see classes/mite_threshold.py). A metric left out has none: its
+    # threshold is the same for every mite.
+    metric_windows: dict = field(default_factory=dict)
     # The threshold of a metric missing from metric_thresholds (older config files).
     # After loading it is the threshold of `metric`.
     motion_threshold: Optional[float] = None
@@ -84,6 +90,12 @@ class MiteConfig:
         if value is None:
             raise ValueError(f"No threshold for metric {metric!r}: add it to mite.metric_thresholds in config.yaml.")
         return float(value)
+
+    def window_for(self, metric):
+        """(window, centred) of the mite's own threshold saved for `metric`;
+        window 0 when it has none."""
+        entry = (self.metric_windows or {}).get(metric) or {}
+        return int(entry.get("window") or 0), bool(entry.get("centred", True))
 
 
 @dataclass
@@ -205,7 +217,8 @@ def _set_metric_entry(text, key, metric, value, path):
 
 
 def save_movement_score(metric: str, params: dict, threshold: float,
-                        config_path: Optional[str | Path] = None, stabilize_plate: Optional[bool] = None) -> dict:
+                        config_path: Optional[str | Path] = None, stabilize_plate: Optional[bool] = None,
+                        window: int = 0, centred: bool = True) -> dict:
     """Write the movement score (metric and its parameters) and the threshold that
     goes with it into the config file, and reload it.
 
@@ -215,10 +228,15 @@ def save_movement_score(metric: str, params: dict, threshold: float,
     lines concerned are rewritten, so comments and layout survive. With
     `stabilize_plate`, `mite.stabilize_plate` is set too: the threshold was
     chosen on scores cut with or without it.
+
+    With a `window`, `threshold` is the offset above the moving median of each
+    mite's scores over that many recordings, centred on the recording or ending
+    at it (`mite.metric_windows`); window 0 is one threshold for every mite.
     """
     path = _config_file(config_path)
     text = path.read_text(encoding="utf-8")
     threshold = round(float(threshold), 3)
+    window, centred = int(window or 0), bool(centred)
 
     match = _METRIC_LINE.search(text)
     if not match:
@@ -226,12 +244,13 @@ def save_movement_score(metric: str, params: dict, threshold: float,
     text = text[:match.start(2)] + f'"{metric}"' + text[match.end(2):]
     text = _set_metric_entry(text, "metric_params", metric, dict(params), path)
     text = _set_metric_entry(text, "metric_thresholds", metric, threshold, path)
+    text = _set_metric_entry(text, "metric_windows", metric, {"window": window, "centred": centred}, path)
     if stabilize_plate is not None:
         text = _set_stabilize_plate(text, bool(stabilize_plate), path)
 
     path.write_text(text, encoding="utf-8")
     _forget_loaded_config()
-    saved = {"metric": metric, "params": dict(params), "threshold": threshold}
+    saved = {"metric": metric, "params": dict(params), "threshold": threshold, "window": window, "centred": centred}
     if stabilize_plate is not None:
         saved["stabilize_plate"] = bool(stabilize_plate)
     return saved

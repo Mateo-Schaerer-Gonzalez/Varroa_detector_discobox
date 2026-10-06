@@ -36,7 +36,7 @@ class ZonePage extends ResultsPage {
       ${stat("Moving in the last recording", mites.length ? `${zone.n_moving_last} <small>(${pct(zone.n_moving_last / mites.length)})</small>` : "–")}
       ${stat("Moving mite-recordings", mites.length ? `${zone.n_moving_observations} <small>of ${mites.length * times.length}</small>` : "–",
         neverMoved ? `${neverMoved} mite${neverMoved === 1 ? "" : "s"} never seen moving` : "")}
-      ${stat("Mean motion score", score(zone.overall_mean_score), `threshold ${score(results.threshold)}`)}
+      ${stat("Mean motion score", score(zone.overall_mean_score), `threshold ${this.thresholdText()}`)}
     </div>
 
     <div class="clip-block">
@@ -57,7 +57,7 @@ class ZonePage extends ResultsPage {
     ${mites.length ? `
     <div class="grid-2">
       ${figure("chart-zone-scores", 5, "Motion score per mite",
-        "Thin lines are single mites; the black line is the mean. The dashed line is the threshold. Hover to identify a mite, select to open it; click elsewhere to show that recording.")}
+        `Thin lines are single mites; the black line is the mean. ${this.ownThreshold() ? "Each mite has its own threshold, shown on its page." : "The dashed line is the threshold."} Hover to identify a mite, select to open it; click elsewhere to show that recording.`)}
       ${section("Mites", `<div class="table-wrap"><table class="clickable" id="mite-table"></table></div>`)}
     </div>` : `<p class="muted">No mites were detected in this zone.</p>`}`;
     this.wire(body);
@@ -175,7 +175,7 @@ class ZonePage extends ResultsPage {
     this.timeChart($("chart-zone-scores"), {
       yLabel: "Motion score",
       noDirectLabels: true,
-      threshold: { value: this.results.threshold, label: "threshold" },
+      ...(this.ownThreshold() ? {} : { threshold: { value: this.results.threshold, label: "threshold" } }),
       series: [
         ...mites.map((mite) => ({
           name: `Mite ${mite.id}`,

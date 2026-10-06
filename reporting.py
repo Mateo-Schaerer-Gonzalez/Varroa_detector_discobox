@@ -127,6 +127,8 @@ def describe_mites(mite_data):
                 "x": round(float(rows["x"].iloc[0]), 1),
                 "y": round(float(rows["y"].iloc[0]), 1),
                 "scores": _floats(rows["motion_score"]),
+                # the mite's threshold in each recording: its own, or the one of every mite
+                "thresholds": _floats(rows["threshold"]),
                 "moving": [bool(value) for value in rows["moving"]],
             }
         )
@@ -240,11 +242,13 @@ def write_calibration_excel(result, out_dir):
     the observations and a survival curve."""
     path = Path(out_dir) / CALIBRATION_EXCEL_NAME
 
+    # `window` 0: one threshold (`offset`) for every mite; else each mite's own,
+    # `offset` above the moving median of its scores over `window` recordings
     summary = pd.DataFrame(
-        [{"threshold": "in use", **result["current"]}]
-        + ([{"threshold": "suggested", **result["best"]}] if result["best"] else [])
+        [{"calls": "in use", **result["calls"]["current"], **result["current"]}]
+        + ([{"calls": "suggested", **result["calls"]["suggested"], **result["best"]}] if result["best"] else [])
     )
-    summary["auc"] = result["auc"]
+    summary["auc"] = [result["auc"]] + ([result["roc_suggested"]["auc"]] if result["best"] else [])
     summary["metric"] = result["metric"]
     summary["metric_params"] = json.dumps(result.get("metric_params") or {})
     if result.get("benchmark"):
@@ -304,6 +308,9 @@ def write_calibration_excel(result, out_dir):
         observations.to_excel(writer, sheet_name="observations", index=False)
         survival.to_excel(writer, sheet_name="survival", index=False)
         over_time.to_excel(writer, sheet_name="moving_over_time", index=False)
+        if result["windows"]:
+            pd.DataFrame(result["windows"]).to_excel(writer, sheet_name="windows", index=False)
         if result["roc"]:
-            pd.DataFrame(result["roc"]).to_excel(writer, sheet_name="roc", index=False)
+            curve = ("fpr", "tpr", "thresholds")
+            pd.DataFrame({key: result["roc"][key] for key in curve}).to_excel(writer, sheet_name="roc", index=False)
     return path.name

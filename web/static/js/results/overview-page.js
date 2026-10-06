@@ -17,7 +17,7 @@ class OverviewPage extends ResultsPage {
     <header class="page-head">
       <div>
         <h1>Results</h1>
-        <p class="meta">${esc($("folder-name").textContent)} · ${results.n_recordings} recordings ${span} · movement threshold ${score(results.threshold)}</p>
+        <p class="meta">${esc($("folder-name").textContent)} · ${results.n_recordings} recordings ${span} · movement threshold ${this.thresholdText()}</p>
       </div>
     </header>
 
@@ -52,7 +52,7 @@ class OverviewPage extends ResultsPage {
       <p class="caption"><b>Moving</b> is the share of all mite-recordings in which the mite moved.</p>`)}
 
     <div class="block">${figure("chart-group-scores", 3, "Motion scores by group",
-      `Every mite in every recording at its motion score, one row per group, pooling every zone with that label: ${movingBadge(true)} at or above the threshold (dashed line),
+      `Every mite in every recording at its motion score, one row per group, pooling every zone with that label: ${movingBadge(true)} at or above ${this.ownThreshold() ? "the mite's own threshold" : "the threshold (dashed line)"},
       ${movingBadge(false)} below it; the number is the group's mites. Points of the recording shown are drawn larger. Select a point to open that mite in that recording.`)}</div>
 
     <div class="block">${figure("chart-moving-scores", 4, "Motion scores of moving mites by group",

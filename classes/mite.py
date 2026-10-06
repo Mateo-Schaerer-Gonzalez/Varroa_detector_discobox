@@ -2,6 +2,7 @@ from typing import Optional
 
 from classes.rect import TextZone
 from classes.app_config import AppConfig, get_default_config
+from classes.mite_threshold import MiteThreshold
 
 
 class Mite(TextZone):
@@ -10,6 +11,11 @@ class Mite(TextZone):
     The camera only sees movement, so a mite records one motion score per
     recording and whether that score reaches the threshold (`moving`). It makes
     no claim about the mite being alive or dead.
+
+    The threshold is config.yaml's: the same for every mite, or, with a window,
+    the mite's own, an offset above the moving median of its scores (see
+    MiteThreshold). The median moves with every recording added, so `moving`
+    and `thresholds` are worked out from all the scores so far.
     """
 
     id_counter = 0
@@ -41,6 +47,7 @@ class Mite(TextZone):
 
         self.radius = self.mite_cfg.radius
         self.motion_threshold = self.mite_cfg.motion_threshold
+        self.threshold = MiteThreshold.from_config(self.mite_cfg)
         self.metric = self.mite_cfg.metric
         self.metric_params = self.mite_cfg.params_for(self.metric)
         self.motion_scores = []
@@ -55,9 +62,14 @@ class Mite(TextZone):
         """Append a per-recording motion score. The drawing color follows the
         latest recording: moving or still."""
         self.motion_scores.append(score)
-        self._show_moving(score >= self.motion_threshold)
+        self._show_moving(self.moving[-1])
+
+    @property
+    def thresholds(self):
+        """Per recording: the threshold the mite's score is compared with."""
+        return self.threshold.thresholds(self.motion_scores)
 
     @property
     def moving(self):
-        """Per recording: did the mite move above the threshold in that recording?"""
-        return [score >= self.motion_threshold for score in self.motion_scores]
+        """Per recording: did the mite's score reach its threshold in that recording?"""
+        return self.threshold.moving(self.motion_scores)

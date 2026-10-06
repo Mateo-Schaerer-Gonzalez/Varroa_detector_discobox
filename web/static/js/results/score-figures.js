@@ -51,9 +51,10 @@ class ScoreFigures {
     return { ...options, points: options.points.map((point) => ({ ...point, r: 3 })) };
   }
 
+  // No line when each mite has its own threshold: there is no one score to draw it at.
   thresholdLine() {
     const { threshold } = this.page.results;
-    return [{ value: threshold, label: `threshold ${score(threshold)}` }];
+    return this.page.ownThreshold() ? [] : [{ value: threshold, label: `threshold ${score(threshold)}` }];
   }
 
   // Like the calibration's "Scores by your label": each mite-recording at its
