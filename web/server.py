@@ -161,6 +161,8 @@ class EvaluateRequest(BaseModel):
     params: Optional[dict[str, float]] = None
     # follow a shaking plate; by default as in config.yaml
     stabilize: Optional[bool] = None
+    # also call every observation with the Discobox's original software
+    benchmark: bool = False
 
 
 class ThresholdRequest(BaseModel):
@@ -530,7 +532,7 @@ def evaluate_calibration(session_id: str, request: EvaluateRequest):
     datasets = request.datasets if request.datasets is not None else [session["dataset_id"]]
     try:
         return pipeline.evaluate_calibration(session["out_dir"], datasets, request.metric, request.params,
-                                             stabilize=request.stabilize)
+                                             stabilize=request.stabilize, benchmark=request.benchmark)
     except (FileNotFoundError, ValueError) as error:
         raise HTTPException(status_code=400, detail=str(error))
 

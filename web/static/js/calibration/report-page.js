@@ -46,13 +46,14 @@ class ReportPage {
   // Who is left out of a survival curve, by the labels and by the detector's calls.
   static leftOutText(curves, marks) {
     const parts = [`${curves.truth.n_left_out} never labelled moving`,
-      ...marks.map((mark) => `${curves[mark.key].n_left_out} never called moving at the threshold ${mark.name}`)];
+      ...marks.map((mark) => `${curves[mark.key].n_left_out} never called moving at the threshold ${mark.name}`),
+      ...(curves.benchmark ? [`${curves.benchmark.n_left_out} never called moving by the benchmark`] : [])];
     return `Left out: ${parts.join(", ")}.`;
   }
 
   static survivalCaption(r, marks) {
     return `The Kaplan–Meier survival rate of the labelled mites: by the ground truth (black, with its 95% confidence band) and as the detector's calls
-    would have it. A mite counts as alive up to the last recording in which it moved and as dead from the next labelled one on; a mite moving in its last
+    ${r.survival.benchmark ? "and the benchmark's " : ""}would have it. A mite counts as alive up to the last recording in which it moved and as dead from the next labelled one on; a mite moving in its last
     labelled recording is right-censored there. Only mites seen moving at least once are in the study, each curve by its own calls, as a mite never
     seen moving may have been dead from the start. ${ReportPage.leftOutText(r.survival, marks)} The closer the dashed curves follow the black one,
     the better the threshold gives the true survival. Hover for the numbers.${ReportPage.poolNote(r)}`;
@@ -118,7 +119,7 @@ class ReportPage {
       look at the suggested threshold, and save it with this movement score to use it.</div>`}
     ${testing ? this.testReport(r) : this.calibrateReport(r)}
     ${testing ? section("Survival rate per group", `<div id="group-legend" class="legend"></div><div id="group-moving" class="group-cards"></div>
-      <p class="caption">Each group's Kaplan–Meier survival rate, by the ground truth and as the detector's calls at the threshold in use would have it, as in Fig. 2;
+      <p class="caption">Each group's Kaplan–Meier survival rate, by the ground truth and as the detector's calls at the threshold in use${r.benchmark ? " and the benchmark's" : ""} would have it, as in Fig. 2;
         the number is the group's mites in the study by the ground truth. Groups are the plate labels.${poolNote(r)}</p>`) : ""}
     ${section("Files", `<ul class="files">
       <li><a href="${cal.fileUrl(r.excel)}" download>${esc(r.excel)}</a>
@@ -127,6 +128,10 @@ class ReportPage {
     body.querySelectorAll(".segmented [data-mode]").forEach((button) => button.addEventListener("click", () => {
       cal.setMode(button.dataset.mode);
       this.draw();
+      // A report asked for on the calibration tab came without the benchmark.
+      if (cal.mode === "test" && !cal.report.benchmark) {
+        cal.reportAgain("benchmark-status", () => {}, "Running the benchmark… the first time a dataset meets it this takes about a minute.");
+      }
     }));
     $("report-refresh")?.addEventListener("click", () => cal.evaluate());
     this.wireDatasetPicker();
@@ -422,6 +427,8 @@ class ReportPage {
       ${figure("chart-survival", 2, "Survival rate: ground truth and the detector", survivalCaption(r, ReportPage.thresholdMarks(r).slice(0, 1)))}
     </div>
 
+    ${section("Against the benchmark", this.benchmarkTable(r))}
+
     <div class="grid-2">
       <figure class="fig">
         <div class="fig-title fig-title-row">Where the errors are
@@ -448,6 +455,31 @@ class ReportPage {
 
     ${section("Per zone", `<div class="table-wrap"><table class="clickable" id="zone-errors"></table></div>
       <p class="caption">Counts are mite-recordings, at the threshold in use. Select a zone to review its labels.</p>`)}`;
+  }
+
+  // The detector at the threshold in use beside the Discobox's original software,
+  // on the same mite-recordings (the server's figures, calibration.calls_confusion).
+  benchmarkTable(r) {
+    const { thr, scoreText } = ReportPage;
+    if (!r.benchmark) return `<p id="benchmark-status" class="hint">The benchmark has not been run on these datasets.</p>`;
+    const share = (value) => (value == null ? "–" : `${(value * 100).toFixed(1)}%`);
+    const rows = [
+      [`Detector <span class="muted">${esc(scoreText(r.metric, r.metric_params, r.stabilize_plate))}</span>`, thr(r.threshold), r.current],
+      [`Benchmark <span class="muted">${esc(r.benchmark.name)}, the Discobox's original software</span>`, r.benchmark.threshold, r.benchmark],
+    ];
+    return `<div class="table-wrap"><table>
+    <thead><tr><th>Called by</th><th class="num">Threshold</th><th class="num">Precision</th><th class="num">Recall</th><th class="num">F1 score</th>
+      <th class="num">Called right</th><th class="num">Moving called still</th><th class="num">Still called moving</th></tr></thead>
+    <tbody>${rows.map(([name, threshold, c]) => `<tr>
+      <td>${name}</td><td class="num">${threshold}</td>
+      <td class="num">${share(c.precision)}</td><td class="num">${share(c.sensitivity)}</td><td class="num">${share(c.f1)}</td>
+      <td class="num">${share(c.accuracy)}</td><td class="num">${c.moving_called_still}</td><td class="num">${c.still_called_moving}</td></tr>`).join("")}</tbody>
+  </table></div>
+  <p class="caption">Both on the same ${r.n_moving + r.n_still} labelled mite-recordings, moving being the positive call.
+    <b>Precision</b>: of the calls "moving", the share labelled moving. <b>Recall</b>: of the labels "moving", the share called moving.
+    <b>F1 score</b>: their harmonic mean. The benchmark denoises each recording's frames, takes the difference of every frame to the first and
+    calls a mite moving when a difference above ${r.benchmark.threshold} lies on it; that threshold is fixed in its code, where the detector's is
+    config.yaml's. Its survival curve is in Fig. 2 and in the groups' below.</p>`;
   }
 
   drawTestFigures(r) {

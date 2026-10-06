@@ -187,7 +187,7 @@ class Calibration {
     const status = $("evaluate-status");
     button.disabled = true;
     status.className = "hint";
-    status.innerHTML = `<span class="spinner"></span> Comparing…`;
+    status.innerHTML = `<span class="spinner"></span> Comparing…${this.mode === "test" ? " the first time a dataset meets the benchmark this takes about a minute." : ""}`;
     try {
       this.takeReport(await this.requestReport());
       status.textContent = "";
@@ -219,6 +219,8 @@ class Calibration {
       post(`/api/calibration/${this.id}/evaluate`, {
         datasets: this.selected, metric: this.metric?.name ?? null, params: this.metric?.params ?? null,
         stabilize: this.metric?.stabilize ?? null,
+        // The test report compares with the benchmark, which is slow the first time.
+        benchmark: this.mode === "test",
       }),
       this.fetchDatasets().catch(() => this.datasets),
       this.fetchScores().catch(() => this.scores),
@@ -234,9 +236,9 @@ class Calibration {
 
   // Evaluate again after changing what the report uses. On failure `undo` puts the
   // choice back and the error shows in the element `statusId`.
-  async reportAgain(statusId, undo) {
+  async reportAgain(statusId, undo, message = "Scoring and comparing… the first time a dataset meets a movement score its recordings are decoded, which takes a while.") {
     $(statusId).className = "hint";
-    $(statusId).innerHTML = `<span class="spinner"></span> Scoring and comparing… the first time a dataset meets a movement score its recordings are decoded, which takes a while.`;
+    $(statusId).innerHTML = `<span class="spinner"></span> ${message}`;
     try {
       this.takeReport(await this.requestReport());
       reportPage.draw();

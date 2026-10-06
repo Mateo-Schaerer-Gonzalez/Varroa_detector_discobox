@@ -162,12 +162,14 @@ def outcome(is_moving, score, threshold):
     return f"{truth}_called_{called}"
 
 
-def confusion(scores, moving, threshold):
-    """Counts of the four outcomes at one threshold, plus accuracy, sensitivity
-    (moving called moving) and specificity (still called still)."""
-    scores = np.asarray(scores, dtype=float)
+def calls_confusion(called, moving):
+    """Counts of the four outcomes of calls (True: called moving) against the
+    labels, plus accuracy, sensitivity (moving called moving, the recall),
+    specificity (still called still), precision (of the calls moving, the
+    fraction labelled moving) and F1 (the harmonic mean of precision and
+    recall). A ratio with nothing to divide by is None."""
+    called = np.asarray(called, dtype=bool)
     moving = np.asarray(moving, dtype=bool)
-    called = scores >= threshold
 
     counts = {
         "moving_called_moving": int((moving & called).sum()),
@@ -176,20 +178,30 @@ def confusion(scores, moving, threshold):
         "still_called_still": int((~moving & ~called).sum()),
     }
     n_moving, n_still = int(moving.sum()), int((~moving).sum())
+    right = counts["moving_called_moving"]
+    wrong = counts["moving_called_still"] + counts["still_called_moving"]
 
     def ratio(a, b):
         return None if b == 0 else a / b
 
     return {
-        "threshold": float(threshold),
         **counts,
         "n_moving": n_moving,
         "n_still": n_still,
-        "n_wrong": counts["moving_called_still"] + counts["still_called_moving"],
-        "accuracy": ratio(counts["moving_called_moving"] + counts["still_called_still"], n_moving + n_still),
-        "sensitivity": ratio(counts["moving_called_moving"], n_moving),
+        "n_wrong": wrong,
+        "accuracy": ratio(right + counts["still_called_still"], n_moving + n_still),
+        "sensitivity": ratio(right, n_moving),
         "specificity": ratio(counts["still_called_still"], n_still),
+        "precision": ratio(right, right + counts["still_called_moving"]),
+        "f1": ratio(2 * right, 2 * right + wrong),
     }
+
+
+def confusion(scores, moving, threshold):
+    """calls_confusion() of the detector's calls at one threshold: moving when
+    the score reaches it."""
+    called = np.asarray(scores, dtype=float) >= threshold
+    return {"threshold": float(threshold), **calls_confusion(called, moving)}
 
 
 def outcome_rates(counts):
@@ -223,10 +235,12 @@ def mite_survival(rows, times, is_moving):
     return times[rows[-1]["recording"]], False
 
 
-def survival_curves(rows, times, thresholds):
+def survival_curves(rows, times, thresholds, calls=None):
     """The Kaplan-Meier survival curves of the labelled mites: by the labels
-    ("truth") and as called by the detector at each of `thresholds` ({name:
-    value}), each on the mites that source saw moving at least once.
+    ("truth"), as called by the detector at each of `thresholds` ({name:
+    value}) and as called by each of `calls` ({name: the key of the rows holding
+    that call, "moving" or "still"}, e.g. the benchmark's), each on the mites
+    that source saw moving at least once.
 
     `rows` have "dataset", "mite_id", "recording", "movement" and "score".
     Returns {source: {alive, low, high (percent per recording, see
@@ -237,6 +251,8 @@ def survival_curves(rows, times, thresholds):
     sources = {"truth": lambda row: row["movement"] == MOVING}
     for name, threshold in thresholds.items():
         sources[name] = lambda row, threshold=threshold: row["score"] >= threshold
+    for name, key in (calls or {}).items():
+        sources[name] = lambda row, key=key: row[key] == MOVING
 
     curves = {}
     for name, is_moving in sources.items():

@@ -83,6 +83,8 @@ import numpy as np
 import reporting
 from classes import calibration
 from classes.analyzer import Analyzer
+from classes import benchmark as benchmark_module
+from classes.benchmark import Benchmark
 from classes.call_corrections import CallCorrections
 from classes import app_config
 from classes.app_config import get_default_config, save_motion_threshold
@@ -1294,9 +1296,52 @@ def _dataset_scores(key, dataset, metric, params, library_dir, stabilize=False):
     return scores
 
 
-def _observations(dataset, dataset_key, scores):
+def _benchmark_mites(dataset, recordings_dir):
+    """Whether the benchmark (classes/benchmark.py) calls each mite of a dataset
+    moving in each recording: mite id to one True or False per recording. Slow:
+    every frame is decoded and denoised, in the part of the image holding mites."""
+    if not Path(recordings_dir).is_dir():
+        raise FileNotFoundError(
+            f"The recordings of {dataset['name']} are no longer at {dataset['data_dir']} and the "
+            "library has no copy, so the benchmark cannot be run on them. "
+            "Move them back and save its ground truth again, or leave this dataset out."
+        )
+    loader = DataLoader(recordings_dir, grayscale=True)
+    boxes = mite_boxes(dataset["mites"])
+    x0 = max(0, min(box[0] for box in boxes.values()) - Benchmark.MARGIN)
+    y0 = max(0, min(box[1] for box in boxes.values()) - Benchmark.MARGIN)
+    x_end = max(box[2] for box in boxes.values()) + Benchmark.MARGIN
+    y_end = max(box[3] for box in boxes.values()) + Benchmark.MARGIN
+    local = {mite_id: (x1 - x0, y1 - y0, x2 - x0, y2 - y0) for mite_id, (x1, y1, x2, y2) in boxes.items()}
+
+    calls = {mite_id: [] for mite_id in boxes}
+    for recording in dataset["recordings"]:
+        frames = loader.load_recording_region(recording["name"], x0, y0, x_end, y_end)
+        for mite_id, moving in Benchmark.calls(frames, local).items():
+            calls[mite_id].append(moving)
+    return calls
+
+
+def _dataset_benchmark(key, dataset, library_dir):
+    """The benchmark's calls for the dataset's mites, from the cache when this
+    benchmark code has called exactly these mites before."""
+    source = inspect.getsource(benchmark_module)
+    version = hashlib.sha1(json.dumps(
+        [source, [[m["id"], m["x"], m["y"], m["r"]] for m in dataset["mites"]]]).encode("utf-8")).hexdigest()[:12]
+    cache = _dataset_dir(key, library_dir) / SCORES_DIRNAME / f"benchmark-{version}.json"
+    if cache.is_file():
+        return json.loads(cache.read_text(encoding="utf-8"))["calls"]
+    calls = _benchmark_mites(dataset, _recordings_dir(dataset["data_dir"], library_dir))
+    cache.parent.mkdir(parents=True, exist_ok=True)
+    cache.write_text(json.dumps({"benchmark": Benchmark.NAME, "calls": calls}), encoding="utf-8")
+    return calls
+
+
+def _observations(dataset, dataset_key, scores, benchmark=None):
     """One row per (mite, recording) of a dataset labelled moving or still, and
-    the number of mites marked not a mite and of unlabelled mite-recordings."""
+    the number of mites marked not a mite and of unlabelled mite-recordings.
+    With `benchmark` (its calls, see _dataset_benchmark()), each row also says
+    what the benchmark called it."""
     times = dataset["times"]
     n_recordings = len(times)
     groups = {zone["id"]: zone["label"] or UNLABELED for zone in dataset["zones"]}
@@ -1326,6 +1371,8 @@ def _observations(dataset, dataset_key, scores):
                     "time": times[recording],
                     "movement": movement,
                     "score": scores[mite["id"]][recording],
+                    **({} if benchmark is None else {
+                        "benchmark_call": calibration.MOVING if benchmark[mite["id"]][recording] else calibration.STILL}),
                 }
             )
     return rows, n_rejected, n_unlabelled
@@ -1411,7 +1458,7 @@ def _resolve_metric(metric, params):
 
 
 def evaluate_calibration(out_dir, datasets, metric=None, params=None, library_dir=CALIBRATION_LIBRARY,
-                         stabilize=None):
+                         stabilize=None, benchmark=False):
     """Score the saved mites with a metric and compare the scores with the
     movement the user saw, pooled over the saved datasets whose ids are in
     `datasets`.
@@ -1437,6 +1484,11 @@ def evaluate_calibration(out_dir, datasets, metric=None, params=None, library_di
     Kaplan-Meier survival curves (of the mites seen moving at least once) by the
     labels and by the detector; and every observation with its outcome.
     Everything is also written to calibration.xlsx in `out_dir`.
+
+    With `benchmark`, the same observations are also called by the Discobox's
+    original software (classes/benchmark.py): its confusion counts, with
+    precision, recall and F1 as for the detector, come as "benchmark", and its
+    survival curve joins the others. Slow the first time a dataset meets it.
     """
     ids = list(dict.fromkeys(datasets))
     if not ids:
@@ -1452,7 +1504,8 @@ def evaluate_calibration(out_dir, datasets, metric=None, params=None, library_di
     rows, n_rejected, n_unlabelled, summaries = [], 0, 0, []
     for key, dataset in zip(ids, loaded):
         scores = _dataset_scores(key, dataset, metric, params, library_dir, stabilize)
-        here, rejected, unlabelled = _observations(dataset, key, scores)
+        here, rejected, unlabelled = _observations(
+            dataset, key, scores, _dataset_benchmark(key, dataset, library_dir) if benchmark else None)
         rows += here
         n_rejected += rejected
         n_unlabelled += unlabelled
@@ -1490,7 +1543,8 @@ def evaluate_calibration(out_dir, datasets, metric=None, params=None, library_di
         return {key: values if key == "n" else _rounded(values) for key, values in curves.items()}
 
     def survival(subset):
-        curves = calibration.survival_curves(subset, times, thresholds)
+        curves = calibration.survival_curves(subset, times, thresholds,
+                                             {"benchmark": "benchmark_call"} if benchmark else None)
         return {name: {key: _rounded(value, 2) if isinstance(value, list) else value for key, value in curve.items()}
                 for name, curve in curves.items()}
 
@@ -1524,6 +1578,12 @@ def evaluate_calibration(out_dir, datasets, metric=None, params=None, library_di
         "n_unlabelled": n_unlabelled,
         "current": calibration.confusion(scores, is_moving, current),
         "best": calibration.confusion(scores, is_moving, suggested) if suggested is not None else None,
+        # the same observations as called by the Discobox's original software
+        "benchmark": {
+            "name": Benchmark.NAME,
+            "threshold": Benchmark.THRESHOLD,
+            **calibration.calls_confusion([row["benchmark_call"] == calibration.MOVING for row in rows], is_moving),
+        } if benchmark else None,
         "moving_over_time": over_time(rows),
         # the survival curves by the labels and by the detector, see calibration.survival_curves()
         "survival": survival(rows),

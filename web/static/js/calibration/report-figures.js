@@ -7,6 +7,9 @@ class ReportFigures {
   // The error map of a recording no labelled mite of the dataset has.
   static NO_MITES = { mites: [], counts: { correct: 0, "missed-positive": 0, "missed-negative": 0 } };
 
+  // The Discobox's original software, which the test report compares with (classes/benchmark.py).
+  static BENCHMARK = "benchmark (Abilium)";
+
   // Where a row comes from: the recording folder and, when known, the recording in it.
   static sourceText(row) {
     return `${esc(row.dataset_name)}${row.recording_name ? ` / ${esc(row.recording_name)}` : ""}`;
@@ -47,16 +50,25 @@ class ReportFigures {
   </table>`;
   }
 
+  // Whose calls a survival figure draws beside the ground truth: the detector's at
+  // each threshold of `marks` and, when the report has it, the benchmark's.
+  static callers(curves, marks) {
+    return [
+      ...marks.map((mark) => ({ key: mark.key, name: `detector, ${mark.name}`, value: ReportPage.thr(mark.value), color: mark.color })),
+      ...(curves.benchmark ? [{ key: "benchmark", name: ReportFigures.BENCHMARK, value: "", color: token("--series-7") }] : []),
+    ];
+  }
+
   // The Kaplan-Meier curve of the ground truth (black, with its confidence band)
-  // against those of the detector's calls, one per threshold (the server's,
-  // calibration.survival_curves). The labels' curve comes last so it is drawn on
-  // top where the curves coincide.
+  // against those of the detector's calls, one per threshold, and of the
+  // benchmark's (the server's, calibration.survival_curves). The labels' curve
+  // comes last so it is drawn on top where the curves coincide.
   survivalSeries(curves, marks, { legend = true } = {}) {
     return [
-      ...marks.map((mark) => ({
-        name: `detector, ${mark.name} ${ReportPage.thr(mark.value)}`,
-        values: curves[mark.key].alive,
-        color: mark.color, dashed: true, step: true, markers: false, legend,
+      ...ReportFigures.callers(curves, marks).map((caller) => ({
+        name: `${caller.name} ${caller.value}`.trim(),
+        values: curves[caller.key].alive,
+        color: caller.color, dashed: true, step: true, markers: false, legend,
       })),
       {
         name: "ground truth", values: curves.truth.alive, band: { low: curves.truth.low, high: curves.truth.high },
@@ -68,7 +80,8 @@ class ReportFigures {
   // How many mites each curve rests on, for the tooltip.
   survivalNote(curves, marks) {
     const count = (name, curve) => `<div class="tip-note">${name}: ${curve.n_mites} mites, ${curve.n_dead} dead, ${curve.n_left_out} left out</div>`;
-    return [count("ground truth", curves.truth), ...marks.map((mark) => count(`detector, ${mark.name}`, curves[mark.key]))].join("");
+    return [count("ground truth", curves.truth),
+      ...ReportFigures.callers(curves, marks).map((caller) => count(caller.name, curves[caller.key]))].join("");
   }
 
   drawSurvival(container, curves, times, marks) {
@@ -103,8 +116,8 @@ class ReportFigures {
       plot.id = id;
       card.appendChild(plot);
       container.appendChild(card);
-      if (!curves.truth.n_mites && marks.every((mark) => !curves[mark.key].n_mites)) {
-        plot.innerHTML = `<p class="muted">No mite of this group was seen moving, by the labels or the detector, so none is in the study.</p>`;
+      if (!curves.truth.n_mites && ReportFigures.callers(curves, marks).every((caller) => !curves[caller.key].n_mites)) {
+        plot.innerHTML = `<p class="muted">No mite of this group was seen moving, by the labels, the detector or the benchmark, so none is in the study.</p>`;
         return;
       }
       Charts.line(plot, {

@@ -7,6 +7,7 @@ from classes.calibration import (
     apply_changes,
     auc,
     best_threshold,
+    calls_confusion,
     confusion,
     has_both_classes,
     is_rejected,
@@ -64,6 +65,21 @@ def test_confusion_counts():
     assert result["n_moving"] == 3 and result["n_still"] == 3 and result["n_wrong"] == 2
     assert result["accuracy"] == pytest.approx(4 / 6)
     assert result["sensitivity"] == pytest.approx(2 / 3)
+
+
+def test_confusion_gives_precision_recall_and_f1():
+    result = confusion(SCORES, MOVING, 10)  # 2 moving called moving, 1 still called moving, 1 moving called still
+    assert result["precision"] == pytest.approx(2 / 3)
+    assert result["sensitivity"] == pytest.approx(2 / 3)  # the recall
+    assert result["f1"] == pytest.approx(2 / 3)
+    # calls given as such, e.g. the benchmark's, count the same way
+    assert calls_confusion(np.array(SCORES) >= 10, MOVING) == {k: v for k, v in result.items() if k != "threshold"}
+
+
+def test_precision_of_no_call_moving_is_unknown():
+    result = calls_confusion([False, False], [True, False])
+    assert result["precision"] is None
+    assert result["sensitivity"] == 0 and result["f1"] == 0
 
 
 def test_outcome_calls_moving_at_or_above_the_threshold():
@@ -169,6 +185,18 @@ def test_survival_curves_by_the_labels_and_the_detector_leave_out_mites_never_mo
     assert (curves["truth"]["n_mites"], curves["truth"]["n_left_out"], curves["truth"]["n_dead"]) == (2, 1, 1)
     assert curves["current"]["alive"] == [100.0, pytest.approx(100 / 3), 0.0]
     assert (curves["current"]["n_mites"], curves["current"]["n_left_out"], curves["current"]["n_dead"]) == (3, 0, 3)
+
+
+def test_survival_curves_of_calls_made_by_another_method():
+    times = [0, 10, 20]
+    rows = (survival_rows("a", ["moving", "still", "still"], [20, 5, 5])
+            + survival_rows("b", ["moving", "moving", "moving"], [20, 20, 5]))
+    for row, call in zip(rows, ["moving", "moving", "still", "still", "still", "still"]):
+        row["benchmark_call"] = call  # a dies at 20, b is never called moving
+    curves = survival_curves(rows, times, {"current": 10}, {"benchmark": "benchmark_call"})
+    assert set(curves) == {"truth", "current", "benchmark"}
+    assert curves["benchmark"]["alive"] == [100.0, 100.0, 0.0]
+    assert (curves["benchmark"]["n_mites"], curves["benchmark"]["n_left_out"]) == (1, 1)
 
 
 def test_has_both_classes():

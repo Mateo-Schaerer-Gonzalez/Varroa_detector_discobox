@@ -189,6 +189,49 @@ def test_scoring_reads_each_mite_box_from_the_frames(tmp_path):
     assert scores["1"] == [50.0]
 
 
+def test_the_benchmark_reads_each_mite_box_from_the_frames(tmp_path):
+    data_dir = tmp_path / "rec"
+    write_frames(data_dir)
+    dataset = {
+        "name": "rec",
+        "data_dir": str(data_dir),
+        "recordings": [{"name": RECORDING, "fps": 30}],
+        "mites": [{"id": "0", "x": 10.0, "y": 10.0, "r": 3.0}, {"id": "1", "x": 40.0, "y": 10.0, "r": 3.0}],
+    }
+    assert pipeline._benchmark_mites(dataset, data_dir) == {"0": [False], "1": [True]}
+
+
+def test_a_report_with_the_benchmark_compares_it_on_the_same_observations(tmp_path, library, scorer, monkeypatch):
+    data_dir, out_dir = make_session(tmp_path, "a", 2, times=(0.0, 5.0, 10.0))
+    scorer.scores = {"a": {"0": [9, 9, 1], "1": [1, 1, 1]}}
+    pipeline.save_ground_truth(out_dir, {"0": ["moving", "moving", "still"], "1": ["still", "still", "still"]}, library_dir=library)
+    runs = []
+
+    def benchmark(dataset, _recordings_dir):
+        runs.append(dataset["name"])
+        return {"0": [True, True, True], "1": [True, False, False]}
+
+    monkeypatch.setattr(pipeline, "_benchmark_mites", benchmark)
+    ids = [pipeline.dataset_id(data_dir)]
+
+    result = pipeline.evaluate_calibration(tmp_path / "report", ids, library_dir=library, benchmark=True)
+    called = result["benchmark"]
+    assert (called["moving_called_moving"], called["still_called_moving"], called["moving_called_still"]) == (2, 2, 0)
+    assert called["precision"] == pytest.approx(0.5) and called["sensitivity"] == 1
+    assert [row["benchmark_call"] for row in result["observations"]] == ["moving", "moving", "moving", "moving", "still", "still"]
+    # mite 0 never stops by the benchmark; mite 1 moved once and is dead by the next recording
+    assert result["survival"]["benchmark"]["alive"] == [100.0, 50.0, 50.0]
+    assert "benchmark" in result["groups"][0]["survival"]
+
+    # Its calls are kept with the dataset, like the scores.
+    pipeline.evaluate_calibration(tmp_path / "report", ids, library_dir=library, benchmark=True)
+    assert runs == ["a"]
+
+    without = pipeline.evaluate_calibration(tmp_path / "report", ids, library_dir=library)
+    assert without["benchmark"] is None and "benchmark" not in without["survival"]
+    assert "benchmark_call" not in without["observations"][0]
+
+
 def test_the_library_keeps_a_copy_of_the_recording_folder(tmp_path, library):
     data_dir, out_dir = make_session(tmp_path, "a", 1)
     write_frames(data_dir)

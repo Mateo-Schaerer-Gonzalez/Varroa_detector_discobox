@@ -235,7 +235,9 @@ CALIBRATION_EXCEL_NAME = "calibration.xlsx"
 def write_calibration_excel(result, out_dir):
     """Write a calibration's summary, the datasets pooled, every labelled (mite,
     recording) observation, the survival curves by the labels and the detector,
-    the fraction moving per recording and, when there is one, the ROC curve."""
+    the fraction moving per recording and, when there is one, the ROC curve.
+    A calibration with the benchmark has it as a row of the summary, a column of
+    the observations and a survival curve."""
     path = Path(out_dir) / CALIBRATION_EXCEL_NAME
 
     summary = pd.DataFrame(
@@ -245,6 +247,10 @@ def write_calibration_excel(result, out_dir):
     summary["auc"] = result["auc"]
     summary["metric"] = result["metric"]
     summary["metric_params"] = json.dumps(result.get("metric_params") or {})
+    if result.get("benchmark"):
+        row = {key: value for key, value in result["benchmark"].items() if key != "name"}
+        row["metric"] = f"benchmark ({result['benchmark']['name']})"
+        summary = pd.concat([summary, pd.DataFrame([row])], ignore_index=True)
 
     observations = pd.DataFrame(result["observations"]).rename(columns={"movement": "your_label"})
 
@@ -273,7 +279,8 @@ def write_calibration_excel(result, out_dir):
                 {
                     "level": level,
                     "name": name,
-                    "curve": {"truth": "labels", "current": "detector_in_use", "suggested": "detector_suggested"}[source],
+                    "curve": {"truth": "labels", "current": "detector_in_use", "suggested": "detector_suggested",
+                              "benchmark": "benchmark"}[source],
                     "n_mites": curve["n_mites"],
                     "n_left_out_never_moving": curve["n_left_out"],
                     "time": result["times"],
