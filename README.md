@@ -84,6 +84,16 @@ To analyse a folder, in *Analysis*:
    to see its close-up and score in each recording. Every chart has a tooltip,
    opens what it shows when clicked, and downloads as SVG or PNG. The browser's
    back button works throughout.
+   *Normalise the scores*, on the overview and on a mite's page, puts the scores
+   of the run on one scale for every mite (`classes/score_normalizer.py`):
+   *brightness* scales each score to the run's typical brightness, as camera
+   noise grows with the light on the mite's patch, and *per-mite floor* moves
+   each mite's own floor, the median of its scores over the run, to the median
+   floor of all mites. Both keep the scale of the scores, so the threshold in
+   use still applies; the calls and every number follow, with no need to run
+   the analysis again, and the choice is saved to the folder's `.settings.txt`.
+   A mite moving in more than half of the recordings gets too high a floor.
+   Both need the whole run, so a live run has neither until it is opened here.
 
 ### Moving or still
 
@@ -297,7 +307,7 @@ Each analysis writes to `results/<recording>/`:
 
 | File | Contents |
 | --- | --- |
-| `results.xlsx` | `measurements` (one row per mite per recording, with `moving` and position), `group_summary`, and `moving` (fraction of mites moving per group and per zone at each recording) |
+| `results.xlsx` | `measurements` (one row per mite per recording, with `moving`, position and the `brightness` of the mite's patch; with normalised scores, `raw_score` holds them as scored), `group_summary`, and `moving` (fraction of mites moving per group and per zone at each recording) |
 | `moving_by_group.png` | Fraction of each group's mites moving in each recording |
 | `distribution_by_group.png` | Score distribution per group, box plot with raw points |
 | `score_over_time.png` | Each mite's score across the session |
