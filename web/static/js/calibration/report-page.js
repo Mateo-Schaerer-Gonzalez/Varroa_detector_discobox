@@ -112,7 +112,7 @@ class ReportPage {
       </div>
     </header>
     ${section("Data used", this.datasetPicker(r))}
-    ${section("Movement score", this.scorePicker(r))}
+    ${section("Movement score", testing ? this.scoreTested(r) : this.scorePicker(r))}
     ${r.threshold_fits ? "" : `<div class="banner">The threshold in use, ${thr(r.threshold)}, was set for
       <code>${esc(scoreText(r.in_use.metric, r.in_use.params, r.in_use.stabilize_plate))}</code>. These scores are
       <code>${esc(scoreText(r.metric, r.metric_params, r.stabilize_plate))}</code>, on another scale, so figures "in use" say little:
@@ -135,7 +135,7 @@ class ReportPage {
     }));
     $("report-refresh")?.addEventListener("click", () => cal.evaluate());
     this.wireDatasetPicker();
-    this.wireScorePicker(r);
+    if (!testing) this.wireScorePicker(r);
 
     // Groups matter to a test of the threshold, not to finding one.
     if (testing) {
@@ -231,6 +231,14 @@ class ReportPage {
     <p id="score-description" class="hint"></p>
     <p id="score-status" class="hint">In use for analyses: <code>${esc(scoreText(cal.scores.in_use.metric, cal.scores.in_use.params, cal.scores.in_use.stabilize_plate))}</code>
       with threshold ${thr(cal.scores.in_use.threshold)}. Try another here; saving a threshold below saves the movement score with it.</p>`;
+  }
+
+  // The test report only says which score it tests: scoring again with another one
+  // there would judge it by a threshold set for a different score.
+  scoreTested(r) {
+    const { thr, scoreText } = ReportPage;
+    return `<p class="hint">Tested: <code>${esc(scoreText(r.metric, r.metric_params, r.stabilize_plate))}</code> with the threshold in use, ${thr(r.threshold)}.
+      Try another movement score on the <b>Calibration</b> tab.</p>`;
   }
 
   wireScorePicker(r) {
