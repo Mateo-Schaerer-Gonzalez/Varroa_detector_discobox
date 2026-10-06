@@ -1,6 +1,6 @@
 import re
 import shutil
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, fields
 from functools import lru_cache
 from pathlib import Path
 from typing import Any, Optional
@@ -35,6 +35,16 @@ def _load_yaml_cached(config_path: Path) -> dict:
 def _tuplify(data: dict) -> dict:
     """Convert list values (e.g. YAML color arrays) into tuples."""
     return {key: tuple(value) if isinstance(value, list) else value for key, value in data.items()}
+
+
+def _known(section, data: dict) -> dict:
+    """The entries of `data` that `section` (a dataclass) has a field for.
+
+    config.yaml is this machine's own, so it can hold a key saved by another
+    version of the app; such a key is left out instead of stopping the app.
+    """
+    names = {f.name for f in fields(section)}
+    return {key: value for key, value in data.items() if key in names}
 
 
 @dataclass
@@ -119,13 +129,13 @@ class AppConfig:
         self._raw_config = _load_yaml_cached(self.config_path)
 
         visual_styles = self._raw_config.get("visual_styles", {})
-        self.rect_style = RectStyle(**_tuplify(visual_styles.get("rect", {})))
-        self.text_zone_style = TextZoneStyle(**_tuplify(visual_styles.get("text_zone", {})))
-        self.mite = MiteConfig(**_tuplify(self._raw_config.get("mite", {})))
-        self.detector = DetectorConfig(**self._raw_config.get("detector", {}))
-        self.label_reader = LabelReaderConfig(**(self._raw_config.get("label_reader") or {}))
+        self.rect_style = RectStyle(**_known(RectStyle, _tuplify(visual_styles.get("rect", {}))))
+        self.text_zone_style = TextZoneStyle(**_known(TextZoneStyle, _tuplify(visual_styles.get("text_zone", {}))))
+        self.mite = MiteConfig(**_known(MiteConfig, _tuplify(self._raw_config.get("mite", {}))))
+        self.detector = DetectorConfig(**_known(DetectorConfig, self._raw_config.get("detector", {})))
+        self.label_reader = LabelReaderConfig(**_known(LabelReaderConfig, self._raw_config.get("label_reader") or {}))
         self.zone_styles = {
-            name: TextZoneStyle(**_tuplify(style))
+            name: TextZoneStyle(**_known(TextZoneStyle, _tuplify(style)))
             for name, style in visual_styles.get("Zones", {}).items()
         }
 

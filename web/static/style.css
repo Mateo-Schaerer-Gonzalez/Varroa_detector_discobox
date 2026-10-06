@@ -754,3 +754,6 @@ td.num.error { color: var(--critical); font-weight: 600; }
 .death-field { display: inline-flex; align-items: baseline; gap: 6px; }
 .death-field .number-input { width: 84px; padding: 3px 6px; font-size: 12.5px; }
 .death-status { margin: 0; }
+.fig-controls .control-check { margin-top: 0; font-size: 12.5px; }
+.normalize-label { color: var(--muted); }
+.normalize-status { margin: 0; }

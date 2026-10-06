@@ -91,13 +91,15 @@ class ResultsPage {
       .join(`<span class="crumb-sep" aria-hidden="true">/</span>`);
   }
 
-  // Wire what every result page may hold: "Run again", the death time, the slider.
+  // Wire what every result page may hold: "Run again", the death time, the
+  // normalisation of the scores, the slider.
   wire(body) {
     body.querySelectorAll(".run-trigger").forEach((button) => button.addEventListener("click", () => {
       router.go("#/label");
       analysis.run();
     }));
     this.wireDeathControl(body);
+    this.wireNormalizeControl(body);
     RecordingSlider.wire(body, this.results.times, null, (index) => resultsView.showRecording(index));
   }
 
@@ -215,6 +217,50 @@ class ResultsPage {
         if (ctx.results === results && /^#\/(live\/)?(results|zone|mite)/.test(location.hash)) resultsView.draw();
       } catch (error) {
         status.className = "hint error death-status";
+        status.textContent = error.message;
+      }
+    }));
+  }
+
+  // --- scores on one scale per mite
+
+  // In the analysis of a folder, the scores can be put on one scale for every
+  // mite (classes/score_normalizer.py): saved with the recordings, and the server
+  // sends the results again, every number following, with no need to run the
+  // analysis again. A live run has none: both need the whole run.
+  normalizeControl() {
+    const chosen = this.results.normalization;
+    if (ctx.mode !== "analysis" || !chosen) return "";
+    const box = (name, text, title) => `<label class="control-check" title="${title}">
+      <input type="checkbox" data-normalize="${name}"${chosen[name] ? " checked" : ""}> ${text}</label>`;
+    return `<span class="normalize-label">Normalise the scores:</span>
+      ${box("floor", "per-mite floor", "Each mite's own floor, the median of its scores over the run, is moved to the median floor of all mites, so one threshold fits every mite. A mite moving in more than half of the recordings gets too high a floor.")}
+      ${box("brightness", "brightness", "Each score is scaled to the run's typical brightness: camera noise, and with it the score of a still mite, grows with the light on its patch.")}
+      <span class="hint normalize-status"></span>`;
+  }
+
+  // "· scores normalised by …" for a page's heading; "" when they are as scored.
+  normalizedNote() {
+    const chosen = this.results.normalization || {};
+    const by = [chosen.brightness ? "brightness" : "", chosen.floor ? "per-mite floor" : ""].filter(Boolean);
+    return by.length ? ` · scores normalised by ${by.join(" and ")}` : "";
+  }
+
+  wireNormalizeControl(body) {
+    body.querySelectorAll("[data-normalize]").forEach((input) => input.addEventListener("change", async () => {
+      const workspace = ctx;
+      const { sessionId } = workspace;
+      const status = input.closest(".fig-controls").querySelector(".normalize-status");
+      status.className = "hint normalize-status";
+      status.innerHTML = `<span class="spinner"></span>`;
+      try {
+        const answer = await post(`/api/session/${sessionId}/normalize`, { [input.dataset.normalize]: input.checked });
+        if (workspace.sessionId !== sessionId) return;  // another folder by now
+        workspace.results = answer.results;
+        if (ctx === workspace && /^#\/(results|zone|mite)/.test(location.hash)) resultsView.draw();
+      } catch (error) {
+        input.checked = !input.checked;
+        status.className = "hint error normalize-status";
         status.textContent = error.message;
       }
     }));

@@ -13,6 +13,7 @@ can never reach into the analysis internals.
     save_label_reading(...)    whether the label page reads them: its box, saved in config.yaml
     run_analysis(...)          the full pipeline, writing Excel and figures to out_dir
     correct_call(...)          change one mite's call in one recording by hand, or mark it gone; the results follow
+    normalize_scores(...)      put the last run's scores on one scale per mite, or back; the results follow
     analysis_clip(...)         frames of one recording, of one zone or the whole plate
     describe_movement(...)     each mite's, zone's and group's movement numbers, for the pages
     describe_survival(...)     the mites alive over time and the log-rank tests against the
@@ -105,6 +106,7 @@ from classes.motion_analysis import MotionAnalysis, detect_mites
 from classes.movement_stats import MovementReport
 from classes.pooling import check_pool_size, describe_pool_size, pools
 from classes.recording_info import RecordingInfo
+from classes.score_normalizer import ScoreNormalizer
 from classes.survival import SurvivalAnalysis, SurvivalReport
 from classes.truth_draft import TruthDraft
 from classes.upload_plan import UploadPlan
@@ -521,26 +523,67 @@ def run_analysis(data_dir, out_dir, labels=None, coords_file=None, library_dir=C
     """
     run = _detect_and_score(data_dir, coords_file, labels, library_dir=library_dir, pool_size=pool_size)
     corrections = CallCorrections(data_dir, pool_size)
+    normalizer = ScoreNormalizer(**score_normalization(data_dir))
     with _runs_lock:
-        _runs[_draft_key(out_dir)] = (run, labels, corrections)
-    return _results(run, out_dir, labels, corrections=corrections)
+        _runs[_draft_key(out_dir)] = (run, labels, corrections, normalizer)
+    return _results(run, out_dir, labels, corrections=corrections, normalizer=normalizer)
 
 
 # The last run of each results folder, so a call corrected by hand on its result
-# pages gives new results without decoding the recordings again.
+# pages, or another normalisation of its scores, gives new results without
+# decoding the recordings again.
 _runs = {}
 _runs_lock = threading.Lock()
 
+# In a folder's .settings.txt: which normalisations of classes/score_normalizer.py
+# its analysis uses, 1 or 0 each.
+NORMALIZATION_SETTINGS = {"floor": "normalize_floor", "brightness": "normalize_brightness"}
 
-def _change_call(zone_manager, corrections, mite_id, recording, state):
+
+def score_normalization(data_dir):
+    """Which normalisations the analysis of the recordings in `data_dir` puts
+    its scores through (classes/score_normalizer.py): {"floor", "brightness"},
+    from their .settings.txt; none without it."""
+    path = Path(data_dir) / SETTINGS_FILENAME
+    try:
+        saved = DataLoader._parse_settings_file(path) if path.is_file() else {}
+    except OSError:
+        saved = {}
+    return {name: saved.get(key) == 1 for name, key in NORMALIZATION_SETTINGS.items()}
+
+
+def normalize_scores(data_dir, out_dir, floor=None, brightness=None):
+    """Switch the normalisations of the scores on or off for the recordings in
+    `data_dir` (the ones left None stay as they are): saved in their
+    .settings.txt, so later runs keep them. Returns the results of the last run
+    written to `out_dir` as run_analysis() does, with the scores, the calls and
+    every number following, and writes the workbook and the figures again."""
+    chosen = score_normalization(data_dir)
+    chosen.update({name: bool(value) for name, value in (("floor", floor), ("brightness", brightness)) if value is not None})
+    with _runs_lock:
+        kept = _runs.get(_draft_key(out_dir))
+        if kept is None:
+            raise ValueError("Run the analysis again to normalise its scores.")
+        for name, key in NORMALIZATION_SETTINGS.items():
+            DataLoader.save_setting(Path(data_dir) / SETTINGS_FILENAME, key, int(chosen[name]))
+        run, labels, corrections, _normalizer = kept
+        normalizer = ScoreNormalizer(**chosen)
+        _runs[_draft_key(out_dir)] = (run, labels, corrections, normalizer)
+        return _results(run, out_dir, labels, corrections=corrections, normalizer=normalizer)
+
+
+def _change_call(zone_manager, corrections, mite_id, recording, state, detected=None):
     """Make the mite `mite_id` `state` in `recording`, or step it to its next
-    state without one (CallCorrections.change())."""
+    state without one (CallCorrections.change()). `detected` maps mite id to
+    the detector's call per recording, where normalised scores make them other
+    than the mite's own."""
     mite = next((m for zone in zone_manager.zones for m in zone.mites if m.text == str(mite_id)), None)
     if mite is None:
         raise ValueError(f"No mite {mite_id} in these results.")
-    if not 0 <= recording < len(mite.moving):
+    calls = mite.moving if detected is None else detected[mite.text]
+    if not 0 <= recording < len(calls):
         raise ValueError(f"No recording {recording} in these results.")
-    corrections.change((mite.x1 + mite.x2) / 2, (mite.y1 + mite.y2) / 2, recording, bool(mite.moving[recording]), state)
+    corrections.change((mite.x1 + mite.x2) / 2, (mite.y1 + mite.y2) / 2, recording, bool(calls[recording]), state)
 
 
 def correct_call(out_dir, mite_id, recording, state=None):
@@ -556,9 +599,10 @@ def correct_call(out_dir, mite_id, recording, state=None):
         kept = _runs.get(_draft_key(out_dir))
         if kept is None:
             raise ValueError("Run the analysis again to correct its calls.")
-        run, labels, corrections = kept
-        _change_call(run.zone_manager, corrections, mite_id, int(recording), state)
-        return _results(run, out_dir, labels, corrections=corrections)
+        run, labels, corrections, normalizer = kept
+        _change_call(run.zone_manager, corrections, mite_id, int(recording), state,
+                     _detected_calls(run, corrections, normalizer))
+        return _results(run, out_dir, labels, corrections=corrections, normalizer=normalizer)
 
 
 def death_minutes(data_dir):
@@ -595,19 +639,43 @@ def save_death_minutes(data_dir, minutes):
     return value
 
 
-def _results(run, out_dir, labels, write_files=True, corrections=None):
+def _mite_table(run, corrections=None, normalizer=None):
+    """The mite score table of a run, with the calls corrected by hand in place
+    of the detector's and, with a `normalizer` (a ScoreNormalizer), its scores
+    normalised and the detector's calls following them; and what the
+    corrections changed (CallCorrections.apply())."""
+    mite_data = run.zone_manager.get_mite_scores(run.burst_minutes)
+    changes = {}
+    if corrections is not None:
+        mite_data, changes = corrections.apply(mite_data)
+    if normalizer is not None:
+        mite_data = normalizer.apply(mite_data, run.analyzer.config.mite.motion_threshold)
+    return mite_data, changes
+
+
+def _detected_calls(run, corrections, normalizer):
+    """Mite id to the detector's call per recording on the normalised scores;
+    None when they are not normalised, so the calls are the mites' own."""
+    if normalizer is None or not normalizer.active:
+        return None
+    mite_data, _changes = _mite_table(run, corrections, normalizer)
+    mite_data = mite_data.assign(detected=normalizer.calls(mite_data, run.analyzer.config.mite.motion_threshold))
+    return {str(mite_id): list(rows.sort_values("time")["detected"]) for mite_id, rows in mite_data.groupby("mite_ID")}
+
+
+def _results(run, out_dir, labels, write_files=True, corrections=None, normalizer=None):
     """The results of a run as the UI browses them. With `write_files`, the
     workbook, the figures, the annotated first frame and the preview are written
     to `out_dir` too. A live run describes its results this same way after every
     pool, so its pages are drawn from exactly what a folder run returns. The calls
     corrected by hand (`corrections`, a CallCorrections) replace the detector's,
     and the mites marked gone are censored; with any, the results say which
-    ("corrections", "censored", "gone_from", see CallCorrections.apply())."""
+    ("corrections", "censored", "gone_from", see CallCorrections.apply()). With
+    a `normalizer` (a ScoreNormalizer) the results say which normalisations the
+    scores went through ("normalization"): those of the folder's settings, none
+    for a live run."""
     burst_minutes = run.burst_minutes
-    mite_data = run.zone_manager.get_mite_scores(burst_minutes)
-    changes = {}
-    if corrections is not None:
-        mite_data, changes = corrections.apply(mite_data)
+    mite_data, changes = _mite_table(run, corrections, normalizer)
 
     if write_files:
         _write_preview(run.first_frame, out_dir)
@@ -629,6 +697,8 @@ def _results(run, out_dir, labels, write_files=True, corrections=None):
         }
     )
     results.update(changes)
+    if normalizer is not None:
+        results["normalization"] = normalizer.describe()
     return results
 
 
@@ -1870,8 +1940,9 @@ def _publish_live(run, write_files):
     if going:  # even if no results can be described, these recordings are analysed
         run.movement = (len(recordings), run.movement[1])
     _arrange(run.analysis, run.run_dir, labels, True, run.library_dir)
+    # The scores are normalised over a whole run, so not while it goes on.
     results = _results(_run_view(run.analysis), run.out_dir, labels, write_files,
-                       corrections=CallCorrections(run.run_dir, run.pool_size))
+                       corrections=CallCorrections(run.run_dir, run.pool_size), normalizer=ScoreNormalizer())
     if going:
         run.movement = (len(recordings), _last_movement(results, recordings))
         _write_run_info(run)

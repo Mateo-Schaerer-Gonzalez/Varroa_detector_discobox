@@ -44,6 +44,9 @@ class Mite(TextZone):
         self.metric = self.mite_cfg.metric
         self.metric_params = self.mite_cfg.params_for(self.metric)
         self.motion_scores = []
+        # Per recording: the mean pixel value of the patch that was scored, for
+        # classes/score_normalizer.py; None where it was not measured.
+        self.brightness = []
         self._show_moving(False)
 
     def _show_moving(self, moving):
@@ -51,10 +54,12 @@ class Mite(TextZone):
         self.color = self.mite_cfg.moving_color if moving else self.mite_cfg.still_color
         self.text_color = self.color
 
-    def record_motion(self, score):
-        """Append a per-recording motion score. The drawing color follows the
-        latest recording: moving or still."""
+    def record_motion(self, score, brightness=None):
+        """Append a per-recording motion score, with the `brightness` of the patch
+        it was scored on. The drawing color follows the latest recording: moving
+        or still."""
         self.motion_scores.append(score)
+        self.brightness.append(brightness)
         self._show_moving(score >= self.motion_threshold)
 
     @property

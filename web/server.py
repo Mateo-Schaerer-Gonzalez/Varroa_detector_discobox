@@ -129,6 +129,12 @@ class CorrectRequest(BaseModel):
     state: Optional[str] = None
 
 
+class NormalizeRequest(BaseModel):
+    # the normalisations of the scores to switch on or off; one left out stays as it is
+    floor: Optional[bool] = None
+    brightness: Optional[bool] = None
+
+
 class RejectRequest(BaseModel):
     mite: str       # the detection's id, as the label page lists it
     rejected: bool
@@ -378,6 +384,22 @@ def correct_call(session_id: str, request: CorrectRequest):
         return {**answer, "results": for_pages(session_id, answer["results"])}
     try:
         results = pipeline.correct_call(session["out_dir"], request.mite, request.recording, request.state)
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error))
+    session["results"] = results
+    return {"results": for_pages(session_id, results)}
+
+
+@app.post("/api/session/{session_id}/normalize")
+def normalize_scores(session_id: str, request: NormalizeRequest):
+    """Put the scores of a folder's last run on one scale per mite, or back
+    (pipeline.normalize_scores), saved with the recordings: the results come
+    back, every number following, with no need to run the analysis again."""
+    session = get_session(session_id)
+    if session.get("live"):
+        raise HTTPException(status_code=400, detail="The scores of a test run are normalised in the Analysis window, once it is over.")
+    try:
+        results = pipeline.normalize_scores(session["data_dir"], session["out_dir"], request.floor, request.brightness)
     except ValueError as error:
         raise HTTPException(status_code=400, detail=str(error))
     session["results"] = results

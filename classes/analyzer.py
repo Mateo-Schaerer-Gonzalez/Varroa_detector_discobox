@@ -74,7 +74,8 @@ class Analyzer:
                 mite_roi = np.stack([mite.get_ROI(frame, pad) for frame in frames])
             else:
                 mite_roi = PlateStabilizer.cut(frames, tuple(mite), pad, shifts)
-            mite.record_motion(self._motion_score(mite_roi, mite.metric, mite.metric_params))
+            mite.record_motion(self._motion_score(mite_roi, mite.metric, mite.metric_params),
+                               brightness=float(mite_roi.mean()))
 
     @staticmethod
     def _metrics():

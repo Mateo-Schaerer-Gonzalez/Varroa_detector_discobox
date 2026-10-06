@@ -37,7 +37,7 @@ class MitePage extends ResultsPage {
       ${stat("Moving in", `${mite.n_moving}/${times.length - nGone}`, movingNote ? `recordings; ${movingNote}` : "recordings above the threshold")}
       ${stat("Last movement", this.lastMovementText(mite), mite.n_moving ? "last recording with movement" : "no movement in any recording")}
       ${stat("Survival", this.survivalText(mite), this.inStudy(mite) ? (this.lifeline(mite).dead ? "time of death" : this.lifeline(mite).lost ? "right-censored where it was last there" : "right-censored") : "")}
-      ${stat("Max motion score", score(mite.max_score), `mean ${score(mite.mean_score)} · threshold ${score(results.threshold)}`)}
+      ${stat("Max motion score", score(mite.max_score), `mean ${score(mite.mean_score)} · threshold ${score(results.threshold)}${this.normalizedNote()}`)}
     </div>
 
     <div class="grid-mite">
@@ -46,7 +46,8 @@ class MitePage extends ResultsPage {
         Where that is wrong, click the mite to step through moving, still, gone in this recording (e.g. fallen off) and gone from this recording on,
         or choose one in the table below.`, "crop-wrap square")}
       ${figure("chart-mite", 2, "Motion score over time",
-        `${movingBadge(true)} at or above the threshold, ${movingBadge(false)} below it. ${ResultsPage.MOVING_NOTE} Click a time to show that recording.${this.stillToCome()}`)}
+        `${movingBadge(true)} at or above the threshold, ${movingBadge(false)} below it. ${ResultsPage.MOVING_NOTE} Click a time to show that recording.${this.stillToCome()}`,
+        "", this.normalizeControl())}
     </div>
 
     ${section("Recordings", `<div class="table-wrap"><table class="clickable" id="recording-table">

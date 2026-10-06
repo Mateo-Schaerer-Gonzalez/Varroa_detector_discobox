@@ -31,3 +31,16 @@ class TestDefaultConfig:
         fresh = AppConfig()
         assert default.mite == fresh.mite
         assert default.text_zone_style == fresh.text_zone_style
+
+
+class TestUnknownKeys:
+    def test_key_saved_by_another_version_is_left_out(self, tmp_path):
+        text = app_config_module.TEMPLATE_CONFIG_PATH.read_text(encoding="utf-8")
+        text = text.replace("  stabilize_plate:", "  metric_windows: {topN_variability: {window: 5}}\n  stabilize_plate:", 1)
+        path = tmp_path / "config.yaml"
+        path.write_text(text, encoding="utf-8")
+
+        config = AppConfig(path)
+
+        assert config.mite == AppConfig(app_config_module.TEMPLATE_CONFIG_PATH).mite
+        assert not hasattr(config.mite, "metric_windows")
