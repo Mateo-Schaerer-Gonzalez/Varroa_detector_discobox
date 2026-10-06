@@ -157,6 +157,30 @@ that with the detector:
    Under *Movement score*, choose a metric and its parameters (e.g. `n` for
    `topN_variability`) and *Score again*: nothing in `config.yaml` changes
    until you save a threshold, which saves the metric and parameters with it.
+   Under *Search the hyperparameters*, tick which of them to search: the
+   metric's parameters, the plate stabilization, and the threshold's window,
+   alignment and MADs. An Optuna search (TPE, `classes/hyper_search.py`) then
+   tries as many sets of values as you ask for, starting from those in use.
+   Each trial fits the threshold's offset on four fifths of the mites and is
+   judged by the death-time error on the fifth left out, in turn for every
+   fifth, so a set of values cannot win by fitting these mites' noise. The
+   panel follows the search and shows the best trial against the values in
+   use, each with a 95% interval from drawing the mites again; the interval of
+   their difference, which says whether the gain is more than the luck of
+   which mites were labelled; per hyperparameter the range of values that do
+   about as well and how much it matters; the search trial by trial; and the
+   error against each hyperparameter. With *then shake the plate* ticked, the
+   plate is afterwards shaken in the recordings themselves (every frame moved
+   by a random offset of 0.25, 0.5 and 1 px, `classes/plate_shake.py`) and the
+   mites are scored again at the threshold fitted on the steady plate: a table
+   and a figure give the death-time error of the best values and of those in
+   use at each shake, with the plate stabilized and without, so you see how
+   much a shaking plate costs and whether stabilization is needed. This reads
+   every recording four more times. *Score the report with the best* shows
+   the usual report for it, *Save the best to config.yaml* saves it. Searching
+   the stabilization reads every recording twice, and the mites' frames are
+   held in memory while the search runs (at most 3 GB: tick fewer datasets if
+   it says so).
 
 Test a threshold on a different recording from the one it was calibrated on.
 `python scripts/tune_mite_threshold.py` runs the same search from the command

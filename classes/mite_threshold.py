@@ -171,12 +171,17 @@ class ThresholdSearch:
             return np.ones(len(self.by_mite), dtype=bool)
         return np.array([bool(subset[indices[0]]) for indices in self.by_mite.values()])
 
+    def death_errors(self, calls):
+        """Per labelled mite, in the order of by_mite: its death time by `calls`
+        minus the one by the labels, in minutes."""
+        return self.death_times(calls) - self.truth_death
+
     def death_error(self, calls, subset=None):
         """How far the death times by `calls` are from those by the labels, over
         the mites of `subset`: the mean distance ("mae") and the mean difference
         ("bias", positive when the calls have the mites die later), in minutes,
         and how many of the "n_mites" get exactly the labels' time ("n_exact")."""
-        errors = (self.death_times(calls) - self.truth_death)[self._mites_in(subset)]
+        errors = self.death_errors(calls)[self._mites_in(subset)]
         return {"mae": float(np.abs(errors).mean()), "bias": float(errors.mean()),
                 "n_mites": int(errors.size), "n_exact": int((errors == 0).sum())}
 

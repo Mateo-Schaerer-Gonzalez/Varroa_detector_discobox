@@ -73,6 +73,7 @@ import shutil
 import stat
 import threading
 import time
+from concurrent.futures import ThreadPoolExecutor
 from datetime import date, datetime, timedelta
 from pathlib import Path
 from types import SimpleNamespace
@@ -89,9 +90,12 @@ from classes.call_corrections import CallCorrections
 from classes import app_config
 from classes.app_config import get_default_config, save_motion_threshold
 from classes import plate_stabilizer
+from classes.plate_shake import PlateShake
 from classes.plate_stabilizer import PlateStabilizer
 from classes.data_loader import DataLoader
 from classes.error_map import ErrorMap
+from classes import hyper_search
+from classes.hyper_search import HyperSearch, SearchSpace
 from classes.mite_threshold import MiteThreshold, ThresholdSearch
 from classes.frame_source import FolderSource, as_analysis_image
 from classes.label_reader import LabelReader, LabelReadError
@@ -1259,29 +1263,56 @@ def _score_mites(dataset, metric, recordings_dir, params=None, stabilize=False):
             f"library has no copy, so its mites cannot be scored with {metric}. "
             "Move them back and save its ground truth again, or leave this dataset out."
         )
-    loader = DataLoader(recordings_dir, grayscale=False)
     pad = Analyzer.roi_padding(metric, params)
-    boxes = mite_boxes(dataset["mites"], pad)
-    # Stabilizing reads a little around each cut; keep real pixels there.
-    margin = STABILIZE_MARGIN if stabilize else 0
-    x0 = max(0, min(box[0] for box in boxes.values()) - margin)
-    y0 = max(0, min(box[1] for box in boxes.values()) - margin)
-    x_end = max(box[2] for box in boxes.values()) + margin
-    y_end = max(box[3] for box in boxes.values()) + margin
-    local = {mite_id: (x1 - x0, y1 - y0, x2 - x0, y2 - y0)
-             for mite_id, (x1, y1, x2, y2) in mite_boxes(dataset["mites"]).items()}
-
-    scores = {mite_id: [] for mite_id in boxes}
-    for recording in dataset["recordings"]:
-        frames = loader.load_recording_region(recording["name"], x0, y0, x_end, y_end)
-        shifts = PlateStabilizer().shifts(frames, list(local.values())) if stabilize else None
-        for mite_id, (x1, y1, x2, y2) in boxes.items():
-            if shifts is None:
-                roi = frames[:, max(0, y1) - y0:y2 - y0, max(0, x1) - x0:x2 - x0]
-            else:
-                roi = PlateStabilizer.cut(frames, local[mite_id], pad, shifts)
+    scores = {mite["id"]: [] for mite in dataset["mites"]}
+    for rois in _recording_rois(dataset, recordings_dir, [pad], stabilize):
+        for mite_id, roi in rois[pad].items():
             scores[mite_id].append(round(float(Analyzer._motion_score(roi, metric, params)), 3))
     return scores
+
+
+def _recording_rois(dataset, recordings_dir, pads, stabilize=False, mite_ids=None):
+    """For each recording of a dataset, in order: {pad: {mite id: the mite's
+    frames}}, the mite's box grown by each of `pads` pixels, cut as an analysis
+    run cuts it (following a shaking plate with `stabilize`). Only the mites in
+    `mite_ids` when given; the plate's shift is still measured on all of them."""
+    for cuts in _recording_cuts(dataset, recordings_dir, pads, [bool(stabilize)], mite_ids):
+        yield cuts[bool(stabilize)]
+
+
+def _recording_cuts(dataset, recordings_dir, pads, stabilized, mite_ids=None, shake=0.0, seed=0):
+    """_recording_rois() for each way of cutting in `stabilized` (True: following
+    the plate, False: not), reading every recording only once: {stabilize: {pad:
+    {mite id: frames}}}. With `shake`, the plate is shaken by that many pixels
+    first (classes/plate_shake.py)."""
+    loader = DataLoader(recordings_dir, grayscale=False)
+    shaker = PlateShake(shake, seed)
+    boxes = {pad: mite_boxes(dataset["mites"], pad) for pad in pads}
+    widest = boxes[max(pads)]
+    # Stabilizing and shaking read a little around each cut; keep real pixels there.
+    margin = STABILIZE_MARGIN if (any(stabilized) or shake) else 0
+    x0 = max(0, min(box[0] for box in widest.values()) - margin)
+    y0 = max(0, min(box[1] for box in widest.values()) - margin)
+    x_end = max(box[2] for box in widest.values()) + margin
+    y_end = max(box[3] for box in widest.values()) + margin
+    local = {mite_id: (x1 - x0, y1 - y0, x2 - x0, y2 - y0)
+             for mite_id, (x1, y1, x2, y2) in mite_boxes(dataset["mites"]).items()}
+    wanted = [mite_id for mite_id in local if mite_ids is None or mite_id in mite_ids]
+
+    for recording in dataset["recordings"]:
+        frames = shaker.apply(loader.load_recording_region(recording["name"], x0, y0, x_end, y_end))
+        cuts = {}
+        for stabilize in stabilized:
+            shifts = PlateStabilizer().shifts(frames, list(local.values())) if stabilize else None
+            cuts[stabilize] = {pad: {} for pad in pads}
+            for pad in pads:
+                for mite_id in wanted:
+                    if shifts is None:
+                        x1, y1, x2, y2 = boxes[pad][mite_id]
+                        cuts[stabilize][pad][mite_id] = frames[:, max(0, y1) - y0:y2 - y0, max(0, x1) - x0:x2 - x0]
+                    else:
+                        cuts[stabilize][pad][mite_id] = PlateStabilizer.cut(frames, local[mite_id], pad, shifts)
+        yield cuts
 
 
 def _dataset_scores(key, dataset, metric, params, library_dir, stabilize=False):
@@ -1743,6 +1774,225 @@ def threshold_search(datasets=None, metric=None, params=None, stabilize=None, li
     if not observations:
         raise ValueError("Mark at least one mite moving or still first.")
     return ThresholdSearch(series, observations, _pooled_times(loaded))
+
+
+# --- searching the hyperparameters --------------------------------------------------
+#
+# A search (classes/hyper_search.py) scores the labelled mites again in every
+# trial, so their frames are cut once and kept in memory while it runs, on a
+# thread of its own: the page asks how far it is.
+
+# The most memory the mites' frames of a search may take. Stabilized frames and
+# the paddings of optical_flow take several times the plain ones.
+SEARCH_MEMORY_LIMIT = 3 * 1024 ** 3
+DEFAULT_SEARCH_TRIALS = 60
+MAX_SEARCH_TRIALS = 2000
+# How far the plate is shaken after a search, in pixels (the standard deviation
+# of each frame's offset, see classes/plate_shake.py); 0 is the plate as recorded.
+SEARCH_SHAKES = [0.0, 0.25, 0.5, 1.0]
+
+_searches = {}            # by the id the page gave the search: see _new_search()
+_searches_lock = threading.Lock()
+
+
+def search_space(metric=None):
+    """The hyperparameters a search can be asked to search for a metric
+    (config.yaml's unless given), see SearchSpace.specs()."""
+    metric, _params = _resolve_metric(metric, None)
+    return {"metric": metric, "hyperparameters": SearchSpace(metric).specs(),
+            "default_trials": DEFAULT_SEARCH_TRIALS, "max_trials": MAX_SEARCH_TRIALS}
+
+
+def start_search(search_id, datasets, searched, metric=None, params=None, stabilize=None,
+                 n_trials=DEFAULT_SEARCH_TRIALS, shake_test=False, library_dir=CALIBRATION_LIBRARY):
+    """Start searching the hyperparameters named in `searched` for the lowest
+    death-time error on the saved datasets whose ids are in `datasets`. The
+    others keep their values: the metric and its parameters as
+    evaluate_calibration() takes them, the threshold's window, alignment and
+    MADs as config.yaml has them for that metric. With `shake_test`, what the
+    search found is then tried on a shaking plate (see _shake_test()). Returns
+    search_status()."""
+    try:
+        import optuna  # noqa: F401
+    except ImportError:
+        raise ValueError("The search needs Optuna, which is not installed: run `pip install optuna` in the app's environment.")
+    ids = list(dict.fromkeys(datasets))
+    if not ids:
+        raise ValueError("Choose at least one dataset.")
+    loaded = [_read_dataset(key, library_dir) for key in ids]
+    metric, params = _resolve_metric(metric, params)
+    mite = get_default_config().mite
+    stabilize = mite.stabilize_plate if stabilize is None else bool(stabilize)
+    space = SearchSpace(metric)
+    searched = [space.spec(name)["name"] for name in dict.fromkeys(searched)]
+    if not searched:
+        raise ValueError("Choose at least one hyperparameter to search.")
+    n_trials = int(n_trials)
+    if not 1 <= n_trials <= MAX_SEARCH_TRIALS:
+        raise ValueError(f"The number of trials must be between 1 and {MAX_SEARCH_TRIALS}.")
+    window, centred = mite.window_for(metric)
+    values = {**params, hyper_search.STABILIZE: stabilize, hyper_search.WINDOW: window,
+              hyper_search.CENTRED: centred, hyper_search.SCALE: mite.scale_for(metric)}
+
+    with _searches_lock:
+        running = _searches.get(search_id)
+        if running and running["state"] in SEARCH_RUNNING:
+            raise ValueError("A search is already running; stop it first.")
+        job = {"state": "loading", "error": None, "loaded": 0, "to_load": 0, "search": None, "stop": False,
+               "metric": metric, "datasets": ids, "shake_test": None, "shaken": 0, "to_shake": 0}
+        _searches[search_id] = job
+    threading.Thread(target=_run_search, daemon=True,
+                     args=(job, ids, loaded, metric, values, searched, n_trials, bool(shake_test), library_dir)).start()
+    return search_status(search_id)
+
+
+SEARCH_RUNNING = ("loading", "searching", "shaking")
+
+
+def _run_search(job, ids, loaded, metric, values, searched, n_trials, shake_test, library_dir):
+    try:
+        # Both ways of cutting when stabilization is searched, every padding when optical_flow's is.
+        stabilized = [True, False] if hyper_search.STABILIZE in searched else [values[hyper_search.STABILIZE]]
+        metric_params = {name: value for name, value in values.items() if name not in SearchSpace.LABELS}
+        pads = SearchSpace.PADS if "pad" in searched else [Analyzer.roi_padding(metric, metric_params)]
+        rois, observations = _search_rois(job, ids, loaded, stabilized, pads, library_dir)
+        if job["stop"]:
+            job["state"] = "stopped"
+            return
+        n_frames = min(len(roi) for by_pad in rois.values() for by_mite in by_pad.values()
+                       for series in by_mite.values() for roi in series)
+        n_recordings = max(len(dataset["times"]) for dataset in loaded)
+
+        def score(metric_params, stabilize):
+            by_mite = rois[stabilize][Analyzer.roi_padding(metric, metric_params)]
+
+            def score_mite(series):
+                return [round(float(Analyzer._motion_score(roi, metric, metric_params)), 3) for roi in series]
+
+            with ThreadPoolExecutor() as executor:
+                return dict(zip(by_mite, executor.map(score_mite, by_mite.values())))
+
+        search = HyperSearch(SearchSpace(metric, n_recordings, n_frames), values, searched, score,
+                             observations, _pooled_times(loaded), n_trials)
+        job["search"] = search
+        if job["stop"]:
+            search.stop()
+        job["state"] = "searching"
+        search.run()
+        rois.clear()  # the shake test reads the recordings again
+        finished = len(search.trials) == n_trials
+        if shake_test and finished and not job["stop"]:
+            job["state"] = "shaking"
+            job["shake_test"] = _shake_test(job, search, ids, loaded, metric, library_dir)
+        job["state"] = "done" if finished and not job["stop"] else "stopped"
+    except Exception as error:  # shown on the page: the thread has nobody else to tell
+        _logger.exception("The hyperparameter search failed")
+        job["error"] = str(error)
+        job["state"] = "error"
+
+
+def _shake_test(job, search, ids, loaded, metric, library_dir):
+    """What a shaking plate does to what a search found: the death-time error,
+    over all the mites, of the best trial and of the values in use, each with
+    its threshold as fitted on the plate as recorded, when the plate is shaken
+    by each of SEARCH_SHAKES pixels, cut following the plate and not.
+
+    Returns {shakes, rows: [{config ("best" or "baseline"), stabilize, chosen
+    (whether that is the stabilization the config has), mae: [per shake]}]};
+    without "baseline" rows when the best trial is the values in use. None when
+    stopped. Every recording is read once per shake."""
+    best = search.best()
+    configs = {"best": best}
+    if best["values"] != search.baseline["values"]:
+        configs["baseline"] = search.baseline
+    pads = sorted({Analyzer.roi_padding(metric, judged["metric_params"]) for judged in configs.values()})
+    job["to_shake"] = sum(len(dataset["recordings"]) for dataset in loaded) * len(SEARCH_SHAKES)
+    errors = {(name, stabilize): [] for name in configs for stabilize in (True, False)}
+    for shake in SEARCH_SHAKES:
+        series = {condition: {} for condition in errors}
+        for key, dataset in zip(ids, loaded):
+            labelled = {mite_id for (dataset_key, mite_id), _recording, _moving in search.observations if dataset_key == key}
+            recordings_dir = _recordings_dir(dataset["data_dir"], library_dir)
+            for cuts in _recording_cuts(dataset, recordings_dir, pads, [True, False], labelled, shake):
+                if job["stop"]:
+                    return None
+                for (name, stabilize), scores in series.items():
+                    metric_params = configs[name]["metric_params"]
+                    for mite_id, roi in cuts[stabilize][Analyzer.roi_padding(metric, metric_params)].items():
+                        scores.setdefault((key, mite_id), []).append(
+                            round(float(Analyzer._motion_score(roi, metric, metric_params)), 3))
+                job["shaken"] += 1
+        for condition, scores in series.items():
+            errors[condition].append(round(search.shaken_error(configs[condition[0]], scores), 3))
+    return {
+        "shakes": SEARCH_SHAKES,
+        "rows": [{"config": name, "stabilize": stabilize,
+                  "chosen": stabilize == bool(configs[name]["values"][hyper_search.STABILIZE]), "mae": maes}
+                 for (name, stabilize), maes in errors.items()],
+    }
+
+
+def _search_rois(job, ids, loaded, stabilized, pads, library_dir):
+    """The frames of every labelled mite of the datasets, in every recording:
+    {stabilized: {pad: {(dataset, mite id): [frames per recording]}}}, and the
+    observations as ThresholdSearch takes them."""
+    rois = {stabilize: {pad: {} for pad in pads} for stabilize in stabilized}
+    observations, held = [], 0
+    job["to_load"] = sum(len(dataset["recordings"]) for dataset in loaded)
+    for key, dataset in zip(ids, loaded):
+        recordings_dir = _recordings_dir(dataset["data_dir"], library_dir)
+        if not recordings_dir.is_dir():
+            raise FileNotFoundError(
+                f"The recordings of {dataset['name']} are no longer at {dataset['data_dir']} and the "
+                "library has no copy, so its mites cannot be scored. Leave this dataset out.")
+        # the scores are only read at the labelled mites' places
+        rows, _rejected, _unlabelled = _observations(dataset, key, {mite["id"]: [0] * len(dataset["times"]) for mite in dataset["mites"]})
+        observations += [((key, row["mite_id"]), row["recording"], row["movement"] == calibration.MOVING) for row in rows]
+        labelled = {row["mite_id"] for row in rows}
+        for cuts in _recording_cuts(dataset, recordings_dir, pads, stabilized, labelled):
+            if job["stop"]:
+                return rois, observations
+            for stabilize, by_pad in cuts.items():
+                for pad, by_mite in by_pad.items():
+                    for mite_id, roi in by_mite.items():
+                        roi = np.ascontiguousarray(roi)
+                        held += roi.nbytes
+                        rois[stabilize][pad].setdefault((key, mite_id), []).append(roi)
+            if held > SEARCH_MEMORY_LIMIT:
+                raise ValueError(
+                    f"The mites' frames take more than {SEARCH_MEMORY_LIMIT / 1024 ** 3:.0f} GB of memory. Tick fewer datasets"
+                    + (", or do not search the plate stabilization" if len(stabilized) > 1 else "")
+                    + (", or do not search optical_flow's pad" if len(pads) > 1 else "") + ".")
+            job["loaded"] += 1
+    if not observations:
+        raise ValueError("Mark at least one mite moving or still first.")
+    return rois, observations
+
+
+def search_status(search_id):
+    """How far a search is: {state ("none", "loading", "searching", "shaking",
+    "done", "stopped" or "error"), error, loaded and to_load (recordings read
+    into memory), shaken and to_shake (recordings shaken and scored), shake_test
+    (see _shake_test(), None until it is done), metric, datasets} and, once it
+    searches, what HyperSearch.describe() says of it."""
+    job = _searches.get(search_id)
+    if job is None:
+        return {"state": "none"}
+    status = {key: job[key] for key in ("state", "error", "loaded", "to_load", "shaken", "to_shake", "shake_test",
+                                        "metric", "datasets")}
+    if job["search"] is not None:
+        status.update(job["search"].describe())
+    return status
+
+
+def stop_search(search_id):
+    """End a search after the trial running now; its trials so far are kept."""
+    job = _searches.get(search_id)
+    if job is not None:
+        job["stop"] = True
+        if job["search"] is not None:
+            job["search"].stop()
+    return search_status(search_id)
 
 
 # --- live runs ----------------------------------------------------------------------

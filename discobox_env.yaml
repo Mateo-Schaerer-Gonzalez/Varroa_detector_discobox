@@ -18,4 +18,5 @@ dependencies:
   - pip
   - pip:
       - python-dotenv
+      - optuna>=4.0      # the hyperparameter search of the calibration report
 # vmbpy, for the camera, comes with the Vimba X SDK: bash install_linux.sh <VimbaX SDK path>

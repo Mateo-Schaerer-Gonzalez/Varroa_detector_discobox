@@ -165,6 +165,19 @@ class EvaluateRequest(BaseModel):
     benchmark: bool = False
 
 
+class SearchRequest(BaseModel):
+    # as EvaluateRequest: the datasets pooled and the movement score to start from
+    datasets: Optional[list[str]] = None
+    metric: Optional[str] = None
+    params: Optional[dict[str, float]] = None
+    stabilize: Optional[bool] = None
+    # names of the hyperparameters to search, see /api/calibration/search-space
+    searched: list[str]
+    trials: int = 60
+    # then try what was found on a shaking plate
+    shake_test: bool = False
+
+
 class ThresholdRequest(BaseModel):
     value: float
 
@@ -541,6 +554,40 @@ def evaluate_calibration(session_id: str, request: EvaluateRequest):
                                              stabilize=request.stabilize, benchmark=request.benchmark)
     except (FileNotFoundError, ValueError) as error:
         raise HTTPException(status_code=400, detail=str(error))
+
+
+@app.get("/api/calibration/search-space")
+def search_space(metric: Optional[str] = None):
+    """The hyperparameters a search can be asked to search for a metric."""
+    try:
+        return pipeline.search_space(metric)
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error))
+
+
+@app.post("/api/calibration/{session_id}/search")
+def start_search(session_id: str, request: SearchRequest):
+    """Start searching the chosen hyperparameters for the lowest death-time error."""
+    session = get_session(session_id)
+    datasets = request.datasets if request.datasets is not None else [session["dataset_id"]]
+    try:
+        return pipeline.start_search(session_id, datasets, request.searched, request.metric, request.params,
+                                     request.stabilize, request.trials, request.shake_test)
+    except (FileNotFoundError, ValueError) as error:
+        raise HTTPException(status_code=400, detail=str(error))
+
+
+@app.get("/api/calibration/{session_id}/search")
+def search_status(session_id: str):
+    """How far the session's search is, and what it found so far."""
+    get_session(session_id)
+    return pipeline.search_status(session_id)
+
+
+@app.post("/api/calibration/{session_id}/search/stop")
+def stop_search(session_id: str):
+    get_session(session_id)
+    return pipeline.stop_search(session_id)
 
 
 @app.post("/api/threshold")

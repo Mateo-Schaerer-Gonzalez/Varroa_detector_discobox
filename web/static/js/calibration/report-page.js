@@ -21,6 +21,7 @@ class ReportPage {
 
   constructor() {
     this.figures = new ReportFigures();
+    this.search = new SearchPanel();
   }
 
   static thr(value) {
@@ -166,6 +167,7 @@ class ReportPage {
     </header>
     ${section("Data used", this.datasetPicker(r))}
     ${section("Movement score", testing ? this.scoreTested(r) : this.scorePicker(r))}
+    ${testing ? "" : section("Search the hyperparameters", SearchPanel.html())}
     ${r.threshold_fits ? "" : `<div class="banner">The threshold in use, ${thresholdText(r.calls.current)}, was set for
       <code>${esc(scoreText(r.in_use.metric, r.in_use.params, r.in_use.stabilize_plate))}</code>. These scores are
       <code>${esc(scoreText(r.metric, r.metric_params, r.stabilize_plate))}</code>, on another scale, so figures "in use" say little:
@@ -189,6 +191,7 @@ class ReportPage {
     $("report-refresh")?.addEventListener("click", () => cal.evaluate());
     this.wireDatasetPicker();
     if (!testing) this.wireScorePicker(r);
+    if (!testing) this.search.mount(r);
 
     // Groups matter to a test of the threshold, not to finding one.
     if (testing) {

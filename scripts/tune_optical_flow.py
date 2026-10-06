@@ -43,6 +43,7 @@ from classes import calibration
 from classes.analyzer import Analyzer
 from classes.app_config import get_default_config
 from classes.data_loader import DataLoader
+from classes.plate_shake import PlateShake
 from classes.plate_stabilizer import PlateStabilizer
 
 METRIC = "optical_flow"
@@ -71,26 +72,12 @@ def combinations(samples, seed):
     return combos
 
 
-SENSOR_ZOOM = 4
-
-
 def shaken(frames, shake, rng):
     """The frames with the whole plate moved by a random offset in each: a
-    shaking plate. Edges are mirrored in, so no black border appears.
-
-    Each frame is moved as a camera would see it: enlarged SENSOR_ZOOM times,
-    moved by whole enlarged pixels, and each camera pixel then averaged over
-    its area. Moving the frame itself by a fraction of a pixel would instead
-    blur it by an amount that changes with every frame, a change no camera
-    makes."""
-    out = np.empty_like(frames)
-    for i, frame in enumerate(frames):
-        dx, dy = np.round(rng.normal(0, shake, 2) * SENSOR_ZOOM)
-        big = cv2.resize(frame, None, fx=SENSOR_ZOOM, fy=SENSOR_ZOOM, interpolation=cv2.INTER_CUBIC)
-        big = cv2.warpAffine(big, np.float32([[1, 0, dx], [0, 1, dy]]), big.shape[1::-1],
-                             flags=cv2.INTER_NEAREST, borderMode=cv2.BORDER_REFLECT101)
-        out[i] = cv2.resize(big, frame.shape[1::-1], interpolation=cv2.INTER_AREA)
-    return out
+    shaking plate (classes/plate_shake.py), drawing the offsets from `rng`."""
+    shaker = PlateShake(shake)
+    shaker.rng = rng
+    return shaker.apply(frames)
 
 
 def load_observations(pads, shake=0.0, seed=0, stabilize=None):
