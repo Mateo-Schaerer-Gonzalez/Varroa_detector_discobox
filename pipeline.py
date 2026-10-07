@@ -1650,7 +1650,42 @@ def _in_use(mite):
         "stabilize_plate": bool(mite.stabilize_plate),
         "normalize_brightness": bool(mite.normalize_brightness),
         "normalize_floor": bool(mite.normalize_floor),
+        # the band around the threshold whose calls are checked by eye: [low, high], or None
+        "review_band": list(mite.review_band_for(mite.metric) or []) or None,
     }
+
+
+# Checks by eye per mite the band suggested with a threshold may ask for, unless the report is asked for another number.
+REVIEW_CHECKS = 0.5
+# Edges tried on each side of the threshold for that band.
+REVIEW_BAND_STEPS = 24
+
+
+def _suggested_band(runs, threshold, checks_per_mite):
+    """The band to check by eye that goes with a suggested threshold, for a
+    calibration report: the one with the smallest death error among those asking
+    for at most `checks_per_mite` checks per mite, the labels standing in for
+    the eye (death_calibration.best_band()), with what it leaves:
+
+        {checks_allowed, low, high, mae, checks_per_mite, exact,
+         frontier: what the checks buy (death_calibration.checks_frontier()), up
+                   to four times the checks allowed}
+
+    low == high when no band does better than the threshold alone."""
+    threshold = round(threshold, 3)
+    grid = death_calibration.band_grid(runs, threshold, REVIEW_BAND_STEPS)
+    low, high = death_calibration.best_band(runs, threshold, checks_per_mite, grid=grid)
+    low, high = min(round(low, 3), threshold), max(round(high, 3), threshold)
+    shown = max(4 * checks_per_mite, 2.0)
+
+    def rounded(band):
+        return {"low": round(band["low"], 3), "high": round(band["high"], 3), "mae": round(band["mae"], 3),
+                "checks_per_mite": round(band["checks_per_mite"], 3), "exact": round(band["exact"], 4)}
+
+    return {"checks_allowed": checks_per_mite,
+            **rounded({"low": low, "high": high, **death_calibration.band_outcome(runs, low, high)}),
+            "frontier": [rounded(band) for band in death_calibration.checks_frontier(grid)
+                         if band["checks_per_mite"] <= shown]}
 
 
 def _resolve_metric(metric, params):
@@ -1665,7 +1700,8 @@ def _resolve_metric(metric, params):
 
 
 def evaluate_calibration(out_dir, datasets, metric=None, params=None, library_dir=CALIBRATION_LIBRARY,
-                         stabilize=None, benchmark=False, normalize_brightness=None, normalize_floor=None):
+                         stabilize=None, benchmark=False, normalize_brightness=None, normalize_floor=None,
+                         checks_per_mite=None):
     """Score the saved mites with a metric and compare the scores with the
     movement the user saw, pooled over the saved datasets whose ids are in
     `datasets`.
@@ -1697,7 +1733,11 @@ def evaluate_calibration(out_dir, datasets, metric=None, params=None, library_di
     Kaplan-Meier survival curves (of the mites seen moving at least once) by the
     labels and by the detector; how far the detector puts each mite's death from
     where the labels put it, in recordings ("death_error", see
-    calibration.death_errors()); and every observation with its outcome.
+    calibration.death_errors()) and, with a suggested threshold, that error by
+    threshold around the two ("death_curve", see death_calibration.death_curve())
+    and the band around it to check by eye, for `checks_per_mite` checks per
+    mite at most (REVIEW_CHECKS unless given; "review_band", see
+    _suggested_band()); and every observation with its outcome.
     Everything is also written to calibration.xlsx in `out_dir`.
 
     With `benchmark`, the same observations are also called by the Discobox's
@@ -1711,6 +1751,9 @@ def evaluate_calibration(out_dir, datasets, metric=None, params=None, library_di
     loaded = [_read_dataset(key, library_dir) for key in ids]
     metric, params = _resolve_metric(metric, params)
     in_use = _in_use(get_default_config().mite)
+    checks_per_mite = REVIEW_CHECKS if checks_per_mite is None else float(checks_per_mite)
+    if not 0 <= checks_per_mite <= 100:
+        raise ValueError("The checks allowed per mite must be between 0 and 100.")
     stabilize = in_use["stabilize_plate"] if stabilize is None else bool(stabilize)
     normalizer = ScoreNormalizer(
         floor=in_use["normalize_floor"] if normalize_floor is None else normalize_floor,
@@ -1751,7 +1794,8 @@ def evaluate_calibration(out_dir, datasets, metric=None, params=None, library_di
     scores = np.array([row["score"] for row in rows])
     is_moving = np.array([row["movement"] == calibration.MOVING for row in rows], dtype=bool)
     both = calibration.has_both_classes(is_moving)
-    suggested = death_calibration.best_threshold(death_calibration.runs_of_rows(rows))[0] if both else None
+    runs = death_calibration.runs_of_rows(rows)
+    suggested = death_calibration.best_threshold(runs)[0] if both else None
 
     thresholds = {"current": current}
     if suggested is not None:
@@ -1820,6 +1864,10 @@ def evaluate_calibration(out_dir, datasets, metric=None, params=None, library_di
                                for key, value in errors.items()}
                         for name, errors in calibration.death_errors(
                             rows, thresholds, {"benchmark": "benchmark_call"} if benchmark else None).items()},
+        # the death error by threshold, around the one in use and the suggested one: what the suggestion is chosen on
+        "death_curve": death_calibration.death_curve(runs, [current, suggested]) if suggested is not None else None,
+        # the band around the suggested threshold to check by eye, and what the checks buy
+        "review_band": _suggested_band(runs, suggested, checks_per_mite) if suggested is not None else None,
         "groups": [
             {
                 "group": group,
@@ -1846,16 +1894,22 @@ def save_threshold(value):
     return save_motion_threshold(value)
 
 
-def save_movement_score(metric, params, threshold, stabilize=None, normalize_brightness=None, normalize_floor=None):
+def save_movement_score(metric, params, threshold, stabilize=None, normalize_brightness=None, normalize_floor=None,
+                        review_band=None):
     """Make `metric` with `params`, and `threshold` on its scale, the movement
     score of every analysis from now on; with `stabilize`, plate stabilization
     on or off too, and with `normalize_brightness` and `normalize_floor` the
-    normalisations of a folder's scores (each left as it is when None)."""
+    normalisations of a folder's scores (each left as it is when None). With
+    `review_band` ([low, high], holding the threshold), the band whose calls are
+    checked by eye is saved with them (classes/review_band.py); without it, the
+    metric's band stays as it is, and is not used while the threshold is
+    outside it."""
     metric, params = _resolve_metric(metric, params)
     if not float(threshold) > 0:
         raise ValueError("The threshold must be positive.")
     return app_config.save_movement_score(metric, params, threshold, stabilize_plate=stabilize,
-                                          normalize_brightness=normalize_brightness, normalize_floor=normalize_floor)
+                                          normalize_brightness=normalize_brightness, normalize_floor=normalize_floor,
+                                          review_band=review_band)
 
 
 # --- live runs ----------------------------------------------------------------------

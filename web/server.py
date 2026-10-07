@@ -173,6 +173,8 @@ class EvaluateRequest(BaseModel):
     normalize_floor: Optional[bool] = None
     # also call every observation with the Discobox's original software
     benchmark: bool = False
+    # checks by eye per mite the suggested band may ask for; by default pipeline.REVIEW_CHECKS
+    checks_per_mite: Optional[float] = None
 
 
 class ThresholdRequest(BaseModel):
@@ -188,6 +190,8 @@ class MovementScoreRequest(BaseModel):
     stabilize: Optional[bool] = None
     normalize_brightness: Optional[bool] = None
     normalize_floor: Optional[bool] = None
+    # [low, high]: the band around the threshold whose calls are checked by eye, saved with it; left as it is when None
+    review_band: Optional[list[float]] = None
 
 
 def safe_join(root: Path, relative: str) -> Path:
@@ -582,7 +586,8 @@ def evaluate_calibration(session_id: str, request: EvaluateRequest):
         return pipeline.evaluate_calibration(session["out_dir"], datasets, request.metric, request.params,
                                              stabilize=request.stabilize, benchmark=request.benchmark,
                                              normalize_brightness=request.normalize_brightness,
-                                             normalize_floor=request.normalize_floor)
+                                             normalize_floor=request.normalize_floor,
+                                             checks_per_mite=request.checks_per_mite)
     except (FileNotFoundError, ValueError) as error:
         raise HTTPException(status_code=400, detail=str(error))
 
@@ -601,7 +606,8 @@ def save_movement_score(request: MovementScoreRequest):
     """Make a metric, its parameters and its threshold the default for every later analysis."""
     try:
         return pipeline.save_movement_score(request.metric, request.params, request.threshold, request.stabilize,
-                                            request.normalize_brightness, request.normalize_floor)
+                                            request.normalize_brightness, request.normalize_floor,
+                                            review_band=request.review_band)
     except ValueError as error:
         raise HTTPException(status_code=400, detail=str(error))
 

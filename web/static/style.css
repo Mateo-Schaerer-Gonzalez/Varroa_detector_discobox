@@ -556,6 +556,8 @@ table.clickable tbody tr:hover, table.clickable tbody tr:focus-visible { backgro
 .segmented { display: inline-flex; }
 .segmented button + button { margin-left: -1px; }
 .save-threshold label { font-weight: 500; color: var(--ink); }
+.save-band { margin-top: 10px; }
+.save-band label { display: inline-flex; align-items: center; gap: 6px; }
 .save-threshold input[type="number"] {
   width: 110px; padding: 6px 8px; font: inherit; font-size: 13px;
   border: 1px solid var(--rule); border-radius: 2px;

@@ -24,6 +24,7 @@ class Calibration {
     this.stamp = 0;               // cache-buster for files that change between evaluations
     this.scores = null;           // the movement scores the server offers, and the one in config.yaml
     this.metric = null;           // the movement score to report with, { name, params }; null: config.yaml's
+    this.checksAllowed = null;    // checks by eye per mite the suggested band may ask for; null: the server's
     this.mapDataset = null;       // the dataset the error map of a pooled report shows
     this.lastDataset = null;      // the dataset whose last recording a pooled test report plays
 
@@ -223,6 +224,7 @@ class Calibration {
         normalize_brightness: this.metric?.normalizeBrightness ?? null, normalize_floor: this.metric?.normalizeFloor ?? null,
         // The test report compares with the benchmark, which is slow the first time.
         benchmark: this.mode === "test",
+        checks_per_mite: this.checksAllowed,
       }),
       this.fetchDatasets().catch(() => this.datasets),
       this.fetchScores().catch(() => this.scores),

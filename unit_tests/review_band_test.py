@@ -119,6 +119,26 @@ def test_the_band_is_saved_per_metric_and_taken_out_again(tmp_path):
     assert yaml.safe_load(path.read_text())["mite"]["metric_review_bands"] == {"optical_flow": [0.4, 0.6]}
 
 
+def test_the_band_is_saved_with_the_threshold_from_the_calibration_report(tmp_path):
+    path = tmp_path / "config.yaml"
+    path.write_text('mite:\n  radius: 8\n  metric: "variability"\n  metric_thresholds: {variability: 3.5}\n'
+                    "  metric_review_bands: {variability: [2.5, 4.0]}\n")
+    saved = app_config.save_movement_score("variability", {}, 4.2, path, review_band=[3.1, 4.25])
+    assert saved["threshold"] == 4.2 and saved["review_band"] == [3.1, 4.25]
+    mite = yaml.safe_load(path.read_text())["mite"]
+    assert mite["metric_thresholds"] == {"variability": 4.2} and mite["metric_review_bands"] == {"variability": [3.1, 4.25]}
+
+    # a band the new threshold is not in is refused, and nothing of it is saved
+    for band in ([2.0, 3.0], [5.0, 4.0], [3.0]):
+        with pytest.raises(ValueError):
+            app_config.save_movement_score("variability", {}, 3.6, path, review_band=band)
+    assert yaml.safe_load(path.read_text())["mite"] == mite
+
+    # without a band the one saved stays, used again once the threshold is back in it
+    assert "review_band" not in app_config.save_movement_score("variability", {}, 9.0, path)
+    assert yaml.safe_load(path.read_text())["mite"]["metric_review_bands"] == {"variability": [3.1, 4.25]}
+
+
 def test_a_band_must_hold_the_threshold(tmp_path):
     path = tmp_path / "config.yaml"
     path.write_text('mite:\n  radius: 8\n  metric: "variability"\n  metric_thresholds: {variability: 3.5}\n')

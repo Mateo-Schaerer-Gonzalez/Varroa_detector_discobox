@@ -237,7 +237,8 @@ def write_calibration_excel(result, out_dir):
     columns, how far the calls put the mites' deaths from the labels', in
     recordings), the datasets pooled, every labelled (mite,
     recording) observation, the survival curves by the labels and the detector,
-    the fraction moving per recording and, when there is one, the ROC curve.
+    the fraction moving per recording and, when there is one, the ROC curve and
+    the death error by threshold and the band to check by eye.
     A calibration with the benchmark has it as a row of the summary, a column of
     the observations and a survival curve."""
     path = Path(out_dir) / CALIBRATION_EXCEL_NAME
@@ -315,4 +316,14 @@ def write_calibration_excel(result, out_dir):
         over_time.to_excel(writer, sheet_name="moving_over_time", index=False)
         if result["roc"]:
             pd.DataFrame(result["roc"]).to_excel(writer, sheet_name="roc", index=False)
+        if result.get("death_curve"):
+            curve = {key: value for key, value in result["death_curve"].items() if key != "n_mites"}
+            pd.DataFrame(curve).rename(columns={"thresholds": "threshold", "mae": "death_mae"}).to_excel(
+                writer, sheet_name="death_by_threshold", index=False)
+        if result.get("review_band"):
+            band = result["review_band"]
+            chosen = {key: value for key, value in band.items() if key not in ("frontier", "checks_allowed")}
+            pd.DataFrame([{"band": f"suggested, {band['checks_allowed']:g} checks per mite allowed", **chosen}]
+                         + [{"band": "what the checks buy", **row} for row in band["frontier"]]).rename(
+                columns={"mae": "death_mae", "exact": "deaths_exact"}).to_excel(writer, sheet_name="review_band", index=False)
     return path.name

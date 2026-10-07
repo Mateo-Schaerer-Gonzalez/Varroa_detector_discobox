@@ -76,16 +76,17 @@ class LabelledRun:
         """Per mite, the recordings to look at for its death with that band:
         those in the band after its last score at or above `high`, from the last
         one back to the first in which it moves."""
-        counts = np.zeros(self.n_mites, dtype=int)
+        n_recordings = self.scores.shape[1]
+        recording = np.arange(n_recordings)
+
+        def last(marked):  # per mite, its last recording marked; -1 without one
+            return np.where(marked.any(axis=1), n_recordings - 1 - np.argmax(marked[:, ::-1], axis=1), -1)
+
         clear = (self.scores >= high) & self.labelled
         in_band = (self.scores >= low) & (self.scores < high) & self.labelled
-        for mite in range(self.n_mites):
-            above = np.flatnonzero(clear[mite])
-            after = np.flatnonzero(in_band[mite])
-            after = after[after > (above[-1] if len(above) else -1)][::-1]
-            moved = np.flatnonzero(self.moving[mite, after])
-            counts[mite] = moved[0] + 1 if len(moved) else len(after)
-        return counts
+        after = in_band & (recording > last(clear)[:, None])
+        # from the last one back to the last in which the mite moves; all of them when it moves in none
+        return (after & (recording >= last(after & self.moving)[:, None])).sum(axis=1)
 
 
 def runs_of_rows(rows):
@@ -142,6 +143,43 @@ def best_threshold(runs):
     return float((low + high) / 2), float(errors.min())
 
 
+def death_curve(runs, around, points=160, worse=3.0):
+    """The death error by threshold, for a chart around the thresholds `around`
+    (e.g. the one in use and the suggested one):
+
+        {thresholds, mae (the mean distance in recordings between the death by
+         the detector and by the labels), n_early, n_late (the mites the
+         detector has die earlier, later than the labels), n_exact, n_mites}
+
+    `points` thresholds are tried, evenly from the middle score to nearly the
+    highest, and those of `around` among the scores. The chart is cut where
+    the error passes `worse` times the worst of `around`: further out it only
+    grows, and would flatten the part that matters."""
+    scores = np.concatenate([run.scores[run.labelled] for run in runs])
+    if not len(scores):
+        raise ValueError("No labelled recordings to draw a death error from.")
+    around = sorted({float(value) for value in around if scores.min() <= value <= scores.max()}) or [best_threshold(runs)[0]]
+    low, high = np.quantile(scores, [0.5, 0.995])
+    thresholds = np.unique(np.concatenate([np.linspace(min(low, around[0]), max(high, around[-1]), points), around]))
+    errors = np.concatenate([run.death_errors(run.scores[None] >= thresholds[:, None, None]) for run in runs], axis=-1)
+    mae = np.abs(errors).mean(axis=-1)
+
+    marks = np.searchsorted(thresholds, around)
+    limit = max(worse * mae[marks].max(), 1.0)
+    first, last = marks[0], marks[-1]
+    while first > 0 and mae[first - 1] <= limit:
+        first -= 1
+    while last < len(thresholds) - 1 and mae[last + 1] <= limit:
+        last += 1
+    kept = slice(first, last + 1)
+    return {"thresholds": [round(float(value), 4) for value in thresholds[kept]],
+            "mae": [round(float(value), 3) for value in mae[kept]],
+            "n_early": [int(n) for n in (errors < 0).sum(axis=-1)[kept]],
+            "n_late": [int(n) for n in (errors > 0).sum(axis=-1)[kept]],
+            "n_exact": [int(n) for n in (errors == 0).sum(axis=-1)[kept]],
+            "n_mites": int(errors.shape[-1])}
+
+
 def band_outcome(runs, low, high):
     """What a band checked by eye leaves: {mae: the mean death error after the
     checks, checks_per_mite, exact: the share of mites whose death is right}."""
@@ -151,23 +189,43 @@ def band_outcome(runs, low, high):
             "exact": float((errors == 0).mean())}
 
 
-def best_band(runs, threshold, checks_per_mite, steps=30):
+def band_grid(runs, threshold, steps=30):
+    """Every band tried around `threshold`, each with its band_outcome():
+    [{low, high, mae, checks_per_mite, exact}, ...]. `steps` edges are tried on
+    each side: the lower one from the middle still score up to the threshold,
+    the upper one from the threshold up to the highest still score, above which
+    no still recording is called moving. The first is the threshold alone."""
+    still = np.concatenate([run.scores[run.labelled & ~run.moving] for run in runs])
+    lows = highs = [threshold]
+    if len(still):
+        lows = np.linspace(min(np.median(still), threshold), threshold, steps)[::-1]
+        highs = np.linspace(threshold, max(still.max() + 1e-6, threshold), steps)
+    return [{"low": float(low), "high": float(high), **band_outcome(runs, low, high)} for low in lows for high in highs]
+
+
+def best_band(runs, threshold, checks_per_mite, steps=30, grid=None):
     """(low, high): the band around `threshold` with the smallest mean death
     error among those asking for at most `checks_per_mite` checks per mite, and
-    the fewest checks among the equally good. `steps` edges are tried on each
-    side, from the middle still score up to the highest still one."""
-    still = np.concatenate([run.scores[run.labelled & ~run.moving] for run in runs])
-    if not len(still):
-        return threshold, threshold
-    lows = np.linspace(min(np.median(still), threshold), threshold, steps)
-    highs = np.linspace(threshold, max(still.max() + 1e-6, threshold), steps)
+    the fewest checks among the equally good; the threshold alone, (threshold,
+    threshold), when no band does better within them. The bands tried are
+    band_grid()'s, or `grid` when it is at hand."""
     best, best_key = (threshold, threshold), None
-    for low in lows:
-        for high in highs:
-            outcome = band_outcome(runs, low, high)
-            if outcome["checks_per_mite"] > checks_per_mite:
-                continue
-            key = (round(outcome["mae"], 9), outcome["checks_per_mite"], high - low)
-            if best_key is None or key < best_key:
-                best, best_key = (float(low), float(high)), key
+    for band in grid or band_grid(runs, threshold, steps):
+        if band["checks_per_mite"] > checks_per_mite:
+            continue
+        key = (round(band["mae"], 9), band["checks_per_mite"], band["high"] - band["low"])
+        if best_key is None or key < best_key:
+            best, best_key = (band["low"], band["high"]), key
     return best
+
+
+def checks_frontier(grid):
+    """What the checks buy: of the bands of band_grid(), those worth having, by
+    the checks they ask for. Each has a smaller death error than every band
+    asking for fewer or as many: the first is the threshold alone, the last the
+    best a band can do."""
+    frontier = []
+    for band in sorted(grid, key=lambda band: (band["checks_per_mite"], band["mae"], band["high"] - band["low"])):
+        if not frontier or band["mae"] < frontier[-1]["mae"] - 1e-9:
+            frontier.append(band)
+    return frontier

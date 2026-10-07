@@ -1,6 +1,6 @@
-// The calibration report's figures: the confusion matrix, the survival rate over
-// time (and per group), the scores against the thresholds, the ROC curve, and
-// where on the plate the errors are. Every observation, from whichever dataset,
+// The calibration report's figures: the confusion matrix, the death error by
+// threshold, the survival rate over time (and per group), the scores against the
+// thresholds, the ROC curve, and where on the plate the errors are. Every observation, from whichever dataset,
 // opens its mite in its recording.
 
 class ReportFigures {
@@ -151,6 +151,83 @@ class ReportFigures {
       yMin: -0.5, yMax: 1.5,
       xMin: 0,
       xLabel: "Motion score in that recording",
+    });
+  }
+
+  // --- what the suggested threshold is chosen on (the server's r.death_curve)
+
+  static deathTip(curve, i) {
+    return `<div class="tip-title">threshold ${ReportPage.thr(curve.thresholds[i])}</div>
+      <div>deaths off by ${curve.mae[i].toFixed(2)} recordings on average</div>
+      <div class="tip-note">${curve.n_exact[i]} of ${curve.n_mites} mites in the same recording · ${curve.n_late[i]} too late · ${curve.n_early[i]} too early</div>`;
+  }
+
+  // The mean death error at every threshold around the ones marked: lowest at the suggested one.
+  drawDeathError(container, r, marks) {
+    const { thr } = ReportPage;
+    const curve = r.death_curve;
+    Charts.scatter(container, {
+      height: 280,
+      yMin: 0,
+      xLabel: "Threshold",
+      yLabel: "Death time off by (recordings)",
+      lines: [{ points: curve.thresholds.map((t, i) => [t, curve.mae[i]]), color: token("--ink"), width: 2 }],
+      points: curve.thresholds.map((t, i) => ({ x: t, y: curve.mae[i], r: 3, hidden: true, tip: ReportFigures.deathTip(curve, i) })),
+      refX: marks.map((mark) => ({ value: mark.value, label: `${mark.name} ${thr(mark.value)}` })),
+    });
+  }
+
+  // Why it rises on both sides: deaths too late below, too early above.
+  drawDeathSides(container, r, marks) {
+    const { thr } = ReportPage;
+    const curve = r.death_curve;
+    const sides = [
+      { key: "n_late", name: "death too late (a still recording called moving)", color: token("--series-7") },
+      { key: "n_early", name: "death too early (a last movement called still)", color: token("--series-2") },
+    ];
+    Charts.scatter(container, {
+      height: 280,
+      yMin: 0,
+      xLabel: "Threshold",
+      yLabel: `Mites (of ${curve.n_mites})`,
+      yFormat: (v) => (Number.isInteger(v) ? `${v}` : ""),
+      lines: sides.map((side) => ({ points: curve.thresholds.map((t, i) => [t, curve[side.key][i]]), color: side.color, width: 2 })),
+      points: curve.thresholds.map((t, i) => ({
+        x: t, y: Math.max(curve.n_late[i], curve.n_early[i]), r: 3, hidden: true, tip: ReportFigures.deathTip(curve, i),
+      })),
+      refX: marks.map((mark) => ({ value: mark.value, label: `${mark.name} ${thr(mark.value)}` })),
+      legend: sides.map((side) => ({ name: side.name, color: side.color, shape: "line" })),
+    });
+  }
+
+  // What the checks buy (the server's r.review_band): the death error left by the
+  // best band for each number of checks, from the suggested threshold alone on,
+  // as steps; the band suggested for the checks allowed is marked.
+  drawChecks(container, r) {
+    const { thr } = ReportPage;
+    const band = r.review_band;
+    const { frontier } = band;
+    const tip = (b, title) => `<div class="tip-title">${title}</div>
+      <div>deaths off by ${b.mae.toFixed(2)} recordings on average</div>
+      <div class="tip-note">${b.checks_per_mite.toFixed(2)} checks per mite · ${pct(b.exact)} of the deaths in the same recording</div>`;
+    const name = (b) => (b.high > b.low ? `band ${thr(b.low)} to ${thr(b.high)}` : `threshold ${thr(b.low)} alone`);
+    const steps = frontier.flatMap((b, i) => (i ? [[b.checks_per_mite, frontier[i - 1].mae], [b.checks_per_mite, b.mae]] : [[b.checks_per_mite, b.mae]]));
+    const reach = Math.max(band.checks_allowed, frontier[frontier.length - 1].checks_per_mite) * 1.08 || 1;
+    Charts.scatter(container, {
+      height: 280,
+      xMin: 0, xMax: reach, yMin: 0,
+      xLabel: "Checks by eye per mite",
+      yLabel: "Death time off by (recordings)",
+      lines: [{ points: [...steps, [reach, frontier[frontier.length - 1].mae]], color: token("--ink"), width: 2 }],
+      points: [
+        ...frontier.map((b) => ({ x: b.checks_per_mite, y: b.mae, r: 3.5, color: token("--ink"), tip: tip(b, name(b)) })),
+        { x: band.checks_per_mite, y: band.mae, r: 6, color: token("--series-2"), label: name(band), tip: tip(band, `suggested: ${name(band)}`) },
+      ],
+      refX: [{ value: band.checks_allowed, label: `allowed ${+band.checks_allowed.toFixed(2)}` }],
+      legend: [
+        { name: "best band for its checks", color: token("--ink"), shape: "circle" },
+        { name: "suggested band", color: token("--series-2"), shape: "circle" },
+      ],
     });
   }
 

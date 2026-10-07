@@ -10,6 +10,7 @@ import shutil
 
 import cv2
 import numpy as np
+import pandas as pd
 import pytest
 
 import pipeline
@@ -526,3 +527,34 @@ def test_reopening_a_dataset_reads_the_ground_truth_next_to_the_recordings(tmp_p
 
     view = pipeline.open_saved_calibration(pipeline.dataset_id(data_dir), tmp_path / "reopened", library_dir=library)
     assert view["truth"] == {"0": ["still", "moving"], "1": ["moving", "moving"]}
+
+
+def test_the_report_suggests_the_threshold_and_the_band_that_put_the_deaths_right(tmp_path, library, scorer):
+    # mite 0: a weak last movement (3) and, later, a still recording scoring 4; mite 1 is clear
+    data_dir, out_dir = make_session(tmp_path, "a", 2, times=(0.0, 5.0, 10.0, 15.0, 20.0, 25.0))
+    scorer.scores = {"a": {"0": [9, 3, 1, 4, 1, 1], "1": [9, 1, 1, 1, 1, 1]}}
+    pipeline.save_ground_truth(out_dir, {"0": ["moving", "moving", "still", "still", "still", "still"],
+                                         "1": ["moving"] + ["still"] * 5}, library_dir=library)
+    ids = [pipeline.dataset_id(data_dir)]
+    result = pipeline.evaluate_calibration(tmp_path / "report", ids, library_dir=library, checks_per_mite=1)
+
+    # no threshold tells the 3 from the 4: one mite's death is off whatever it is
+    suggested = result["suggested_threshold"]
+    assert result["death_error"]["suggested"]["mae"] > 0
+    curve = result["death_curve"]
+    assert suggested in curve["thresholds"] and min(curve["mae"]) == result["death_error"]["suggested"]["mae"]
+
+    # the band holds both, and with its two close calls checked the deaths are right
+    band = result["review_band"]
+    assert band["checks_allowed"] == 1 and band["low"] <= 3 < 4 < band["high"] and band["low"] <= suggested <= band["high"]
+    assert (band["mae"], band["checks_per_mite"], band["exact"]) == (0, 1, 1)
+    assert band["frontier"][0]["checks_per_mite"] == 0 and band["frontier"][-1]["mae"] == 0
+    json.dumps(result, allow_nan=False)  # what the server's JSON needs
+    sheets = pd.read_excel(tmp_path / "report" / result["excel"], sheet_name=None)
+    assert {"death_by_threshold", "review_band"} <= set(sheets)
+
+    # without checks allowed there is no band: the threshold alone
+    none = pipeline.evaluate_calibration(tmp_path / "report", ids, library_dir=library, checks_per_mite=0)["review_band"]
+    assert none["low"] == none["high"] == suggested and none["checks_per_mite"] == 0
+    with pytest.raises(ValueError):
+        pipeline.evaluate_calibration(tmp_path / "report", ids, library_dir=library, checks_per_mite=-1)

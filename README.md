@@ -120,7 +120,15 @@ that with the detector:
    at the recording after its last movement) and can save it to `config.yaml`.
    That is not the threshold calling the most mite-recordings right: in a long
    run, one still recording called moving long after a death moves the death
-   there. Its confusion matrix switches
+   there. Two figures show what the suggestion is chosen on: the death-time
+   error at every threshold around the one in use and the suggested one, and
+   how many mites die too late (still recordings called moving) and too early
+   (last movements called still) at each. With the threshold it suggests a band
+   around it to check by eye (see *Close calls to check by eye* below): the one
+   with the smallest death-time error among those asking for at most the
+   *checks allowed per mite* (0.5 unless changed), the labels standing in for
+   the eye; a figure shows what the checks buy, and the band is saved with the
+   threshold when ticked. Its confusion matrix switches
    between the suggested threshold and the one in use. *Test* shows the
    confusion matrix at the threshold in use, the ROC curve with AUC, and where on
    the plate the errors are. Both show the fraction of mites moving per recording
@@ -205,8 +213,9 @@ apart from the calibration's ground truth, which they do not change.
 movement, so one wrong call can move its death by hours: a still recording
 called moving long after it, or a weak last movement called still. The scores
 close to the threshold are the ones the detector gets wrong. With a band around
-the threshold (`mite.metric_review_bands` in `config.yaml`, set under *To check
-by eye* on the results page), a score in the band is a close call, and the
+the threshold (`mite.metric_review_bands` in `config.yaml`, saved with the
+threshold from the calibration report or set under *To check by eye* on the
+results page), a score in the band is a close call, and the
 results page lists, mite by mite, the ones its time of death depends on: those
 after its last clear movement, the latest first. Opening a mite shows the
 recording and asks *Moving* or *Still*; the answer is kept in

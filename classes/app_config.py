@@ -265,7 +265,8 @@ def _set_metric_entry(text, key, metric, value, path):
 
 def save_movement_score(metric: str, params: dict, threshold: float,
                         config_path: Optional[str | Path] = None, stabilize_plate: Optional[bool] = None,
-                        normalize_brightness: Optional[bool] = None, normalize_floor: Optional[bool] = None) -> dict:
+                        normalize_brightness: Optional[bool] = None, normalize_floor: Optional[bool] = None,
+                        review_band: Optional[list] = None) -> dict:
     """Write the movement score (metric and its parameters) and the threshold that
     goes with it into the config file, and reload it.
 
@@ -275,11 +276,20 @@ def save_movement_score(metric: str, params: dict, threshold: float,
     lines concerned are rewritten, so comments and layout survive. With
     `stabilize_plate`, `mite.stabilize_plate` is set too: the threshold was
     chosen on scores cut with or without it. Likewise `normalize_brightness` and
-    `normalize_floor`, the normalisations the scores went through.
+    `normalize_floor`, the normalisations the scores went through. With
+    `review_band` ([low, high], holding the threshold), the band around the
+    threshold whose calls are checked by eye is saved for the metric too;
+    without it, the metric's band stays as it is.
     """
     path = _config_file(config_path)
     text = path.read_text(encoding="utf-8")
     threshold = round(float(threshold), 3)
+    if review_band is not None:
+        review_band = [round(float(edge), 3) for edge in review_band]
+        if len(review_band) != 2 or not review_band[0] < review_band[1]:
+            raise ValueError("The band's lower edge must be below its upper edge.")
+        if not review_band[0] <= threshold <= review_band[1]:
+            raise ValueError(f"The band must hold the threshold, {threshold:g}.")
 
     match = _METRIC_LINE.search(text)
     if not match:
@@ -292,10 +302,13 @@ def save_movement_score(metric: str, params: dict, threshold: float,
     flags = {key: bool(value) for key, value in flags.items() if value is not None}
     for key, value in flags.items():
         text = _set_flag(text, key, value, path)
+    if review_band is not None:
+        text = _set_metric_entry(text, "metric_review_bands", metric, review_band, path)
 
     path.write_text(text, encoding="utf-8")
     _forget_loaded_config()
-    return {"metric": metric, "params": dict(params), "threshold": threshold, **flags}
+    return {"metric": metric, "params": dict(params), "threshold": threshold, **flags,
+            **({"review_band": review_band} if review_band is not None else {})}
 
 
 def _set_flag(text, key, value, path):
