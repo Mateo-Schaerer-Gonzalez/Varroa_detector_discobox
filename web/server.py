@@ -497,6 +497,17 @@ def calibration_clip(session_id: str, recording: int, zone_id: int):
         raise HTTPException(status_code=400, detail=str(error))
 
 
+@app.get("/api/calibration/{session_id}/plate-clip/{dataset_id}/{recording}")
+def dataset_clip(session_id: str, dataset_id: str, recording: int):
+    """Frames of the whole plate during one recording of a saved dataset, for the
+    test report; kept with this session's files."""
+    session = get_session(session_id)
+    try:
+        return pipeline.dataset_clip(session["out_dir"], dataset_id, recording)
+    except (FileNotFoundError, ValueError) as error:
+        raise HTTPException(status_code=400, detail=str(error))
+
+
 @app.get("/api/calibration/{session_id}/truth")
 def get_ground_truth(session_id: str):
     """The ground truth of this session's mites as saved now, which another window

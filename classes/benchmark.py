@@ -19,6 +19,7 @@ class Benchmark:
     THRESHOLD = 25  # cv2.threshold(differentialImage, 25, 255, cv2.THRESH_BINARY)
     GROW = 5        # cv2.dilate(mask, kernel, iterations=5)
     KERNEL = np.ones((3, 3), np.uint8)
+    CIRCLE = 20     # cv2.circle(originals[i], center, 20, ...)
     # Pixels to read around the mites for their calls to be those of the whole
     # frame: the denoising looks 13 past a pixel, growing and closing 6 more.
     MARGIN = 32
@@ -40,6 +41,15 @@ class Benchmark:
         _ret, mask = cv2.threshold(differential, cls.THRESHOLD, 255, cv2.THRESH_BINARY)
         mask = cv2.dilate(mask, cls.KERNEL, iterations=cls.GROW)
         return cv2.morphologyEx(mask, cv2.MORPH_CLOSE, cls.KERNEL)
+
+    @classmethod
+    def circles(cls, frames):
+        """What the original draws on one recording: the centre [x, y] of the
+        circle, of radius CIRCLE, around every contour of the mask, each counted
+        as one mite alive. `frames` are the recording's whole frames in
+        grayscale, as the original reads them."""
+        contours, _hierarchy = cv2.findContours(cls.mask(cls.differential(frames)), cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
+        return [[int(x), int(y)] for (x, y), _radius in map(cv2.minEnclosingCircle, contours)]
 
     @classmethod
     def calls(cls, frames, boxes):

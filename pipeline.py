@@ -28,6 +28,7 @@ can never reach into the analysis internals.
     open_saved_calibration(...)      reopen a saved dataset without decoding anything
     delete_calibration_dataset(...)  forget a saved dataset
     dataset_preview(...)             the first frame of a saved dataset
+    dataset_clip(...)                frames of the whole plate in one recording of a saved dataset
     movement_scores()          the metrics a calibration can score with, and their parameters
     evaluate_calibration(...)  score the saved mites with a metric (the one in config.yaml
                                unless another is given), then confusion matrix, ROC, best
@@ -889,6 +890,20 @@ def _write_clip(loader, recording_name, fps, box, out_dir, name, max_width=None,
 PLATE_CLIP_WIDTH = 1400  # the whole plate is scaled down to this width in its clip
 
 
+def dataset_clip(out_dir, dataset, recording, library_dir=CALIBRATION_LIBRARY):
+    """Frames of the whole plate, scaled down, during one recording of a saved
+    dataset, for the test report to draw the calls on. Like calibration_clip(),
+    written to `out_dir` once and reused after."""
+    saved = _read_dataset(dataset, library_dir)
+    if not 0 <= recording < len(saved["recordings"]):
+        raise ValueError(f"No recording {recording} in {saved['name']}.")
+    recordings_dir = _recordings_dir(saved["data_dir"], library_dir)
+    _check_recordings(saved, recordings_dir, "there is no clip to play")
+    source = saved["recordings"][recording]
+    return _write_clip(DataLoader(recordings_dir, grayscale=False), source["name"], source["fps"], (0, 0, 10**6, 10**6),
+                       out_dir, f"clip_{dataset}_r{recording}_plate", PLATE_CLIP_WIDTH)
+
+
 def analysis_clip(data_dir, out_dir, recording, zone_id=None, coords_file=None, pool_size=None):
     """Frames of one recording of an analysis session: of one zone, or with no
     `zone_id` of the whole plate, scaled down. Like calibration_clip(), written
@@ -1428,6 +1443,69 @@ def _dataset_benchmark(key, dataset, library_dir):
     return calls
 
 
+def _benchmark_circles(recordings_dir, recording_name):
+    """The circles the benchmark draws on one recording (Benchmark.circles()).
+    Slow: every whole frame is decoded and denoised."""
+    return Benchmark.circles(DataLoader(recordings_dir, grayscale=True).load_recording(recording_name))
+
+
+def _dataset_circles(key, dataset, recording, library_dir):
+    """The benchmark's circles on one recording of the dataset, from the cache
+    when this benchmark code has drawn them before; None when the recording's
+    frames are gone, so there is nothing to draw them from."""
+    name = dataset["recordings"][recording]["name"]
+    version = hashlib.sha1(json.dumps([inspect.getsource(benchmark_module), name]).encode("utf-8")).hexdigest()[:12]
+    cache = _dataset_dir(key, library_dir) / SCORES_DIRNAME / f"benchmark-circles-{version}.json"
+    if cache.is_file():
+        return json.loads(cache.read_text(encoding="utf-8"))["circles"]
+    try:
+        circles = _benchmark_circles(_recordings_dir(dataset["data_dir"], library_dir), name)
+    except FileNotFoundError:
+        return None
+    cache.parent.mkdir(parents=True, exist_ok=True)
+    cache.write_text(json.dumps({"benchmark": Benchmark.NAME, "recording": name, "circles": circles}), encoding="utf-8")
+    return circles
+
+
+def _last_recording(dataset, scores, threshold, benchmark=None, circles=None):
+    """The last recording of a dataset as its callers see it, for the test
+    report: every mite not marked "not a mite" with its box (x1, y1, x2, y2),
+    its score there, the detector's call at `threshold` and its label, None
+    when it has none there. With `benchmark` (its calls, see
+    _dataset_benchmark()) each mite also has the benchmark's call, and
+    `circles` are what the benchmark draws on that recording, each of radius
+    "circle_radius" (see _dataset_circles())."""
+    n_recordings = len(dataset["times"])
+    last = n_recordings - 1
+    boxes = mite_boxes(dataset["mites"])
+    mites = []
+    for mite in dataset["mites"]:
+        states = calibration.per_recording(dataset["truth"].get(mite["id"]), n_recordings)
+        if calibration.is_rejected(states):
+            continue
+        score = scores[mite["id"]][last]
+        mites.append(
+            {
+                "id": mite["id"],
+                "zone_id": mite["zone_id"],
+                "box": list(boxes[mite["id"]]),
+                "score": score,
+                "call": calibration.MOVING if score >= threshold else calibration.STILL,
+                "movement": states[last],
+                **({} if benchmark is None else {
+                    "benchmark_call": calibration.MOVING if benchmark[mite["id"]][last] else calibration.STILL}),
+            }
+        )
+    return {
+        "recording": last,
+        "recording_name": dataset["recordings"][last]["name"] if last < len(dataset["recordings"]) else "",
+        "time": dataset["times"][last],
+        "mites": mites,
+        "circles": circles,
+        "circle_radius": Benchmark.CIRCLE,
+    }
+
+
 def _observations(dataset, dataset_key, scores, benchmark=None):
     """One row per (mite, recording) of a dataset labelled moving or still, and
     the number of mites marked not a mite and of unlabelled mite-recordings.
@@ -1607,8 +1685,10 @@ def evaluate_calibration(out_dir, datasets, metric=None, params=None, library_di
         scores = _dataset_scores(key, dataset, metric, params, library_dir, stabilize)
         scores = _normalised_scores(key, dataset, scores, normalizer, Analyzer.roi_padding(metric, params),
                                     library_dir, stabilize)
-        here, rejected, unlabelled = _observations(
-            dataset, key, scores, _dataset_benchmark(key, dataset, library_dir) if benchmark else None)
+        called = _dataset_benchmark(key, dataset, library_dir) if benchmark else None
+        here, rejected, unlabelled = _observations(dataset, key, scores, called)
+        last = len(dataset["times"]) - 1
+        circles = _dataset_circles(key, dataset, last, library_dir) if benchmark and last < len(dataset["recordings"]) else None
         rows += here
         n_rejected += rejected
         n_unlabelled += unlabelled
@@ -1622,6 +1702,8 @@ def evaluate_calibration(out_dir, datasets, metric=None, params=None, library_di
                 # enough to draw the dataset's plate on its own preview
                 "image": dataset["image"],
                 "zones": [{k: zone[k] for k in ("id", "x1", "y1", "x2", "y2")} for zone in dataset["zones"]],
+                # its last recording, every mite with the call at the threshold in use and the benchmark's
+                "last_recording": _last_recording(dataset, scores, current, called, circles),
             }
         )
     if not rows:

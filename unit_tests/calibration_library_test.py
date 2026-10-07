@@ -212,6 +212,8 @@ def test_a_report_with_the_benchmark_compares_it_on_the_same_observations(tmp_pa
         return {"0": [True, True, True], "1": [True, False, False]}
 
     monkeypatch.setattr(pipeline, "_benchmark_mites", benchmark)
+    drawn = []
+    monkeypatch.setattr(pipeline, "_benchmark_circles", lambda _recordings_dir, name: drawn.append(name) or [[10, 10]])
     ids = [pipeline.dataset_id(data_dir)]
 
     result = pipeline.evaluate_calibration(tmp_path / "report", ids, library_dir=library, benchmark=True)
@@ -226,14 +228,50 @@ def test_a_report_with_the_benchmark_compares_it_on_the_same_observations(tmp_pa
     assert (result["death_error"]["benchmark"]["mae"], result["death_error"]["benchmark"]["n_late"]) == (1.0, 2)
     assert (result["death_error"]["current"]["mae"], result["death_error"]["current"]["n_exact"]) == (0.0, 2)
 
+    # The last recording, every mite with both calls; the benchmark's circles on it are drawn once.
+    last = result["datasets"][0]["last_recording"]
+    assert (last["recording"], last["recording_name"], last["time"]) == (2, "r2", 10.0)
+    assert [(m["id"], m["call"], m["benchmark_call"], m["movement"]) for m in last["mites"]] == [
+        ("0", "still", "moving", "still"), ("1", "still", "still", "still")]
+    assert last["mites"][0]["box"] == [7, 7, 13, 13]
+    assert (last["circles"], last["circle_radius"]) == ([[10, 10]], 20)
+
     # Its calls are kept with the dataset, like the scores.
-    pipeline.evaluate_calibration(tmp_path / "report", ids, library_dir=library, benchmark=True)
-    assert runs == ["a"]
+    again = pipeline.evaluate_calibration(tmp_path / "report", ids, library_dir=library, benchmark=True)
+    assert runs == ["a"] and drawn == ["r2"]
+    assert again["datasets"][0]["last_recording"]["circles"] == [[10, 10]]
 
     without = pipeline.evaluate_calibration(tmp_path / "report", ids, library_dir=library)
     assert without["benchmark"] is None and "benchmark" not in without["survival"]
     assert set(without["death_error"]) == {"current", "suggested"}
     assert "benchmark_call" not in without["observations"][0]
+    last = without["datasets"][0]["last_recording"]
+    assert last["circles"] is None and "benchmark_call" not in last["mites"][0]
+
+
+def test_the_last_recording_leaves_out_what_is_not_a_mite_and_keeps_the_unlabelled(tmp_path, library, scorer):
+    data_dir, out_dir = make_session(tmp_path, "a", 3)
+    scorer.scores = {"a": {"0": [9, 9], "1": [1, 1], "2": [9, 9]}}
+    pipeline.save_ground_truth(out_dir, {"0": ["moving", None], "1": ["still", "still"], "2": "not_a_mite"}, library_dir=library)
+    result = pipeline.evaluate_calibration(tmp_path / "report", [pipeline.dataset_id(data_dir)], library_dir=library)
+    assert [(m["id"], m["call"], m["movement"]) for m in result["datasets"][0]["last_recording"]["mites"]] == [
+        ("0", "moving", None), ("1", "still", "still")]
+
+
+def test_a_saved_dataset_plays_its_whole_plate(tmp_path, library):
+    data_dir, out_dir = make_session(tmp_path, "rec", 1, times=(0.0,))
+    write_frames(data_dir)
+    stored = json.loads((out_dir / pipeline.CALIBRATION_SESSION_NAME).read_text(encoding="utf-8"))
+    stored["recordings"] = [{"name": RECORDING, "fps": 30}]
+    (out_dir / pipeline.CALIBRATION_SESSION_NAME).write_text(json.dumps(stored), encoding="utf-8")
+    pipeline.save_ground_truth(out_dir, {"0": ["still"]}, library_dir=library)
+    key = pipeline.dataset_id(data_dir)
+
+    clip = pipeline.dataset_clip(tmp_path / "report", key, 0, library_dir=library)
+    assert (clip["x"], clip["y"], clip["width"], clip["height"]) == (0, 0, 60, 40)
+    assert len(clip["frames"]) == 4 and (tmp_path / "report" / clip["frames"][0]).is_file()
+    with pytest.raises(ValueError):
+        pipeline.dataset_clip(tmp_path / "report", key, 1, library_dir=library)
 
 
 def test_the_library_keeps_a_copy_of_the_recording_folder(tmp_path, library):

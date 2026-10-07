@@ -25,6 +25,7 @@ class Calibration {
     this.scores = null;           // the movement scores the server offers, and the one in config.yaml
     this.metric = null;           // the movement score to report with, { name, params }; null: config.yaml's
     this.mapDataset = null;       // the dataset the error map of a pooled report shows
+    this.lastDataset = null;      // the dataset whose last recording a pooled test report plays
 
     this.modeRadios = document.querySelectorAll('input[name="cal-mode"]');
     this.modeRadios.forEach((radio) => radio.addEventListener("change", () => { this.mode = radio.value; }));

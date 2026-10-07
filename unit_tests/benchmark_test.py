@@ -41,3 +41,13 @@ def test_movement_just_beside_a_box_reaches_it():
 
 def test_a_box_over_the_edge_of_the_image_is_cut_there():
     assert Benchmark.calls(frames_with_mites(4), {"edge": (-5, -5, 3, 3)}) == {"edge": False}
+
+
+def test_the_circles_are_the_spots_of_the_mask_wherever_they_are():
+    """One circle around the mite that shifts, none around the still one: the
+    original draws on movement, it knows no mite."""
+    circles = Benchmark.circles(frames_with_mites(4))
+    assert len(circles) == 1
+    x, y = circles[0]
+    assert 56 <= x <= 68 and 16 <= y <= 24
+    assert Benchmark.circles(frames_with_mites(0)) == []

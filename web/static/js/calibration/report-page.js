@@ -11,6 +11,7 @@ class ReportPage {
 
   constructor() {
     this.figures = new ReportFigures();
+    this.lastRecording = new LastRecording();
   }
 
   static thr(value) {
@@ -472,6 +473,8 @@ class ReportPage {
 
     ${r.roc ? figure("chart-strip", 5, "Motion score distribution", STRIP_CAPTION) : ""}
 
+    ${section("The last recording", `<div id="last-recording" data-number="${r.roc ? 6 : 4}">${this.lastRecording.html(r, r.roc ? 6 : 4)}</div>`)}
+
     ${section("Per zone", `<div class="table-wrap"><table class="clickable" id="zone-errors"></table></div>
       <p class="caption">Counts are mite-recordings, at the threshold in use. Select a zone to review its labels.</p>`)}`;
   }
@@ -526,5 +529,6 @@ class ReportPage {
       figures.drawStrip($("chart-strip"), r, marks);
     }
     figures.drawZoneErrors(r);
+    this.lastRecording.draw(r);
   }
 }

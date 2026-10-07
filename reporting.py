@@ -307,7 +307,9 @@ def write_calibration_excel(result, out_dir):
 
     with pd.ExcelWriter(path, engine="openpyxl") as writer:
         summary.to_excel(writer, sheet_name="summary", index=False)
-        pd.DataFrame(result["datasets"]).to_excel(writer, sheet_name="datasets", index=False)
+        # without each dataset's last recording, which is for the page to draw
+        pd.DataFrame([{key: value for key, value in dataset.items() if key != "last_recording"}
+                      for dataset in result["datasets"]]).to_excel(writer, sheet_name="datasets", index=False)
         observations.to_excel(writer, sheet_name="observations", index=False)
         survival.to_excel(writer, sheet_name="survival", index=False)
         over_time.to_excel(writer, sheet_name="moving_over_time", index=False)

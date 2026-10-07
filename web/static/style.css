@@ -576,6 +576,17 @@ td.num.error { color: var(--critical); font-weight: 600; }
 .outcome-dot.missed-positive { background: var(--series-2); }
 .outcome-dot.missed-negative { background: var(--series-7); border-radius: 1px; }
 
+/* The last recording with every mite's box by its call, and the benchmark's circles. */
+.plate-calls { max-width: 1100px; }
+.plate-calls .crop { max-height: none; }
+.call-mite { cursor: pointer; }
+.call-mite .hit { fill: transparent; stroke: none; }
+.call-mite .box { fill: none; stroke-width: 1.5; vector-effect: non-scaling-stroke; pointer-events: none; }
+.call-mite.moving .box { stroke: #3fdc8f; }
+.call-mite.still .box { stroke: #ffb52e; }
+.call-mite:hover .box { stroke-width: 3; }
+.benchmark-circle { fill: none; stroke: #ff5fa2; stroke-width: 1.5; vector-effect: non-scaling-stroke; pointer-events: none; }
+
 .confusion-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 40px; }
 .confusion-grid + .table-wrap { margin-top: 28px; }
 .threshold-switch { display: flex; align-items: center; gap: 10px; margin-bottom: 14px; font-size: 13px; }
