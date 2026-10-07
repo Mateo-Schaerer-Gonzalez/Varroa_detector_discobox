@@ -84,7 +84,10 @@ class MovementReport:
                            corrected (per recording: the call is the user's, not the
                            detector's; see classes/call_corrections.py), censored (per
                            recording: the user marked the mite gone) and gone_from (the
-                           recording from which it is gone for good, or None)
+                           recording from which it is gone for good, or None);
+                           checked (per recording: the user set the call by hand) and
+                           to_check (the recordings to check by eye, the latest
+                           first; see classes/review_band.py)
             zones        + n_moving (mites moving per recording), n_seen (mites there
                            per recording, not gone), n_moving_observations,
                            n_never_moved, overall_mean_score and rests (see zone_rests());
@@ -100,9 +103,12 @@ class MovementReport:
 
     def mite_stats(self, mite):
         corrected = set(self.results.get("corrections", {}).get(mite["id"], []))
+        checked = corrected | set(self.results.get("checked", {}).get(mite["id"], []))
         scores = self.seen_scores(mite)
         return {
             "corrected": [recording in corrected for recording in range(len(mite["moving"]))],
+            "checked": [recording in checked for recording in range(len(mite["moving"]))],
+            "to_check": list((self.results.get("review") or {}).get("to_check", {}).get(mite["id"], [])),
             "censored": self.groups.censored(mite),
             "gone_from": self.results.get("gone_from", {}).get(mite["id"]),
             "n_moving": MovementStats.moving_count(mite["moving"]),

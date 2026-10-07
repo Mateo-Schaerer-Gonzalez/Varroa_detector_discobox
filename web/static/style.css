@@ -352,6 +352,17 @@ button.secondary:hover, .button.secondary:hover { background: var(--wash); borde
 .tip-glyphs .gone { color: var(--muted); }
 .state-select { font: inherit; font-size: 12px; padding: 3px 6px; color: var(--ink); background: var(--paper); border: 1px solid var(--rule); border-radius: 3px; }
 .corrected-mark { color: var(--muted); font-size: 0.85em; white-space: nowrap; }
+/* The calls to check by eye: "to check" beside a close call, the question under the close-up. */
+.check-mark { color: var(--muted); font-size: 0.85em; white-space: nowrap; }
+.check-mark.to-check { color: var(--ink); font-weight: 600; padding: 1px 5px; background: #fdf7e8; border: 1px solid var(--series-4); border-radius: 2px; }
+.review-note { margin: 0 0 16px; }
+.review-times { display: inline-flex; gap: 6px; flex-wrap: wrap; }
+.review-times .current { border-color: var(--ink); font-weight: 600; }
+.review-ask { display: block; margin-top: 8px; padding: 8px 10px; color: var(--ink); background: #fdf7e8; border-left: 3px solid var(--series-4); }
+.review-ask button { margin: 4px 4px 0 0; }
+.review-intro { max-width: 78ch; }
+.review-band { margin-top: 12px; align-items: center; }
+.review-band .hint { margin: 0; }
 .tip-glyphs .corrected { outline: 1px solid currentColor; border-radius: 2px; }
 /* A mite never seen moving, left out of the survival numbers: its id greyed out. */
 .mite-marker.left-out text { fill: #c4c8cd; font-style: italic; }
@@ -396,6 +407,8 @@ table.clickable tbody tr:hover, table.clickable tbody tr:focus-visible { backgro
 .chart .axis-label { fill: var(--ink); font-size: 12px; }
 .chart .threshold { stroke: var(--muted); stroke-width: 1; stroke-dasharray: 3 3; }
 .chart .threshold-label { fill: var(--muted); font-size: 11px; font-style: italic; }
+/* The band of scores too close to the threshold to trust. */
+.chart .range { fill: var(--muted); opacity: 0.13; }
 .chart .crosshair { stroke: var(--muted); stroke-width: 0.75; }
 .chart .box line { stroke-width: 1.25; }
 .chart .box-body { fill: var(--wash); fill-opacity: 0.7; stroke-width: 1.25; }

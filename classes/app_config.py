@@ -85,6 +85,10 @@ class MiteConfig:
     # each mite's own floor moved to the common one.
     normalize_brightness: bool = False
     normalize_floor: bool = False
+    # metric name -> [low, high] on that metric's scale: the band around its
+    # threshold whose scores are checked by eye (see classes/review_band.py),
+    # e.g. {"topN_variability": [2.7, 3.9]}. A metric left out has none.
+    metric_review_bands: dict = field(default_factory=dict)
 
     def __post_init__(self):
         self._fallback_threshold = self.motion_threshold
@@ -99,6 +103,17 @@ class MiteConfig:
         if value is None:
             raise ValueError(f"No threshold for metric {metric!r}: add it to mite.metric_thresholds in config.yaml.")
         return float(value)
+
+    def review_band_for(self, metric):
+        """(low, high): the band saved for `metric` whose scores are checked by
+        eye, or None: without one, or with one the metric's threshold is no
+        longer in, as after a new threshold was saved."""
+        band = (self.metric_review_bands or {}).get(metric)
+        try:
+            low, high = (float(edge) for edge in band)
+        except (TypeError, ValueError):
+            return None
+        return (low, high) if low < high and low <= self.threshold_for(metric) <= high else None
 
 
 @dataclass
@@ -186,6 +201,31 @@ def save_motion_threshold(value: float, config_path: Optional[str | Path] = None
     return value
 
 
+def save_review_band(low: Optional[float], high: Optional[float],
+                     config_path: Optional[str | Path] = None) -> Optional[list]:
+    """Write the band checked by eye for the metric in use, `low` to `high` on
+    its scale, into `mite.metric_review_bands` of the config file and reload it;
+    without both, the metric has no band any more. The band must hold the
+    metric's threshold. Returns [low, high] as saved, or None."""
+    path = _config_file(config_path)
+    text = path.read_text(encoding="utf-8")
+    mite = (yaml.safe_load(text) or {}).get("mite", {})
+    metric = mite.get("metric")
+    if not metric:
+        raise ValueError(f"No mite.metric line found in {path}")
+    band = None
+    if low is not None and high is not None:
+        band = [round(float(low), 3), round(float(high), 3)]
+        threshold = (mite.get("metric_thresholds") or {}).get(metric, mite.get("motion_threshold"))
+        if not band[0] < band[1]:
+            raise ValueError("The band's lower edge must be below its upper edge.")
+        if threshold is not None and not band[0] <= float(threshold) <= band[1]:
+            raise ValueError(f"The band must hold the threshold, {float(threshold):g}.")
+    path.write_text(_set_metric_entry(text, "metric_review_bands", metric, band, path), encoding="utf-8")
+    _forget_loaded_config()
+    return band
+
+
 def _forget_loaded_config():
     """Make every AppConfig built from now on read the file again."""
     global _default_config
@@ -197,14 +237,18 @@ _METRIC_LINE = re.compile(r"^([ \t]+)metric:[ \t]*(\"[^\"]*\"|'[^']*'|[^\s#]+)",
 
 
 def _set_metric_entry(text, key, metric, value, path):
-    """Set `mite.<key>[metric] = value`, keeping the entries of the other metrics.
+    """Set `mite.<key>[metric] = value`, keeping the entries of the other metrics;
+    with None for `value`, the metric's entry is taken out.
 
     `mite.<key>` is one flow-style line, e.g. `metric_thresholds: {variability: 15.6}`,
     added under `metric:` if the file has none yet.
     """
     mite = (yaml.safe_load(text) or {}).get("mite", {})
     entries = dict(mite.get(key) or {})
-    entries[metric] = value
+    if value is None:
+        entries.pop(metric, None)
+    else:
+        entries[metric] = value
     flow = yaml.safe_dump(entries, default_flow_style=True, sort_keys=False, width=10_000).strip()
 
     line = re.compile(rf"^[ \t]+{key}:[ \t]*(\{{.*\}}|[^\s#]*)", re.MULTILINE)

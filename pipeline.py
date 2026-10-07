@@ -13,6 +13,8 @@ can never reach into the analysis internals.
     save_label_reading(...)    whether the label page reads them: its box, saved in config.yaml
     run_analysis(...)          the full pipeline, writing Excel and figures to out_dir
     correct_call(...)          change one mite's call in one recording by hand, or mark it gone; the results follow
+    save_review_band(...)      the band around the threshold whose calls are checked by eye, into config.yaml
+    review_again(...)          the results of a folder's last run again, with the band as it is now
     analysis_clip(...)         frames of one recording, of one zone or the whole plate
     describe_movement(...)     each mite's, zone's and group's movement numbers, for the pages
     describe_survival(...)     the mites alive over time and the log-rank tests against the
@@ -83,6 +85,7 @@ import numpy as np
 
 import reporting
 from classes import calibration
+from classes import death_calibration
 from classes.analyzer import Analyzer
 from classes import benchmark as benchmark_module
 from classes.benchmark import Benchmark
@@ -106,6 +109,7 @@ from classes.motion_analysis import MotionAnalysis, detect_mites
 from classes.movement_stats import MovementReport
 from classes.pooling import check_pool_size, describe_pool_size, pools
 from classes.recording_info import RecordingInfo
+from classes.review_band import ReviewBand
 from classes.score_normalizer import ScoreNormalizer
 from classes.survival import SurvivalAnalysis, SurvivalReport
 from classes.truth_draft import TruthDraft
@@ -541,27 +545,36 @@ def _normalizer_in_use(mite):
     return ScoreNormalizer(floor=mite.normalize_floor, brightness=mite.normalize_brightness)
 
 
-def _change_call(zone_manager, corrections, mite_id, recording, state, detected=None):
+def _review_band(metric):
+    """The band around the threshold of `metric` whose calls are checked by eye,
+    as config.yaml has it now (a ReviewBand); None without one."""
+    return ReviewBand.of(get_default_config().mite, metric)
+
+
+def _change_call(zone_manager, corrections, mite_id, recording, state, detected=None, checked=False):
     """Make the mite `mite_id` `state` in `recording`, or step it to its next
     state without one (CallCorrections.change()). `detected` maps mite id to
     the detector's call per recording, where normalised scores make them other
-    than the mite's own."""
+    than the mite's own. With `checked` the call is kept as checked by eye."""
     mite = next((m for zone in zone_manager.zones for m in zone.mites if m.text == str(mite_id)), None)
     if mite is None:
         raise ValueError(f"No mite {mite_id} in these results.")
     calls = mite.moving if detected is None else detected[mite.text]
     if not 0 <= recording < len(calls):
         raise ValueError(f"No recording {recording} in these results.")
-    corrections.change((mite.x1 + mite.x2) / 2, (mite.y1 + mite.y2) / 2, recording, bool(calls[recording]), state)
+    corrections.change((mite.x1 + mite.x2) / 2, (mite.y1 + mite.y2) / 2, recording, bool(calls[recording]), state,
+                       checked=checked)
 
 
-def correct_call(out_dir, mite_id, recording, state=None):
+def correct_call(out_dir, mite_id, recording, state=None, checked=False):
     """Change by hand what one mite is in one recording of the last run written to
     `out_dir`: `state` is "moving" or "still" (its call; the detector's again is
     no correction any more), "gone" (the mite is not there in this recording,
     e.g. it fell off) or "gone_from" (nor in any later one); without `state`,
     the next of these. A mite gone is censored there. The change is saved next
     to the recordings (see classes/call_corrections.py), so later runs keep it.
+    With `checked`, a call is kept as checked by eye, also when it is the
+    detector's: the answer to a close call (classes/review_band.py).
     Returns the results as run_analysis() does, every number following the
     change, and writes the workbook and the figures again."""
     with _runs_lock:
@@ -570,8 +583,27 @@ def correct_call(out_dir, mite_id, recording, state=None):
             raise ValueError("Run the analysis again to correct its calls.")
         run, labels, corrections, normalizer = kept
         _change_call(run.zone_manager, corrections, mite_id, int(recording), state,
-                     _detected_calls(run, corrections, normalizer))
+                     _detected_calls(run, corrections, normalizer), checked=checked)
         return _results(run, out_dir, labels, corrections=corrections, normalizer=normalizer)
+
+
+def save_review_band(low, high):
+    """Make `low` to `high`, on the scale of the metric in use, the band around
+    its threshold whose calls are checked by eye (classes/review_band.py), for
+    every analysis from now on; without both, there is no band any more.
+    Returns [low, high] as saved, or None."""
+    return app_config.save_review_band(low, high)
+
+
+def review_again(out_dir):
+    """The results of the last run written to `out_dir` again, with the calls to
+    check by eye as the band is now; None when that run is no longer kept."""
+    with _runs_lock:
+        kept = _runs.get(_draft_key(out_dir))
+        if kept is None:
+            return None
+        run, labels, corrections, normalizer = kept
+        return _results(run, out_dir, labels, write_files=False, corrections=corrections, normalizer=normalizer)
 
 
 def death_minutes(data_dir):
@@ -642,7 +674,8 @@ def _results(run, out_dir, labels, write_files=True, corrections=None, normalize
     ("corrections", "censored", "gone_from", see CallCorrections.apply()). With
     a `normalizer` (a ScoreNormalizer) the results say which normalisations the
     scores went through ("normalization"): config.yaml's for a folder, none for
-    a live run."""
+    a live run. With a band around the threshold in config.yaml, they hold the
+    calls to check by eye ("review", see ReviewBand.describe())."""
     burst_minutes = run.burst_minutes
     mite_data, changes = _mite_table(run, corrections, normalizer)
 
@@ -668,6 +701,9 @@ def _results(run, out_dir, labels, write_files=True, corrections=None, normalize
     results.update(changes)
     if normalizer is not None:
         results["normalization"] = normalizer.describe()
+    band = _review_band(run.analyzer.config.mite.metric)
+    if band is not None:
+        results["review"] = band.describe(mite_data, changes)
     return results
 
 
@@ -1654,7 +1690,10 @@ def evaluate_calibration(out_dir, datasets, metric=None, params=None, library_di
 
     Returns the confusion counts at the threshold in use and, when there are
     both moving and still labels, the ROC curve and the suggested threshold with
-    its confusion counts; the fraction of mites moving per recording and the
+    its confusion counts: the one that puts the mites' deaths closest to where
+    the labels put them (death_calibration.best_threshold()), as in a long run
+    the one that best tells moving from still recording by recording puts many
+    deaths late. Also the fraction of mites moving per recording and the
     Kaplan-Meier survival curves (of the mites seen moving at least once) by the
     labels and by the detector; how far the detector puts each mite's death from
     where the labels put it, in recordings ("death_error", see
@@ -1712,7 +1751,7 @@ def evaluate_calibration(out_dir, datasets, metric=None, params=None, library_di
     scores = np.array([row["score"] for row in rows])
     is_moving = np.array([row["movement"] == calibration.MOVING for row in rows], dtype=bool)
     both = calibration.has_both_classes(is_moving)
-    suggested = calibration.best_threshold(scores, is_moving) if both else None
+    suggested = death_calibration.best_threshold(death_calibration.runs_of_rows(rows))[0] if both else None
 
     thresholds = {"current": current}
     if suggested is not None:
@@ -2231,13 +2270,14 @@ def live_results(live_id):
     return {"version": run.session.version, "results": run.session.results}
 
 
-def live_correct_call(live_id, mite_id, recording, state=None):
+def live_correct_call(live_id, mite_id, recording, state=None, checked=False):
     """correct_call() for a live run: the results published next, at once, follow
     the change. Once the run is over, the workbook and the figures are written
     again too; before, they are after every recording anyway."""
     run = _get_live(live_id)
     with run.session.lock:
-        _change_call(run.analysis.zone_manager, CallCorrections(run.run_dir, run.pool_size), mite_id, int(recording), state)
+        _change_call(run.analysis.zone_manager, CallCorrections(run.run_dir, run.pool_size), mite_id, int(recording), state,
+                     checked=checked)
     run.session.publish(write_files=run.session.state == "finished")
     return live_results(live_id)
 

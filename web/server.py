@@ -127,6 +127,13 @@ class CorrectRequest(BaseModel):
     recording: int  # the recording whose call to change
     # "moving", "still", "gone" (in this recording) or "gone_from" (from it on); the next of these without
     state: Optional[str] = None
+    checked: bool = False  # the answer to a close call: kept as checked by eye, also when it is the detector's
+
+
+class ReviewBandRequest(BaseModel):
+    # the band around the threshold whose calls are checked by eye; none without both
+    low: Optional[float] = None
+    high: Optional[float] = None
 
 
 class RejectRequest(BaseModel):
@@ -380,12 +387,36 @@ def correct_call(session_id: str, request: CorrectRequest):
     it. A live run's come with their version."""
     session = get_session(session_id)
     if session.get("live"):
-        answer = live_call(pipeline.live_correct_call, session_id, request.mite, request.recording, request.state)
+        answer = live_call(pipeline.live_correct_call, session_id, request.mite, request.recording, request.state,
+                           request.checked)
         return {**answer, "results": for_pages(session_id, answer["results"])}
     try:
-        results = pipeline.correct_call(session["out_dir"], request.mite, request.recording, request.state)
+        results = pipeline.correct_call(session["out_dir"], request.mite, request.recording, request.state,
+                                        request.checked)
     except ValueError as error:
         raise HTTPException(status_code=400, detail=str(error))
+    session["results"] = results
+    return {"results": for_pages(session_id, results)}
+
+
+@app.post("/api/session/{session_id}/review-band")
+def save_review_band(session_id: str, request: ReviewBandRequest):
+    """The band around the threshold whose calls are checked by eye, saved in
+    config.yaml for every analysis (pipeline.save_review_band): the results come
+    back with the calls to check as the band makes them. A live run's come with
+    their version."""
+    session = get_session(session_id)
+    try:
+        pipeline.save_review_band(request.low, request.high)
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error))
+    if session.get("live"):
+        pipeline.live_refresh(session_id)
+        answer = live_call(pipeline.live_results, session_id)
+        return {**answer, "results": for_pages(session_id, answer["results"])}
+    results = pipeline.review_again(session["out_dir"]) if session.get("results") else None
+    if results is None:
+        raise HTTPException(status_code=400, detail="The band is saved. Run the analysis again to see what to check.")
     session["results"] = results
     return {"results": for_pages(session_id, results)}
 

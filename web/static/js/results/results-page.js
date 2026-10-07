@@ -57,13 +57,14 @@ class ResultsPage {
 
   // Change by hand what a mite is in a recording, to `state` or, without one, to
   // its next state (classes/call_corrections.py): the server saves it and sends
-  // the results again, every number following the change.
-  async correctCall(mite, recording = ctx.shown, state = null) {
+  // the results again, every number following the change. With `checked`, the
+  // call is kept as checked by eye, also when it is the detector's (ReviewCheck).
+  async correctCall(mite, recording = ctx.shown, state = null, checked = false) {
     const workspace = ctx;
     const { sessionId } = workspace;
     Charts.hideTooltip();
     try {
-      const answer = await post(`/api/session/${sessionId}/correct`, { mite: mite.id, recording, state });
+      const answer = await post(`/api/session/${sessionId}/correct`, { mite: mite.id, recording, state, checked });
       if (workspace.sessionId !== sessionId) return;  // another folder or run by now
       workspace.results = answer.results;
       if (workspace.mode === "live" && answer.version != null) live.version = answer.version;

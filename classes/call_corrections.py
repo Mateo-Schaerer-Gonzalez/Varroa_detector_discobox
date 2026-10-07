@@ -19,6 +19,10 @@ renumbers the mites. They are kept per pool size, as a recording's index means
 another stretch of frames with another one:
 
     {"recording": [{"x": 412.5, "y": 230.0, "moving": {"3": true}, "gone": [1], "gone_from": 5}], "30": [...]}
+
+A call the user looked at and set, the detector's or not, can be kept as checked
+("checked": [recording, ...]), so the result pages do not ask for it again
+(classes/review_band.py).
 """
 
 import json
@@ -55,24 +59,28 @@ class CallCorrections:
 
     def entries(self):
         """The corrections of this pool size, one entry per mite:
-        [{x, y, moving: {recording: call}, gone: [recording, ...], gone_from: recording or None}]."""
+        [{x, y, moving: {recording: call}, gone: [recording, ...], gone_from: recording or None,
+        checked: [recording, ...]}]."""
         saved = self._read().get(self.key, [])
         entries = []
         for entry in saved if isinstance(saved, list) else []:
             if not isinstance(entry, dict) or "x" not in entry or "y" not in entry:
                 continue
             moving, gone, since = entry.get("moving"), entry.get("gone"), entry.get("gone_from")
+            checked = entry.get("checked")
             entries.append({
                 "x": entry["x"], "y": entry["y"],
                 "moving": moving if isinstance(moving, dict) else {},
                 "gone": sorted({r for r in gone if isinstance(r, int)}) if isinstance(gone, list) else [],
                 "gone_from": since if isinstance(since, int) else None,
+                "checked": sorted({r for r in checked if isinstance(r, int)}) if isinstance(checked, list) else [],
             })
         return entries
 
     def _write(self, entries):
         saved = self._read()
-        saved[self.key] = [entry for entry in entries if entry["moving"] or entry["gone"] or entry["gone_from"] is not None]
+        saved[self.key] = [{key: value for key, value in entry.items() if key != "checked" or value} for entry in entries
+                           if entry["moving"] or entry["gone"] or entry["gone_from"] is not None or entry["checked"]]
         if not saved[self.key]:
             del saved[self.key]
         self.path.write_text(json.dumps(saved), encoding="utf-8")
@@ -95,7 +103,7 @@ class CallCorrections:
             return GONE
         return MOVING if entry["moving"].get(str(recording), detected) else STILL
 
-    def change(self, x, y, recording, detected, state=None):
+    def change(self, x, y, recording, detected, state=None, checked=False):
         """Make the mite at (x, y) `state` in `recording`: "moving" or "still" (its
         call), "gone" (in this recording) or "gone_from" (from this recording on);
         without `state`, the one after what it is now in CYCLE. `detected` is the
@@ -103,11 +111,12 @@ class CallCorrections:
 
         A mite gone from an earlier recording on that is given another state here
         is seen again from here on: the recordings in between stay gone, one by one.
-        Returns the state now."""
+        With `checked`, a call ("moving" or "still") is kept as checked by eye,
+        also when it is the detector's. Returns the state now."""
         entries = self.entries()
         entry = self._nearest(entries, x, y)
         if entry is None:
-            entry = {"x": float(x), "y": float(y), "moving": {}, "gone": [], "gone_from": None}
+            entry = {"x": float(x), "y": float(y), "moving": {}, "gone": [], "gone_from": None, "checked": []}
             entries.append(entry)
         if state is None:
             state = CYCLE[(CYCLE.index(self._state(entry, recording, detected)) + 1) % len(CYCLE)]
@@ -130,6 +139,8 @@ class CallCorrections:
             else:
                 entry["moving"][str(recording)] = state == MOVING
         entry["gone"], entry["gone_from"] = sorted(gone), since
+        if checked and state in (MOVING, STILL):
+            entry["checked"] = sorted({*entry["checked"], recording})
         self._write(entries)
         return state
 
@@ -143,6 +154,7 @@ class CallCorrections:
             corrections   {mite id: [recording, ...]}: the calls that are the user's
             censored      {mite id: [recording, ...]}: the recordings in which the mite is gone
             gone_from     {mite id: recording}: the mites gone from a recording on
+            checked       {mite id: [recording, ...]}: the calls kept as checked by eye
 
         With corrections the table has a `corrected` column, with mites gone a
         `censored` one, true in those rows; a censored row is not moving."""
@@ -156,7 +168,7 @@ class CallCorrections:
         moving = data["moving"].to_numpy(dtype=bool).copy()
         corrected = np.zeros(len(data), dtype=bool)
         censored = np.zeros(len(data), dtype=bool)
-        changes = {"corrections": {}, "censored": {}, "gone_from": {}}
+        changes = {"corrections": {}, "censored": {}, "gone_from": {}, "checked": {}}
         for mite in data.drop_duplicates("mite_ID").itertuples():
             entry = self._nearest(entries, mite.x, mite.y)
             if entry is None:
@@ -178,6 +190,9 @@ class CallCorrections:
                 changes["censored"][mite_id] = sorted(gone)
             if since is not None and since < len(times):
                 changes["gone_from"][mite_id] = since
+            looked = sorted(r for r in entry["checked"] if r not in gone and 0 <= r < len(times))
+            if looked:
+                changes["checked"][mite_id] = looked
         changes = {key: value for key, value in changes.items() if value}
         if not changes:
             return mite_data, {}

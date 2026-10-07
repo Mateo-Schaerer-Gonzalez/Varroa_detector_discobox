@@ -332,7 +332,8 @@ class ReportPage {
       ${this.outcomeStat("Moving called moving", r.best, r.rates.best, "moving", "still", r.current)}
       ${this.outcomeStat("Still called still", r.best, r.rates.best, "still", "moving", r.current)}
     </div>
-    <p class="caption">Key figures at the suggested threshold, per mite-recording; "in use" is the threshold in config.yaml.</p>
+    <p class="caption">Key figures at the suggested threshold, per mite-recording; "in use" is the threshold in config.yaml.
+      The suggestion is chosen by where it puts the mites' deaths, not by these figures: see <i>Save the threshold</i>.</p>
 
     <div class="grid-2">
       <figure class="fig">
@@ -352,8 +353,10 @@ class ReportPage {
           <button type="button" id="save-threshold">Save to config.yaml</button>
         </div>
         <p id="save-status" class="hint">Saves the movement score <code>${esc(scoreText(r.metric, r.metric_params, r))}</code> along with the threshold.</p>
-        <p class="hint">The suggestion maximises the fraction of moving labels called moving plus the fraction of still labels called still,
-          and sits halfway between the two nearest scores. Every analysis started after saving uses the new value.
+        <p class="hint">The suggestion puts the mites' deaths closest to where the labels put them: a mite dies at the recording after its last movement,
+          and the suggestion has the smallest mean distance, in recordings, between that death by the detector and by the labels (<i>death error</i> below).
+          Among the thresholds that do as well, it is the middle of the widest stretch. It can call fewer mite-recordings right than a lower threshold would:
+          in a long run, one still recording called moving long after a death moves the death there. Every analysis started after saving uses the new value.
           Check it with the <b>Test</b> report on a <em>different</em> recording: on this one it looks better than it will be.</p>
         ${this.comparisonTable(r)}`)}
     </div>
@@ -369,12 +372,13 @@ class ReportPage {
   comparisonTable(r) {
     const { thr } = ReportPage;
     // The values as shown everywhere else, so the same threshold never rounds two ways.
-    const rows = [["in use", r.threshold, r.current], ...(r.best ? [["suggested", r.suggested_threshold, r.best]] : [])];
+    const rows = [["in use", r.threshold, r.current, "current"], ...(r.best ? [["suggested", r.suggested_threshold, r.best, "suggested"]] : [])];
+    const deathError = (key) => { const error = r.death_error?.[key]?.mae; return error == null ? "–" : `${(+error).toFixed(2)} rec.`; };
     return `<div class="table-wrap"><table>
-    <thead><tr><th>Threshold</th><th class="num">Value</th><th class="num">Called right</th>
-      <th class="num">Moving called still</th><th class="num">Still called moving</th></tr></thead>
-    <tbody>${rows.map(([name, value, c]) => `<tr>
-      <td>${name}</td><td class="num">${thr(value)}</td><td class="num">${pct(c.accuracy)}</td>
+    <thead><tr><th>Threshold</th><th class="num">Value</th><th class="num" title="Mean distance, in recordings, between each mite's death by the detector and by the labels">Death error</th>
+      <th class="num">Called right</th><th class="num">Moving called still</th><th class="num">Still called moving</th></tr></thead>
+    <tbody>${rows.map(([name, value, c, key]) => `<tr>
+      <td>${name}</td><td class="num">${thr(value)}</td><td class="num">${deathError(key)}</td><td class="num">${pct(c.accuracy)}</td>
       <td class="num">${c.moving_called_still}</td><td class="num">${c.still_called_moving}</td></tr>`).join("")}</tbody>
   </table></div>`;
   }

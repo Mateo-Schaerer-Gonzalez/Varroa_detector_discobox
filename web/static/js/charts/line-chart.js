@@ -10,6 +10,7 @@
  *   yLabel, xLabel, yMin, yMax, height
  *   yFormat     value -> text, for axis ticks and the tooltip
  *   threshold   { value, label } drawn as a dashed reference line
+ *   range       { low, high } shaded across the plot, behind the data
  *   selected    index of the x value to mark, e.g. the recording on screen
  *   onXClick    index -> called when the chart is clicked away from a clickable line
  *   xDomain     [min, max] of the x axis, e.g. a whole live run; the part past
@@ -135,6 +136,11 @@ class LineChart {
     if (!threshold) return;
     const { el } = ChartKit;
     const { pad, plotW } = this;
+    const { range } = this.options;
+    if (range) {
+      const top = this.sy(Math.min(range.high, this.yMax));
+      el("rect", { x: pad.left, y: top, width: plotW, height: Math.max(0, this.sy(Math.max(range.low, this.yMin)) - top), class: "range" }, svg);
+    }
     const y = this.sy(threshold.value);
     el("line", { x1: pad.left, x2: pad.left + plotW, y1: y, y2: y, class: "threshold" }, svg);
     el("text", { x: pad.left + plotW - 4, y: y - 6, "text-anchor": "end", class: "threshold-label" }, svg).textContent = threshold.label;

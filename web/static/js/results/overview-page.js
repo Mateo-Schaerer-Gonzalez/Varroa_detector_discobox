@@ -1,5 +1,5 @@
-// The results overview: key figures, the plate map playing the recording shown,
-// the survival rate by group, the survival against the negative control, movement
+// The results overview: key figures, the calls to check by eye (ReviewCheck), the
+// plate map playing the recording shown, the survival rate by group, the survival against the negative control, movement
 // per zone, the group summary and the score figures.
 
 class OverviewPage extends ResultsPage {
@@ -11,6 +11,7 @@ class OverviewPage extends ResultsPage {
     const body = this.body;
     const span = times.length > 1 ? `over ${minutes(times[times.length - 1] - times[0])}` : "";
     const { stat, figure, section, movingBadge } = Markup;
+    const review = new ReviewCheck(this);
 
     body.innerHTML = `
     ${this.staleBanner()}
@@ -27,6 +28,8 @@ class OverviewPage extends ResultsPage {
       ${stat("Groups", summary.n_groups)}
       ${stat("Recordings", results.n_recordings, span)}
     </div>
+
+    ${review.section()}
 
     <div class="clip-block">
       ${this.clipFigure("result-plate", 1, `Plate map · recording at ${this.shownTime()}`,
@@ -71,6 +74,7 @@ class OverviewPage extends ResultsPage {
       </ul>
       <p class="caption">${this.resultsFolderNote()}Every chart above can be downloaded as SVG or PNG from the buttons beside its title.</p>`)}`;
     this.wire(body);
+    review.wire(body);
 
     this.timeChart($("chart-group-alive"), {
       yLabel: "Survival rate (%)",

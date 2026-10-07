@@ -114,8 +114,13 @@ that with the detector:
    next to the recordings, so they survive a change in detector settings.
 3. **Report**: every labelled (mite, recording) is compared with the
    detector's call there, moving when that recording's score reaches the
-   threshold. *Calibration* suggests the threshold that maximises sensitivity +
-   specificity and can save it to `config.yaml`; its confusion matrix switches
+   threshold. *Calibration* suggests the threshold that puts the mites' deaths
+   closest to where the labels put them (the smallest mean distance, in
+   recordings, between the death by the detector and by the labels; a mite dies
+   at the recording after its last movement) and can save it to `config.yaml`.
+   That is not the threshold calling the most mite-recordings right: in a long
+   run, one still recording called moving long after a death moves the death
+   there. Its confusion matrix switches
    between the suggested threshold and the one in use. *Test* shows the
    confusion matrix at the threshold in use, the ROC curve with AUC, and where on
    the plate the errors are. Both show the fraction of mites moving per recording
@@ -195,6 +200,24 @@ gone from a recording on leaves the survival numbers at the recording before,
 alive as far as is known (right-censored). The corrections are saved by mite position to
 `corrections.json` next to the recordings, so later runs keep them; they are
 apart from the calibration's ground truth, which they do not change.
+
+**Close calls to check by eye.** A mite dies at the recording after its last
+movement, so one wrong call can move its death by hours: a still recording
+called moving long after it, or a weak last movement called still. The scores
+close to the threshold are the ones the detector gets wrong. With a band around
+the threshold (`mite.metric_review_bands` in `config.yaml`, set under *To check
+by eye* on the results page), a score in the band is a close call, and the
+results page lists, mite by mite, the ones its time of death depends on: those
+after its last clear movement, the latest first. Opening a mite shows the
+recording and asks *Moving* or *Still*; the answer is kept in
+`corrections.json`, also when it is the detector's own call, and the next one
+comes up. Once a close call shows the mite moving, the earlier ones no longer
+matter and are asked for no more. The band changes no number by itself: a call
+stays what the threshold makes it until it is answered. A band the threshold is
+no longer in, as after a new threshold was saved, is not used.
+`scripts/optuna_death_time.py` chooses the threshold and the band by where they
+put each mite's death, on the saved ground truth split into train and test
+mites, and `notebooks/death_time_calibration.ipynb` shows what it found.
 
 Everything runs on `127.0.0.1` and no asset is fetched from the internet, so the
 app works with no network connection.

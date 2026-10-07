@@ -1,6 +1,7 @@
 // One mite: its key figures (its survival among them; a mite never seen moving is
 // left out of the survival numbers), a close-up playing the recording shown, its motion
-// score over time and a table of its recordings.
+// score over time and a table of its recordings. Its close calls to check by eye
+// are asked here (ReviewCheck).
 
 class MitePage extends ResultsPage {
   show(miteId) {
@@ -21,9 +22,11 @@ class MitePage extends ResultsPage {
       nCorrected ? `${nCorrected} call${nCorrected === 1 ? "" : "s"} corrected by hand` : "",
       nGone ? `gone in ${nGone} more` : "",
     ].filter(Boolean).join(", ");
+    const review = new ReviewCheck(this);
     const body = this.body;
     body.innerHTML = `
     ${this.staleBanner()}
+    ${review.miteNote(mite)}
     <header class="page-head">
       <div>
         <h1>Mite ${this.miteId(mite)}</h1>
@@ -44,9 +47,9 @@ class MitePage extends ResultsPage {
       ${this.clipFigure("mite-crop", 1, "Close-up",
         `The recording at ${this.shownTime()}, looped, 140 × 140 px around the mite: ${this.callBadge(mite, ctx.shown)} in it.
         Where that is wrong, click the mite to step through moving, still, gone in this recording (e.g. fallen off) and gone from this recording on,
-        or choose one in the table below.`, "crop-wrap square")}
+        or choose one in the table below.${review.ask(mite)}`, "crop-wrap square")}
       ${figure("chart-mite", 2, "Motion score over time",
-        `${movingBadge(true)} at or above the threshold, ${movingBadge(false)} below it. ${ResultsPage.MOVING_NOTE} Click a time to show that recording.${this.stillToCome()}`)}
+        `${movingBadge(true)} at or above the threshold, ${movingBadge(false)} below it. ${ResultsPage.MOVING_NOTE}${review.review ? ` The shaded band, ${review.bandText()}, holds the scores too close to the threshold to trust.` : ""} Click a time to show that recording.${this.stillToCome()}`)}
     </div>
 
     ${section("Recordings", `<div class="table-wrap"><table class="clickable" id="recording-table">
@@ -55,7 +58,7 @@ class MitePage extends ResultsPage {
           title="Show this recording above">
           <td class="num">${minutes(t)}</td>
           <td class="num">${score(mite.scores[i])}</td>
-          <td>${this.callBadge(mite, i)}</td>
+          <td>${this.callBadge(mite, i)}${review.mark(mite, i)}</td>
           <td><select class="state-select" data-correct="${i}" aria-label="Mite ${esc(mite.id)} at ${minutes(t)}"
             title="Set by hand what the mite is in this recording. Gone, e.g. fallen off: censored, in this recording or from it on.">
             ${STATES.map((state) => `<option value="${state}"${state === this.callState(mite, i) ? " selected" : ""}>${STATE_NAMES[state]}</option>`).join("")}
@@ -64,6 +67,7 @@ class MitePage extends ResultsPage {
       <p class="caption">A mite <i>gone</i> in a recording, e.g. one that fell off the plate, is censored there: it counts neither as moving nor as still.
         One gone from a recording on leaves the survival numbers at the recording before, alive as far as is known, unless it counted as dead by then.</p>`)}`;
     this.wire(body);
+    review.wireMite(body, mite);
     body.querySelectorAll("[data-correct]").forEach((select) => {
       // the row's click and Enter show the recording
       ["click", "keydown"].forEach((type) => select.addEventListener(type, (event) => event.stopPropagation()));
@@ -80,6 +84,7 @@ class MitePage extends ResultsPage {
       yLabel: "Motion score",
       noDirectLabels: true,
       threshold: { value: results.threshold, label: "threshold" },
+      range: review.review,
       series: [{
         name: `Mite ${mite.id}`,
         values: mite.scores,
@@ -87,7 +92,7 @@ class MitePage extends ResultsPage {
         width: 1.5,
         pointColors: mite.moving.map((moving, i) => token(mite.censored[i] ? "--muted" : moving ? "--moving" : "--still")),
       }],
-      tooltipExtra: (i) => `<div class="tip-note">${mite.censored[i] ? "gone" : mite.moving[i] ? "moving" : "still"}${mite.corrected[i] ? ", corrected by hand" : ""}</div>`,
+      tooltipExtra: (i) => `<div class="tip-note">${mite.censored[i] ? "gone" : mite.moving[i] ? "moving" : "still"}${mite.corrected[i] ? ", corrected by hand" : mite.to_check.includes(i) ? ", to check" : ""}</div>`,
     });
   }
 

@@ -16,6 +16,11 @@ mite:
   # Tried and saved with the threshold on the calibration report.
   normalize_brightness: false
   normalize_floor: false
+  # Per metric, [low, high] on its scale: a band around its threshold. A score
+  # in it is too close to call, so the result pages ask to check by eye the
+  # ones a mite's time of death depends on (classes/review_band.py). Set on the
+  # results page, or edited here; a metric left out has none.
+  metric_review_bands: {}
   moving_color: [0, 255, 0]         # BGR: green for a mite moving in the latest recording
   still_color: [0, 0, 255]          # BGR: red for a mite still in the latest recording
 
