@@ -55,6 +55,20 @@ def test_fill_labels_only_the_unlabelled_mites_of_a_zone():
         d.fill(1, 1, "sideways")
 
 
+def test_dead_labels_the_unlabelled_mites_still_from_the_recording_on():
+    d = draft({"0": [None, "moving", None], "1": ["moving", None, None]})
+    d.fill(1, 1, "dead")
+    assert d.states("0") == [None, "moving", "still"]  # a label already there stays
+    assert d.states("1") == ["moving", "still", "still"]
+    assert d.states("2") == [None, None, None]  # another zone
+
+
+def test_dead_leaves_not_a_mite():
+    d = draft({"0": ["not_a_mite"] * 3})
+    d.fill(1, 0, "dead")
+    assert d.states("0") == ["not_a_mite"] * 3
+
+
 def test_clear_leaves_not_a_mite():
     d = draft({"0": ["not_a_mite"] * 3})
     d.fill(1, 0, "clear")

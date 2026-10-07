@@ -22,8 +22,9 @@ from classes.calibration import MOVING, NOT_A_MITE, STILL, apply_changes, is_rej
 # A click on a mite steps through these; None is unlabelled.
 CYCLE = (None, MOVING, STILL, NOT_A_MITE)
 # The fill buttons: label every unlabelled mite of a zone moving or still, as in
-# the recording before, or clear the zone's labels in one recording.
-FILLS = (MOVING, STILL, "previous", "clear")
+# the recording before, or clear the zone's labels in one recording. "dead" labels
+# them still from the recording on to the last one: a dead mite does not move again.
+FILLS = (MOVING, STILL, "previous", "dead", "clear")
 COUNTED = {MOVING: MOVING, STILL: STILL, NOT_A_MITE: NOT_A_MITE, None: "unset"}
 
 
@@ -86,7 +87,8 @@ class TruthDraft:
         self.set(mite_id, recording, CYCLE[(index + (-1 if backwards else 1)) % len(CYCLE)])
 
     def fill(self, zone_id, recording, kind):
-        """Label every unlabelled mite of a zone in one recording by `kind` (see FILLS)."""
+        """Label every unlabelled mite of a zone in one recording by `kind` (see FILLS);
+        "dead" also labels the recordings after it, where the mite is unlabelled."""
         if kind not in FILLS:
             raise ValueError(f"Unknown fill {kind!r}.")
         for mite_id in self.mites_in(zone_id):
@@ -94,6 +96,11 @@ class TruthDraft:
             if kind == "clear":
                 if not is_rejected(states):
                     self.set(mite_id, recording, None)
+            elif kind == "dead":
+                if not is_rejected(states):
+                    for later in range(recording, self.n):
+                        if states[later] is None:
+                            self.set(mite_id, later, STILL)
             elif not self.cell_done(mite_id, recording):
                 state = (states[recording - 1] if recording > 0 else None) if kind == "previous" else kind
                 if state:

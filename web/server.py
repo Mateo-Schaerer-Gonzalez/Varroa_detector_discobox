@@ -150,7 +150,7 @@ class TruthEdit(BaseModel):
     mite: Optional[str] = None  # cycle: the mite clicked
     backwards: bool = False     # cycle: to the previous status (shift-click)
     zone: Optional[int] = None  # fill: the zone
-    kind: Optional[str] = None  # fill: "moving", "still", "previous" or "clear"
+    kind: Optional[str] = None  # fill: "moving", "still", "previous", "dead" or "clear"
 
 
 class EvaluateRequest(BaseModel):

@@ -1,7 +1,7 @@
 // The ground-truth page: one zone in one recording, its clip looped, each mite a
 // ring to click through moving, still and not a mite; beside it the whole plate,
 // the counts and the progress. ← → move between zones, ↑ ↓ between recordings,
-// P plays or pauses. What a click does, and every count, is the server's
+// P plays or pauses, D marks the zone's unlabelled mites dead. What a click does, and every count, is the server's
 // (GroundTruth, classes/truth_draft.py).
 
 class TruthPage {
@@ -200,7 +200,8 @@ class TruthPage {
   }
 
   // Label every unlabelled mite of the zone on screen, in the recording on screen:
-  // "moving", "still", "previous" (as in the recording before), or "clear" it.
+  // "moving", "still", "previous" (as in the recording before), or "clear" it;
+  // "dead" labels them still from the recording on screen to the last one.
   async fill(kind) {
     const { zoneId, recording } = cal;
     try {
@@ -226,6 +227,7 @@ class TruthPage {
     if (event.target.tagName === "INPUT" && !slider) return;
     if (event.key === "p" || event.key === "P") { $("play-btn").click(); return; }
     if (slider) return;
+    if (event.key === "d" || event.key === "D") { this.fill("dead"); return; }
     const zoneStep = { ArrowLeft: -1, ArrowRight: 1 }[event.key];
     const recordingStep = { ArrowUp: -1, ArrowDown: 1 }[event.key];
     if (zoneStep) {
