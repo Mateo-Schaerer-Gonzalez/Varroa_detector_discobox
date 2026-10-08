@@ -265,3 +265,57 @@ class TestOpticalFlowShortStacks:
         roi = np.random.default_rng(0).uniform(0, 255, (5, 20, 20, 3)).astype(np.float32)
         assert Analyzer._motion_score(roi, "optical_flow", {"step": 10}) == \
             Analyzer._motion_score(roi, "optical_flow", {"step": 4})
+
+
+def _mite_frames(legs, shifts=None, light=None, size=46):
+    """Frames of a dark oval on a bright plate with one leg: `legs` gives, per
+    frame, how far the leg sticks out to the left, in pixels."""
+    frames = []
+    for index, leg in enumerate(legs):
+        frame = np.full((size, size), 115, dtype=np.uint8)
+        cv2.ellipse(frame, (size // 2, size // 2), (5, 7), 0, 0, 360, 25, -1)
+        if leg:
+            cv2.line(frame, (size // 2 - 5, size // 2 - 2), (size // 2 - 5 - leg, size // 2 - 3), 60, 1)
+        frame = cv2.GaussianBlur(frame, (0, 0), 0.8).astype(np.float32)
+        if shifts is not None:
+            move = np.float32([[1, 0, shifts[index]], [0, 1, 0]])
+            frame = cv2.warpAffine(frame, move, (size, size), flags=cv2.INTER_LINEAR, borderMode=cv2.BORDER_REPLICATE)
+        if light is not None:
+            frame = frame * light[index]
+        frames.append(frame)
+    return np.stack(frames)[..., None]
+
+
+class TestOutlineMovement:
+    SHAKE = [0, 0.3, -0.3, 0.2, -0.2, 0]
+
+    def test_it_is_padded_by_default(self):
+        assert Analyzer.roi_padding("outline_movement") == 16
+
+    def test_a_mite_that_does_nothing_scores_nothing(self):
+        assert Analyzer._motion_score(_mite_frames([3] * 6), "outline_movement") == pytest.approx(0, abs=1e-4)
+
+    def test_a_leg_that_moves_scores_in_pixels(self):
+        score = Analyzer._motion_score(_mite_frames([3, 3, 4, 5, 4, 3]), "outline_movement")
+        assert 0.15 < score < 2
+
+    def test_a_leg_that_moves_further_scores_higher(self):
+        short = Analyzer._motion_score(_mite_frames([3, 4, 3, 4]), "outline_movement")
+        far = Analyzer._motion_score(_mite_frames([3, 6, 3, 6]), "outline_movement")
+        assert far > short
+
+    def test_a_lamp_that_flickers_scores_nothing(self):
+        frames = _mite_frames([3] * 6, light=[1.0, 0.97, 1.0, 0.97, 1.03, 1.0])
+        assert Analyzer._motion_score(frames, "outline_movement") == pytest.approx(0, abs=1e-3)
+
+    def test_a_shaking_plate_scores_far_less_than_a_leg(self):
+        leg = Analyzer._motion_score(_mite_frames([3, 3, 4, 5, 4, 3]), "outline_movement")
+        shake = Analyzer._motion_score(_mite_frames([3] * 6, shifts=self.SHAKE), "outline_movement")
+        assert shake < leg / 3
+
+    def test_a_patch_without_a_mite_scores_nothing(self):
+        assert Analyzer._motion_score(np.full((5, 40, 40, 1), 115, dtype=np.float32), "outline_movement") == 0.0
+
+    def test_a_patch_cut_off_at_the_image_edge_still_gets_a_score(self):
+        frames = _mite_frames([3, 3, 4, 5, 4, 3])[:, :, 14:]   # the mite 9 pixels from the left edge
+        assert np.isfinite(Analyzer._motion_score(frames, "outline_movement"))

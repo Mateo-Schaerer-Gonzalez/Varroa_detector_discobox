@@ -3,10 +3,10 @@ mite:
   metric: "topN_variability"
   # Per metric, the movement threshold on that metric's scale; the one of `metric`
   # is used, so changing `metric` also changes the threshold.
-  metric_thresholds: {max_diff: 14.0, mean_diff: 1.727, vector_diff: 117.7, vector_variance: 229.9, variability: 3.476, topN_variability: 3.476, optical_flow: 0.1004, topN_temporal_range: 28.4, topN_vector_temporal_range: 38.5, topN_binary_flux: 0.02296}
+  metric_thresholds: {max_diff: 14.0, mean_diff: 1.727, vector_diff: 117.7, vector_variance: 229.9, variability: 3.476, topN_variability: 3.476, optical_flow: 0.1004, topN_temporal_range: 28.4, topN_vector_temporal_range: 38.5, topN_binary_flux: 0.02296, outline_movement: 0.266}
   # Per metric, parameters that override the defaults in classes/analyzer.py.
   # Chosen and saved from the calibration report, or edited here.
-  metric_params: {max_diff: {}, mean_diff: {}, vector_diff: {}, vector_variance: {}, variability: {}, topN_variability: {n: 759}, optical_flow: {window: 5, n: 50, step: 13, winsize: 23, levels: 2, iterations: 2, poly_n: 7, poly_sigma: 1.5, pad: 12}, topN_temporal_range: {n: 10}, topN_vector_temporal_range: {n: 1}, topN_binary_flux: {threshold: 98, n: 260}}
+  metric_params: {max_diff: {}, mean_diff: {}, vector_diff: {}, vector_variance: {}, variability: {}, topN_variability: {n: 759}, optical_flow: {window: 5, n: 50, step: 13, winsize: 23, levels: 2, iterations: 2, poly_n: 7, poly_sigma: 1.5, pad: 12}, topN_temporal_range: {n: 10}, topN_vector_temporal_range: {n: 1}, topN_binary_flux: {threshold: 98, n: 260}, outline_movement: {n: 4, pad: 16}}
   # Follow the plate when it shakes: each frame is shifted back by the plate's
   # movement before any metric scores it. Changes nothing on a still plate.
   stabilize_plate: true

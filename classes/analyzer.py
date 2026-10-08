@@ -104,6 +104,7 @@ class Analyzer:
             "topN_temporal_range": Analyzer._topN_temporal_range,
             "topN_vector_temporal_range": Analyzer._topN_vector_temporal_range,
             "topN_binary_flux": Analyzer._topN_binary_flux,
+            "outline_movement": Analyzer._outline_movement,
         }
 
     @staticmethod
@@ -296,5 +297,73 @@ class Analyzer:
         # Compute temporal standard deviation of the binary transitions
         pixel_flux = binary_mask.std(axis=0).ravel()
         return float(np.sort(pixel_flux)[-n:].mean())
+
+    @staticmethod
+    def _outline_movement(roi, n=4, pad=16):
+        """How far the mite's outline moves over the frames, in pixels.
+
+        The outline is unrolled around the mite's centre: a ray goes out at
+        each of 64 angles, and the darkness along it (the share of the plate's
+        light the mite takes away, the plate's light read off the patch's
+        outermost pixels) is summed. That is the length the mite would cover
+        on that ray if it were black, and a leg makes the rays that cross it
+        longer. Each frame's profile is set against the mean of the frames,
+        and the score is the mean, over the `n` rays that move most, of how
+        far each goes from its shortest to its longest.
+
+        Two things change a picture without the mite changing shape and are
+        kept out: the lamp (each frame's darkness is against the plate's light
+        in that frame) and a shift of the whole mite, as when the plate shakes
+        (each frame's rays start at the mite's centre in that frame). What they
+        leave is the same all the way round, or longer on one side and shorter
+        on the other: the first two harmonics in the angle, taken out as well.
+        What is left is a change of shape, as a leg makes.
+
+        `pad` is not used here: the ROI is cut `pad` pixels larger on each side
+        than the mite's box (see roi_padding()), for the rays to reach past the
+        legs and for bare plate at the patch's edge. It should be 12 or more.
+
+        notebooks/alive_dead_legs.ipynb shows what it sees."""
+        gray = roi.mean(axis=-1)
+        height, width = gray.shape[1:]
+        edge = np.ones((height, width), dtype=bool)
+        edge[6:-6, 6:-6] = False               # the outermost pixels: the plate, never the mite
+        plate = np.median(gray[:, edge], axis=1)  # per frame, so a lamp that flickers changes nothing
+        if plate.min() <= 0:
+            return 0.0
+        dark = np.clip(1 - gray / plate[:, None, None], 0, None).astype(np.float32)
+
+        # The mite's centre in each frame: where its darkness lies, the far
+        # surroundings left out. The rays start there, so a mite that is moved
+        # as a whole (the plate shaking) keeps its profile.
+        near = np.zeros((height, width), dtype=np.float32)
+        margin = max(pad - 8, 0)
+        near[margin:height - margin, margin:width - margin] = 1
+        weight = dark * near
+        total = weight.sum(axis=(1, 2))
+        if total.min() <= 0:
+            return 0.0
+        yy, xx = np.mgrid[:height, :width]
+        centre_x, centre_y = (weight * xx).sum(axis=(1, 2)) / total, (weight * yy).sum(axis=(1, 2)) / total
+
+        angles, ray_step = 64, 0.25
+        # 13 pixels reach past a mite's legs; less where the patch ends sooner (a mite at the image's edge)
+        reach = min(13.0, centre_x.min(), centre_y.min(), width - 1 - centre_x.max(), height - 1 - centre_y.max())
+        if reach < 2:
+            return 0.0
+        angle = np.arange(angles) * (2 * np.pi / angles)
+        along = np.arange(0, reach, ray_step)
+        ray_x, ray_y = np.outer(np.cos(angle), along), np.outer(np.sin(angle), along)
+        profiles = np.array([
+            cv2.remap(frame, (x + ray_x).astype(np.float32), (y + ray_y).astype(np.float32), cv2.INTER_LINEAR).sum(axis=1)
+            for frame, x, y in zip(dark, centre_x.tolist(), centre_y.tolist())
+        ]) * ray_step
+
+        harmonics = np.fft.rfft(profiles - profiles.mean(axis=0), axis=1)
+        harmonics[:, :2] = 0                   # the same all round, and a shift of the whole mite
+        shape = np.fft.irfft(harmonics, n=angles, axis=1)
+        shape = (np.roll(shape, 1, axis=1) + shape + np.roll(shape, -1, axis=1)) / 3  # a leg is wider than one ray
+        swing = shape.max(axis=0) - shape.min(axis=0)
+        return float(np.sort(swing)[-n:].mean())
 
 

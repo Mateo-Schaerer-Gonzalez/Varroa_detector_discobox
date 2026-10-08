@@ -60,6 +60,11 @@ def _binary_flux(trial):
     return {"threshold": trial.suggest_int("threshold", 10, 245), **_top_n(trial)}
 
 
+def _outline_movement(trial):
+    # the rays need bare plate beyond the legs, so the small paddings are left out
+    return {"n": trial.suggest_int("n", 1, 32, log=True), "pad": trial.suggest_categorical("pad", [12, 16])}
+
+
 def _optical_flow(trial):
     """Farneback wants odd window sizes; poly_sigma follows poly_n as the
     OpenCV docs advise."""
@@ -84,6 +89,7 @@ SPACES = {
     "topN_vector_temporal_range": _top_n,
     "topN_binary_flux": _binary_flux,
     "optical_flow": _optical_flow,
+    "outline_movement": _outline_movement,
 }
 # Trials per search: a single parameter is mapped out long before 300.
 TRIALS = {"optical_flow": 300, "topN_binary_flux": 150}
