@@ -65,9 +65,12 @@ def test_a_recording_in_which_the_mite_is_gone_is_not_asked_for():
 def test_the_pages_are_told_what_is_left_to_check():
     data = mite_data({"0": [9.0, 3.0, 1.0, 4.0], "1": [9.0, 1.0, 1.0, 1.0], "2": [1.0, 1.0, 2.6, 1.0]})
     review = BAND.describe(data)
-    assert review == {"low": 2.5, "high": 4.5, "to_check": {"0": [3, 1], "2": [2]}, "n_recordings": 3, "n_mites": 2}
+    assert review == {"low": 2.5, "high": 4.5, "to_check": {"0": [3, 1], "2": [2]}, "n_recordings": 3, "n_mites": 2,
+                      "n_asked": 2, "n_done": 0}
     # a correction counts as checked, like a call kept as checked
-    assert BAND.describe(data, {"corrections": {"0": [1]}, "checked": {"2": [2]}})["to_check"] == {"0": [3]}
+    answered = BAND.describe(data, {"corrections": {"0": [1]}, "checked": {"2": [2]}})
+    assert answered["to_check"] == {"0": [3]}
+    assert (answered["n_asked"], answered["n_done"]) == (2, 1)  # mite 2 is done, mite 0 not yet
     # mite 0's last call, moving, set by hand: a settled movement, so the one before it matters no more
     assert BAND.describe(data, {"checked": {"0": [3]}})["to_check"] == {"2": [2]}
 

@@ -156,6 +156,7 @@ def test_a_call_corrected_on_the_result_pages_changes_the_results_and_stays(tmp_
     assert changed["corrections"] == {mite["id"]: [1]}
     zone_after = next(z for z in changed["zones"] if z["id"] == zone["id"])
     assert zone_after["moving"][1] != zone["moving"][1]  # the zone's numbers follow
+    pipeline.finish_files(out)  # written a moment after the page has its numbers
     measurements = pd.read_excel(out / "results.xlsx", sheet_name="measurements")
     assert int(measurements["corrected"].sum()) == 1  # and so does the workbook
 
@@ -182,7 +183,7 @@ def test_a_mite_marked_gone_counts_in_no_number_of_the_results(tmp_path):
     assert gone["summary"]["n_observations"] == results["summary"]["n_observations"] - n_last
     json.dumps(pipeline.describe_movement(gone), allow_nan=False)
     json.dumps(pipeline.describe_survival(gone), allow_nan=False)
-    workbook = pd.read_excel(out / "results.xlsx", sheet_name=None)
+    workbook = pd.read_excel(pipeline.results_file(out, "results.xlsx"), sheet_name=None)  # waits for it
     assert int(workbook["measurements"]["censored"].sum()) == n_last  # the rows stay, marked
     zone_rows = workbook["moving"][(workbook["moving"]["level"] == "zone") & (workbook["moving"]["name"] == mite["zone_id"])]
     n_zone = sum(1 for m in results["mites"] if m["zone_id"] == mite["zone_id"])

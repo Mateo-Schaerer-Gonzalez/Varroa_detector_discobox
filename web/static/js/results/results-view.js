@@ -10,6 +10,17 @@ class ResultsView {
     // The index of the first recording new since the page was last drawn, set by
     // the live run for the one drawing that shows it: its points are drawn in.
     this.enterFrom = null;
+    document.addEventListener("keydown", (event) => this.onKey(event));
+  }
+
+  // M and S answer the close call asked on a mite's page (ReviewCheck).
+  onKey(event) {
+    if (!/^#\/(live\/)?mite\//.test(location.hash) || $("view-results").hidden) return;
+    if (event.altKey || event.ctrlKey || event.metaKey || event.repeat) return;
+    if (["INPUT", "SELECT", "TEXTAREA"].includes(event.target.tagName) && event.target.type !== "range") return;
+    const state = { m: "moving", s: "still" }[event.key.toLowerCase()];
+    const button = state && document.querySelector(`#results-body [data-answer="${state}"]:not(:disabled)`);
+    if (button) { event.preventDefault(); button.click(); }
   }
 
   draw() {
@@ -44,9 +55,12 @@ class ResultsView {
     if (ctx.mode === "live") live.setFollow(index === ctx.results.times.length - 1);
   }
 
-  // Open a mite's page, in the recording `recording` when given.
-  openMite(mite, recording = null) {
+  // Open a mite's page, in the recording `recording` when given; with `replace`,
+  // in place of the page shown, so Back does not go through every mite checked.
+  openMite(mite, recording = null, replace = false) {
     if (recording != null) this.setShown(recording);
-    router.go(ctx.href(`mite/${encodeURIComponent(mite.id)}`));
+    const hash = ctx.href(`mite/${encodeURIComponent(mite.id)}`);
+    if (replace && location.hash !== hash) location.replace(hash);
+    else router.go(hash);
   }
 }

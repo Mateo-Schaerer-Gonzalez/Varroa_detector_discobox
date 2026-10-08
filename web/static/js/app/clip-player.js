@@ -11,6 +11,7 @@ class ClipPlayer {
     this.show = null;
     this.interval = 100;
     this.playing = true;
+    this.warmed = new Map();  // url -> a clip being fetched ahead (warm)
   }
 
   stop() {
@@ -42,18 +43,34 @@ class ClipPlayer {
     this.stop();
     const token = this.token;
     try {
-      const data = await readJson(await fetch(url), "Could not load the recording");
-      const frames = data.frames.map(frameUrl);
-      await Promise.all(frames.map((src) => new Promise((resolve) => {
-        const image = new Image();
-        image.onload = image.onerror = resolve;
-        image.src = src;
-      })));
-      return token === this.token ? { ...data, frames } : null;
+      // A clip fetched ahead is used once: the server may make it anew later.
+      const ahead = this.warmed.get(url);
+      this.warmed.delete(url);
+      const clip = (ahead && await ahead) || await this.fetchClip(url, frameUrl);
+      return token === this.token ? clip : null;
     } catch (error) {
       if (token !== this.token) return null;
       throw error;
     }
+  }
+
+  async fetchClip(url, frameUrl) {
+    const data = await readJson(await fetch(url), "Could not load the recording");
+    const frames = data.frames.map(frameUrl);
+    await Promise.all(frames.map((src) => new Promise((resolve) => {
+      const image = new Image();
+      image.onload = image.onerror = resolve;
+      image.src = src;
+    })));
+    return { ...data, frames };
+  }
+
+  // Fetch a clip ahead of its being shown, so load() has it at once. The few
+  // fetched last are kept; one that fails is fetched again by load().
+  warm(url, frameUrl) {
+    if (this.warmed.has(url)) return;
+    this.warmed.set(url, this.fetchClip(url, frameUrl).catch(() => null));
+    if (this.warmed.size > 4) this.warmed.delete(this.warmed.keys().next().value);
   }
 
   // Show a loaded clip's frames in turn through `show(src)`.

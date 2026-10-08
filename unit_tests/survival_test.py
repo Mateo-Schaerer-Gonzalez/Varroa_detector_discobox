@@ -32,6 +32,36 @@ def test_with_a_death_time_a_mite_still_for_less_counts_as_alive():
     assert [SurvivalAnalysis(TIMES, 25).is_alive(NEVER, r) for r in range(3)] == [True, True, True]
 
 
+def alive_by_the_rule(survival, moving, recording):
+    """The rule as the module's docstring states it, recording by recording."""
+    moved = [index for index, value in enumerate(moving) if value]
+    there = [index for index, value in enumerate(moving) if value is not None]
+    last, end = (moved[-1] if moved else -1), (there[-1] if there else -1)
+    if recording <= last:
+        return True
+    if recording > end:
+        return False
+    return survival.times[end] - survival.times[max(last, 0)] < survival.death_minutes
+
+
+def test_one_pass_over_a_mites_calls_tells_every_recording():
+    rng = random.Random(3)
+    for _trial in range(400):
+        n = rng.randint(1, 12)
+        times = sorted(rng.sample(range(300), n))
+        survival = SurvivalAnalysis(times, rng.choice([0, 10, 40, 500]))
+        movings = [[rng.choice([True, False, False, None]) for _ in range(n)] for _ in range(rng.randint(0, 5))]
+        movings.append([None] * n)  # never there
+        for moving in movings:
+            alive = [alive_by_the_rule(survival, moving, recording) for recording in range(n)]
+            assert [survival.is_alive(moving, recording) for recording in range(n)] == alive
+            # alive up to a last recording, never again after it
+            assert alive == [recording <= survival.alive_until(moving) for recording in range(n)]
+        assert survival.alive_counts(movings) == [survival.alive_count(movings, recording) for recording in range(n)]
+        assert survival.alive_counts(movings) == [sum(alive_by_the_rule(survival, moving, recording) for moving in movings)
+                                                  for recording in range(n)]
+
+
 def test_the_last_movement():
     survival = SurvivalAnalysis(TIMES)
     assert survival.last_movement(FIRST_TWO) == 1

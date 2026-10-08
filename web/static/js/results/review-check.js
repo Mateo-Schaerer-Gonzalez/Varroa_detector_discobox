@@ -2,8 +2,10 @@
 // threshold (config.yaml, set here), a score in it is too close to trust, and the
 // server lists, per mite, the ones its time of death depends on, the latest first
 // (results.review, mite.to_check; classes/review_band.py). The overview lists the
-// mites to check and sets the band; a mite's page asks about the recording shown
-// and keeps the answer.
+// mites to check and sets the band; a mite's page asks about the recording shown,
+// keeps the answer (the buttons, or M and S) and goes on to the next close call, of
+// this mite or of the next one, whose clip is fetched ahead. A bar says how far
+// the checking has got (results.review: n_done of n_asked mites).
 
 class ReviewCheck {
   constructor(page) {
@@ -22,6 +24,15 @@ class ReviewCheck {
   mites() {
     return this.page.results.mites.filter((mite) => mite.to_check.length)
       .sort((a, b) => b.to_check.length - a.to_check.length);
+  }
+
+  // How many of the mites the band asks about have nothing left to check, as a bar.
+  progress() {
+    const { n_asked: asked, n_done: done } = this.review;
+    if (!asked) return "";
+    return `<div class="review-progress" role="progressbar" aria-valuemin="0" aria-valuemax="${asked}" aria-valuenow="${done}">
+      <div class="progress-bar"><div style="width: ${percent(done, asked)}"></div></div>
+      <span class="hint">${done} of ${plural(asked, "mite")} checked</span></div>`;
   }
 
   // --- the overview
@@ -55,6 +66,7 @@ class ReviewCheck {
           <th class="num">Motion score</th><th>Detector's call</th></tr></thead>
         <tbody>${rows}</tbody></table></div>` : "";
     return Markup.section("To check by eye", `<p class="caption review-intro">${intro}</p>
+      ${review ? this.progress() : ""}
       ${table}
       <div class="fig-controls review-band">
         <label class="death-field">Check scores from
@@ -115,21 +127,29 @@ class ReviewCheck {
       return `<div class="banner review-note"><span><b>${plural(mite.to_check.length, "close call")}</b> ${mite.to_check.length === 1 ? "decides" : "decide"} when this mite died:
         a score from ${this.bandText()} after its last clear movement. Check the latest first.</span>
         <span class="review-times">${mite.to_check.map((recording) =>
-          `<button type="button" class="small secondary${recording === ctx.shown ? " current" : ""}" data-check-recording="${recording}">${minutes(times[recording])}</button>`).join("")}</span></div>`;
+          `<button type="button" class="small secondary${recording === ctx.shown ? " current" : ""}" data-check-recording="${recording}">${minutes(times[recording])}</button>`).join("")}</span>
+        ${mite.to_check.includes(ctx.shown) ? `<span class="review-now">Is the mite moving at ${minutes(times[ctx.shown])}? ${this.answerButtons()}</span>` : ""}
+        ${this.progress()}</div>`;
     }
     if (!mite.checked.some(Boolean)) return "";
     const next = this.mites()[0];
     return `<div class="banner review-note"><span>Nothing is left to check for this mite.</span>
       ${next ? `<a class="button small secondary" href="${this.page.miteHref(next)}" data-check-next="${esc(next.id)}">Next: mite ${esc(next.id)} (${next.to_check.length})</a>`
-        : `<a class="button small secondary" href="${ctx.href("results")}">All checked: back to the results</a>`}</div>`;
+        : `<a class="button small secondary" href="${ctx.href("results")}">All checked: back to the results</a>`}
+      ${this.progress()}</div>`;
   }
 
-  // The question about the recording shown, for the close-up's caption.
+  // The question about the recording shown, for the close-up's caption; the note
+  // above the page asks it too, where it is on screen without scrolling.
   ask(mite) {
     if (!mite.to_check.includes(ctx.shown)) return "";
     return `<span class="review-ask"><b>Close call:</b> the score here, ${score(mite.scores[ctx.shown])}, is in the band. Is the mite moving in this recording?
-      <button type="button" class="small" data-answer="moving">Moving</button>
-      <button type="button" class="small" data-answer="still">Still</button></span>`;
+      ${this.answerButtons()}</span>`;
+  }
+
+  answerButtons() {
+    return `<button type="button" class="small" data-answer="moving" title="Key: M">Moving <kbd>M</kbd></button>
+      <button type="button" class="small" data-answer="still" title="Key: S">Still <kbd>S</kbd></button>`;
   }
 
   // "to check" or "checked" beside a recording's call in the mite's table.
@@ -147,14 +167,37 @@ class ReviewCheck {
       const next = this.page.results.mites.find((m) => m.id === link.dataset.checkNext);
       resultsView.openMite(next, next.to_check[0]);
     }));
-    body.querySelectorAll("[data-answer]").forEach((button) =>
-      button.addEventListener("click", () => this.answer(mite, button.dataset.answer)));
+    const answers = body.querySelectorAll("[data-answer]");
+    answers.forEach((button) => button.addEventListener("click", () => {
+      // Said at once, and no second answer while the first is on its way.
+      answers.forEach((other) => { other.disabled = true; });
+      button.classList.add("chosen");
+      this.answer(mite, button.dataset.answer).finally(() => answers.forEach((other) => { other.disabled = false; }));
+    }));
+    this.warmNext(mite);
   }
 
-  // Keep the answer for the recording shown, then show the mite's next close call.
+  // Keep the answer for the recording shown, then show the next close call: the
+  // mite's own, or with none left the next mite's.
   async answer(mite, state) {
-    await this.page.correctCall(mite, ctx.shown, state, true);
+    const page = location.hash;
+    if (!await this.page.saveCall(mite, ctx.shown, state, true)) return;
+    if (location.hash !== page) { resultsView.draw(); return; }  // another page by now
     const now = ctx.results.mites.find((m) => m.id === mite.id);
-    if (now && now.to_check.length && /^#\/(live\/)?mite/.test(location.hash)) resultsView.showRecording(now.to_check[0]);
+    const next = now && now.to_check.length ? now : this.mites()[0];
+    if (!next) resultsView.draw();  // all checked
+    else if (next === now) { resultsView.setShown(now.to_check[0]); resultsView.draw(); }
+    else resultsView.openMite(next, next.to_check[0], true);
+  }
+
+  // Fetch ahead the clips an answer may show next: the mite's close call after
+  // the one shown (it is still), and the next mite's latest (it is moving, or was the last).
+  warmNext(mite) {
+    if (!this.review || !mite.to_check.includes(ctx.shown)) return;
+    if (ctx.mode === "live" && !(live.status && live.status.save_frames)) return;  // no clips to play
+    const own = mite.to_check.find((recording) => recording !== ctx.shown);
+    const other = this.mites().find((m) => m.id !== mite.id);
+    [own != null && [mite, own], other && [other, other.to_check[0]]].filter(Boolean).forEach(([m, recording]) =>
+      player.warm(`/api/session/${ctx.sessionId}/clip/${recording}/${m.zone_id}`, this.page.frameUrl()));
   }
 }

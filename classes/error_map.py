@@ -20,14 +20,16 @@ class ErrorMap:
         by_dataset = {}
         for row in self.observations:
             by_dataset.setdefault(row["dataset"], []).append(row)
-        return {
-            dataset: {
+        described = {}
+        for dataset, rows in by_dataset.items():
+            by_recording = {}
+            for row in rows:
+                by_recording.setdefault(row["recording"], []).append(row)
+            described[dataset] = {
                 "all": self.select(rows),
-                "recordings": {recording: self.select([row for row in rows if row["recording"] == recording])
-                               for recording in sorted({row["recording"] for row in rows})},
+                "recordings": {recording: self.select(by_recording[recording]) for recording in sorted(by_recording)},
             }
-            for dataset, rows in by_dataset.items()
-        }
+        return described
 
     @staticmethod
     def select(rows):

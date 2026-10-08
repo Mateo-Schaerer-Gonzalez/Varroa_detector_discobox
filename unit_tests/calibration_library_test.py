@@ -6,6 +6,7 @@ unless a test writes real frames, so nothing is decoded.
 """
 
 import json
+import os
 import shutil
 
 import cv2
@@ -550,7 +551,8 @@ def test_the_report_suggests_the_threshold_and_the_band_that_put_the_deaths_righ
     assert (band["mae"], band["checks_per_mite"], band["exact"]) == (0, 1, 1)
     assert band["frontier"][0]["checks_per_mite"] == 0 and band["frontier"][-1]["mae"] == 0
     json.dumps(result, allow_nan=False)  # what the server's JSON needs
-    sheets = pd.read_excel(tmp_path / "report" / result["excel"], sheet_name=None)
+    # the workbook is written a moment after the report is handed over: this waits for it
+    sheets = pd.read_excel(pipeline.results_file(tmp_path / "report", result["excel"]), sheet_name=None)
     assert {"death_by_threshold", "review_band"} <= set(sheets)
 
     # without checks allowed there is no band: the threshold alone
@@ -558,3 +560,21 @@ def test_the_report_suggests_the_threshold_and_the_band_that_put_the_deaths_righ
     assert none["low"] == none["high"] == suggested and none["checks_per_mite"] == 0
     with pytest.raises(ValueError):
         pipeline.evaluate_calibration(tmp_path / "report", ids, library_dir=library, checks_per_mite=-1)
+
+
+def test_a_dataset_of_another_kind_of_computer_keeps_its_id():
+    """The library of the Discobox's Linux, copied to Windows (or back): the id
+    of each dataset is the one it was saved under there."""
+    linux = "/home/localuser/Varroa_detector_discobox/recordings/test_run_2026-09-08_Mathis_last_dsRNA"
+    windows = "C:" + "\\Users\\mateo\\OneDrive\\Escritorio\\zivildienst\\agroscope part 2\\Varroa_detector_discobox\\recordings\\sample_data"
+    if os.name == "nt":
+        assert pipeline.dataset_id(linux) == "test_run_2026-09-08_Mathis_last_dsRNA-1cb2072d"
+    else:
+        assert pipeline.dataset_id(windows) == "sample_data-e9dc7400"
+
+
+def test_a_copied_librarys_recordings_are_found(library):
+    foreign = "/home/someone/recordings/a_run" if os.name == "nt" else "D:" + "\\recordings\\a_run"
+    copy = library / pipeline.dataset_id(foreign) / pipeline.RECORDINGS_DIRNAME
+    copy.mkdir(parents=True)
+    assert pipeline._recordings_dir(foreign, library) == copy

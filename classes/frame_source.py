@@ -19,12 +19,14 @@ camera) are in classes/live/.
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from datetime import datetime
+from functools import partial
 from pathlib import Path
 
 import cv2
 import numpy as np
 
 from classes.data_loader import DataLoader
+from classes.workers import one_ahead
 
 
 @dataclass(frozen=True)
@@ -89,9 +91,12 @@ class FolderSource:
     """The recordings of a session folder, in name order, each frame decoded as
     folder mode always has (cv2.IMREAD_COLOR, files sorted by name).
 
-    One recording is decoded at a time, in parallel, so the session is never held
-    in memory as a whole.
+    A recording is decoded in parallel, and the one after it while it is worked
+    on, so the session is never held in memory as a whole: the recording in
+    work and the next one are.
     """
+
+    FIRST = "first"  # for events(): decode only the first frame of the stream
 
     def __init__(self, data_dir):
         self.data_dir = Path(data_dir)
@@ -102,18 +107,49 @@ class FolderSource:
 
     def events(self, decode=True):
         """The stream of Frames and RecordingEnds. With `decode` False the Frames
-        carry no image: enough to know which frames make which pool."""
+        carry no image: enough to know which frames make which pool. With
+        FolderSource.FIRST only the first frame of the stream does: enough to
+        find the mites as well."""
         recordings = self.recordings()
         if not recordings:
             raise FileNotFoundError(f"No recordings found in {self.data_dir}")
-        with ThreadPoolExecutor() as executor:
-            for recording in recordings:
-                paths = sorted((self.data_dir / recording.name).glob("*.bmp"))
-                if not paths:
-                    raise FileNotFoundError(f"No .bmp images found in {self.data_dir / recording.name}")
-                read = (lambda path: cv2.imread(str(path), cv2.IMREAD_COLOR)) if decode else (lambda path: None)
-                for index, (path, image) in enumerate(zip(paths, executor.map(read, paths))):
-                    if decode and image is None:
-                        raise ValueError(f"Could not read the image {path}")
-                    yield Frame(recording, index, path.name, image)
-                yield RecordingEnd(recording)
+        if decode is True:
+            with ThreadPoolExecutor() as readers:
+                loads = (partial(self._load, recording, readers) for recording in recordings)
+                for recording, (paths, images) in zip(recordings, one_ahead(loads)):
+                    for index, (path, image) in enumerate(zip(paths, images)):
+                        yield Frame(recording, index, path.name, image)
+                    yield RecordingEnd(recording)
+            return
+        first = decode == self.FIRST
+        for recording in recordings:
+            for index, path in enumerate(self._frame_paths(recording)):
+                yield Frame(recording, index, path.name, self._read(path) if first else None)
+                first = False
+            yield RecordingEnd(recording)
+
+    def frame_files(self):
+        """What tells this folder's frames from any others, without reading
+        them: [[recording, [[file, size, time written], ...]], ...], in the
+        order events() gives them."""
+        return [[recording.name, [[path.name, (stat := path.stat()).st_size, stat.st_mtime_ns]
+                                  for path in self._frame_paths(recording)]]
+                for recording in self.recordings()]
+
+    def _frame_paths(self, recording):
+        paths = sorted((self.data_dir / recording.name).glob("*.bmp"))
+        if not paths:
+            raise FileNotFoundError(f"No .bmp images found in {self.data_dir / recording.name}")
+        return paths
+
+    def _load(self, recording, readers):
+        """A recording's frame files and their images, decoded side by side."""
+        paths = self._frame_paths(recording)
+        return paths, list(readers.map(self._read, paths))
+
+    @staticmethod
+    def _read(path):
+        image = cv2.imread(str(path), cv2.IMREAD_COLOR)
+        if image is None:
+            raise ValueError(f"Could not read the image {path}")
+        return image

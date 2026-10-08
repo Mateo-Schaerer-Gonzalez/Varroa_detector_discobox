@@ -114,11 +114,17 @@ def _floats(values, digits=3):
     return [None if pd.isna(value) else round(float(value), digits) for value in values]
 
 
+def by_time(rows):
+    """One mite's rows in the order of their times; as they are when they are in it already."""
+    times = rows["time"].to_numpy()
+    return rows if (times[1:] > times[:-1]).all() else rows.sort_values("time")
+
+
 def describe_mites(mite_data):
     """One entry per mite with its whole time series, for the mite pages."""
     mites = []
     for mite_id, rows in mite_data.groupby("mite_ID"):
-        rows = rows.sort_values("time")
+        rows = by_time(rows)
         mites.append(
             {
                 "id": str(mite_id),

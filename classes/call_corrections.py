@@ -177,11 +177,13 @@ class CallCorrections:
             since = entry["gone_from"]
             gone = {r for r in entry["gone"] if r < len(times)} | set(range(since, len(times)) if since is not None else ())
             calls = {int(r): bool(call) for r, call in entry["moving"].items() if int(r) not in gone and 0 <= int(r) < len(times)}
+            mine = np.flatnonzero(ids == mite.mite_ID)  # the mite's rows, looked for once however many calls it has
+            at = recording[mine]
             for index, call in calls.items():
-                rows = (ids == mite.mite_ID) & (recording == index)
+                rows = mine[at == index]
                 moving[rows] = call
                 corrected[rows] = True
-            rows = (ids == mite.mite_ID) & np.isin(recording, sorted(gone))
+            rows = mine[np.isin(at, sorted(gone))]
             moving[rows] = False
             censored[rows] = True
             if calls:

@@ -1,10 +1,20 @@
 import inspect
+from functools import lru_cache
 from typing import Optional
 import cv2
 from classes.app_config import AppConfig, get_default_config
 from classes.mite import Mite
 from classes.plate_stabilizer import PlateStabilizer
+from classes.workers import side_by_side
 import numpy as np
+
+
+@lru_cache(maxsize=None)
+def _defaults_of(metric_function):
+    """The parameters of a metric's function with their defaults, read from its
+    signature once: every mite of every recording asks for them."""
+    signature = inspect.signature(metric_function)
+    return {name: p.default for name, p in signature.parameters.items() if name != "roi"}
 
 
 class Analyzer:
@@ -64,18 +74,22 @@ class Analyzer:
 
         Each mite's ROI is cut from each frame and the cuts stacked, without
         ever holding a second copy of the frames. With mite.stabilize_plate the
-        cuts follow the plate as it shakes (see PlateStabilizer)."""
+        cuts follow the plate as it shakes (see PlateStabilizer). The mites are
+        cut and scored side by side (classes/workers.py)."""
         shifts = None
         if self.config.mite.stabilize_plate:
             shifts = PlateStabilizer().shifts(frames, [tuple(mite) for mite in mites])
-        for mite in mites:
+
+        def score(mite):
             pad = self.roi_padding(mite.metric, mite.metric_params)
             if shifts is None:
                 mite_roi = np.stack([mite.get_ROI(frame, pad) for frame in frames])
             else:
                 mite_roi = PlateStabilizer.cut(frames, tuple(mite), pad, shifts)
-            mite.record_motion(self._motion_score(mite_roi, mite.metric, mite.metric_params),
-                               brightness=float(mite_roi.mean()))
+            return self._motion_score(mite_roi, mite.metric, mite.metric_params), float(mite_roi.mean())
+
+        for mite, (motion, brightness) in zip(mites, side_by_side(score, mites)):
+            mite.record_motion(motion, brightness=brightness)
 
     @staticmethod
     def _metrics():
@@ -108,8 +122,7 @@ class Analyzer:
         {"n": 10} for topN_variability."""
         if metric not in Analyzer._metrics():
             raise ValueError(f"Unknown motility metric: {metric!r}")
-        signature = inspect.signature(Analyzer._metrics()[metric])
-        return {name: p.default for name, p in signature.parameters.items() if name != "roi"}
+        return dict(_defaults_of(Analyzer._metrics()[metric]))
 
     @staticmethod
     def roi_padding(metric, params=None):

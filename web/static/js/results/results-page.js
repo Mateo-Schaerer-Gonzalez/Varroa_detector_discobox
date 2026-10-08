@@ -60,21 +60,28 @@ class ResultsPage {
   // the results again, every number following the change. With `checked`, the
   // call is kept as checked by eye, also when it is the detector's (ReviewCheck).
   async correctCall(mite, recording = ctx.shown, state = null, checked = false) {
+    if (await this.saveCall(mite, recording, state, checked)) resultsView.draw();
+  }
+
+  // correctCall() without drawing: whether the change is saved and a result page
+  // of these results is still on screen, to draw them on.
+  async saveCall(mite, recording, state, checked) {
     const workspace = ctx;
     const { sessionId } = workspace;
     Charts.hideTooltip();
     try {
       const answer = await post(`/api/session/${sessionId}/correct`, { mite: mite.id, recording, state, checked });
-      if (workspace.sessionId !== sessionId) return;  // another folder or run by now
+      if (workspace.sessionId !== sessionId) return false;  // another folder or run by now
       workspace.results = answer.results;
       if (workspace.mode === "live" && answer.version != null) live.version = answer.version;
-      if (ctx === workspace && /^#\/(live\/)?(results|zone|mite)/.test(location.hash)) resultsView.draw();
+      return ctx === workspace && /^#\/(live\/)?(results|zone|mite)/.test(location.hash);
     } catch (error) {
       const status = this.body.querySelector(".clip-status");
       if (status) {
         status.className = "hint clip-status error";
         status.textContent = `Could not change the call: ${error.message}`;
       }
+      return false;
     }
   }
 
@@ -255,7 +262,7 @@ class ResultsPage {
     status.innerHTML = `<span class="spinner"></span> Loading the recording at ${this.shownTime()}…`;
     try {
       // The frames of a recording never change, so they need no cache-buster.
-      const clip = await player.load(url, (name) => `/api/session/${ctx.sessionId}/file/${name}`);
+      const clip = await player.load(url, this.frameUrl());
       if (!clip) return;
       wrap.classList.remove("loading");
       status.textContent = `Recording at ${this.shownTime()}: ${clip.frames.length} frames, looped in real time.`;
@@ -266,6 +273,12 @@ class ResultsPage {
       status.className = "hint clip-status error";
       status.textContent = `${error.message} Showing the first frame.`;
     }
+  }
+
+  // Where the frames of this session's clips are, by their names.
+  frameUrl() {
+    const { sessionId } = ctx;
+    return (name) => `/api/session/${sessionId}/file/${name}`;
   }
 
   // A crop of the first frame.

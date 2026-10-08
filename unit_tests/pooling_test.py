@@ -116,3 +116,34 @@ def test_with_a_pool_size_a_clip_plays_its_pool(tmp_path):
         pipeline.analysis_clip(root, tmp_path / "out", 4, pool_size=2)
     # without a pool size, as always: one clip per recording, named as before, in the clips folder
     assert pipeline.analysis_clip(root, tmp_path / "out", 1)["frames"][0].startswith("clips/clip_r1_plate_")
+
+
+def test_the_folder_source_can_decode_the_first_frame_alone(tmp_path):
+    root = write_session(tmp_path, [3, 2])
+    whole = list(FolderSource(root).events())
+    events = list(FolderSource(root).events(decode=FolderSource.FIRST))
+    frames = [event for event in events if isinstance(event, Frame)]
+    assert [type(event).__name__ for event in events] == [type(event).__name__ for event in whole]
+    assert [(frame.recording, frame.index, frame.filename) for frame in frames] == [
+        (frame.recording, frame.index, frame.filename) for frame in whole if isinstance(frame, Frame)]
+    assert np.array_equal(frames[0].image, whole[0].image) and all(frame.image is None for frame in frames[1:])
+    assert all(frame.image is None for frame in FolderSource(root).events(decode=False) if isinstance(frame, Frame))
+
+
+def test_a_frame_that_cannot_be_read_stops_the_stream_at_its_recording(tmp_path):
+    root = write_session(tmp_path, [2, 2, 2])
+    second = sorted(d for d in root.iterdir() if d.is_dir())[1]
+    sorted(second.glob("*.bmp"))[1].write_bytes(b"not a picture")
+    events = FolderSource(root).events()
+    assert [type(next(events)).__name__ for _ in range(3)] == ["Frame", "Frame", "RecordingEnd"]  # the first recording is whole
+    with pytest.raises(ValueError, match="Could not read"):
+        next(events)
+
+
+def test_a_recording_without_frames_stops_the_stream_there(tmp_path):
+    root = write_session(tmp_path, [2, 2])
+    (root / "2025-09-04-09-40-17_fps-30").mkdir()
+    events = FolderSource(root).events()
+    assert len([next(events) for _ in range(6)]) == 6  # the two recordings with frames
+    with pytest.raises(FileNotFoundError, match="No .bmp"):
+        next(events)

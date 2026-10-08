@@ -102,8 +102,8 @@ In *Calibration* you mark by eye which mites move in each recording and compare
 that with the detector:
 
 1. **Calibration data**: pick *Calibrate the threshold* or *Test the threshold*,
-   then drop the folder, or *Calibrate* one of the previous recordings. Every
-   frame is decoded and each mite is scored.
+   then drop the folder, or *Calibrate* one of the previous recordings. The
+   mites are found on its first frame; nothing is scored until a report is made.
 2. **Ground truth**: zone by zone and recording by recording, the zone's frames
    of that recording play in a loop; click each mite to cycle it through
    *moving*, *still*, *not a mite* (a false detection) and back to unlabelled;
@@ -199,8 +199,10 @@ curve or figure.
 A call the detector got wrong can be corrected by hand on the result pages, of a
 folder and of a live run alike: on the mite's page, click the mite in the
 recording shown, or the button of a recording in the table, and its call changes
-from *moving* to *still* or back. Every number, chart and the workbook (its `corrected`
-column) follow at once, and the mite's ring is dashed. Clicking again brings back the
+from *moving* to *still* or back. Every number and chart follows at once, and the
+mite's ring is dashed; the workbook (its `corrected` column) and the figures are
+written again once the corrections pause for half a minute, and at once when the
+workbook is downloaded or the app is closed. Clicking again brings back the
 detector's call. A mite that is not there any more, e.g. one that fell off the
 plate, can be marked *gone* the same way, in one recording or from a recording
 on: it is censored there, counting neither as moving nor as still, and a mite
@@ -333,7 +335,7 @@ to change that).
 | Folder | Contents |
 | --- | --- |
 | `recordings/<name>/` | The frames of every recording session: each live test run, and each folder dropped into the page. Its labels, *not a mite* marks, ground truth, `.settings.txt` and, for a live run, `run.json` are kept next to them. |
-| `results/<name>/` | The last analysis of that recording, replaced when it is analysed again (files below). `clips/` holds the frames the result pages play; it can be deleted at any time. |
+| `results/<name>/` | The last analysis of that recording, replaced when it is analysed again (files below). `clips/` holds the frames the result pages play, and `kept/` the scores, so that analysing the same recordings again, with the same metric and the same scoring code, takes a moment instead of scoring every frame again; both can be deleted at any time. |
 | `calibration_data/<dataset>/` | Saved ground truth, one dataset per labelled recording (see *Saved ground truth*). |
 | `calibration_data/reports/<date time> <name>/` | One calibration session: its `calibration.xlsx`. Sessions that made no report are removed at the next start. |
 

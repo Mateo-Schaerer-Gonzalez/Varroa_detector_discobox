@@ -18,7 +18,7 @@ from typing import Optional
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import FileResponse, PlainTextResponse, Response
+from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
@@ -202,6 +202,16 @@ def safe_join(root: Path, relative: str) -> Path:
     return root.joinpath(*parts)
 
 
+def as_it_is(content):
+    """A large reply, sent as pipeline made it. It is plain data already; FastAPI
+    would go through it value by value before sending it, which for the results
+    of a long run takes longer than working them out."""
+    try:
+        return JSONResponse(content)
+    except TypeError:  # not plain after all: FastAPI's way
+        return content
+
+
 def get_session(session_id: str) -> dict:
     if session_id not in sessions:
         raise HTTPException(status_code=404, detail="Unknown session. Open a folder again.")
@@ -376,12 +386,13 @@ def run_analysis(session_id: str, request: LabelsRequest):
     session = get_session(session_id)
     pipeline.save_labels(session["data_dir"], request.labels)
     try:
-        results = pipeline.run_analysis(session["data_dir"], session["out_dir"], request.labels, pool_size=request.pool_size)
+        results = pipeline.run_analysis(session["data_dir"], session["out_dir"], request.labels, pool_size=request.pool_size,
+                                        files_later=True)
     except (FileNotFoundError, ValueError) as error:
         raise HTTPException(status_code=400, detail=str(error))
     session["pool_size"] = request.pool_size  # the clips of the results are of its pools
     session["results"] = results  # for the survival numbers, which follow the controls and the time to count dead
-    return for_pages(session_id, results)
+    return as_it_is(for_pages(session_id, results))
 
 
 @app.post("/api/session/{session_id}/correct")
@@ -393,14 +404,14 @@ def correct_call(session_id: str, request: CorrectRequest):
     if session.get("live"):
         answer = live_call(pipeline.live_correct_call, session_id, request.mite, request.recording, request.state,
                            request.checked)
-        return {**answer, "results": for_pages(session_id, answer["results"])}
+        return as_it_is({**answer, "results": for_pages(session_id, answer["results"])})
     try:
         results = pipeline.correct_call(session["out_dir"], request.mite, request.recording, request.state,
                                         request.checked)
     except ValueError as error:
         raise HTTPException(status_code=400, detail=str(error))
     session["results"] = results
-    return {"results": for_pages(session_id, results)}
+    return as_it_is({"results": for_pages(session_id, results)})
 
 
 @app.post("/api/session/{session_id}/review-band")
@@ -417,12 +428,12 @@ def save_review_band(session_id: str, request: ReviewBandRequest):
     if session.get("live"):
         pipeline.live_refresh(session_id)
         answer = live_call(pipeline.live_results, session_id)
-        return {**answer, "results": for_pages(session_id, answer["results"])}
+        return as_it_is({**answer, "results": for_pages(session_id, answer["results"])})
     results = pipeline.review_again(session["out_dir"]) if session.get("results") else None
     if results is None:
         raise HTTPException(status_code=400, detail="The band is saved. Run the analysis again to see what to check.")
     session["results"] = results
-    return {"results": for_pages(session_id, results)}
+    return as_it_is({"results": for_pages(session_id, results)})
 
 
 @app.get("/api/session/{session_id}/clip/{recording}")
@@ -455,7 +466,7 @@ def new_calibration_session(name, open_it):
         "out_dir": out_dir,
         "dataset_id": calibration["dataset_id"],
     }
-    return {"session_id": session_id, **calibration}
+    return as_it_is({"session_id": session_id, **calibration})
 
 
 @app.post("/api/calibration")
@@ -519,7 +530,7 @@ def switch_dataset(session_id: str, dataset_id: str):
     except (FileNotFoundError, ValueError) as error:
         raise HTTPException(status_code=400, detail=str(error))
     session.update(data_dir=calibration["data_dir"], dataset_id=calibration["dataset_id"])
-    return {"session_id": session_id, **calibration}
+    return as_it_is({"session_id": session_id, **calibration})
 
 
 @app.get("/api/calibration/{session_id}/clip/{recording}/{zone_id}")
@@ -549,7 +560,7 @@ def get_ground_truth(session_id: str):
     may have changed, with the changes not saved yet on top (pipeline.truth_view)."""
     session = get_session(session_id)
     try:
-        return pipeline.truth_view(session["out_dir"])
+        return as_it_is(pipeline.truth_view(session["out_dir"]))
     except (FileNotFoundError, ValueError) as error:
         raise HTTPException(status_code=400, detail=str(error))
 
@@ -559,8 +570,8 @@ def edit_ground_truth(session_id: str, request: TruthEdit):
     """A change on the ground-truth page; it waits for "Save changes"."""
     session = get_session(session_id)
     try:
-        return pipeline.edit_truth(session["out_dir"], request.action, mite=request.mite, zone=request.zone,
-                                   recording=request.recording, backwards=request.backwards, kind=request.kind)
+        return as_it_is(pipeline.edit_truth(session["out_dir"], request.action, mite=request.mite, zone=request.zone,
+                                            recording=request.recording, backwards=request.backwards, kind=request.kind))
     except (FileNotFoundError, ValueError) as error:
         raise HTTPException(status_code=400, detail=str(error))
 
@@ -572,7 +583,7 @@ def save_ground_truth(session_id: str):
     session = get_session(session_id)
     try:
         with truth_lock:
-            return pipeline.save_truth(session["out_dir"])
+            return as_it_is(pipeline.save_truth(session["out_dir"]))
     except (FileNotFoundError, ValueError) as error:
         raise HTTPException(status_code=400, detail=str(error))
 
@@ -583,11 +594,11 @@ def evaluate_calibration(session_id: str, request: EvaluateRequest):
     session = get_session(session_id)
     datasets = request.datasets if request.datasets is not None else [session["dataset_id"]]
     try:
-        return pipeline.evaluate_calibration(session["out_dir"], datasets, request.metric, request.params,
-                                             stabilize=request.stabilize, benchmark=request.benchmark,
-                                             normalize_brightness=request.normalize_brightness,
-                                             normalize_floor=request.normalize_floor,
-                                             checks_per_mite=request.checks_per_mite)
+        return as_it_is(pipeline.evaluate_calibration(session["out_dir"], datasets, request.metric, request.params,
+                                                      stabilize=request.stabilize, benchmark=request.benchmark,
+                                                      normalize_brightness=request.normalize_brightness,
+                                                      normalize_floor=request.normalize_floor,
+                                                      checks_per_mite=request.checks_per_mite))
     except (FileNotFoundError, ValueError) as error:
         raise HTTPException(status_code=400, detail=str(error))
 
@@ -749,7 +760,7 @@ def live_results(session_id: str):
     answer = live_call(pipeline.live_results, session_id)
     if answer["results"] is not None:
         answer = {**answer, "results": for_pages(session_id, answer["results"])}
-    return answer
+    return as_it_is(answer)
 
 
 @app.get("/api/live/{session_id}/frame.jpg")
@@ -767,7 +778,8 @@ def get_file(session_id: str, name: str):
     session = get_session(session_id)
 
     # Only ever serve a file from this session's own output folder.
-    path = safe_join(session["out_dir"], name).resolve()
+    safe_join(session["out_dir"], name)
+    path = pipeline.results_file(session["out_dir"], name).resolve()
     if not path.is_file() or session["out_dir"].resolve() not in path.parents:
         raise HTTPException(status_code=404, detail=f"No such file: {name}")
     return FileResponse(path)

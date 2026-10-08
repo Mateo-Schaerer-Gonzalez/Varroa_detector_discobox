@@ -360,6 +360,14 @@ button.secondary:hover, .button.secondary:hover { background: var(--wash); borde
 .review-times .current { border-color: var(--ink); font-weight: 600; }
 .review-ask { display: block; margin-top: 8px; padding: 8px 10px; color: var(--ink); background: #fdf7e8; border-left: 3px solid var(--series-4); }
 .review-ask button { margin: 4px 4px 0 0; }
+.review-now { flex-basis: 100%; display: flex; align-items: center; gap: 8px; font-weight: 600; }
+[data-answer].chosen { outline: 2px solid var(--ink); outline-offset: 1px; }
+[data-answer] kbd { margin-left: 4px; padding: 0 4px; font: inherit; font-size: 0.85em; border: 1px solid currentColor; border-radius: 2px; opacity: 0.7; }
+/* How many of the mites to check are done. */
+.review-progress { flex-basis: 100%; display: flex; align-items: center; gap: 10px; }
+.review-progress .progress-bar { flex: 1; max-width: 320px; height: 6px; }
+.review-progress .hint { margin: 0; white-space: nowrap; }
+.review-intro + .review-progress { margin: 0 0 12px; }
 .review-intro { max-width: 78ch; }
 .review-band { margin-top: 12px; align-items: center; }
 .review-band .hint { margin: 0; }

@@ -65,7 +65,7 @@ def kaplan_meier(survivals, times, confidence=0.95):
     high = np.where(np.isnan(high), estimate, high)
 
     def percent(values):
-        return [None if np.isnan(value) else 100 * float(value) for value in values]
+        return [None if value != value else 100 * value for value in values.tolist()]  # NaN is not itself
 
     return {"alive": percent(estimate), "low": percent(low), "high": percent(high)}
 
@@ -90,7 +90,10 @@ class SurvivalAnalysis:
     @staticmethod
     def last_movement(moving):
         """The last recording in which a mite moved; -1 when it never did."""
-        return max((index for index, value in enumerate(moving) if value), default=-1)
+        for index in range(len(moving) - 1, -1, -1):
+            if moving[index]:
+                return index
+        return -1
 
     def last_movement_time(self, moving):
         """The time of the last recording in which a mite moved; None when it never did."""
@@ -102,23 +105,39 @@ class SurvivalAnalysis:
         """The last recording in which a mite was there (not None): the end of
         its follow-up, the last recording unless it is gone by then; -1 when it
         never was there."""
-        return max((index for index, value in enumerate(moving) if value is not None), default=-1)
+        for index in range(len(moving) - 1, -1, -1):
+            if moving[index] is not None:
+                return index
+        return -1
+
+    def alive_until(self, moving):
+        """The last recording in which a mite that moved as `moving` (one call
+        per recording, None where it was gone) counts as alive; -1 when it does
+        in none. That is its last movement, or the end of its follow-up when it
+        has not been still for the death time by then: whether it counts as
+        alive after its last movement is the same for every recording up to
+        there, so one pass over its calls tells them all."""
+        last = self.last_movement(moving)
+        end = self.followed(moving)
+        if end > last and self.times[end] - self.times[max(last, 0)] < self.death_minutes:
+            return end
+        return last
 
     def is_alive(self, moving, recording):
-        """Whether a mite that moved as `moving` (one call per recording, None
-        where it was gone) counts as alive in recording `recording`; not after
+        """Whether the mite counts as alive in recording `recording`; not after
         the end of its follow-up, where nothing is known of it."""
-        last = self.last_movement(moving)
-        if recording <= last:
-            return True
-        end = self.followed(moving)
-        if recording > end:
-            return False
-        still_for = self.times[end] - self.times[max(last, 0)]
-        return still_for < self.death_minutes
+        return recording <= self.alive_until(moving)
 
     def alive_count(self, movings, recording):
         return sum(1 for moving in movings if self.is_alive(moving, recording))
+
+    def alive_counts(self, movings):
+        """alive_count() in every recording, each mite's calls read once."""
+        counts = [0] * len(self.times)
+        for moving in movings:
+            for recording in range(self.alive_until(moving) + 1):
+                counts[recording] += 1
+        return counts
 
     def alive_percent(self, movings):
         """The share of the mites alive in each recording, in percent; None
@@ -129,7 +148,7 @@ class SurvivalAnalysis:
             return [None] * len(self.times)
         if any(self.followed(moving) < len(self.times) - 1 for moving in movings):
             return kaplan_meier([self.survival(moving) for moving in movings], self.times)["alive"]
-        return [100 * self.alive_count(movings, recording) / len(movings) for recording in range(len(self.times))]
+        return [100 * count / len(movings) for count in self.alive_counts(movings)]
 
     def alive_ci(self, movings, confidence=0.95):
         """The confidence interval of alive_percent() in each recording, in percent,
@@ -166,9 +185,9 @@ class SurvivalAnalysis:
         recording, or the last before it was gone) is censored there: all that
         is known is that it lived at least that long."""
         end = self.followed(moving)
-        for recording, time in enumerate(self.times[:end + 1]):
-            if not self.is_alive(moving, recording):
-                return time, True
+        until = self.alive_until(moving)
+        if until < end:
+            return self.times[until + 1], True
         return self.times[max(end, 0)], False
 
     def dead_count(self, movings):
@@ -269,7 +288,7 @@ class SurvivalReport:
             zones[zone["id"]] = {
                 "alive": analysis.alive_percent(movings),
                 "alive_ci": analysis.alive_ci(movings),
-                "n_alive": [analysis.alive_count(movings, recording) for recording in range(len(analysis.times))],
+                "n_alive": analysis.alive_counts(movings),
                 **self.counts([zone["id"]]),
             }
         groups = []

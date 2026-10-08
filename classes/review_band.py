@@ -51,19 +51,29 @@ class ReviewBand:
         hand in it) and what the corrections changed (CallCorrections.apply()):
 
             {low, high, to_check: {mite id: [recording, ...] the latest first},
-             n_recordings, n_mites}
+             n_recordings, n_mites, n_asked, n_done}
+
+        n_asked is how many mites the band asks about at all, with nothing set
+        by hand yet, and n_done how many of them have nothing left to check: how
+        far the checking has got.
         """
         changes = changes or {}
         to_check = {}
+        n_asked = 0
         for mite_id, rows in mite_data.groupby("mite_ID"):
-            rows = rows.sort_values("time")
+            times = rows["time"].to_numpy()
+            if not (times[1:] > times[:-1]).all():  # in the order of their times already, most often
+                rows = rows.sort_values("time")
             set_by_hand = set(changes.get("corrections", {}).get(str(mite_id), [])) | set(
                 changes.get("checked", {}).get(str(mite_id), []))
+            censored = rows["censored"] if "censored" in rows else None
             recordings = self.to_check(
                 rows["motion_score"], rows["moving"],
-                checked=[recording in set_by_hand for recording in range(len(rows))],
-                censored=rows["censored"] if "censored" in rows else None)
+                checked=[recording in set_by_hand for recording in range(len(rows))], censored=censored)
             if recordings:
                 to_check[str(mite_id)] = recordings
+            n_asked += bool(recordings or (set_by_hand and self.to_check(rows["motion_score"], rows["moving"],
+                                                                         censored=censored)))
         return {"low": self.low, "high": self.high, "to_check": to_check,
-                "n_recordings": sum(len(recordings) for recordings in to_check.values()), "n_mites": len(to_check)}
+                "n_recordings": sum(len(recordings) for recordings in to_check.values()), "n_mites": len(to_check),
+                "n_asked": n_asked, "n_done": n_asked - len(to_check)}

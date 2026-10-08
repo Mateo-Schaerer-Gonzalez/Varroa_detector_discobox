@@ -61,7 +61,8 @@ can never reach into the analysis internals.
 Where things go:
 
     recordings/<name>/         the frames: live test runs, and folders dropped into the page
-    results/<name>/            the last analysis of <name>: workbook, figures (clips/ is a cache)
+    results/<name>/            the last analysis of <name>: workbook, figures (clips/ is a cache,
+                               kept/ the scores, to save scoring the same recordings again)
     calibration_data/          saved ground truth; reports/ holds the calibration reports
 """
 
@@ -70,6 +71,7 @@ import inspect
 import itertools
 import json
 import logging
+import ntpath
 import os
 import re
 import shutil
@@ -77,7 +79,8 @@ import stat
 import threading
 import time
 from datetime import date, datetime, timedelta
-from pathlib import Path
+from functools import partial
+from pathlib import Path, PurePosixPath, PureWindowsPath
 from types import SimpleNamespace
 
 import cv2
@@ -95,8 +98,10 @@ from classes.app_config import get_default_config, save_motion_threshold
 from classes import plate_stabilizer
 from classes.plate_stabilizer import PlateStabilizer
 from classes.data_loader import DataLoader
+from classes.deferred_files import DeferredFiles
 from classes.error_map import ErrorMap
 from classes.frame_source import FolderSource, as_analysis_image
+from classes.kept_scores import KeptScores
 from classes.label_reader import LabelReader, LabelReadError
 from classes.live import camera as live_camera
 from classes.live.lights import DEVICES, open_lights, serial_ports
@@ -114,6 +119,7 @@ from classes.score_normalizer import ScoreNormalizer
 from classes.survival import SurvivalAnalysis, SurvivalReport
 from classes.truth_draft import TruthDraft
 from classes.upload_plan import UploadPlan
+from classes.workers import one_ahead, side_by_side
 from classes.zone_layout import ZoneLayout
 from classes.zones import UNLABELED, ZoneManager
 
@@ -458,16 +464,34 @@ def detection_marks(data_dir, mites, library_dir=CALIBRATION_LIBRARY):
 
 
 def _detect_and_score(data_dir, coords_file, labels=None, reject=True, score=True, library_dir=CALIBRATION_LIBRARY,
-                      pool_size=None):
-    """Decode every recording, find the mites and, with `score`, score their motion.
+                      pool_size=None, kept_in=None):
+    """Find the mites and, with `score`, decode every recording and score their motion.
 
     The expensive part shared by an analysis run and a calibration: the analysis
     core (classes/motion_analysis.py) fed from the folder, one recording at a time.
     With `reject`, detections marked "not a mite" in the session's ground truth
-    are dropped, so they appear nowhere in the results.
+    are dropped, so they appear nowhere in the results. With `kept_in`, a folder,
+    the scores are kept there, and read back instead of worked out when these
+    very frames were scored there before, by this code (classes/kept_scores.py).
     """
-    analysis = MotionAnalysis(_build_zone_manager(_coords_file(data_dir, coords_file)), score=score)
-    analysis.run(FolderSource(data_dir).events(), pool_size)
+    source = FolderSource(data_dir)
+    analysis = MotionAnalysis(_build_zone_manager(_coords_file(data_dir, coords_file)), score=False)
+    if not score or kept_in is not None:
+        # The mites and the pools, from the first frame and the names of the
+        # others: those are counted, not decoded.
+        analysis.run(source.events(decode=FolderSource.FIRST), pool_size)
+    if score:
+        kept = key = None
+        if kept_in is not None:
+            kept = KeptScores(kept_in)
+            key = KeptScores.key(analysis.mites, analysis.analyzer.config.mite.stabilize_plate, pool_size,
+                                 source.frame_files(), analysis.first_frame)
+        if kept is None or not kept.give(key, analysis.mites, len(analysis.pool_times)):
+            analysis.score = True
+            analysis.pool_times, analysis.pool_frames = [], []
+            analysis.run(source.events(), pool_size)
+            if kept is not None:
+                kept.keep(key, analysis.mites)
     _arrange(analysis, data_dir, labels, reject, library_dir)
     return _run_view(analysis)
 
@@ -516,7 +540,7 @@ def _write_preview(frame, out_dir):
 
 
 def run_analysis(data_dir, out_dir, labels=None, coords_file=None, library_dir=CALIBRATION_LIBRARY,
-                 pool_size=None):
+                 pool_size=None, files_later=False):
     """Run the whole pipeline and write its results to `out_dir`.
 
     `labels` maps zone id (as a string) to the group name the user typed, e.g.
@@ -524,19 +548,78 @@ def run_analysis(data_dir, out_dir, labels=None, coords_file=None, library_dir=C
     frames scored together; by default a whole recording (see classes/pooling.py).
     Returns the output filenames, a summary, and the per-zone and per-mite results
     the UI browses.
+
+    The scores are kept in `out_dir` (classes/kept_scores.py): a run of the same
+    recordings, by the same code and settings, reads them back and is done in a
+    moment. With `files_later`, the workbook and the figures are written just
+    after the results are handed over, as after a correction, so a page need not
+    wait for them (finish_files() does).
     """
-    run = _detect_and_score(data_dir, coords_file, labels, library_dir=library_dir, pool_size=pool_size)
+    run = _detect_and_score(data_dir, coords_file, labels, library_dir=library_dir, pool_size=pool_size,
+                            kept_in=out_dir)
     corrections = CallCorrections(data_dir, pool_size)
     normalizer = _normalizer_in_use(run.analyzer.config.mite)
     with _runs_lock:
         _runs[_draft_key(out_dir)] = (run, labels, corrections, normalizer)
-    return _results(run, out_dir, labels, corrections=corrections, normalizer=normalizer)
+    if not files_later:
+        # Files of the run before still to be written are not to be written over this one's.
+        _files_later.forget(_draft_key(out_dir))
+        finish_files(out_dir)
+        return _results(run, out_dir, labels, corrections=corrections, normalizer=normalizer)
+    results = _results(run, out_dir, labels, write_files=False, corrections=corrections, normalizer=normalizer)
+    _write_preview(run.first_frame, out_dir)  # the pages draw on it at once
+    _write_files_later(run, out_dir, corrections, normalizer)
+    return results
 
 
 # The last run of each results folder, so a call corrected by hand on its result
 # pages gives new results without decoding the recordings again.
 _runs = {}
 _runs_lock = threading.Lock()
+# The files a page need not wait for, written in the background once things are
+# quiet (classes/deferred_files.py): the workbook and the figures after a page's
+# run and after every call corrected by hand, and a calibration report's workbook.
+_files_later = DeferredFiles()
+# One at a time: matplotlib's figures are not made for two threads at once.
+_files_lock = threading.Lock()
+
+
+def _annotated(run):
+    """The first frame of a run with its zones and mites drawn on it."""
+    return run.zone_manager.draw(run.masked.copy())
+
+
+def _write_files(annotated, out_dir, mite_data):
+    """Write the workbook, the figures and the annotated first frame of a run to
+    `out_dir` (reporting.write_outputs()), and say what was written."""
+    with _files_lock:
+        return reporting.write_outputs(mite_data, annotated, out_dir)
+
+
+def _write_files_later(run, out_dir, corrections, normalizer, delay=None):
+    """Write the files of a folder's run in the background (see _files_later),
+    from the table as the corrections are when they are written."""
+    _files_later.later(_draft_key(out_dir),
+                       lambda: _write_files(_annotated(run), out_dir, _mite_table(run, corrections, normalizer)[0]),
+                       delay)
+
+
+def finish_files(out_dir=None):
+    """Return once the files of the results in `out_dir` (by default of all
+    results) are as the last call corrected by hand makes them: before one is
+    downloaded, and before the program ends."""
+    _files_later.finish(None if out_dir is None else _draft_key(out_dir))
+
+
+def results_file(out_dir, name):
+    """The path of the file `name` of the results in `out_dir`, written as the
+    last correction makes it if it is one of those. A clip's frames wait for
+    nothing."""
+    if name in (reporting.EXCEL_NAME, reporting.DETECTIONS_NAME, reporting.CALIBRATION_EXCEL_NAME,
+                *(figure for figure, _method in reporting.FIGURES)):
+        finish_files(out_dir)
+    return Path(out_dir) / name
+
 
 def _normalizer_in_use(mite):
     """The normalisations config.yaml puts the scores of a folder's analysis
@@ -576,7 +659,8 @@ def correct_call(out_dir, mite_id, recording, state=None, checked=False):
     With `checked`, a call is kept as checked by eye, also when it is the
     detector's: the answer to a close call (classes/review_band.py).
     Returns the results as run_analysis() does, every number following the
-    change, and writes the workbook and the figures again."""
+    change. The workbook and the figures are written again a moment later, once
+    the corrections pause (finish_files() waits for them)."""
     with _runs_lock:
         kept = _runs.get(_draft_key(out_dir))
         if kept is None:
@@ -584,7 +668,9 @@ def correct_call(out_dir, mite_id, recording, state=None, checked=False):
         run, labels, corrections, normalizer = kept
         _change_call(run.zone_manager, corrections, mite_id, int(recording), state,
                      _detected_calls(run, corrections, normalizer), checked=checked)
-        return _results(run, out_dir, labels, corrections=corrections, normalizer=normalizer)
+        results = _results(run, out_dir, labels, write_files=False, corrections=corrections, normalizer=normalizer)
+    _write_files_later(run, out_dir, corrections, normalizer)
+    return results
 
 
 def save_review_band(low, high):
@@ -681,8 +767,7 @@ def _results(run, out_dir, labels, write_files=True, corrections=None, normalize
 
     if write_files:
         _write_preview(run.first_frame, out_dir)
-        annotated = run.zone_manager.draw(run.masked.copy())
-        results = reporting.write_outputs(mite_data, annotated, out_dir)
+        results = _write_files(_annotated(run), out_dir, mite_data)
     else:
         results = reporting.describe_outputs(mite_data)
 
@@ -808,9 +893,10 @@ def _opened_calibration(stored, out_dir, library_dir):
 def open_calibration(data_dir, out_dir, coords_file=None, library_dir=CALIBRATION_LIBRARY):
     """Detect the mites of a calibration session and keep them in `out_dir`.
 
-    Slow: every frame is decoded. Nothing is scored here, so the page cannot show
-    scores while the user enters the ground truth and bias it. Detections already
-    marked "not a mite" are kept here, so that the mark can be undone.
+    Nothing is scored here, so the page cannot show scores while the user enters
+    the ground truth and bias it, and only the first frame is decoded.
+    Detections already marked "not a mite" are kept here, so that the mark can
+    be undone.
     """
     data_dir = Path(data_dir)
     if not data_dir.is_dir():
@@ -1130,9 +1216,22 @@ def _write_ground_truth(stored, truth, out_dir, library_dir, tolerance=10.0):
 
 
 def dataset_id(data_dir):
-    """A stable, filename-safe id for the dataset of one recording folder."""
-    path = Path(data_dir).resolve()
-    digest = hashlib.sha1(os.path.normcase(str(path)).encode("utf-8")).hexdigest()[:8]
+    """A stable, filename-safe id for the dataset of one recording folder.
+
+    A folder of another kind of computer -- a library copied from the Discobox's
+    Linux to Windows, or back -- keeps the id it was saved under there, so its
+    dataset and the library's copy of its recordings are still found."""
+    text = str(data_dir)
+    foreign = not Path(text).exists() and (
+        (text.startswith("/") and not text.startswith("//")) if os.name == "nt" else re.match(r"[A-Za-z]:[\\/]", text))
+    if foreign and os.name == "nt":
+        path, key = PurePosixPath(text), text  # Linux made the id from the path as it is
+    elif foreign:
+        path, key = PureWindowsPath(text), ntpath.normcase(text)  # Windows from it in lower case
+    else:
+        path = Path(data_dir).resolve()
+        key = os.path.normcase(str(path))
+    digest = hashlib.sha1(key.encode("utf-8")).hexdigest()[:8]
     name = re.sub(r"[^A-Za-z0-9_-]+", "_", path.name).strip("_") or "recording"
     return f"{name}-{digest}"
 
@@ -1332,12 +1431,14 @@ def mite_boxes(mites, pad=0):
     }
 
 
-def _mite_patches(dataset, recordings_dir, pad=0, stabilize=False):
-    """Per recording of a dataset, in order: (mite id, patch) for every mite,
-    the patch being its box grown by `pad` in every frame, as an analysis run
-    cuts it. Slow: every frame is decoded, one recording at a time, and only the
-    part of the image holding mites is kept. With `stabilize`, the cuts follow a
-    shaking plate, as mite.stabilize_plate makes an analysis run cut them."""
+def _measure_mites(dataset, recordings_dir, measure, pad=0, stabilize=False):
+    """Per recording of a dataset, in order: {mite id: measure(its patch)}, the
+    patch being the mite's box grown by `pad` in every frame, as an analysis run
+    cuts it. Slow: every frame is decoded, a recording at a time (the next one
+    while this one is measured), and only the part of the image holding mites
+    is kept; the mites of a recording are measured side by side. With
+    `stabilize`, the cuts follow a shaking plate, as mite.stabilize_plate makes
+    an analysis run cut them."""
     loader = DataLoader(recordings_dir, grayscale=False)
     boxes = mite_boxes(dataset["mites"], pad)
     # Stabilizing reads a little around each cut; keep real pixels there.
@@ -1349,16 +1450,21 @@ def _mite_patches(dataset, recordings_dir, pad=0, stabilize=False):
     local = {mite_id: (x1 - x0, y1 - y0, x2 - x0, y2 - y0)
              for mite_id, (x1, y1, x2, y2) in mite_boxes(dataset["mites"]).items()}
 
-    def patches(frames):
+    def measured(frames):
         shifts = PlateStabilizer().shifts(frames, list(local.values())) if stabilize else None
-        for mite_id, (x1, y1, x2, y2) in boxes.items():
-            if shifts is None:
-                yield mite_id, frames[:, max(0, y1) - y0:y2 - y0, max(0, x1) - x0:x2 - x0]
-            else:
-                yield mite_id, PlateStabilizer.cut(frames, local[mite_id], pad, shifts)
 
-    for recording in dataset["recordings"]:
-        yield patches(loader.load_recording_region(recording["name"], x0, y0, x_end, y_end))
+        def one(mite_id):
+            x1, y1, x2, y2 = boxes[mite_id]
+            if shifts is None:
+                return measure(frames[:, max(0, y1) - y0:y2 - y0, max(0, x1) - x0:x2 - x0])
+            return measure(PlateStabilizer.cut(frames, local[mite_id], pad, shifts))
+
+        return dict(zip(boxes, side_by_side(one, boxes)))
+
+    loads = (partial(loader.load_recording_region, recording["name"], x0, y0, x_end, y_end)
+             for recording in dataset["recordings"])
+    for frames in one_ahead(loads):
+        yield measured(frames)
 
 
 def _check_recordings(dataset, recordings_dir, what):
@@ -1372,12 +1478,16 @@ def _check_recordings(dataset, recordings_dir, what):
 
 def _score_mites(dataset, metric, recordings_dir, params=None, stabilize=False):
     """Score every mite of a dataset in every recording with `metric` and its
-    `params`: mite id to one score per recording (see _mite_patches())."""
+    `params`: mite id to one score per recording (see _measure_mites())."""
     _check_recordings(dataset, recordings_dir, f"its mites cannot be scored with {metric}")
     scores = {mite["id"]: [] for mite in dataset["mites"]}
-    for patches in _mite_patches(dataset, recordings_dir, Analyzer.roi_padding(metric, params), stabilize):
-        for mite_id, roi in patches:
-            scores[mite_id].append(round(float(Analyzer._motion_score(roi, metric, params)), 3))
+
+    def score(roi):
+        return round(float(Analyzer._motion_score(roi, metric, params)), 3)
+
+    for recording in _measure_mites(dataset, recordings_dir, score, Analyzer.roi_padding(metric, params), stabilize):
+        for mite_id, value in recording.items():
+            scores[mite_id].append(value)
     return scores
 
 
@@ -1387,9 +1497,13 @@ def _brightness_mites(dataset, recordings_dir, pad=0, stabilize=False):
     pixel value per recording."""
     _check_recordings(dataset, recordings_dir, "the brightness of its mites cannot be measured")
     brightness = {mite["id"]: [] for mite in dataset["mites"]}
-    for patches in _mite_patches(dataset, recordings_dir, pad, stabilize):
-        for mite_id, roi in patches:
-            brightness[mite_id].append(round(float(np.asarray(roi, dtype=np.float32).mean()), 3))
+
+    def mean(roi):
+        return round(float(np.asarray(roi, dtype=np.float32).mean()), 3)
+
+    for recording in _measure_mites(dataset, recordings_dir, mean, pad, stabilize):
+        for mite_id, value in recording.items():
+            brightness[mite_id].append(value)
     return brightness
 
 
@@ -1738,7 +1852,9 @@ def evaluate_calibration(out_dir, datasets, metric=None, params=None, library_di
     and the band around it to check by eye, for `checks_per_mite` checks per
     mite at most (REVIEW_CHECKS unless given; "review_band", see
     _suggested_band()); and every observation with its outcome.
-    Everything is also written to calibration.xlsx in `out_dir`.
+    Everything is also written to calibration.xlsx in `out_dir`, a moment later:
+    the workbook takes longer to write than the report to work out, so the page
+    has the report first (results_file() waits for the workbook).
 
     With `benchmark`, the same observations are also called by the Discobox's
     original software (classes/benchmark.py): its confusion counts, with
@@ -1885,7 +2001,8 @@ def evaluate_calibration(out_dir, datasets, metric=None, params=None, library_di
     # each outcome as a fraction of its row, for the confusion matrices and the ROC curve
     result["rates"] = {key: None if result[key] is None else calibration.outcome_rates(result[key]) for key in ("current", "best")}
     Path(out_dir).mkdir(parents=True, exist_ok=True)
-    result["excel"] = reporting.write_calibration_excel(result, out_dir)
+    result["excel"] = reporting.CALIBRATION_EXCEL_NAME
+    _files_later.later(_draft_key(out_dir), lambda: reporting.write_calibration_excel(result, out_dir))
     return result
 
 
@@ -2327,13 +2444,26 @@ def live_results(live_id):
 def live_correct_call(live_id, mite_id, recording, state=None, checked=False):
     """correct_call() for a live run: the results published next, at once, follow
     the change. Once the run is over, the workbook and the figures are written
-    again too; before, they are after every recording anyway."""
+    again too, a moment later as correct_call() does; before, they are after
+    every recording anyway."""
     run = _get_live(live_id)
     with run.session.lock:
         _change_call(run.analysis.zone_manager, CallCorrections(run.run_dir, run.pool_size), mite_id, int(recording), state,
                      checked=checked)
-    run.session.publish(write_files=run.session.state == "finished")
+    run.session.publish(write_files=False)
+    if run.session.state == "finished":
+        _files_later.later(_draft_key(run.out_dir), lambda: _write_live_files(run))
     return live_results(live_id)
+
+
+def _write_live_files(run):
+    """The workbook and the figures of a live run that is over, as its corrections
+    are now. The lock is held only to read the run, not while the files are written."""
+    with run.session.lock:
+        view = _run_view(run.analysis)
+        mite_data, _changes = _mite_table(view, CallCorrections(run.run_dir, run.pool_size), ScoreNormalizer())
+        annotated = _annotated(view)
+    _write_files(annotated, run.out_dir, mite_data)
 
 
 def live_refresh(live_id):
@@ -2406,7 +2536,9 @@ def live_running():
 
 
 def close_all_live():
-    """Stop every live run cleanly and release the camera: on shutdown."""
+    """Stop every live run cleanly and release the camera: on shutdown. The
+    files a correction left to write are written first."""
+    finish_files()
     with _live_lock:
         for live_id in list(_live):
             _close_live(live_id)
@@ -2433,6 +2565,7 @@ def list_recordings(recordings_root=RECORDINGS_ROOT, results_root=RESULTS_ROOT, 
     root = Path(recordings_root)
     if not root.is_dir():
         return []
+    finish_files()  # a list of the results on disk: those still to be written are, first
     recording_now = {run.run_dir.resolve() for run in list(_live.values()) if run.session.state in LIVE_STATES}
     listed = []
     for folder in root.iterdir():
@@ -2527,7 +2660,7 @@ def recording_results_file(name, filename, results_root=RESULTS_ROOT):
     for part in (name, filename):
         if not part or part in (".", "..") or Path(part).name != part:
             raise ValueError(f"Bad name: {part}")
-    path = Path(results_root) / name / filename
+    path = results_file(Path(results_root) / name, filename)
     if not path.is_file():
         raise FileNotFoundError(f"{name} has no {filename}.")
     return str(path)

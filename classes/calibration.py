@@ -327,8 +327,11 @@ def moving_over_time(rows, n_recordings, thresholds):
     recording without rows gives None.
     """
     result = {"n": [], "truth": [], **{name: [] for name in thresholds}}
+    by_recording = {}
+    for row in rows:
+        by_recording.setdefault(row["recording"], []).append(row)
     for recording in range(n_recordings):
-        here = [row for row in rows if row["recording"] == recording]
+        here = by_recording.get(recording, [])
         result["n"].append(len(here))
         if not here:
             for key in ["truth", *thresholds]:

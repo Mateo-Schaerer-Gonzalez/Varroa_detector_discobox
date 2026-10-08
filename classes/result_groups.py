@@ -18,6 +18,7 @@ class ResultGroups:
     def __init__(self, results):
         self.zones = [zone for zone in results["zones"] if zone["n_mites"]]
         self._censored = results.get("censored", {})
+        self._seen = {}  # mite id -> seen(), made once: the survival numbers ask for it many times
         self._mites = {}
         for mite in results["mites"]:
             self._mites.setdefault(mite["zone_id"], []).append(mite)
@@ -37,8 +38,13 @@ class ResultGroups:
         return [recording in gone for recording in range(len(mite["moving"]))]
 
     def seen(self, mite):
-        """The mite's movement per recording, None in those in which it was gone."""
-        return [None if gone else moving for moving, gone in zip(mite["moving"], self.censored(mite))]
+        """The mite's movement per recording, None in those in which it was gone.
+        The same list every time: it is not to be changed."""
+        seen = self._seen.get(mite["id"])
+        if seen is None:
+            seen = [None if gone else moving for moving, gone in zip(mite["moving"], self.censored(mite))]
+            self._seen[mite["id"]] = seen
+        return seen
 
     def rows(self, zones=None):
         """(group, [zone, ...]) for the zones with mites (or `zones`), in group

@@ -10,3 +10,11 @@ def no_review_band(monkeypatch):
     results, which the references were made without. A test of the band gives
     its own (see review_band_test.py)."""
     monkeypatch.setattr(pipeline, "_review_band", lambda metric: None)
+
+
+@pytest.fixture(autouse=True)
+def no_files_left_to_write():
+    """The files a test left to be written a moment later (after a correction,
+    a calibration report) are not written during the tests after it."""
+    yield
+    pipeline._files_later.forget()
