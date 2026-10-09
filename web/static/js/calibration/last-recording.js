@@ -105,7 +105,7 @@ class LastRecording {
       <div class="tip-note">${mite.movement ? `labelled ${mite.movement}` : "not labelled in this recording"}</div>
       <div class="tip-hint">Click to see it in its recording</div>`));
     g.addEventListener("mouseleave", Charts.hideTooltip);
-    g.addEventListener("click", () => cal.goToMite(dataset.id, mite.zone_id, dataset.last_recording.recording));
+    g.addEventListener("click", () => cal.goToMite(dataset.id, mite.zone_id, dataset.last_recording.recording, mite.id));
     return g;
   }
 

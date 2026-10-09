@@ -2,7 +2,7 @@
 // mite and each recording, whether it moves, and the detector's calls are compared with theirs.
 //
 //   #/cal/open                              choose calibrate or test, then the recordings
-//   #/cal/truth/<zone id>/<recording>       enter the ground truth, zone by zone (TruthPage)
+//   #/cal/truth/<mite id>/<recording>       enter the ground truth, a mite at a time (TruthPage)
 //   #/cal/report                            the calibration or the test report (ReportPage)
 //
 // The ground truth itself, and saving it, is GroundTruth's; the saved datasets
@@ -18,7 +18,7 @@ class Calibration {
     this.selected = [];           // ids of the saved datasets the report pools
     this.report = null;           // what the last evaluation returned
     this.reportStale = false;     // the ground truth changed after that evaluation
-    this.zoneId = null;           // the zone shown on the ground-truth page
+    this.miteId = null;           // the mite shown on the ground-truth page
     this.recording = 0;           // the recording shown on the ground-truth page
     this.shownThreshold = "best"; // confusion matrix of the calibration tab: "best" or "current"
     this.stamp = 0;               // cache-buster for files that change between evaluations
@@ -59,8 +59,8 @@ class Calibration {
     return `recording ${recording + 1} (${minutes(this.data.times[recording])})`;
   }
 
-  truthHref(zoneId, recording = this.recording) {
-    return `#/cal/truth/${zoneId}/${recording}`;
+  truthHref(miteId, recording = this.recording) {
+    return `#/cal/truth/${encodeURIComponent(miteId)}/${recording}`;
   }
 
   // --- routing
@@ -100,7 +100,7 @@ class Calibration {
 
   // Put a dataset on the ground-truth page; the report and the pooled datasets stay.
   showDataset(data) {
-    Object.assign(this, { data, datasetId: data.dataset_id, zoneId: null, recording: 0, stamp: Date.now() });
+    Object.assign(this, { data, datasetId: data.dataset_id, miteId: null, recording: 0, stamp: Date.now() });
     groundTruth.load(data.truth_view);
     router.setFolder("cal", folderOf(data.data_dir), data.data_dir);
   }
@@ -108,7 +108,7 @@ class Calibration {
   // Go to one mite in one recording of any saved dataset, e.g. a point of a pooled
   // report. Another dataset than the one on the ground-truth page is opened in its
   // place, in the same session, so the report stays.
-  async goToMite(datasetId, zoneId, recording) {
+  async goToMite(datasetId, zoneId, recording, miteId = null) {
     if (!(this.data && this.datasetId === datasetId)) {
       try {
         await this.saveOrDropChanges();
@@ -118,7 +118,9 @@ class Calibration {
         return;
       }
     }
-    router.go(this.truthHref(zoneId, recording));
+    // without a mite, the first one of the zone
+    const mite = miteId ?? this.mites(zoneId)[0]?.id;
+    if (mite != null) router.go(this.truthHref(mite, recording));
   }
 
   // Before another dataset replaces the one on screen: ask whether to save its
@@ -154,7 +156,7 @@ class Calibration {
       alert(`Not closed: the last changes could not be saved (${error.message}).`);
       return;
     }
-    Object.assign(this, { id: null, data: null, datasetId: null, selected: [], report: null, reportStale: false, zoneId: null, recording: 0 });
+    Object.assign(this, { id: null, data: null, datasetId: null, selected: [], report: null, reportStale: false, miteId: null, recording: 0 });
     groundTruth.load(null);
     router.setFolder("cal", "");
     router.go("#/cal/open");

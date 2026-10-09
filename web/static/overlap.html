@@ -1,0 +1,208 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Ground truth check · Varroa discobox</title>
+<!-- TEMPORARY: a check of the saved ground truth where the scores of the two labels
+     overlap. What it is, and what to delete with it, is in pipeline.py, in the block
+     "TEMPORARY: checking the ground truth where the labels overlap". -->
+<link rel="stylesheet" href="style.css?v=24">
+<style>
+  main { max-width: 1440px; }
+  .ov-split { display: grid; grid-template-columns: minmax(0, 1fr) 430px; gap: 32px; align-items: start; }
+  .ov-side { position: sticky; top: 68px; padding-left: 24px; border-left: 1px solid var(--rule); }
+  .ov-side h2 { margin-bottom: 6px; }
+  .ov-side .fig { margin-top: 12px; }
+  .ov-side .control-check { align-items: baseline; }
+  .ov-side .control-check .hint { margin: 0 0 0 4px; font-size: 12px; }
+
+  .ov-position { font-family: var(--mono); font-size: 12px; color: var(--muted); align-self: center; white-space: nowrap; }
+  .ov-bar { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 10px; margin-bottom: 10px; }
+  .ov-bar .control-check { margin: 0 0 0 auto; }
+  .ov-field { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--ink); white-space: nowrap; }
+  .ov-field .number-input { width: 64px; padding: 3px 6px; font-size: 12.5px; }
+  .ov-field select.number-input { width: auto; }
+  .ov-labels { display: contents; }
+  .ov-labels button.current { color: #fff; background: var(--ink); border-color: var(--ink); }
+  .ov-labels kbd, .ov-bar button kbd { margin-left: 2px; padding: 0 4px; font: inherit; font-size: 0.85em; color: inherit; background: none; border: 1px solid currentColor; border-radius: 2px; opacity: 0.6; }
+  .ov-bar .truth-key { font-size: 12px; }
+  .ov-labels button.current .truth-key.moving { color: #3fdc8f; }
+  .ov-labels button.current .truth-key.still { color: #ffb52e; }
+  .ov-labels button.current .truth-key.unset { color: #fff; }
+
+  /* How long the datapoint on screen has left while cycling. */
+  .ov-dwell { height: 2px; background: var(--rule); margin-bottom: 6px; }
+  .ov-dwell > div { height: 100%; width: 0; background: var(--ink); }
+  .ov-views { display: grid; grid-template-columns: minmax(0, 3fr) minmax(0, 2fr); gap: 16px; align-items: start; }
+  .ov-views .crop { aspect-ratio: 1; max-height: 62vh; }
+  #ov-variation .crop { image-rendering: pixelated; }
+  /* The ring round the mite keeps its width however far the clip is zoomed. */
+  .ov-ring { fill: none; stroke-width: 2; vector-effect: non-scaling-stroke; }
+  .ov-ring.moving { stroke: #3fdc8f; }
+  .ov-ring.still { stroke: #ffb52e; }
+  .ov-ring.unset { stroke: #fff; stroke-dasharray: 4 3; }
+  .ov-trace { margin-top: 22px; }
+
+  .ov-band { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 10px; margin-top: 12px; }
+  .ov-filters { display: flex; flex-wrap: wrap; gap: 6px 14px; margin-top: 14px; }
+  .ov-group { margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--rule); }
+  .ov-changed { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+  .ov-changed .hint { margin: 0; }
+  .ov-list { max-height: 34vh; overflow-y: auto; margin-top: 10px; border-bottom: 1px solid var(--rule-strong); }
+  .ov-list table { border-bottom: 0; }
+  .ov-list th, .ov-list td { padding: 4px 7px; }
+  .ov-list thead th { position: sticky; top: 0; z-index: 1; background: var(--paper); box-shadow: 0 1px 0 var(--rule-strong); }
+  .ov-list tr.current td { background: var(--wash); color: var(--ink); font-weight: 600; }
+  .ov-was { color: var(--muted); font-size: 12px; font-weight: 400; font-style: italic; }
+  .chart .ov-bin { fill: transparent; }
+  .chart .ov-bin:hover { fill: var(--muted); fill-opacity: 0.1; }
+
+  @media (max-width: 1000px) {
+    .ov-split { grid-template-columns: minmax(0, 1fr); }
+    .ov-side { position: static; padding-left: 0; border-left: 0; }
+  }
+</style>
+</head>
+<body>
+
+<header class="topbar">
+  <div class="brand">
+    <span class="brand-name">Varroa discobox</span>
+    <span class="folder-name">Ground truth check · a temporary page</span>
+  </div>
+  <nav class="steps" aria-label="Back to the app">
+    <a href="./#/cal/open">&larr; Calibration</a>
+  </nav>
+</header>
+
+<main>
+  <p id="ov-loading" class="hint"></p>
+
+  <div id="ov-page" class="ov-split" hidden>
+    <div>
+      <p id="ov-empty" class="hint" hidden></p>
+      <div id="ov-datapoint">
+        <header class="page-head">
+          <div>
+            <h1 id="ov-title"></h1>
+            <p id="ov-meta" class="meta"></p>
+          </div>
+          <div class="pager">
+            <span id="ov-position" class="ov-position"></span>
+            <button id="ov-prev" type="button" class="secondary small">&larr; Previous</button>
+            <button id="ov-next" type="button" class="secondary small">Next &rarr;</button>
+          </div>
+        </header>
+        <div class="ov-bar">
+          <div class="ov-labels">
+            <button type="button" class="secondary small" data-state="moving"><span class="truth-key moving" aria-hidden="true">●</span>moving <kbd>M</kbd></button>
+            <button type="button" class="secondary small" data-state="still"><span class="truth-key still" aria-hidden="true">○</span>still <kbd>S</kbd></button>
+            <button type="button" class="secondary small" data-state=""><span class="truth-key unset" aria-hidden="true">?</span>unlabelled <kbd>U</kbd></button>
+          </div>
+          <button id="ov-undo" type="button" class="secondary small" disabled>Undo <kbd>Z</kbd></button>
+          <span id="ov-label-status" class="hint"></span>
+          <label class="control-check"><input id="ov-auto" type="checkbox"> Autocycle</label>
+          <label class="ov-field">every <input id="ov-seconds" type="number" min="0.5" max="600" step="0.5" value="4" class="number-input"> s</label>
+          <label class="ov-field">Clip
+            <select id="ov-speed" class="number-input">
+              <option value="1">in real time</option>
+              <option value="0.5">at half speed</option>
+              <option value="0.25">at a quarter speed</option>
+            </select>
+          </label>
+          <button id="ov-play" type="button" class="secondary small">Pause</button>
+        </div>
+        <div class="ov-dwell"><div id="ov-dwell-bar"></div></div>
+        <div class="ov-views">
+          <figure class="fig">
+            <div id="ov-clip" class="crop-wrap"></div>
+            <figcaption id="ov-clip-status"></figcaption>
+          </figure>
+          <figure class="fig">
+            <div id="ov-variation" class="crop-wrap"></div>
+            <figcaption>Where the pixels change over the frames: black where a pixel varies by 1 grey level or less (its standard
+              deviation; the camera's noise), brightest at 8 or more. A leg that moves lights up on its side of the mite.</figcaption>
+          </figure>
+        </div>
+        <figure class="fig ov-trace">
+          <div class="fig-title">This mite over the run</div>
+          <div id="ov-trace" class="chart"></div>
+          <figcaption>Its score in every recording, on a logarithmic axis, with the overlap shaded. Under it its labels:
+            a tick in the upper row where it is labelled moving, in the lower row where still. The dashed line is the recording on screen.</figcaption>
+        </figure>
+        <p class="caption">
+          <kbd>←</kbd> <kbd>→</kbd> previous and next, <kbd>M</kbd> moving, <kbd>S</kbd> still, <kbd>U</kbd> unlabelled,
+          <kbd>Z</kbd> takes the last label back, <kbd>Space</kbd> starts or stops the autocycle, <kbd>P</kbd> plays or pauses the clip.
+          A label is saved the moment it is set, to the saved ground truth and next to the recordings.
+        </p>
+      </div>
+    </div>
+
+    <aside class="ov-side">
+      <h2>The overlap</h2>
+      <p id="ov-summary" class="hint"></p>
+      <figure class="fig">
+        <div id="ov-histogram" class="chart"></div>
+        <figcaption>How many mite-recordings of each label have each score; both axes are logarithmic.
+          The dashed line is the datapoint on screen.</figcaption>
+      </figure>
+      <div class="ov-band">
+        <label class="ov-field">Overlap from <input id="ov-low" type="number" min="0" step="any" class="number-input"></label>
+        <label class="ov-field">to <input id="ov-high" type="number" min="0" step="any" class="number-input"></label>
+        <button id="ov-suggested" type="button" class="secondary small" title="The stretch of scores in which both labels are common">Suggested</button>
+      </div>
+      <p id="ov-band-note" class="hint"></p>
+      <label class="control-check"><input id="ov-beyond" type="checkbox" checked> <span id="ov-beyond-text"></span></label>
+
+      <div class="ov-group">
+        <div id="ov-datasets"></div>
+      </div>
+      <div class="ov-group">
+        <div class="ov-changed">
+          <p id="ov-changed" class="hint"></p>
+          <button id="ov-refresh" type="button" class="secondary small" title="Count and list again, with the labels as they are now">List again</button>
+        </div>
+        <div class="ov-filters">
+          <label class="ov-field">Show
+            <select id="ov-show" class="number-input">
+              <option value="all">all</option>
+              <option value="still">labelled still</option>
+              <option value="moving">labelled moving</option>
+              <option value="changed">changed here</option>
+            </select>
+          </label>
+          <label class="ov-field">by
+            <select id="ov-order" class="number-input">
+              <option value="mite">mite and recording</option>
+              <option value="high">score, highest first</option>
+              <option value="low">score, lowest first</option>
+            </select>
+          </label>
+        </div>
+        <p id="ov-status" class="hint"></p>
+        <div id="ov-list" class="ov-list"><table id="ov-table" class="clickable"></table></div>
+      </div>
+    </aside>
+  </div>
+</main>
+
+<div id="tooltip" class="tooltip" hidden></div>
+
+<!-- The app's own classes the page draws with, then the page's, in order (see index.html). -->
+<script src="js/charts/chart-kit.js"></script>
+<script src="js/charts/line-chart.js"></script>
+<script src="js/charts/scatter-chart.js"></script>
+<script src="js/charts/ridgeline-chart.js"></script>
+<script src="js/charts/chart-export.js"></script>
+<script src="js/charts/charts.js"></script>
+<script src="js/core/util.js"></script>
+<script src="js/ui/plate-view.js"></script>
+<script src="js/app/clip-player.js"></script>
+<script src="js/app/server-heartbeat.js"></script>
+<script src="js/overlap/overlap-figures.js"></script>
+<script src="js/overlap/overlap-check.js"></script>
+<script src="js/overlap/overlap-page.js"></script>
+<script src="js/overlap/overlap-main.js"></script>
+</body>
+</html>

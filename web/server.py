@@ -152,12 +152,13 @@ class ManifestRequest(BaseModel):
 
 class TruthEdit(BaseModel):
     """A click or a fill button on the ground-truth page (pipeline.edit_truth)."""
-    action: str                 # "cycle" or "fill"
+    action: str                 # "set", "dead", "cycle" or "fill"
     recording: int
     mite: Optional[str] = None  # cycle: the mite clicked
     backwards: bool = False     # cycle: to the previous status (shift-click)
     zone: Optional[int] = None  # fill: the zone
     kind: Optional[str] = None  # fill: "moving", "still", "previous", "dead" or "clear"
+    state: Optional[str] = None  # set: "moving", "still", "not_a_mite", or none for unlabelled
 
 
 class EvaluateRequest(BaseModel):
@@ -450,6 +451,23 @@ def analysis_clip(session_id: str, recording: int, zone_id: Optional[int] = None
         raise HTTPException(status_code=400, detail=str(error))
 
 
+@app.get("/api/session/{session_id}/outline/{recording}/{zone_id}")
+def analysis_outlines(session_id: str, recording: int, zone_id: int):
+    """What the score sees of each mite of one zone in one recording: the dots and
+    the arrow the result pages draw over the mites. Cached on first request."""
+    session = get_session(session_id)
+    if session.get("live") and not session.get("save_frames"):
+        raise HTTPException(status_code=400, detail="This test run does not save its recordings, so the outlines cannot be drawn.")
+    results = session_results(session_id)
+    if results is None:
+        raise HTTPException(status_code=400, detail="No results yet.")
+    try:
+        return pipeline.analysis_outlines(session["data_dir"], session["out_dir"], recording, zone_id, results["mites"],
+                                          pool_size=session.get("pool_size"))
+    except (FileNotFoundError, ValueError) as error:
+        raise HTTPException(status_code=400, detail=str(error))
+
+
 def new_calibration_session(name, open_it):
     """Run `open_it(out_dir)` in a fresh calibration session and remember it.
     Its folder is named by when it began and by `name`, what it opened."""
@@ -543,6 +561,17 @@ def calibration_clip(session_id: str, recording: int, zone_id: int):
         raise HTTPException(status_code=400, detail=str(error))
 
 
+@app.get("/api/calibration/{session_id}/mite-clip/{recording}/{mite}")
+def calibration_mite_clip(session_id: str, recording: int, mite: str):
+    """Frames of one mite during one recording, cut close around it, with a picture
+    of where its pixels change; cached on first request."""
+    session = get_session(session_id)
+    try:
+        return pipeline.calibration_mite_clip(session["out_dir"], recording, mite)
+    except (FileNotFoundError, ValueError) as error:
+        raise HTTPException(status_code=400, detail=str(error))
+
+
 @app.get("/api/calibration/{session_id}/plate-clip/{dataset_id}/{recording}")
 def dataset_clip(session_id: str, dataset_id: str, recording: int):
     """Frames of the whole plate during one recording of a saved dataset, for the
@@ -571,7 +600,8 @@ def edit_ground_truth(session_id: str, request: TruthEdit):
     session = get_session(session_id)
     try:
         return as_it_is(pipeline.edit_truth(session["out_dir"], request.action, mite=request.mite, zone=request.zone,
-                                            recording=request.recording, backwards=request.backwards, kind=request.kind))
+                                            recording=request.recording, backwards=request.backwards, kind=request.kind,
+                                            state=request.state))
     except (FileNotFoundError, ValueError) as error:
         raise HTTPException(status_code=400, detail=str(error))
 
@@ -783,6 +813,67 @@ def get_file(session_id: str, name: str):
     if not path.is_file() or session["out_dir"].resolve() not in path.parents:
         raise HTTPException(status_code=404, detail=f"No such file: {name}")
     return FileResponse(path)
+
+
+# --- TEMPORARY: checking the ground truth where the labels overlap ---------------------
+#
+# The page static/overlap.html; see the block of the same name in pipeline.py for
+# what it is and what to delete with it.
+
+
+class OverlapRequest(BaseModel):
+    # ids of the saved datasets to pool; by default all of them
+    datasets: Optional[list[str]] = None
+    # the scores the overlap runs between; by default the ones the labels suggest
+    low: Optional[float] = None
+    high: Optional[float] = None
+    # also the recordings beyond the overlap on the wrong side
+    beyond: bool = True
+
+
+class OverlapLabel(BaseModel):
+    dataset: str
+    mite: str
+    recording: int
+    state: Optional[str] = None  # "moving", "still", or none: unlabelled
+
+
+@app.post("/api/overlap")
+def truth_overlap(request: OverlapRequest):
+    """The mite-recordings whose score lies where the two labels overlap. Slow
+    the first time a dataset meets the metric: every frame is decoded."""
+    try:
+        return as_it_is(pipeline.truth_overlap(request.datasets, request.low, request.high, request.beyond))
+    except (FileNotFoundError, ValueError) as error:
+        raise HTTPException(status_code=400, detail=str(error))
+
+
+@app.get("/api/overlap/clip/{dataset_id}/{mite}/{recording}")
+def overlap_clip(dataset_id: str, mite: str, recording: int):
+    """Frames of one mite during one recording, cut close around it, cached on first request."""
+    try:
+        return pipeline.overlap_clip(dataset_id, mite, recording)
+    except (FileNotFoundError, ValueError) as error:
+        raise HTTPException(status_code=400, detail=str(error))
+
+
+@app.get("/api/overlap/file/{name:path}")
+def overlap_file(name: str):
+    """One frame of a clip made by overlap_clip()."""
+    path = safe_join(pipeline.OVERLAP_DIR, name)
+    if not path.is_file():
+        raise HTTPException(status_code=404, detail=f"No such file: {name}")
+    return FileResponse(path)
+
+
+@app.post("/api/overlap/label")
+def set_overlap_label(request: OverlapLabel):
+    """Change one mite's label in one recording, saved at once."""
+    try:
+        with truth_lock:
+            return pipeline.set_overlap_label(request.dataset, request.mite, request.recording, request.state)
+    except (FileNotFoundError, ValueError) as error:
+        raise HTTPException(status_code=400, detail=str(error))
 
 
 # --- the recordings kept -------------------------------------------------------------

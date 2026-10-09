@@ -32,7 +32,7 @@ def test_each_mite_on_the_error_map_is_coloured_by_its_more_frequent_error():
     assert selection["counts"] == {"correct": 1, "missed-positive": 1, "missed-negative": 1}
     one = selection["mites"][1]
     assert one["n"] == 2 and one["moving_missed"] == [{"time": 0.0, "recording_name": "r0"}]
-    assert one["open"] == {"dataset": "d", "zone_id": 1, "recording": 0}  # its first error
+    assert one["open"] == {"dataset": "d", "zone_id": 1, "mite_id": "1", "recording": 0}  # its first error
 
 
 def test_the_error_map_of_one_recording():
@@ -160,6 +160,17 @@ def test_taking_a_mark_back_puts_back_the_labels_it_replaced(tmp_path):
 def test_an_unknown_detection_is_refused(tmp_path):
     with pytest.raises(ValueError):
         pipeline.mark_detection(tmp_path, MITES, "9", True)
+
+
+# --- the movement scores of the calibration report
+
+def test_the_score_picker_is_told_which_parameters_are_whole_numbers():
+    metrics = {metric["name"]: metric for metric in pipeline.movement_scores()["metrics"]}
+    assert metrics["topN_variability"]["whole"] == ["n"]
+    # 0.0 arrives in the page as 0: without this it would ask for a whole number
+    assert metrics["outline_variability"]["defaults"]["relative"] == 0
+    assert metrics["outline_variability"]["whole"] == ["pad"]
+    assert "poly_sigma" not in metrics["optical_flow"]["whole"] and "pad" in metrics["optical_flow"]["whole"]
 
 
 # --- small things

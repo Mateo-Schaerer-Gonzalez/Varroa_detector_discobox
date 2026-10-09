@@ -45,7 +45,7 @@ class MitePage extends ResultsPage {
 
     <div class="grid-mite">
       ${this.clipFigure("mite-crop", 1, "Close-up",
-        `The recording at ${this.shownTime()}, looped, 140 × 140 px around the mite: ${this.callBadge(mite, ctx.shown)} in it.
+        `The recording at ${this.shownTime()}, looped, 56 × 56 px around the mite: ${this.callBadge(mite, ctx.shown)} in it. The dots round the mite are darker where its outline changes more over the frames, and the arrow points to the side most of that change lies on: the longer, the more one-sided; green when the mite is called moving, orange when still.
         Where that is wrong, click the mite to step through moving, still, gone in this recording (e.g. fallen off) and gone from this recording on,
         or choose one in the table below.${review.ask(mite)}`, "crop-wrap square")}
       ${figure("chart-mite", 2, "Motion score over time",
@@ -96,9 +96,9 @@ class MitePage extends ResultsPage {
     });
   }
 
-  // 140 × 140 px of the zone's clip around the mite: the crop's view box shows only that part.
+  // 56 × 56 px of the zone's clip around the mite: the crop's view box shows only that part.
   drawCloseUp(mite, zone) {
-    const size = 140;
+    const size = 56;
     const crop = this.crop(mite.x - size / 2, mite.y - size / 2, size, size);
     // A click steps the mite to its next state in the recording shown, as on the ground-truth page.
     const { STATES, STATE_NAMES } = ResultsPage;
@@ -109,6 +109,7 @@ class MitePage extends ResultsPage {
       hint: `Click: change to ${STATE_NAMES[next]}`,
     });
     $("mite-crop").appendChild(crop);
+    this.drawOutlines(crop, zone.id);
     this.playClip(`/api/session/${ctx.sessionId}/clip/${ctx.shown}/${zone.id}`, $("mite-crop"), $("mite-crop").nextElementSibling,
       (clip) => ClipPlayer.onSvg(crop, clip));
   }

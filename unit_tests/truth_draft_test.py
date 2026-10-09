@@ -142,3 +142,24 @@ def test_the_view_follows_a_change_saved_elsewhere(tmp_path):
     assert view["changed"]
     assert view["states"] == {"0": ["moving", "still"], "1": [None, "still"]}
     assert view["unsaved"] == 2
+
+
+def test_a_mite_dead_from_a_recording_is_still_from_it_on_where_not_labelled():
+    d = draft({"0": ["moving", "moving", None]})
+    d.dead_from("0", 1)
+    assert d.states("0") == ["moving", "still", "still"]
+    late = TruthDraft(MITES, ZONES, 4, {"1": [None, None, None, "moving"]})
+    late.dead_from("1", 1)
+    assert late.states("1") == [None, "still", "still", "moving"]  # a later label stays
+
+
+def test_the_view_says_which_mite_and_recording_to_label_next():
+    d = draft({"0": ["still", "still", "still"], "1": ["moving", None, None]})
+    view = d.view()
+    assert view["next_mite"] == ["1", 1]
+    assert view["mites_done"] == {"0": 3, "1": 1, "2": 0}
+    d.dead_from("1", 1)
+    assert d.view()["next_mite"] == ["2", 0]
+    for recording in range(3):
+        d.set("2", recording, "still")
+    assert d.view()["next_mite"] is None

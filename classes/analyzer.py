@@ -105,6 +105,7 @@ class Analyzer:
             "topN_vector_temporal_range": Analyzer._topN_vector_temporal_range,
             "topN_binary_flux": Analyzer._topN_binary_flux,
             "outline_movement": Analyzer._outline_movement,
+            "outline_variability": Analyzer._outline_variability,
         }
 
     @staticmethod
@@ -365,5 +366,123 @@ class Analyzer:
         shape = (np.roll(shape, 1, axis=1) + shape + np.roll(shape, -1, axis=1)) / 3  # a leg is wider than one ray
         swing = shape.max(axis=0) - shape.min(axis=0)
         return float(np.sort(swing)[-n:].mean())
+
+    @staticmethod
+    def _outline_variability(roi, relative=0.0, width=1.5, pad=16):
+        """Vector sum around the mite of the variance of the pixels on its outline: how much of that variance lies on one side.
+
+        The variance over the frames is taken around the outline, one value
+        for each of 64 directions from the mite's centre
+        (outline_variability_profile()). Each value is a vector that points in
+        its direction, and the score is the length of their sum, divided by
+        the number of directions so that it stays in grey levels squared. A
+        leg that moves varies the outline on its side, and all of that adds
+        up. What varies the same all the way round (the camera's noise) or on
+        two opposite sides cancels.
+
+        `relative` takes the score relative to how much the outline varies: it
+        is divided by the outline's mean variance to that power. At 1 it is
+        the share of the variance that lies on one side, 0 to 1: how clustered
+        the variance is, however little of it there is.
+
+        `width` is how far the outline reaches on each side of the body's
+        edge, in pixels.
+
+        `pad` is not used here: the ROI is cut `pad` pixels larger on each side
+        than the mite's box (see roi_padding()), for bare plate at the patch's
+        edge. It should be 12 or more.
+
+        notebooks/outline_variability.ipynb shows what it sees."""
+        profile = Analyzer.outline_variability_profile(roi, width, pad)
+        mean = float(profile.mean())
+        if mean < 1e-6:                        # frames that are all the same: nothing varies
+            return 0.0
+        direction = np.exp(2j * np.pi * np.arange(len(profile)) / len(profile))
+        one_sided = float(np.abs((profile * direction).mean()))
+        return one_sided / mean ** relative
+
+    @staticmethod
+    def outline_variability_profile(roi, width=1.5, pad=16):
+        """Where around the mite its pixels vary over the frames: the variance
+        on the outline in each of 64 directions from the mite's centre, in
+        grey levels squared, (64,). Direction 0 points right in the image and
+        they go on clockwise. All 0 for a patch without a mite.
+
+        On the ray in each direction the body's edge is found (_outline_rays()),
+        and the outline is what lies within `width` pixels of it: that is
+        where the pixels of a moving mite vary. The direction's value is the
+        mean variance of the ray's points on the outline."""
+        rays = Analyzer._outline_rays(roi, pad)
+        if rays is None:
+            return np.zeros(64)
+        variance, edge, ray_step, _centre = rays
+        away = np.abs(np.arange(variance.shape[1])[None] - edge[:, None]) * ray_step
+        on_outline = away <= width
+        return (variance * on_outline).sum(axis=1) / on_outline.sum(axis=1)
+
+    @staticmethod
+    def _outline_rays(roi, pad=16):
+        """The mite unrolled around its centre: (variance, edge, ray_step,
+        centre), or None for a patch without a mite. `variance` (64, points)
+        is the variance over the frames at each point of each ray, the points
+        `ray_step` pixels apart from the centre outwards; `edge` (64,) is the
+        point of each ray at which the body ends, where the mite stops being
+        half as dark as its darkest; `centre` is the mite's (x, y) in the
+        patch, in the mean of the frames.
+
+        Two things change the pixels without the mite moving and are kept out.
+        The lamp: each frame is brought to the light the plate has in the mean
+        of the frames, read off the patch's outermost pixels. A shift of the
+        whole mite, as when the plate shakes: each frame's rays start at the
+        mite's centre in that frame, the centre of the darkness of the body
+        and the two pixels around it."""
+        gray = roi.mean(axis=-1)
+        height, width = gray.shape[1:]
+        edge = np.ones((height, width), dtype=bool)
+        edge[6:-6, 6:-6] = False               # the outermost pixels: the plate, never the mite
+        plate = np.median(gray[:, edge], axis=1)
+        if plate.min() <= 0:
+            return None
+        light = float(plate.mean())
+        lit = (gray * (light / plate)[:, None, None]).astype(np.float32)  # a lamp that flickers changes nothing
+        dark = np.clip(1 - lit / light, 0, None)
+        still = dark.mean(axis=0)
+
+        # The body: what is at least 30% as dark as the darkest of the mite, the
+        # far surroundings left out, and two pixels around it. Of several
+        # pieces it is the one closest to the middle of the patch, where the
+        # mite's box is: the other is a neighbour, which may be walking past.
+        margin = max(pad - 8, 0)
+        near = np.zeros((height, width), dtype=bool)
+        near[margin:height - margin, margin:width - margin] = True
+        if not near.any() or still[near].max() <= 0:
+            return None
+        dark_enough = (still > 0.3 * still[near].max()) & near
+        pieces = cv2.connectedComponents(dark_enough.astype(np.uint8))[1]
+        yy, xx = np.mgrid[:height, :width]
+        from_middle = np.hypot(yy - (height - 1) / 2, xx - (width - 1) / 2)
+        body = (pieces == pieces.ravel()[np.where(dark_enough, from_middle, np.inf).argmin()]).astype(np.uint8)
+        body = cv2.dilate(body, np.ones((3, 3), np.uint8), iterations=2)
+        weight = dark * body
+        total = weight.sum(axis=(1, 2))
+        if total.min() <= 0:
+            return None
+        centre_x, centre_y = (weight * xx).sum(axis=(1, 2)) / total, (weight * yy).sum(axis=(1, 2)) / total
+
+        angles, ray_step = 64, 0.5
+        # 13 pixels reach past a mite's legs; less where the patch ends sooner (a mite at the image's edge)
+        reach = min(13.0, centre_x.min(), centre_y.min(), width - 1 - centre_x.max(), height - 1 - centre_y.max())
+        if reach < 2:
+            return None
+        angle = np.arange(angles) * (2 * np.pi / angles)
+        along = np.arange(0, reach, ray_step)
+        ray_x, ray_y = np.outer(np.cos(angle), along), np.outer(np.sin(angle), along)
+        unrolled = np.array([
+            cv2.remap(frame, (x + ray_x).astype(np.float32), (y + ray_y).astype(np.float32), cv2.INTER_LINEAR)
+            for frame, x, y in zip(lit, centre_x.tolist(), centre_y.tolist())
+        ])
+        past_body = 1 - unrolled.mean(axis=0) / light < 0.5 * np.sort(still.ravel())[-30:].mean()
+        body_ends = np.where(past_body.any(axis=1), past_body.argmax(axis=1), len(along) - 1)
+        return unrolled.var(axis=0), body_ends, ray_step, (float(centre_x.mean()), float(centre_y.mean()))
 
 

@@ -65,6 +65,12 @@ def _outline_movement(trial):
     return {"n": trial.suggest_int("n", 1, 32, log=True), "pad": trial.suggest_categorical("pad", [12, 16])}
 
 
+def _outline_variability(trial):
+    # from the vector sum itself (0) to the share of the variance on one side (1); the plate's light is read off the patch's edge, as above
+    return {"relative": trial.suggest_float("relative", 0.0, 1.0), "width": trial.suggest_float("width", 0.5, 3.0, step=0.5),
+            "pad": trial.suggest_categorical("pad", [12, 16])}
+
+
 def _optical_flow(trial):
     """Farneback wants odd window sizes; poly_sigma follows poly_n as the
     OpenCV docs advise."""
@@ -90,6 +96,7 @@ SPACES = {
     "topN_binary_flux": _binary_flux,
     "optical_flow": _optical_flow,
     "outline_movement": _outline_movement,
+    "outline_variability": _outline_variability,
 }
 # Trials per search: a single parameter is mapped out long before 300.
 TRIALS = {"optical_flow": 300, "topN_binary_flux": 150}

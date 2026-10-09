@@ -1,156 +1,159 @@
-// The ground-truth page: one zone in one recording, its clip looped, each mite a
-// ring to click through moving, still and not a mite; beside it the whole plate,
-// the counts and the progress. ← → move between zones, ↑ ↓ between recordings,
-// P plays or pauses, D marks the zone's unlabelled mites dead. What a click does, and every count, is the server's
-// (GroundTruth, classes/truth_draft.py).
+// The ground-truth page: one mite in one recording. Its clip, cut close around it
+// and looped, beside a picture of where its pixels change; its label to set; and
+// the whole plate, small, showing where the mite is. M, S, N and U label it
+// moving, still, not a mite or not at all, and a label goes on to the next
+// recording; D marks the mite dead from the recording on screen on. ← → move
+// between recordings, ↑ ↓ between mites, P plays or pauses. What a label does,
+// and every count, is the server's (GroundTruth, classes/truth_draft.py).
 
 class TruthPage {
   // The statuses in the order the counts list them; null is unlabelled.
   static ORDER = ["moving", "still", "not_a_mite", null];
   static NAMES = { moving: "moving", still: "still", not_a_mite: "not a mite" };
   static GLYPHS = { moving: "●", still: "○", not_a_mite: "⊘" };
+  static RING = 18;  // pixels of the recording: the ring's radius, clear of a mite's legs
 
   constructor() {
     $("play-btn").addEventListener("click", () => {
       $("play-btn").textContent = player.toggle() ? "Pause" : "Play";
     });
-    // Buttons acting on the zone on screen, in the recording on screen.
-    document.querySelectorAll(".zone-actions [data-fill]").forEach((button) => button.addEventListener("click", () => this.fill(button.dataset.fill)));
+    document.querySelectorAll(".truth-labels [data-truth]").forEach((button) => button.addEventListener("click", () => {
+      button.blur();
+      this.label(button.dataset.truth || null);
+    }));
+    $("truth-dead").addEventListener("click", (event) => { event.currentTarget.blur(); this.dead(); });
     document.addEventListener("keydown", (event) => this.onKey(event));
   }
 
-  draw(zoneArg, recordingArg) {
-    const zones = cal.zones();
-    const zone = zones.find((z) => String(z.id) === zoneArg);
+  // The mites in the order gone through: by their number.
+  mites() {
+    return cal.data.mites;
+  }
+
+  mite() {
+    return this.mites().find((mite) => mite.id === cal.miteId) || null;
+  }
+
+  draw(miteArg, recordingArg) {
+    const mites = this.mites();
+    const mite = mites.find((m) => m.id === decodeURIComponent(miteArg ?? ""));
     const recording = Number(recordingArg);
-    if (!zone || !(recording >= 0 && recording < cal.nRecordings) || recordingArg === "") {
-      // Go to where work is left: the first zone and recording with an unlabelled mite.
-      const target = (zone ? [zone.id, cal.recording] : null) || groundTruth.view.next || [zones[0].id, 0];
+    if (!mite || !(recording >= 0 && recording < cal.nRecordings) || recordingArg === "" || recordingArg == null) {
+      // Go to where work is left: the first mite and recording still to label.
+      const target = (mite ? [mite.id, cal.recording] : null) || groundTruth.view.next_mite || [mites[0].id, 0];
       location.replace(cal.truthHref(...target));
       return;
     }
-    cal.zoneId = zone.id;
+    cal.miteId = mite.id;
     cal.recording = recording;
-    const index = zones.indexOf(zone);
+    const index = mites.indexOf(mite);
+    const zone = cal.data.zones.find((z) => z.id === mite.zone_id);
 
-    $("truth-title").textContent = `Zone ${zone.id} · ${cal.recordingName(recording)}`;
+    $("truth-title").textContent = `Mite ${mite.id} · ${cal.recordingName(recording)}`;
     const source = cal.data.recordings?.[recording];
-    $("truth-meta").innerHTML = `${zone.label ? `${esc(zone.label)} · ` : ""}zone ${index + 1} of ${zones.length} with mites
+    $("truth-meta").innerHTML = `mite ${index + 1} of ${mites.length} · zone ${mite.zone_id}${zone?.label ? ` (${esc(zone.label)})` : ""}
     · <span title="${esc(cal.data.data_dir)}">${esc(folderOf(cal.data.data_dir))}</span>${source ? ` / <code>${esc(source)}</code>` : ""}`;
-    $("truth-pager").innerHTML = Markup.pager(zones, index, (z) => cal.truthHref(z.id), (z) => `Zone ${z.id}`);
+    $("truth-pager").innerHTML = Markup.pager(mites, index, (m) => cal.truthHref(m.id), (m) => `Mite ${m.id}`);
 
-    const crop = PlateView.zoneCrop(zone, cal.fileUrl(cal.data.preview), cal.data.image);
-    const radius = PlateView.ringRadius(zone);
-    cal.mites(zone.id).forEach((mite) => crop.appendChild(this.marker(mite, radius)));
-    $("truth-crop").innerHTML = "";
-    $("truth-crop").appendChild(crop);
-    this.playClip(crop, zone.id, recording);
-
+    this.playClip(mite, recording);
     this.drawRecordingSlider();
+    this.drawLabel();
     this.drawMap();
     this.drawCounts();
   }
 
-  // The recording slider, with a mark under each recording in which every mite of
-  // this zone is labelled.
+  // The recording slider, with a mark under each recording in which this mite is labelled.
   drawRecordingSlider() {
     const { times } = cal.data;
-    const { done } = groundTruth.zone(cal.zoneId);
+    const states = groundTruth.statesOf(this.mite());
+    const done = states.map((state) => state !== null);
     const holder = $("rec-tabs");
     holder.innerHTML = RecordingSlider.html({ times, current: cal.recording, done, label: "Recording" });
-    RecordingSlider.wire(holder, times, done, (recording) => router.go(cal.truthHref(cal.zoneId, recording)));
+    RecordingSlider.wire(holder, times, done, (recording) => router.go(cal.truthHref(cal.miteId, recording)));
     $("play-btn").textContent = player.playing ? "Pause" : "Play";
   }
 
-  // The recording's frames, looped over the zone crop.
-  async playClip(svg, zoneId, recording) {
-    const wrap = $("truth-crop");
+  // A picture of the clip's cut of the recording, with the ring round the mite.
+  picture(clip, mite, src) {
+    const svg = PlateView.crop(clip.x, clip.y, clip.width, clip.height, src, clip);
+    const image = svg.querySelector("image");
+    image.setAttribute("x", clip.x);
+    image.setAttribute("y", clip.y);
+    svg.appendChild(PlateView.svgEl("circle", { cx: mite.x, cy: mite.y, r: Math.max(TruthPage.RING, mite.r * 2.5), class: "truth-ring" }));
+    return svg;
+  }
+
+  // The recording's frames, looped, and beside them where its pixels change.
+  async playClip(mite, recording) {
+    const holders = [$("truth-crop"), $("truth-variation")];
     const status = $("clip-status");
-    wrap.classList.add("loading");
-    status.className = "hint";
+    const frameUrl = (name) => `/api/session/${cal.id}/file/${name}`;
+    const clipUrl = (m, r) => `/api/calibration/${cal.id}/mite-clip/${r}/${encodeURIComponent(m.id)}`;
+    const shown = () => cal.miteId === mite.id && cal.recording === recording && location.hash.startsWith("#/cal/truth");
+    holders.forEach((holder) => holder.classList.add("loading"));
+    status.className = "";
     status.innerHTML = `<span class="spinner"></span> Loading ${cal.recordingName(recording)}…`;
+    let clip = null;
     try {
       // The frames never change, so they need no cache-buster.
-      const clip = await player.load(`/api/calibration/${cal.id}/clip/${recording}/${zoneId}`, (name) => `/api/session/${cal.id}/file/${name}`);
-      if (!clip) return;  // the user moved on meanwhile
-      wrap.classList.remove("loading");
-      status.textContent = `${clip.frames.length} frames, played back in real time.`;
-      player.start(clip, ClipPlayer.onSvg(svg, clip));
+      clip = await player.load(clipUrl(mite, recording), frameUrl);
     } catch (error) {
-      status.className = "hint error";
+      if (!shown()) return;
+      holders.forEach((holder) => { holder.classList.remove("loading"); holder.innerHTML = ""; });
+      status.className = "error";
       status.textContent = error.message;
+      return;
     }
+    if (!clip || !shown()) return;  // the user moved on meanwhile
+    const moving = this.picture(clip, mite, clip.frames[0]);
+    holders[0].replaceChildren(moving);
+    holders[1].replaceChildren(this.picture(clip, mite, frameUrl(clip.variation)));
+    holders.forEach((holder) => holder.classList.remove("loading"));
+    status.textContent = `${clip.frames.length} frames, played back in real time. The ring marks the mite, in the colour of its label.`;
+    this.drawRings();
+    player.start(clip, ClipPlayer.onSvg(moving, clip));
+    // the next recording, so that a label goes on to it at once
+    if (recording + 1 < cal.nRecordings) player.warm(clipUrl(mite, recording + 1), frameUrl);
   }
 
-  // A clickable ring around one mite in the zone crop, showing its ground truth in
-  // the recording on screen.
-  marker(mite, radius) {
-    const { NAMES, GLYPHS } = TruthPage;
-    const r = Math.max(radius, mite.r * 1.6);
-    const g = PlateView.svgEl("g", { tabindex: "0", role: "button" });
-    const text = PlateView.svgEl("text", { x: mite.x + r + 4, y: mite.y - r * 0.6, "font-size": radius * 0.8 });
-    g.append(
-      PlateView.svgEl("circle", { cx: mite.x, cy: mite.y, r: r * 1.5, class: "hit" }),
-      PlateView.svgEl("circle", { cx: mite.x, cy: mite.y, r, class: "ring" }),
-      text,
-    );
+  state() {
+    return groundTruth.stateAt(this.mite(), cal.recording);
+  }
 
-    const state = () => groundTruth.stateAt(mite, cal.recording);
-    const describe = () => (state() ? NAMES[state()] : "unlabelled");
-    const update = () => {
-      g.setAttribute("class", `truth-marker ${state() || "unset"}`);
-      text.textContent = `${mite.id} ${state() ? GLYPHS[state()] : "?"}`;
-      g.setAttribute("aria-label", `Mite ${mite.id}: ${describe()} in ${cal.recordingName(cal.recording)}. Click to change.`);
-    };
-    const tip = (event) => Charts.showTooltip(event,
-      `<div class="tip-title">Mite ${esc(mite.id)}</div>${describe()} in ${cal.recordingName(cal.recording)}
-     <div class="tip-note">${groundTruth.statesOf(mite).map((s) => (s ? GLYPHS[s] : "?")).join(" ")}</div>
-     <div class="tip-hint">Click: next status · Shift-click: previous</div>`);
-    // The server steps the mite to its next status (the previous one with Shift).
-    const cycle = async (event, backwards) => {
-      try {
-        if (!await groundTruth.edit({ action: "cycle", mite: mite.id, recording: cal.recording, backwards })) return;
-      } catch (error) {
-        this.showError(error);
-        return;
-      }
-      update();
-      this.refreshPanel();
-      if (event.type === "click" && g.isConnected) tip(event);
-    };
+  drawRings() {
+    document.querySelectorAll(".truth-ring").forEach((ring) => ring.setAttribute("class", `truth-ring ${this.state() || "unset"}`));
+  }
 
-    g.addEventListener("click", (event) => cycle(event, event.shiftKey));
-    g.addEventListener("keydown", (event) => {
-      if (event.key === "Enter" || event.key === " ") { event.preventDefault(); cycle(event, event.shiftKey); }
+  // The label of the mite in the recording on screen: on its buttons and on the rings.
+  drawLabel() {
+    const state = this.state();
+    document.querySelectorAll(".truth-labels [data-truth]").forEach((button) => {
+      button.classList.toggle("current", (button.dataset.truth || null) === state);
     });
-    g.addEventListener("mousemove", tip);
-    g.addEventListener("mouseleave", Charts.hideTooltip);
-    update();
-    return g;
+    this.drawRings();
   }
 
-  refreshPanel() {
-    this.drawRecordingSlider();
-    this.refreshMap();
-    this.drawCounts();
-  }
-
-  // The whole plate, small: which zones are done, and a dot per mite by its status
-  // in the recording on screen.
+  // The whole plate, small: the zones, a dot per mite by its status in the
+  // recording on screen, and the mite on screen marked.
   drawMap() {
     const map = $("truth-map");
     const place = PlateView.overlay(map, cal.fileUrl(cal.data.preview), cal.data.image);
-    cal.zones().forEach((zone) => {
+    cal.data.zones.forEach((zone) => {
+      const first = cal.mites(zone.id)[0];
+      if (!first) return;
       const link = document.createElement("a");
       link.className = "zone nav-zone";
-      link.href = cal.truthHref(zone.id);
+      link.href = cal.truthHref(first.id);
+      link.title = `Zone ${zone.id}: go to its first mite`;
       link.dataset.zoneId = zone.id;
       Object.assign(link.style, place(zone.x1, zone.y1, zone.x2, zone.y2));
       link.innerHTML = `<span class="zone-num">${zone.id}</span>`;
       map.appendChild(link);
     });
     cal.data.mites.forEach((mite) => {
-      const dot = document.createElement("span");
+      const dot = document.createElement("a");
+      dot.href = cal.truthHref(mite.id);
+      dot.title = `Mite ${mite.id}`;
       dot.dataset.miteId = mite.id;
       dot.style.left = percent(mite.x, cal.data.image.width);
       dot.style.top = percent(mite.y, cal.data.image.height);
@@ -161,31 +164,28 @@ class TruthPage {
 
   refreshMap() {
     const map = $("truth-map");
-    map.querySelectorAll(".nav-zone").forEach((link) => {
-      const id = Number(link.dataset.zoneId);
-      const zone = groundTruth.zone(id);
-      link.classList.toggle("current", id === cal.zoneId);
-      link.classList.toggle("done", zone.complete);
-      link.title = `Zone ${id}: ${zone.n_done} of ${cal.nRecordings} recordings labelled`;
-    });
+    const here = this.mite();
+    map.querySelectorAll(".nav-zone").forEach((link) => link.classList.toggle("current", Number(link.dataset.zoneId) === here.zone_id));
     map.querySelectorAll("[data-mite-id]").forEach((dot) => {
-      const state = groundTruth.stateAt(cal.data.mites.find((m) => m.id === dot.dataset.miteId), cal.recording);
-      dot.className = `mite-dot ${state === "not_a_mite" ? "rejected" : state || "unset"}`;
+      const mite = cal.data.mites.find((m) => m.id === dot.dataset.miteId);
+      const state = groundTruth.stateAt(mite, cal.recording);
+      dot.className = `mite-dot ${state === "not_a_mite" ? "rejected" : state || "unset"}${mite === here ? " current" : ""}`;
     });
   }
 
   drawCounts() {
     const { ORDER, NAMES, GLYPHS } = TruthPage;
     const { view } = groundTruth;
-    const here = groundTruth.zone(cal.zoneId).counts[cal.recording];
+    const mite = this.mite();
+    const states = groundTruth.statesOf(mite);
     const all = view.counts[cal.recording];
     $("truth-counts").innerHTML = ORDER.map((state) => `
     <li><span class="truth-key ${state || "unset"}" aria-hidden="true">${state ? GLYPHS[state] : "?"}</span>
       <span class="group-name">${state ? NAMES[state] : "unlabelled"}</span>
-      <span class="hint">${here[state || "unset"]} here · ${all[state || "unset"]} all zones</span></li>`).join("");
+      <span class="hint">${states.filter((s) => s === state).length} of this mite's recordings · ${all[state || "unset"]} mites in this one</span></li>`).join("");
 
     const { cells, done, ready } = view;
-    $("truth-progress").innerHTML = `<b>${done}</b> of ${cells} mite-recordings labelled`;
+    $("truth-progress").innerHTML = `<b>${done}</b> of ${cells} mite-recordings labelled · this mite: ${view.mites_done[mite.id]} of ${cal.nRecordings}`;
     $("truth-progress-bar").style.width = `${(done / cells) * 100}%`;
     groundTruth.drawSaveButton();
 
@@ -199,18 +199,48 @@ class TruthPage {
     }
   }
 
-  // Label every unlabelled mite of the zone on screen, in the recording on screen:
-  // "moving", "still", "previous" (as in the recording before), or "clear" it;
-  // "dead" labels them still from the recording on screen to the last one.
-  async fill(kind) {
-    const { zoneId, recording } = cal;
+  refreshPanel() {
+    this.drawRecordingSlider();
+    this.drawLabel();
+    this.refreshMap();
+    this.drawCounts();
+  }
+
+  // Send a change of the mite on screen; true once the server's view with it is shown.
+  async change(edit) {
     try {
-      await groundTruth.edit({ action: "fill", zone: zoneId, recording, kind });
+      return await groundTruth.edit({ mite: cal.miteId, recording: cal.recording, ...edit });
     } catch (error) {
       this.showError(error);
-      return;
+      return false;
     }
-    if (cal.zoneId === zoneId && cal.recording === recording) this.draw(String(zoneId), String(recording));
+  }
+
+  // Label the mite in the recording on screen and go on: to its next recording, or
+  // after its last one, and after "not a mite", to the next mite with work left.
+  async label(state) {
+    const { miteId, recording } = cal;
+    if (!await this.change({ action: "set", state })) return;
+    if (cal.miteId !== miteId || cal.recording !== recording) return;  // moved on meanwhile
+    this.refreshPanel();
+    if (state === "not_a_mite" || (state && recording + 1 >= cal.nRecordings)) this.goToWork();
+    else if (state) router.go(cal.truthHref(miteId, recording + 1));
+  }
+
+  // The mite is dead from the recording on screen on: still in it and in every
+  // later one not labelled yet. On to the next mite with work left.
+  async dead() {
+    const { miteId, recording } = cal;
+    if (!await this.change({ action: "dead" })) return;
+    if (cal.miteId !== miteId || cal.recording !== recording) return;
+    this.refreshPanel();
+    this.goToWork();
+  }
+
+  // To the first mite and recording still to label; nowhere when all are done.
+  goToWork() {
+    const next = groundTruth.view.next_mite;
+    if (next) router.go(cal.truthHref(...next));
   }
 
   // A change the server refused, or could not be reached for.
@@ -225,19 +255,22 @@ class TruthPage {
     // On the recording slider the arrows move the slider itself; P still plays.
     const slider = event.target.type === "range";
     if (event.target.tagName === "INPUT" && !slider) return;
-    if (event.key === "p" || event.key === "P") { $("play-btn").click(); return; }
+    const key = event.key.length === 1 ? event.key.toLowerCase() : event.key;
+    if (key === "p") { $("play-btn").click(); return; }
     if (slider) return;
-    if (event.key === "d" || event.key === "D") { this.fill("dead"); return; }
-    const zoneStep = { ArrowLeft: -1, ArrowRight: 1 }[event.key];
-    const recordingStep = { ArrowUp: -1, ArrowDown: 1 }[event.key];
-    if (zoneStep) {
-      const zones = cal.zones();
-      const next = zones[zones.findIndex((zone) => zone.id === cal.zoneId) + zoneStep];
-      if (next) { event.preventDefault(); router.go(cal.truthHref(next.id)); }
-    } else if (recordingStep) {
+    const labels = { m: "moving", s: "still", n: "not_a_mite", u: null };
+    if (key in labels) { event.preventDefault(); this.label(labels[key]); return; }
+    if (key === "d") { event.preventDefault(); this.dead(); return; }
+    const recordingStep = { ArrowLeft: -1, ArrowRight: 1 }[key];
+    const miteStep = { ArrowUp: -1, ArrowDown: 1 }[key];
+    if (recordingStep) {
       const next = cal.recording + recordingStep;
       event.preventDefault();
-      if (next >= 0 && next < cal.nRecordings) router.go(cal.truthHref(cal.zoneId, next));
+      if (next >= 0 && next < cal.nRecordings) router.go(cal.truthHref(cal.miteId, next));
+    } else if (miteStep) {
+      const mites = this.mites();
+      const next = mites[mites.findIndex((mite) => mite.id === cal.miteId) + miteStep];
+      if (next) { event.preventDefault(); router.go(cal.truthHref(next.id)); }
     }
   }
 }

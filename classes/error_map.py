@@ -61,7 +61,8 @@ class ErrorMap:
                 "n": len(mite_rows),
                 "moving_missed": [ErrorMap._when(row) for row in moving_missed],
                 "still_missed": [ErrorMap._when(row) for row in still_missed],
-                "open": {"dataset": opened["dataset"], "zone_id": opened["zone_id"], "recording": opened["recording"]},
+                "open": {"dataset": opened["dataset"], "zone_id": opened["zone_id"], "mite_id": opened["mite_id"],
+                         "recording": opened["recording"]},
             })
         return {"mites": mites, "counts": counts}
 

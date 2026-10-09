@@ -41,8 +41,8 @@ class ZonePage extends ResultsPage {
 
     <div class="clip-block">
       ${this.clipFigure("zone-crop", 1, `Zone ${zone.id} · recording at ${this.shownTime()}`,
-        `The recording, looped, with each detected mite ${movingBadge(true)} or ${movingBadge(false)} in it. Hover a mite for every recording, select it to open it;
-        a call that is wrong can be corrected on the mite's page, and its ring is then dashed here. A mite marked gone there, e.g. fallen off, has a grey dotted ring.`, "crop-wrap truth-crop")}
+        `The recording, looped, with each detected mite ${movingBadge(true)} or ${movingBadge(false)} in it: the arrow on it is green or orange, and points to the side of the mite on which its outline changes, the dots round it being darker there. Hover a mite for every recording, select it to open it;
+        a call that is wrong can be corrected on the mite's page, and its arrow is then dashed here. A mite marked gone there, e.g. fallen off, has a grey arrow.`, "crop-wrap truth-crop")}
     </div>
 
     ${mites.length ? `<div class="block">${figure("chart-zone-moving", 2, "Mites moving", `Fraction of this zone's mites moving in each recording, with the whole group for comparison where the group spans several zones. Click a time to show that recording.${this.stillToCome()}`)}</div>` : ""}
@@ -82,6 +82,7 @@ class ZonePage extends ResultsPage {
     const radius = PlateView.ringRadius(zone);
     mites.forEach((mite) => this.miteMarker(crop, mite, radius, { onClick: () => resultsView.openMite(mite), hint: "Click to open" }));
     $("zone-crop").appendChild(crop);
+    this.drawOutlines(crop, zone.id);
     this.playClip(`/api/session/${ctx.sessionId}/clip/${ctx.shown}/${zone.id}`, $("zone-crop"), $("zone-crop").nextElementSibling,
       (clip) => ClipPlayer.onSvg(crop, clip));
   }

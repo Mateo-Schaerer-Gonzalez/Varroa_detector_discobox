@@ -25,7 +25,7 @@ class ReportFigures {
   }
 
   openObservation(row) {
-    return () => cal.goToMite(row.dataset, row.zone_id, row.recording);
+    return () => cal.goToMite(row.dataset, row.zone_id, row.recording, row.mite_id);
   }
 
   // The confusion counts `c` with their `rates` (the server's), each a fraction of its row.
@@ -315,7 +315,7 @@ class ReportFigures {
        ${stillMissed.length ? `<div class="tip-note">still called moving: ${list(stillMissed)}</div>` : ""}
        <div class="tip-hint">Click to see it in its recording</div>`));
       dot.addEventListener("mouseleave", Charts.hideTooltip);
-      dot.addEventListener("click", () => cal.goToMite(mite.open.dataset, mite.open.zone_id, mite.open.recording));
+      dot.addEventListener("click", () => cal.goToMite(mite.open.dataset, mite.open.zone_id, mite.open.recording, mite.open.mite_id));
       container.appendChild(dot);
     });
     const { counts } = shown;

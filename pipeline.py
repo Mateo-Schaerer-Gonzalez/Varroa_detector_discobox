@@ -76,6 +76,7 @@ import os
 import re
 import shutil
 import stat
+import tempfile
 import threading
 import time
 from datetime import date, datetime, timedelta
@@ -111,6 +112,7 @@ from classes.live.session import LiveSession
 from classes.live.settings import RANGES as SETTING_RANGES, Settings
 from classes.live.sources import CameraSource, ReplaySource
 from classes.motion_analysis import MotionAnalysis, detect_mites
+from classes.outline_view import OutlineView
 from classes.movement_stats import MovementReport
 from classes.pooling import check_pool_size, describe_pool_size, pools
 from classes.recording_info import RecordingInfo
@@ -118,6 +120,7 @@ from classes.review_band import ReviewBand
 from classes.score_normalizer import ScoreNormalizer
 from classes.survival import SurvivalAnalysis, SurvivalReport
 from classes.truth_draft import TruthDraft
+from classes.truth_overlap import TruthOverlap
 from classes.upload_plan import UploadPlan
 from classes.workers import one_ahead, side_by_side
 from classes.zone_layout import ZoneLayout
@@ -968,6 +971,78 @@ def calibration_clip(out_dir, recording, zone_id, library_dir=CALIBRATION_LIBRAR
     return _write_clip(DataLoader(recordings_dir, grayscale=False), source["name"], source["fps"], box, out_dir, name)
 
 
+MITE_CLIP_REACH = 40            # pixels from a mite's centre to the edge of its own clip
+MITE_VARIATION = (1.0, 8.0)     # grey levels: the standard deviations the variation picture draws black and brightest
+
+
+def _variation_picture(frames):
+    """How much each pixel of `frames` (frames, height, width, 3) varies over
+    them, as a picture: its standard deviation in grey, from black at the
+    first of MITE_VARIATION (the camera's noise) through orange to nearly
+    white at the second."""
+    variation = frames.astype(np.float32).mean(axis=-1).std(axis=0)
+    least, most = MITE_VARIATION
+    shade = np.clip((variation - least) / (most - least), 0, 1)
+    colours = np.array([[0, 0, 0], [52, 104, 235], [224, 244, 255]], dtype=np.float32)  # BGR; one hue, growing lighter
+    return np.stack([np.interp(shade, [0.0, 0.5, 1.0], colours[:, channel]) for channel in range(3)], axis=-1).astype(np.uint8)
+
+
+def _mite_clip(recordings_dir, source, mite, out_dir, name):
+    """Every frame of one recording (`source`: {name, fps}) cut MITE_CLIP_REACH
+    pixels around `mite` ({x, y}) and kept as it is (PNG), to judge by eye
+    whether the mite moves, and one picture of how much each pixel varies over
+    them (_variation_picture()). Written to out_dir/clips/ once, with a
+    manifest `name`_x_y.json that later calls reuse; the name says where the
+    cut is, so a mite detected anew elsewhere gets a new clip. Returns the
+    files (relative to `out_dir`), where the cut sits in the image, and the
+    delay between frames that plays them in real time."""
+    x, y = int(round(mite["x"])), int(round(mite["y"]))
+    x1, y1 = max(0, x - MITE_CLIP_REACH), max(0, y - MITE_CLIP_REACH)
+    name = f"{name}_x{x1}_y{y1}"
+    clips_dir = Path(out_dir) / CLIPS_DIRNAME
+    manifest = clips_dir / f"{name}.json"
+    if manifest.is_file():
+        return json.loads(manifest.read_text(encoding="utf-8"))
+    frames = DataLoader(recordings_dir, grayscale=False).load_recording_region(
+        source["name"], x1, y1, x + MITE_CLIP_REACH, y + MITE_CLIP_REACH)
+    clips_dir.mkdir(parents=True, exist_ok=True)
+    names = [f"{CLIPS_DIRNAME}/{name}_{index:02d}.png" for index in range(len(frames))]
+    for frame, frame_name in zip(frames, names):
+        cv2.imwrite(str(Path(out_dir) / frame_name), frame)
+    variation = f"{CLIPS_DIRNAME}/{name}_variation.png"
+    cv2.imwrite(str(Path(out_dir) / variation), _variation_picture(frames))
+    clip = {
+        "frames": names,
+        "variation": variation,
+        "x": x1,
+        "y": y1,
+        "width": int(frames.shape[2]),
+        "height": int(frames.shape[1]),
+        "interval_ms": int(round(1000 / source["fps"])),
+    }
+    manifest.write_text(json.dumps(clip), encoding="utf-8")
+    return clip
+
+
+def calibration_mite_clip(out_dir, recording, mite_id, library_dir=CALIBRATION_LIBRARY):
+    """Frames of one mite during one recording of a calibration session, cut
+    close around it, for the ground-truth page (see _mite_clip())."""
+    stored = _read_calibration_session(out_dir)
+    if not 0 <= recording < len(stored["recordings"]):
+        raise ValueError(f"No recording {recording} in this session.")
+    mite = next((mite for mite in stored["mites"] if mite["id"] == str(mite_id)), None)
+    if mite is None:
+        raise ValueError(f"No mite {mite_id} in this session.")
+    recordings_dir = _recordings_dir(stored["data_dir"], library_dir)
+    if not recordings_dir.is_dir():
+        raise FileNotFoundError(
+            f"The recordings are no longer at {stored['data_dir']} and the library has no copy, "
+            "so there is no clip to play. The ground truth can still be edited."
+        )
+    return _mite_clip(recordings_dir, stored["recordings"][recording], mite, out_dir,
+                      f"mite_{dataset_id(stored['data_dir'])}_r{recording}")
+
+
 def _write_clip(loader, recording_name, fps, box, out_dir, name, max_width=None, first=0, count=None):
     """Write up to CLIP_MAX_FRAMES JPEGs of the region `box` = (x1, y1, x2, y2) of
     one recording (with `count`, of its `count` frames from index `first` on),
@@ -1026,6 +1101,57 @@ def dataset_clip(out_dir, dataset, recording, library_dir=CALIBRATION_LIBRARY):
                        out_dir, f"clip_{dataset}_r{recording}_plate", PLATE_CLIP_WIDTH)
 
 
+def _time_point(loader, data_dir, recording, pool_size):
+    """Where the frames of time point `recording` of an analysis are: (the
+    recording's name, the first frame's index, how many frames or None for all,
+    a tag for file names). A time point is a recording, or with a `pool_size`
+    one of its pools."""
+    pool_size = check_pool_size(pool_size)
+    if pool_size is None:
+        recordings = loader.recording_dirs
+        if not 0 <= recording < len(recordings):
+            raise ValueError(f"No recording {recording} in this session.")
+        return recordings[recording].name, 0, None, ""
+    pooled = [(pool.recording.name, pool.first_index, len(pool.frames))
+              for pool in pools(FolderSource(data_dir).events(decode=False), pool_size)]
+    if not 0 <= recording < len(pooled):
+        raise ValueError(f"No pool {recording} in this session.")
+    return (*pooled[recording], f"_p{pool_size}")
+
+
+def analysis_outlines(data_dir, out_dir, recording, zone_id, mites, pool_size=None):
+    """What the score sees of each mite of one zone at one time point of an
+    analysis, for the result pages to draw over the mites: mite id to
+    OutlineView.describe(), None for a mite it finds no outline of. `mites` are
+    the results' ({id, zone_id, x, y}). Like analysis_clip(), worked out from
+    the frames once, kept in `out_dir` and reused after."""
+    loader = DataLoader(data_dir, grayscale=False)
+    source, first, count, tag = _time_point(loader, data_dir, recording, pool_size)
+    mites = [mite for mite in mites if mite["zone_id"] == zone_id]
+    manifest = Path(out_dir) / CLIPS_DIRNAME / f"outline_r{recording}{tag}_z{zone_id}.json"
+    if manifest.is_file():
+        return json.loads(manifest.read_text(encoding="utf-8"))
+    if not mites:
+        return {}
+
+    mite = get_default_config().mite
+    params = Analyzer.check_metric_params(mite.metric, mite.params_for(mite.metric))
+    pad, width = Analyzer.roi_padding(mite.metric, params), params.get("width", 1.5)
+    reach = int(mite.radius) + pad
+    boxes = {m["id"]: (int(round(m["x"])) - reach, int(round(m["y"])) - reach, int(round(m["x"])) + reach, int(round(m["y"])) + reach)
+             for m in mites}
+    x0, y0 = max(0, min(box[0] for box in boxes.values())), max(0, min(box[1] for box in boxes.values()))
+    frames = loader.load_recording_region(source, x0, y0, max(box[2] for box in boxes.values()),
+                                          max(box[3] for box in boxes.values()), first=first, count=count)
+    outlines = {}
+    for mite_id, (x1, y1, x2, y2) in boxes.items():
+        x1, y1 = max(x1, x0), max(y1, y0)
+        outlines[mite_id] = OutlineView.describe(frames[:, y1 - y0:y2 - y0, x1 - x0:x2 - x0], x1, y1, width, pad)
+    manifest.parent.mkdir(parents=True, exist_ok=True)
+    manifest.write_text(json.dumps(outlines), encoding="utf-8")
+    return outlines
+
+
 def analysis_clip(data_dir, out_dir, recording, zone_id=None, coords_file=None, pool_size=None):
     """Frames of one recording of an analysis session: of one zone, or with no
     `zone_id` of the whole plate, scaled down. Like calibration_clip(), written
@@ -1034,18 +1160,7 @@ def analysis_clip(data_dir, out_dir, recording, zone_id=None, coords_file=None, 
     `recording` is the index of a time point of the results, i.e. of a pool: with
     a `pool_size`, the clip holds that pool's frames only."""
     loader = DataLoader(data_dir, grayscale=False)
-    pool_size = check_pool_size(pool_size)
-    if pool_size is None:
-        recordings = loader.recording_dirs
-        if not 0 <= recording < len(recordings):
-            raise ValueError(f"No recording {recording} in this session.")
-        source, first, count, tag = recordings[recording].name, 0, None, ""
-    else:
-        pooled = [(pool.recording.name, pool.first_index, len(pool.frames))
-                  for pool in pools(FolderSource(data_dir).events(decode=False), pool_size)]
-        if not 0 <= recording < len(pooled):
-            raise ValueError(f"No pool {recording} in this session.")
-        (source, first, count), tag = pooled[recording], f"_p{pool_size}"
+    source, first, count, tag = _time_point(loader, data_dir, recording, pool_size)
 
     if zone_id is None:
         box, name, max_width = (0, 0, 10**6, 10**6), f"clip_r{recording}{tag}_plate", PLATE_CLIP_WIDTH
@@ -1141,13 +1256,23 @@ def truth_view(out_dir, library_dir=CALIBRATION_LIBRARY):
         return _draft_view(draft, changed)
 
 
-def edit_truth(out_dir, action, mite=None, zone=None, recording=0, backwards=False, kind=None, library_dir=CALIBRATION_LIBRARY):
-    """A change on the ground-truth page, not saved yet: "cycle" a `mite` to its
-    next status in `recording` (its previous one with `backwards`), or "fill" the
-    unlabelled mites of a `zone` in `recording` by `kind` (see TruthDraft.fill)."""
+def edit_truth(out_dir, action, mite=None, zone=None, recording=0, backwards=False, kind=None, state=None,
+               library_dir=CALIBRATION_LIBRARY):
+    """A change on the ground-truth page, not saved yet: "set" a `mite`'s status
+    in `recording` to `state` ("moving", "still", "not_a_mite" or None for
+    unlabelled), mark it "dead" from `recording` on (TruthDraft.dead_from()),
+    "cycle" it to its next status there (its previous one with `backwards`), or
+    "fill" the unlabelled mites of a `zone` in `recording` by `kind` (see
+    TruthDraft.fill)."""
     draft = _draft(out_dir, library_dir)
     with _drafts_lock:
-        if action == "cycle":
+        if action == "set":
+            if state not in (*calibration.TRUTH_STATES, None):
+                raise ValueError(f"Unknown status {state!r}.")
+            draft.set(str(mite), int(recording), state)
+        elif action == "dead":
+            draft.dead_from(str(mite), int(recording))
+        elif action == "cycle":
             draft.cycle(str(mite), int(recording), bool(backwards))
         elif action == "fill":
             draft.fill(int(zone), int(recording), kind)
@@ -1739,8 +1864,9 @@ def _rounded(values, digits=4):
 
 def movement_scores():
     """The metrics a calibration can score with -- for each its name, a one-line
-    description, its default parameters and its parameters after config.yaml's
-    -- and the metric, parameters and threshold in use."""
+    description, its default parameters, which of them are whole numbers and
+    its parameters after config.yaml's -- and the metric, parameters and
+    threshold in use."""
     mite = get_default_config().mite
     return {
         "metrics": [
@@ -1748,6 +1874,8 @@ def movement_scores():
                 "name": name,
                 "description": Analyzer.metric_description(name),
                 "defaults": Analyzer.metric_defaults(name),
+                # JSON does not tell 0.0 from 0, and the page has to know which of the two to ask for
+                "whole": [param for param, value in Analyzer.metric_defaults(name).items() if isinstance(value, int)],
                 "params": Analyzer.check_metric_params(name, mite.params_for(name)),
             }
             for name in Analyzer.metric_names()
@@ -2027,6 +2155,127 @@ def save_movement_score(metric, params, threshold, stabilize=None, normalize_bri
     return app_config.save_movement_score(metric, params, threshold, stabilize_plate=stabilize,
                                           normalize_brightness=normalize_brightness, normalize_floor=normalize_floor,
                                           review_band=review_band)
+
+
+# --- TEMPORARY: checking the ground truth where the labels overlap ---------------------
+#
+# The page web/static/overlap.html lists the mite-recordings whose score lies where
+# those labelled moving and those labelled still overlap (classes/truth_overlap.py),
+# plays each one cut close around its mite, and lets its label be changed. A change
+# is saved at once, where save_truth() saves. To take the page out again, delete
+# this block with the two imports only it uses (tempfile and TruthOverlap), its
+# routes in web/server.py, classes/truth_overlap.py, web/static/overlap.html,
+# web/static/js/overlap/ and unit_tests/truth_overlap_test.py.
+
+OVERLAP_METRIC = "outline_variability"
+# The clips the page plays: a cache, made again when missing.
+OVERLAP_DIR = Path(tempfile.gettempdir()) / "varroa_truth_overlap"
+_OVERLAP_LETTERS = {calibration.MOVING: "m", calibration.STILL: "s"}
+
+
+def _overlap_states(states, n_recordings):
+    """A mite's statuses as one letter per recording: m, s, or - for neither."""
+    return "".join(_OVERLAP_LETTERS.get(state, "-") for state in calibration.per_recording(states, n_recordings))
+
+
+def truth_overlap(datasets=None, low=None, high=None, beyond=True, metric=OVERLAP_METRIC, library_dir=CALIBRATION_LIBRARY):
+    """The mite-recordings to check by eye: those whose score lies where the
+    scores labelled moving and those labelled still overlap, pooled over the
+    saved datasets whose ids are in `datasets` (all of them by default).
+
+    They are scored with `metric` and config.yaml's parameters for it, plate
+    stabilization and normalisations, as a calibration report scores them
+    (slow the first time a dataset meets them, see evaluate_calibration()).
+    The overlap is the band of scores TruthOverlap suggests unless `low` and
+    `high` give another; with `beyond`, the recordings beyond it on the wrong
+    side are listed too.
+
+    Returns TruthOverlap.describe(), each datapoint with its mite's radius "r",
+    and with it the metric and its parameters, every saved dataset with whether
+    it is among the chosen, and for each mite with a datapoint
+    ("<dataset id>/<mite id>") its statuses (_overlap_states()) and scores in
+    every recording."""
+    saved = list_calibration_datasets(library_dir)
+    ids = [summary["id"] for summary in saved] if datasets is None else list(dict.fromkeys(datasets))
+    if not ids:
+        raise ValueError("Choose at least one dataset.")
+    metric, params = _resolve_metric(metric, None)
+    in_use = _in_use(get_default_config().mite)
+    stabilize = in_use["stabilize_plate"]
+    normalizer = ScoreNormalizer(floor=in_use["normalize_floor"], brightness=in_use["normalize_brightness"])
+
+    rows, loaded = [], {}
+    for key in ids:
+        dataset = _read_dataset(key, library_dir)
+        scores = _dataset_scores(key, dataset, metric, params, library_dir, stabilize)
+        scores = _normalised_scores(key, dataset, scores, normalizer, Analyzer.roi_padding(metric, params),
+                                    library_dir, stabilize)
+        rows += _observations(dataset, key, scores)[0]
+        loaded[key] = (dataset, scores, {mite["id"]: mite["r"] for mite in dataset["mites"]})
+    if not rows:
+        raise ValueError("Mark at least one mite moving or still first.")
+
+    overlap = TruthOverlap(rows).describe(low, high, beyond)
+    mites = {}
+    for point in overlap["datapoints"]:
+        dataset, scores, radius = loaded[point["dataset"]]
+        point["r"] = radius[point["mite_id"]]
+        mites.setdefault(f"{point['dataset']}/{point['mite_id']}", {
+            "states": _overlap_states(dataset["truth"].get(point["mite_id"]), len(dataset["times"])),
+            "scores": scores[point["mite_id"]],
+        })
+    return {
+        "metric": metric,
+        "metric_params": params,
+        "datasets": [{**{key: summary[key] for key in ("id", "name", "n_recordings", "n_moving", "n_still")},
+                      "chosen": summary["id"] in ids} for summary in saved],
+        **overlap,
+        "mites": mites,
+    }
+
+
+def overlap_clip(dataset, mite_id, recording, library_dir=CALIBRATION_LIBRARY):
+    """Frames of one mite during one recording of a saved dataset, cut close
+    around it (see _mite_clip()), kept in OVERLAP_DIR."""
+    saved = _read_dataset(dataset, library_dir)
+    mite = next((mite for mite in saved["mites"] if mite["id"] == str(mite_id)), None)
+    if mite is None:
+        raise ValueError(f"No mite {mite_id} in {saved['name']}.")
+    if not 0 <= recording < len(saved["recordings"]):
+        raise ValueError(f"No recording {recording} in {saved['name']}.")
+    recordings_dir = _recordings_dir(saved["data_dir"], library_dir)
+    _check_recordings(saved, recordings_dir, "there is no clip to play")
+    return _mite_clip(recordings_dir, saved["recordings"][recording], mite, OVERLAP_DIR, f"{dataset}_r{recording}")
+
+
+def set_overlap_label(dataset, mite_id, recording, state, library_dir=CALIBRATION_LIBRARY):
+    """Give one mite of a saved dataset the label `state` in one recording
+    ("moving", "still", or None for unlabelled) and save it at once, next to the
+    recordings and in the library, on top of what is saved now
+    (update_ground_truth() does the same for a calibration session). Returns
+    the label and the mite's statuses as saved (_overlap_states())."""
+    if state not in (calibration.MOVING, calibration.STILL, None):
+        raise ValueError(f"A label here is moving, still or none, not {state!r}.")
+    saved = _read_dataset(dataset, library_dir)
+    if dataset_id(saved["data_dir"]) != dataset:
+        raise ValueError(f"{dataset} is not where the ground truth of {saved['data_dir']} is saved, so it is left as it is.")
+    stored = {key: saved[key] for key in ("data_dir", "times", "recordings", "image", "zones", "mites")}
+    n_recordings = len(stored["times"])
+    mite_id = str(mite_id)
+    if all(mite["id"] != mite_id for mite in stored["mites"]):
+        raise ValueError(f"No mite {mite_id} in {saved['name']}.")
+    if not 0 <= recording < n_recordings:
+        raise ValueError(f"No recording {recording} in {saved['name']}.")
+
+    truth = _saved_truth(stored, library_dir)
+    if calibration.is_rejected(truth.get(mite_id)):
+        raise ValueError(f"Mite {mite_id} is marked not a mite; take that back on the ground-truth page first.")
+    truth[mite_id] = calibration.apply_changes(truth.get(mite_id), {recording: state}, n_recordings)
+    if not any(any(states) for states in truth.values()):
+        # _write_ground_truth() lets a dataset without a label go, recordings and all
+        raise ValueError(f"That is the last label of {saved['name']}; delete the dataset on the calibration page instead.")
+    labelled = _write_ground_truth(stored, truth, OVERLAP_DIR, library_dir)
+    return {"movement": state, "states": _overlap_states(labelled.get(mite_id), n_recordings)}
 
 
 # --- live runs ----------------------------------------------------------------------

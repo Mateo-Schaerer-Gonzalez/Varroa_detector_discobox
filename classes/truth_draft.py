@@ -106,6 +106,16 @@ class TruthDraft:
                 if state:
                     self.set(mite_id, recording, state)
 
+    def dead_from(self, mite_id, recording):
+        """One mite is dead from `recording` on: still in it, and in every later
+        recording it has no label in yet. A dead mite does not move again, but
+        a later label says the eye saw otherwise, so it stays."""
+        self._check(mite_id, recording)
+        self.set(mite_id, recording, STILL)
+        for later in range(recording + 1, self.n):
+            if self.states(mite_id)[later] is None:
+                self.set(mite_id, later, STILL)
+
     def _check(self, mite_id, recording):
         if mite_id not in self.zone_of:
             raise ValueError(f"No mite {mite_id} in this dataset.")
@@ -157,6 +167,9 @@ class TruthDraft:
             counts            per recording, how many mites have each status ("unset": none)
             next              [zone id, recording] of the first zone and recording with a
                               mite still to label; None when every one is done
+            next_mite         [mite id, recording] of the first mite, in their order, and
+                              its first recording still to label; None when every one is done
+            mites_done        mite id -> how many of its recordings need nothing more
         """
         recordings = range(self.n)
         states = {mite_id: self.states(mite_id) for mite_id in self.mite_ids}
@@ -177,7 +190,10 @@ class TruthDraft:
                               "counts": [counts(mites, r) for r in recordings]}
             if upcoming is None and not all(done):
                 upcoming = [zone_id, done.index(False)]
+        waiting = next((mite_id for mite_id in self.mite_ids if not all(done_cell[mite_id])), None)
         return {
+            "next_mite": None if waiting is None else [waiting, done_cell[waiting].index(False)],
+            "mites_done": {mite_id: sum(cells) for mite_id, cells in done_cell.items()},
             "states": {mite_id: s for mite_id, s in states.items() if any(s)},
             "unsaved": len(self.unsaved),
             "cells": len(self.mite_ids) * self.n,

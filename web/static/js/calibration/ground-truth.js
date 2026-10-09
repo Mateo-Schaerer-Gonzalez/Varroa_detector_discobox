@@ -114,7 +114,7 @@ class GroundTruth {
         if (cal.data && id === cal.id) truthPage.drawCounts();
       }
       // Saved on top of a change made elsewhere meanwhile: show it.
-      if (taken && view.changed && location.hash.startsWith("#/cal/truth")) truthPage.draw(String(cal.zoneId), String(cal.recording));
+      if (taken && view.changed && location.hash.startsWith("#/cal/truth")) truthPage.draw(String(cal.miteId), String(cal.recording));
     });
     this.saves = run.catch(() => {});
     return run;
@@ -126,7 +126,7 @@ class GroundTruth {
     try {
       const view = await getJson(`/api/calibration/${id}/truth`, "Could not load the ground truth");
       if (id === cal.id && this.take(view) && view.changed && location.hash.startsWith("#/cal/truth")) {
-        truthPage.draw(String(cal.zoneId), String(cal.recording));
+        truthPage.draw(String(cal.miteId), String(cal.recording));
       }
     } catch {
       // the page keeps what it shows; the next change goes through as usual

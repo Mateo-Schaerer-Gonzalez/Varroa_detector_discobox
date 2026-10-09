@@ -303,6 +303,7 @@ class ResultsPage {
     const corrected = mite.corrected[ctx.shown];
     const g = PlateView.svgEl("g", {
       class: `mite-marker ${state}${corrected ? " corrected" : ""}${this.inStudy(mite) ? "" : " left-out"}`,
+      "data-mite-id": mite.id,
     });
     g.append(
       PlateView.svgEl("circle", { cx: mite.x, cy: mite.y, r: radius + 3, class: "hit" }),
@@ -322,6 +323,45 @@ class ResultsPage {
       g.addEventListener("mouseleave", Charts.hideTooltip);
     }
     svg.appendChild(g);
+  }
+
+  // Over each mite marked in `svg`, a crop of the zone `zoneId`, what the score
+  // sees of it in the recording shown (classes/outline_view.py), in place of its
+  // ring: a dot in each direction round its outline, the darker the more the
+  // outline varies there, and an arrow toward the side the variance lies on, as
+  // long as that side is marked; green for a mite called moving, orange for one
+  // called still. Where the server has no outline (no frames kept), the ring stays.
+  async drawOutlines(svg, zoneId) {
+    const { sessionId, shown } = ctx;
+    let outlines;
+    try {
+      outlines = await readJson(await fetch(`/api/session/${sessionId}/outline/${shown}/${zoneId}`));
+    } catch {
+      return;
+    }
+    if (!svg.isConnected || ctx.sessionId !== sessionId || ctx.shown !== shown) return;
+    svg.querySelectorAll(".mite-marker").forEach((marker) => {
+      const outline = outlines[marker.dataset.miteId];
+      if (!outline) return;
+      const g = PlateView.svgEl("g", { class: "mite-outline" });
+      outline.dots.forEach(([x, y, share]) => {
+        // white where the outline is quiet, to dark blue where it varies most
+        const mix = (from, to) => Math.round(from + (to - from) * share);
+        g.appendChild(PlateView.svgEl("circle", { cx: x, cy: y, r: 0.55, fill: `rgb(${mix(255, 24)},${mix(255, 58)},${mix(255, 140)})` }));
+      });
+      const [endX, endY] = outline.arrow;
+      const length = Math.hypot(endX - outline.x, endY - outline.y);
+      const [ux, uy] = length > 1e-6 ? [(endX - outline.x) / length, (endY - outline.y) / length] : [1, 0];
+      const head = 1.8;  // pixels of the recording
+      g.appendChild(PlateView.svgEl("line", { x1: outline.x, y1: outline.y, x2: endX, y2: endY, class: "arrow" }));
+      g.appendChild(PlateView.svgEl("polygon", {
+        class: "arrow-head",
+        points: [[endX + ux * head, endY + uy * head], [endX - uy * head * 0.6, endY + ux * head * 0.6], [endX + uy * head * 0.6, endY - ux * head * 0.6]]
+          .map((point) => point.map((value) => value.toFixed(2)).join(",")).join(" "),
+      }));
+      marker.appendChild(g);
+      marker.classList.add("outlined");
+    });
   }
 
   // A zone's outline over its crop, in its group's colour.

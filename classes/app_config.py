@@ -12,6 +12,12 @@ import yaml
 # from config.default.yaml, which is in git.
 DEFAULT_CONFIG_PATH = Path(__file__).resolve().parent.parent / "config.yaml"
 TEMPLATE_CONFIG_PATH = DEFAULT_CONFIG_PATH.with_name("config.default.yaml")
+# The movement score of every analysis. It is no longer chosen: a config file's
+# own `mite.metric` is not read, and one without a threshold or parameters for
+# this score (made before it was the one) takes config.default.yaml's.
+# The frames always follow a shaking plate before they are scored
+# (classes/plate_stabilizer.py): a file's own `mite.stabilize_plate` is not read either.
+METRIC = "outline_variability"
 
 
 def _config_file(config_path: Optional[str | Path] = None) -> Path:
@@ -35,6 +41,21 @@ def _load_yaml_cached(config_path: Path) -> dict:
 def _tuplify(data: dict) -> dict:
     """Convert list values (e.g. YAML color arrays) into tuples."""
     return {key: tuple(value) if isinstance(value, list) else value for key, value in data.items()}
+
+
+def _with_the_metric(mite: dict) -> dict:
+    """A config file's `mite` section with METRIC as its metric, plate
+    stabilization on, and with
+    config.default.yaml's threshold and parameters for it where it has none."""
+    mite = {**mite, "metric": METRIC, "stabilize_plate": True}
+    for key in ("metric_thresholds", "metric_params"):
+        own = dict(mite.get(key) or {})
+        if METRIC in own or not TEMPLATE_CONFIG_PATH.exists():
+            continue
+        template = _load_yaml_cached(TEMPLATE_CONFIG_PATH).get("mite", {}).get(key) or {}
+        if METRIC in template:
+            mite[key] = {**own, METRIC: template[METRIC]}
+    return mite
 
 
 def _known(section, data: dict) -> dict:
@@ -151,7 +172,7 @@ class AppConfig:
         visual_styles = self._raw_config.get("visual_styles", {})
         self.rect_style = RectStyle(**_known(RectStyle, _tuplify(visual_styles.get("rect", {}))))
         self.text_zone_style = TextZoneStyle(**_known(TextZoneStyle, _tuplify(visual_styles.get("text_zone", {}))))
-        self.mite = MiteConfig(**_known(MiteConfig, _tuplify(self._raw_config.get("mite", {}))))
+        self.mite = MiteConfig(**_known(MiteConfig, _tuplify(_with_the_metric(self._raw_config.get("mite", {})))))
         self.detector = DetectorConfig(**_known(DetectorConfig, self._raw_config.get("detector", {})))
         self.label_reader = LabelReaderConfig(**_known(LabelReaderConfig, self._raw_config.get("label_reader") or {}))
         self.zone_styles = {

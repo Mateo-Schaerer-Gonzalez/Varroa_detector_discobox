@@ -345,6 +345,19 @@ button.secondary:hover, .button.secondary:hover { background: var(--wash); borde
 .mite-marker.still .ring { stroke: #ffb52e; }
 .mite-marker text { fill: #fff; font-weight: 600; paint-order: stroke; stroke: #000; stroke-width: 3px; font-family: var(--sans); pointer-events: none; }
 .mite-marker:hover .ring { stroke-width: 4.5; }
+/* What the score sees of the mite, in place of its ring: dots round its outline and
+   an arrow to the side the outline changes on, in the colour of the call. */
+.mite-marker.outlined .ring { stroke: transparent; }
+.mite-outline { pointer-events: none; }
+.mite-outline circle { stroke: rgba(0, 0, 0, 0.25); stroke-width: 0.5; vector-effect: non-scaling-stroke; }
+.mite-outline .arrow { stroke-width: 2.5; stroke-linecap: round; vector-effect: non-scaling-stroke; }
+.mite-marker.moving .mite-outline .arrow { stroke: #3fdc8f; }
+.mite-marker.moving .mite-outline .arrow-head { fill: #3fdc8f; }
+.mite-marker.still .mite-outline .arrow { stroke: #ffb52e; }
+.mite-marker.still .mite-outline .arrow-head { fill: #ffb52e; }
+.mite-marker.gone .mite-outline .arrow { stroke: #b9bdc2; }
+.mite-marker.gone .mite-outline .arrow-head { fill: #b9bdc2; }
+.mite-marker.corrected .mite-outline .arrow { stroke-dasharray: 5 3; }
 /* A call corrected by hand: the ring dashed, "corrected" beside the call. */
 .mite-marker.corrected .ring { stroke-dasharray: 6 3; }
 /* A mite marked gone in the recording shown, e.g. fallen off. */
@@ -529,6 +542,28 @@ table.clickable tbody tr:hover, table.clickable tbody tr:focus-visible { backgro
 .rec-readout b { color: var(--ink); font-weight: 600; margin-right: 6px; }
 .rec-tick { color: var(--ink); margin-left: 6px; }
 .truth-crop .crop { max-height: 68vh; }
+/* One mite at a time: its clip and where its pixels change, side by side. */
+.truth-split { grid-template-columns: minmax(0, 1fr) 320px; }
+.truth-labels { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin-bottom: 10px; }
+.truth-labels button.current { color: #fff; background: var(--ink); border-color: var(--ink); }
+.truth-labels kbd { margin-left: 2px; padding: 0 4px; font: inherit; font-size: 0.85em; color: inherit; background: none; border: 1px solid currentColor; border-radius: 2px; opacity: 0.6; }
+.truth-labels .truth-key { font-size: 12px; }
+.truth-labels button.current .truth-key.moving { color: #3fdc8f; }
+.truth-labels button.current .truth-key.still { color: #ffb52e; }
+.truth-labels button.current .truth-key.not_a_mite, .truth-labels button.current .truth-key.unset { color: #fff; }
+#truth-dead { margin-left: auto; }
+.truth-views { display: grid; grid-template-columns: minmax(0, 3fr) minmax(0, 2fr); gap: 16px; align-items: start; }
+.truth-views .crop { aspect-ratio: 1; max-height: 62vh; }
+#truth-variation .crop { image-rendering: pixelated; }
+/* The ring round the mite keeps its width however far the clip is zoomed. */
+.truth-ring { fill: none; stroke-width: 2; vector-effect: non-scaling-stroke; }
+.truth-ring.moving { stroke: #3fdc8f; }
+.truth-ring.still { stroke: #ffb52e; }
+.truth-ring.unset { stroke: #fff; stroke-dasharray: 4 3; }
+.truth-ring.not_a_mite { stroke: #b9bdc2; stroke-dasharray: 1 4; stroke-linecap: round; }
+/* On the small plate every mite is a dot to click; the one on screen stands out. */
+.truth-map a.mite-dot { pointer-events: auto; z-index: 2; }
+.truth-map .mite-dot.current { width: 11px; height: 11px; margin: -5.5px 0 0 -5.5px; border: 2px solid var(--ink); z-index: 3; box-shadow: 0 0 0 2px #fff; }
 #clip-status { min-height: 1.5em; }
 .truth-progress { margin: 12px 0 0; max-width: none; }
 .truth-progress .hint b { color: var(--ink); font-weight: 600; }
@@ -672,14 +707,6 @@ td.num.error { color: var(--critical); font-weight: 600; }
 .pool-toggle input { margin: 0; accent-color: var(--ink); }
 .pool-toggle .hint { display: block; margin: 2px 0 0; }
 .dataset-option input:disabled + .group-name { color: var(--muted); }
-.score-picker { flex-wrap: wrap; align-items: center; gap: 10px; }
-.score-picker > label { font-weight: 500; color: var(--ink); }
-.score-picker select, .score-picker input[type="number"] {
-  font: inherit; font-size: 13px; color: var(--ink); background: var(--paper);
-  padding: 5px 8px; border: 1px solid var(--rule); border-radius: 2px;
-}
-.score-picker input[type="number"] { width: 80px; }
-.score-picker .param { display: inline-flex; align-items: center; gap: 6px; color: var(--muted); }
 #zone-errors tbody tr { cursor: pointer; }
 
 /* --- live from the Discobox ---------------------------------------------------------- */

@@ -319,3 +319,100 @@ class TestOutlineMovement:
     def test_a_patch_cut_off_at_the_image_edge_still_gets_a_score(self):
         frames = _mite_frames([3, 3, 4, 5, 4, 3])[:, :, 14:]   # the mite 9 pixels from the left edge
         assert np.isfinite(Analyzer._motion_score(frames, "outline_movement"))
+
+
+def _neighbour_frames(offsets, size=46):
+    """Frames of a still mite with a second one beside it: `offsets` gives,
+    per frame, how far down the neighbour is, in pixels."""
+    frames = []
+    for offset in offsets:
+        frame = np.full((size, size), 115, dtype=np.uint8)
+        cv2.ellipse(frame, (size // 2, size // 2), (5, 7), 0, 0, 360, 25, -1)
+        cv2.ellipse(frame, (size // 2 - 13, size // 2 + offset), (4, 6), 0, 0, 360, 25, -1)
+        frames.append(cv2.GaussianBlur(frame, (0, 0), 0.8).astype(np.float32))
+    return np.stack(frames)[..., None]
+
+
+class TestOutlineVariability:
+    LEG = [3, 3, 4, 5, 4, 3, 3, 4, 5, 4]
+    STILL = [3] * 10
+    SHAKE = [0, 0.3, -0.3, 0.2, -0.2, 0]
+
+    @staticmethod
+    def _score(frames, **params):
+        return Analyzer._motion_score(frames, "outline_variability", params)
+
+    @staticmethod
+    def _noisy(frames, sd=1.0):
+        """The frames as a camera gives them: with noise in every pixel."""
+        return frames + np.random.default_rng(0).normal(0, sd, frames.shape).astype(np.float32)
+
+    def test_it_is_padded_by_default(self):
+        assert Analyzer.roi_padding("outline_variability") == 16
+
+    def test_a_mite_that_does_nothing_scores_nothing(self):
+        assert self._score(_mite_frames(self.STILL)) == 0.0
+
+    def test_a_leg_that_moves_scores(self):
+        assert self._score(_mite_frames(self.LEG)) > 0.05
+
+    def test_a_leg_that_moves_further_scores_higher(self):
+        short, far = (self._score(_mite_frames(legs)) for legs in ([3, 4] * 5, [3, 6] * 5))
+        assert far > 5 * short
+
+    def test_it_is_the_vector_sum_of_the_profile(self):
+        frames = self._noisy(_mite_frames(self.LEG))
+        profile = Analyzer.outline_variability_profile(frames)
+        angle = np.arange(64) * 2 * np.pi / 64
+        length = np.hypot((profile * np.cos(angle)).sum(), (profile * np.sin(angle)).sum())
+        assert self._score(frames) == pytest.approx(length / 64)
+
+    def test_the_variance_is_on_the_side_of_the_leg(self):
+        profile = Analyzer.outline_variability_profile(_mite_frames(self.LEG))
+        assert profile.shape == (64,)
+        # the leg sticks out to the left and a little up: direction 35 of 64, clockwise from the right
+        assert 32 <= profile.argmax() <= 38
+        assert profile[27:44].sum() > 0.7 * profile.sum()   # a quarter of the outline
+
+    def test_noise_all_round_cancels(self):
+        frames = self._noisy(_mite_frames(self.STILL), sd=2.0)
+        assert self._score(frames) < Analyzer.outline_variability_profile(frames).mean() / 10
+
+    def test_a_lamp_that_flickers_scores_nothing(self):
+        light = [1.0, 0.97, 1.0, 0.97, 1.03, 1.0, 0.98, 1.02, 1.0, 0.99]
+        assert self._score(_mite_frames(self.STILL, light=light)) == 0.0
+
+    def test_a_shaking_plate_scores_less_than_a_leg(self):
+        assert self._score(_mite_frames([3] * 6, shifts=self.SHAKE)) < self._score(_mite_frames(self.LEG)) / 2
+
+    def test_two_opposite_sides_cancel(self):
+        one = _mite_frames(self.LEG)
+        both = np.minimum(one, one[:, ::-1, ::-1])   # the same leg on the other side as well, moving with it
+        assert self._score(both) < self._score(one) / 4
+
+    def test_a_neighbour_that_moves_is_not_the_mite(self):
+        beside = _neighbour_frames([0, 1, 2, 1, 0, -1, 0, 1, 2, 1])
+        assert beside.var(axis=0).mean() > 5   # the neighbour changes the patch far more than a leg does
+        assert self._score(beside) < self._score(_mite_frames(self.LEG)) / 2
+
+    def test_relative_makes_it_the_share_on_one_side(self):
+        frames = self._noisy(_mite_frames(self.LEG))
+        mean = Analyzer.outline_variability_profile(frames).mean()
+        assert self._score(frames, relative=1) == pytest.approx(self._score(frames) / mean)
+        assert self._score(frames, relative=0.5) == pytest.approx(self._score(frames) / mean ** 0.5)
+        assert 0.5 < self._score(_mite_frames(self.LEG), relative=1) <= 1   # nothing varies but the leg
+
+    def test_the_share_of_a_still_mite_is_close_to_nothing(self):
+        assert self._score(self._noisy(_mite_frames(self.STILL)), relative=1) < 0.08
+        assert self._score(self._noisy(_mite_frames(self.LEG)), relative=1) > 0.12
+
+    def test_a_patch_without_a_mite_scores_nothing(self):
+        assert self._score(np.full((5, 40, 40, 1), 115, dtype=np.float32)) == 0.0
+
+    def test_a_patch_cut_off_at_the_image_edge_still_gets_a_score(self):
+        frames = _mite_frames(self.LEG)[:, :, 14:]   # the mite 9 pixels from the left edge
+        assert np.isfinite(self._score(frames))
+
+    def test_one_frame_scores_nothing(self):
+        assert self._score(_mite_frames([3])) == 0.0
+        assert self._score(_mite_frames([3]), relative=1) == 0.0

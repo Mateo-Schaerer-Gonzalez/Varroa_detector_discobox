@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Varroa discobox</title>
-<link rel="stylesheet" href="style.css?v=22">
+<link rel="stylesheet" href="style.css?v=24">
 </head>
 <body>
 
@@ -266,9 +266,9 @@
   <section class="block recordings-block" data-recordings="cal"></section>
 </section>
 
-<!-- 2 · enter the ground truth, zone by zone ------------------------------------ -->
+<!-- 2 · enter the ground truth, a mite at a time -------------------------------- -->
 <section id="view-cal-truth" class="view" hidden>
-  <div class="split">
+  <div class="split truth-split">
     <div class="split-main">
       <header class="page-head">
         <div>
@@ -281,15 +281,30 @@
         <div id="rec-tabs" class="rec-tabs"></div>
         <button id="play-btn" type="button" class="secondary small">Pause</button>
       </div>
-      <div id="truth-crop" class="crop-wrap truth-crop"></div>
-      <p id="clip-status" class="hint"></p>
+      <div class="truth-labels">
+        <button type="button" class="secondary small" data-truth="moving"><span class="truth-key moving" aria-hidden="true">●</span>moving <kbd>M</kbd></button>
+        <button type="button" class="secondary small" data-truth="still"><span class="truth-key still" aria-hidden="true">○</span>still <kbd>S</kbd></button>
+        <button type="button" class="secondary small" data-truth="not_a_mite" title="Applies to every recording, and takes the detection out of later analyses of this folder"><span class="truth-key not_a_mite" aria-hidden="true">⊘</span>not a mite <kbd>N</kbd></button>
+        <button type="button" class="secondary small" data-truth=""><span class="truth-key unset" aria-hidden="true">?</span>unlabelled <kbd>U</kbd></button>
+        <button id="truth-dead" type="button" class="secondary small" title="Still in this recording and in every later one not labelled yet">dead from here on <kbd>D</kbd></button>
+      </div>
+      <div class="truth-views">
+        <figure class="fig">
+          <div id="truth-crop" class="crop-wrap"></div>
+          <figcaption id="clip-status"></figcaption>
+        </figure>
+        <figure class="fig">
+          <div id="truth-variation" class="crop-wrap"></div>
+          <figcaption>Where the pixels change over the frames: black where a pixel varies by 1 grey level or less (its standard
+            deviation; the camera's noise), brightest at 8 or more. A leg that moves lights up on its side of the mite.</figcaption>
+        </figure>
+      </div>
       <p class="caption">
-        Watch the clip and mark, for every mite in every recording, whether it moves. Click a mite to cycle it through
-        <b>moving</b>, <b>still</b>, <b>not a mite</b> and back to unlabelled; <kbd>Shift</kbd>-click goes backwards.
-        <b>Not a mite</b> applies to every recording and removes the detection from later analyses of this folder;
-        clicking on past a <b>not a mite</b> you just set brings back the mite's labels.
-        <kbd>↑</kbd> <kbd>↓</kbd> change recording, <kbd>←</kbd> <kbd>→</kbd> change zone, <kbd>P</kbd> plays or pauses,
-        <kbd>D</kbd> marks the zone's unlabelled mites dead: still from this recording on.
+        Watch the clip and mark whether the mite moves in it. A label goes on to the mite's next recording, and after its last one
+        to the next mite with recordings still to label. <b>Dead from here on</b> marks the mite still in this recording and in every
+        later one not labelled yet. <b>Not a mite</b> applies to every recording and removes the detection from later analyses of
+        this folder; another label given after it brings the mite's labels back.
+        <kbd>←</kbd> <kbd>→</kbd> change recording, <kbd>↑</kbd> <kbd>↓</kbd> change mite, <kbd>P</kbd> plays or pauses.
       </p>
     </div>
     <aside class="split-side panel">
@@ -303,17 +318,8 @@
         <p id="truth-progress" class="hint"></p>
       </div>
       <div id="truth-map" class="plate truth-map"></div>
+      <p class="hint">Where the mite is on the plate: the dot with the dark edge. Click a dot to go to that mite.</p>
       <ul id="truth-counts" class="group-list"></ul>
-      <div class="zone-actions">
-        <span class="hint">Unlabelled mites in this zone, this recording:</span>
-        <div class="row">
-          <button type="button" class="secondary small" data-fill="moving">all moving</button>
-          <button type="button" class="secondary small" data-fill="still">all still</button>
-          <button type="button" class="secondary small" data-fill="previous">as in previous recording</button>
-          <button type="button" class="secondary small" data-fill="dead" title="Still in this recording and every later one (D)">dead from here on</button>
-          <button type="button" class="secondary small" data-fill="clear">clear this recording</button>
-        </div>
-      </div>
       <button id="save-truth-btn" type="button" class="wide secondary" disabled>All changes saved</button>
       <button id="evaluate-btn" type="button" class="wide">Show report</button>
       <p id="evaluate-status" class="hint"></p>

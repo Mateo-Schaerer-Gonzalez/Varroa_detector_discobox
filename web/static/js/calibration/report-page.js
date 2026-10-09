@@ -236,29 +236,13 @@ class ReportPage {
 
   // --- the movement score the report is scored with
 
-  // Choose a metric and its parameters, and score again with them. Nothing is
-  // written to config.yaml until a threshold is saved with them.
+  // The movement score is outline_variability, always, on frames that follow a
+  // shaking plate: nothing to choose, the report only says what it scored with.
   scorePicker(r) {
     const { thr, scoreText } = ReportPage;
-    if (!cal.scores) return `<p class="hint">Movement scores could not be listed.</p>`;
-    const options = cal.scores.metrics.map((m) =>
-      `<option value="${esc(m.name)}" ${m.name === r.metric ? "selected" : ""}>${esc(m.name)}${m.name === cal.scores.in_use.metric ? " (config.yaml)" : ""}</option>`).join("");
-    return `<div class="row score-picker">
-      <label for="score-metric">Metric</label>
-      <select id="score-metric">${options}</select>
-      <span id="score-params" class="row"></span>
-      <label class="param" title="Measure how the whole plate moved in each frame, from all the mites at once, and shift it back before scoring. Changes nothing on a still plate.">
-        <input type="checkbox" id="score-stabilize" ${r.stabilize_plate ? "checked" : ""}> Stabilize plate</label>
-      <label class="param" title="Scale each score to the typical brightness of its dataset: camera noise, and with it the score of a still mite, grows with the light on its patch. The analysis of a folder then does the same over its run.">
-        <input type="checkbox" id="score-brightness" ${r.normalize_brightness ? "checked" : ""}> Normalise brightness</label>
-      <label class="param" title="Move each mite's own floor, the median of its scores over the recordings of its dataset, to the median floor of all mites. The analysis of a folder then does the same over its run. A mite moving in more than half of the recordings gets too high a floor.">
-        <input type="checkbox" id="score-floor" ${r.normalize_floor ? "checked" : ""}> Per-mite floor</label>
-      <button type="button" id="score-apply" class="small">Score again</button>
-      <button type="button" id="score-reset" class="small secondary" ${r.threshold_fits ? "hidden" : ""}>Back to config.yaml's</button>
-    </div>
-    <p id="score-description" class="hint"></p>
-    <p id="score-status" class="hint">In use for analyses: <code>${esc(scoreText(cal.scores.in_use.metric, cal.scores.in_use.params, cal.scores.in_use))}</code>
-      with threshold ${thr(cal.scores.in_use.threshold)}. Try another here; saving a threshold below saves the movement score with it.</p>`;
+    if (!cal.scores) return `<p class="hint">The movement score could not be read.</p>`;
+    return `<p id="score-status" class="hint">Scored with <code>${esc(scoreText(r.metric, r.metric_params, r))}</code>.
+      Threshold in use for analyses: ${thr(cal.scores.in_use.threshold)}.</p>`;
   }
 
   // The test report only says which score it tests: scoring again with another one
@@ -266,51 +250,10 @@ class ReportPage {
   scoreTested(r) {
     const { thr, scoreText } = ReportPage;
     return `<p class="hint">Tested: <code>${esc(scoreText(r.metric, r.metric_params, r))}</code> with the threshold in use, ${thr(r.threshold)}.
-      Try another movement score on the <b>Calibration</b> tab.</p>`;
+      </p>`;
   }
 
-  wireScorePicker(r) {
-    if (!cal.scores) return;
-    const select = $("score-metric");
-    const showParams = () => {
-      const metric = cal.scores.metrics.find((m) => m.name === select.value);
-      // the report's own values for its metric, else config.yaml's or the defaults
-      const values = metric.name === r.metric ? r.metric_params : metric.params;
-      $("score-params").innerHTML = Object.entries(metric.defaults).map(([name, fallback]) => `
-      <label class="param">${esc(name)}
-        <input type="number" data-param="${esc(name)}" min="${Number.isInteger(fallback) ? 1 : 0}" step="${Number.isInteger(fallback) ? 1 : "any"}"
-          value="${values[name] ?? fallback}" title="default ${fallback}"></label>`).join("")
-        || '<span class="hint">no parameters</span>';
-      $("score-description").textContent = metric.description;
-    };
-    select.addEventListener("change", showParams);
-    showParams();
-
-    const status = $("score-status");
-    $("score-apply").addEventListener("click", () => {
-      const params = {};
-      for (const input of document.querySelectorAll("#score-params [data-param]")) {
-        const value = Number(input.value);
-        if (!(value > 0)) {
-          status.className = "hint error";
-          status.textContent = `${input.dataset.param} must be a positive number.`;
-          return;
-        }
-        params[input.dataset.param] = value;
-      }
-      const before = cal.metric;
-      cal.metric = {
-        name: select.value, params, stabilize: $("score-stabilize").checked,
-        normalizeBrightness: $("score-brightness").checked, normalizeFloor: $("score-floor").checked,
-      };
-      cal.reportAgain("score-status", () => { cal.metric = before; });
-    });
-    $("score-reset").addEventListener("click", () => {
-      const before = cal.metric;
-      cal.metric = null;
-      cal.reportAgain("score-status", () => { cal.metric = before; });
-    });
-  }
+  wireScorePicker() {}
 
   // --- key figures and the confusion matrix, shared by both tabs
 
