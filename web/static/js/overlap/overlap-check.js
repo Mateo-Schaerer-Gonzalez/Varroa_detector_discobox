@@ -63,7 +63,7 @@ class OverlapCheck {
     const shown = this.data.datapoints.filter((point) => (
       this.show === "all" || (this.show === "changed" ? this.was(point) : point.listed === this.show)));
     const byMite = (a, b) => datasets.indexOf(a.dataset) - datasets.indexOf(b.dataset)
-      || Number(a.mite_id) - Number(b.mite_id) || a.recording - b.recording;
+      || String(a.mite_id).localeCompare(String(b.mite_id), undefined, { numeric: true }) || a.recording - b.recording;
     return shown.sort({ mite: byMite, high: (a, b) => b.score - a.score || byMite(a, b), low: (a, b) => a.score - b.score || byMite(a, b) }[this.order]);
   }
 

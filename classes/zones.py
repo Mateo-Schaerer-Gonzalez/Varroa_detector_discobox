@@ -79,16 +79,24 @@ class Zone(TextZone):
             mite.draw(image)
 
 
-def sort_reading_order(zones):
+# Mites whose tops are within this many mite heights of each other are on one
+# line when they are numbered: they lie scattered on the plate, not in rows.
+MITE_LINE_HEIGHTS = 2
+
+
+def sort_reading_order(zones, row_tolerance=None):
     """Order zones left-to-right, top-to-bottom, the way you would read the plate.
 
     Zones in the same physical row have slightly different y1 values, so rows are
-    grouped by proximity rather than by an exact coordinate match.
+    grouped by proximity rather than by an exact coordinate match: within
+    `row_tolerance` pixels of the row's topmost, by default half a zone's height.
+    Orders the mites of a zone the same way.
     """
     if not zones:
         return []
 
-    row_tolerance = float(np.median([zone.y2 - zone.y1 for zone in zones])) / 2
+    if row_tolerance is None:
+        row_tolerance = float(np.median([zone.y2 - zone.y1 for zone in zones])) / 2
     by_height = sorted(zones, key=lambda zone: zone.y1)
 
     rows = [[by_height[0]]]
@@ -223,7 +231,8 @@ class ZoneManager:
     def assign_mites(self, mites):
         """Assigns mites to their respective zones.
 
-        Returns the list of mites that successfully landed inside a valid zone.
+        Returns the list of mites that successfully landed inside a valid zone,
+        each named by its zone (see number_mites()).
         """
         assigned_mites = []
 
@@ -234,7 +243,20 @@ class ZoneManager:
                     assigned_mites.append(mite)
                     break  # Stop checking once the first matching zone claims it
 
+        self.number_mites()
         return assigned_mites
+
+    def number_mites(self):
+        """Give every mite the id "<zone id>.<number>": its number counts the
+        mites of its zone from 1 in reading order, left to right and line by
+        line, so a mite is found on the plate from its id. The mites of a zone
+        stay in the order they were detected in."""
+        for zone in self.zones:
+            if zone.id is None or not zone.mites:
+                continue
+            line = MITE_LINE_HEIGHTS * float(np.median([mite.y2 - mite.y1 for mite in zone.mites]))
+            for number, mite in enumerate(sort_reading_order(zone.mites, line), start=1):
+                mite.text = f"{zone.id}.{number}"
 
 
     def remove_mites(self, rejected):

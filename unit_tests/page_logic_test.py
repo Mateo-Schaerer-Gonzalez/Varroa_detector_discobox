@@ -191,3 +191,26 @@ def test_a_group_seen_once_has_no_sd_rather_than_nan():
     [group] = reporting._summary(data)["groups"]
     assert group["std_score"] is None
     json.dumps(group, allow_nan=False)  # what the server's JSON needs
+
+
+def test_the_workbook_says_when_each_mite_last_moved_and_shows_where_it_is(tmp_path):
+    import cv2
+    import numpy as np
+    import pandas as pd
+    from openpyxl import load_workbook
+    calls = {"0.2": [True, True, False], "0.10": [False, False, False], "0.1": [True, False, True]}
+    data = pd.DataFrame([{"mite_ID": mite, "time": 10.0 * at, "motion_score": float(at), "moving": moving,
+                          "zone_id": 0, "group": "a", "censored": mite == "0.1" and at == 2}
+                         for mite, moves in calls.items() for at, moving in enumerate(moves)])
+    cv2.imwrite(str(tmp_path / "plate.jpg"), np.zeros((30, 40, 3), np.uint8))
+
+    reporting.write_excel(data, tmp_path, tmp_path / "plate.jpg")
+
+    sheets = pd.read_excel(tmp_path / reporting.EXCEL_NAME, sheet_name=None, dtype={"mite_ID": str})
+    assert list(sheets)[:3] == ["mites", "scores", "mite_map"]
+    assert list(sheets["mites"]["mite_ID"]) == ["0.1", "0.2", "0.10"]
+    last_moved = list(sheets["mites"]["last_moved_min"])
+    assert last_moved[:2] == [0.0, 10.0] and pd.isna(last_moved[2])  # not where it was gone; never
+    assert list(sheets["scores"].columns) == ["mite_ID", "zone_id", "group", 0, 10, 20]
+    assert list(sheets["scores"].iloc[0, 3:]) == [0, 1, 2]
+    assert len(load_workbook(tmp_path / reporting.EXCEL_NAME)["mite_map"]._images) == 1

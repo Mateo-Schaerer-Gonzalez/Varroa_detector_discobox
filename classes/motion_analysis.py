@@ -19,7 +19,8 @@ DETECTION_LOCK = threading.Lock()
 
 
 def detect_mites(zone_manager, image, analyzer):
-    """Find the mites on one frame, numbered from 0, and put each in its zone.
+    """Find the mites on one frame and put each in its zone, which numbers them
+    ("<zone id>.<number>", in reading order: ZoneManager.number_mites()).
     Returns the frame masked to the plates, which is what the detection saw."""
     with DETECTION_LOCK:
         Mite.reset_ids()

@@ -70,7 +70,7 @@ class OverviewPage extends ResultsPage {
       <span id="intervals-left"></span>Hover a ridge for its numbers; select it to open the zone.`)}</div>
 
     ${section("Files", `<ul class="files">
-        <li><a href="${ctx.fileUrl(results.excel)}" download>${esc(results.excel)}</a> <span class="muted">measurements, group summary and movement over time</span></li>
+        <li><a href="${ctx.fileUrl(results.excel)}" download>${esc(results.excel)}</a> <span class="muted">when each mite last moved, every score, a picture of the plate with the mite IDs, and the group summaries</span></li>
       </ul>
       <p class="caption">${this.resultsFolderNote()}Every chart above can be downloaded as SVG or PNG from the buttons beside its title.</p>`)}`;
     this.wire(body);

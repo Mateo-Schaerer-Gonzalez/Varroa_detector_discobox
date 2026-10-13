@@ -33,7 +33,7 @@ REFERENCE_DIR = Path(__file__).resolve().parent / "reference"
 # Plate labels for the labelled run: three groups, so grouping is exercised.
 LABELS = {str(zone): ["control", "venom 1x", "venom 2x"][zone // 5] for zone in range(15)}
 # The mite the labelled run marks "not a mite", by its id in the unlabelled run.
-REJECTED_MITE = "3"
+REJECTED_MITE = "13.4"
 
 # The small session the command line is run on: the first frames of the first
 # recordings of sample_data.

@@ -12,7 +12,18 @@ class Mite(TextZone):
     no claim about the mite being alive or dead.
     """
 
+    # A mite is numbered as it is detected; once it is in a zone its id becomes
+    # "<zone id>.<number in the zone>" (ZoneManager.number_mites()).
     id_counter = 0
+
+    @staticmethod
+    def id_order(mite_id):
+        """A key that sorts mite ids by zone, then by number: "2.10" after "2.9".
+        An id of another form comes after those, by its text."""
+        parts = str(mite_id).split(".")
+        if all(part.isdigit() for part in parts):
+            return (0, [int(part) for part in parts], "")
+        return (1, [], str(mite_id))
 
     @classmethod
     def reset_ids(cls):

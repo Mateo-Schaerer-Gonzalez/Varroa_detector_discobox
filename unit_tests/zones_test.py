@@ -246,3 +246,18 @@ class TestZoneManagerTextZoneFor:
         manager = ZoneManager([plate], excluded_types=["label"])
 
         assert manager.text_zone_for(plate) is None
+
+    def test_mites_are_numbered_by_zone_in_reading_order(self):
+        left = Zone(0, 0, 200, 200, type="brood")
+        right = Zone(300, 0, 500, 200, type="brood")
+        manager = ZoneManager([right, left])
+        # detected in no order; the first two of the top line are not level
+        low, top_right, top_left, other = Mite(20, 150, 36, 166), Mite(120, 20, 136, 36), Mite(20, 40, 36, 56), Mite(310, 10, 326, 26)
+
+        manager.assign_mites([low, top_right, top_left, other])
+
+        assert (top_left.text, top_right.text, low.text, other.text) == ("0.1", "0.2", "0.3", "1.1")
+        assert left.mites == [low, top_right, top_left]  # as detected
+
+    def test_ids_sort_by_zone_then_number(self):
+        assert sorted(["10.1", "2.10", "2.9", "2.1"], key=Mite.id_order) == ["2.1", "2.9", "2.10", "10.1"]

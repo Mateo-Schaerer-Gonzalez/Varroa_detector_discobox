@@ -112,6 +112,7 @@ from classes.live.recorder import Recorder
 from classes.live.session import LiveSession
 from classes.live.settings import RANGES as SETTING_RANGES, Settings
 from classes.live.sources import CameraSource
+from classes.mite import Mite
 from classes.motion_analysis import MotionAnalysis, detect_mites
 from classes.outline_view import OutlineView
 from classes.movement_stats import MovementReport
@@ -921,7 +922,7 @@ def open_calibration(data_dir, out_dir, coords_file=None, library_dir=CALIBRATIO
             )
     if not mites:
         raise ValueError("No mites were detected, so there is nothing to calibrate.")
-    mites.sort(key=lambda mite: int(mite["id"]))
+    mites.sort(key=lambda mite: Mite.id_order(mite["id"]))
 
     loader = DataLoader(data_dir, grayscale=False)
     stored = {

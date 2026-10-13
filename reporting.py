@@ -14,8 +14,10 @@ matplotlib.use("Agg")  # must be set before pyplot is imported anywhere
 import matplotlib.pyplot as plt
 import pandas as pd
 import cv2
+from openpyxl.drawing.image import Image as ExcelImage
 from pathlib import Path
 
+from classes.mite import Mite
 from classes.plotter import Plotter
 
 EXCEL_NAME = "results.xlsx"
@@ -76,11 +78,53 @@ def moving_table(mite_data):
     return moving
 
 
-def write_excel(mite_data, out_dir):
-    """Write the long-form measurements, the per-group summary and movement over
-    time; the last two without the recordings in which a mite was marked gone."""
+def _by_mite_id(table):
+    """`table` with its rows in the order of their mite ids: by zone, then by number."""
+    order = sorted(range(len(table)), key=lambda row: Mite.id_order(table["mite_ID"].iloc[row]))
+    return table.iloc[order].reset_index(drop=True)
+
+
+def last_moved_table(mite_data):
+    """One row per mite: when it last moved, in minutes from the start of the
+    first recording to the start of the last one it was moving in; empty for a
+    mite that never moved."""
+    mites = mite_data.drop_duplicates("mite_ID")[["mite_ID", "zone_id", "group"]]
+    last_moved = mite_data[mite_data["moving"].astype(bool)].groupby("mite_ID")["time"].max()
+    return _by_mite_id(mites.assign(last_moved_min=mites["mite_ID"].map(last_moved)))
+
+
+def scores_table(mite_data):
+    """Every score: one row per mite, one column per recording, named by its
+    time in minutes from the start of the first."""
+    scores = mite_data.pivot(index=["mite_ID", "zone_id", "group"], columns="time", values="motion_score")
+    scores.columns.name = None
+    return _by_mite_id(scores.reset_index())
+
+
+MITE_MAP_NOTE = "The ID drawn above each mite is its mite_ID on the other sheets: zone number . mite number in the zone."
+MITE_MAP_WIDTH = 1400  # pixels the picture of the plate is shown at in the workbook
+
+
+def _add_mite_map(writer, image_path):
+    """A sheet with the picture of the plate on which every mite has its id."""
+    pd.DataFrame(columns=[MITE_MAP_NOTE]).to_excel(writer, sheet_name="mite_map", index=False)
+    picture = ExcelImage(str(image_path))
+    picture.width, picture.height = MITE_MAP_WIDTH, round(picture.height * MITE_MAP_WIDTH / picture.width)
+    writer.sheets["mite_map"].add_image(picture, "A3")
+
+
+def write_excel(mite_data, out_dir, mite_map=None):
+    """Write when each mite last moved, every score, the picture `mite_map` (a
+    file with the mite ids drawn on the plate, if given), the long-form
+    measurements, the per-group summary and movement over time; all but the
+    scores and the measurements without the recordings in which a mite was
+    marked gone."""
     path = Path(out_dir) / EXCEL_NAME
     with pd.ExcelWriter(path, engine="openpyxl") as writer:
+        last_moved_table(_observed(mite_data)).to_excel(writer, sheet_name="mites", index=False)
+        scores_table(mite_data).to_excel(writer, sheet_name="scores", index=False)
+        if mite_map is not None:
+            _add_mite_map(writer, mite_map)
         mite_data.to_excel(writer, sheet_name="measurements", index=False)
         summarise_by_group(_observed(mite_data)).to_excel(writer, sheet_name="group_summary", index=False)
         moving_table(_observed(mite_data)).to_excel(writer, sheet_name="moving", index=False)
@@ -136,7 +180,7 @@ def describe_mites(mite_data):
                 "moving": [bool(value) for value in rows["moving"]],
             }
         )
-    return sorted(mites, key=lambda mite: int(mite["id"]) if mite["id"].isdigit() else mite["id"])
+    return sorted(mites, key=lambda mite: Mite.id_order(mite["id"]))
 
 
 def _moving_series(rows, times):
@@ -192,7 +236,7 @@ def write_outputs(mite_data, annotated_image, out_dir):
     cv2.imwrite(str(out_dir / DETECTIONS_NAME), annotated_image)
 
     return {
-        "excel": write_excel(mite_data, out_dir),
+        "excel": write_excel(mite_data, out_dir, out_dir / DETECTIONS_NAME),
         "figures": write_figures(mite_data, out_dir),
         "detections": DETECTIONS_NAME,
         "summary": _summary(mite_data),

@@ -341,7 +341,7 @@ Each analysis writes to `results/<recording>/`:
 
 | File | Contents |
 | --- | --- |
-| `results.xlsx` | `measurements` (one row per mite per recording, with `moving`, position and the `brightness` of the mite's patch; with normalised scores, `raw_score` holds them as scored), `group_summary`, and `moving` (fraction of mites moving per group and per zone at each recording) |
+| `results.xlsx` | `mites` (one row per mite: when it last moved, in minutes from the start of the first recording), `scores` (every score: one row per mite, one column per recording), `mite_map` (the plate with each mite's ID drawn on it, to find a mite of the sheets in the video), `measurements` (one row per mite per recording, with `moving`, position and the `brightness` of the mite's patch; with normalised scores, `raw_score` holds them as scored), `group_summary`, and `moving` (fraction of mites moving per group and per zone at each recording) |
 | `moving_by_group.png` | Fraction of each group's mites moving in each recording |
 | `distribution_by_group.png` | Score distribution per group, box plot with raw points |
 | `score_over_time.png` | Each mite's score across the session |
@@ -381,7 +381,9 @@ web-related, or if the page references a remote URL.
 `coords_pixel.txt` holds one line per zone: `type x1 y1 x2 y2`, where type `1` is a
 plate and type `0` is a printed-label area that is masked out before detection.
 Plates are numbered 0-14 in reading order (left to right, top to bottom), and that
-id is what a typed label attaches to.
+id is what a typed label attaches to. A mite's id is its plate's number, a dot, and
+its own number on that plate, counted from 1 in the same reading order: `13.4` is
+the fourth mite of plate 13.
 
 `coords_pixel_2.txt` cuts each plate, and its label area, into an upper and a lower
 half: two zones per plate. *Zones per plate* (1 or 2) chooses between the two files:
