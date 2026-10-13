@@ -52,6 +52,14 @@ function duration(seconds) {
   return m < 60 ? `${m} min` : `${Math.floor(m / 60)} h${m % 60 ? ` ${m % 60} min` : ""}`;
 }
 
+// A countdown: 4:05, or 1:02:09 from an hour on.
+function countdown(seconds) {
+  const s = Math.max(0, Math.ceil(seconds));
+  const pad = (n) => String(n).padStart(2, "0");
+  const m = Math.floor(s / 60) % 60;
+  return s < 3600 ? `${m}:${pad(s % 60)}` : `${Math.floor(s / 3600)}:${pad(m)}:${pad(s % 60)}`;
+}
+
 // --- colours -------------------------------------------------------------------
 
 // Read colour tokens from the stylesheet so charts follow light/dark mode.

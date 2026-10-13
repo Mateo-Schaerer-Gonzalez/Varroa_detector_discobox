@@ -53,7 +53,7 @@ def test_outcome_rates_are_fractions_of_their_row():
 
 def status(**overrides):
     return {"timeline": {"elapsed": 30.0, "length": 120.0, "starts": [0.0, 60.0, 120.0]}, "open_ended": False,
-            "alive": None, "analysed": 1, "completed": 1, "recording_name": "r1", **overrides}
+            "alive": None, "analysed": 1, "completed": 1, "recording_name": "r1", "state": "running", **overrides}
 
 
 def test_the_bar_fills_as_the_run_goes_with_a_tick_per_recording():
@@ -70,9 +70,19 @@ def test_a_run_until_every_mite_is_dead_shows_the_mites_alive():
 
 
 def test_no_bar_before_the_run_starts():
-    assert RunProgress(status(timeline=None)).describe() == {"fraction": 0, "alive_bar": False, "marks": [], "left_seconds": 0}
+    assert RunProgress(status(timeline=None)).describe() == {"fraction": 0, "alive_bar": False, "marks": [], "left_seconds": 0,
+                                                             "next_seconds": None}
     starting = RunProgress(status(timeline={"elapsed": 0.0, "length": 0.0, "starts": [0.0]})).describe()
     assert starting["fraction"] == 0 and starting["marks"] == []
+
+
+def test_the_countdown_to_the_next_recording():
+    assert RunProgress(status()).describe()["next_seconds"] == 30.0
+    assert RunProgress(status(state="paused")).describe()["next_seconds"] == 30.0
+    last = {"elapsed": 120.0, "length": 141.0, "starts": [0.0, 60.0, 120.0]}
+    assert RunProgress(status(timeline=last)).describe()["next_seconds"] is None  # none to come
+    assert RunProgress(status(state="stopping")).describe()["next_seconds"] is None
+    assert RunProgress(status(state="finished")).describe()["next_seconds"] is None
 
 
 # --- the list of recordings

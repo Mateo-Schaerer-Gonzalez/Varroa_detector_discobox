@@ -11,6 +11,7 @@ class LivePanel {
   <div class="live-thumb-wrap"><img id="live-thumb" alt="The camera's newest frame" hidden></div>
   <div class="live-facts">
     <div class="live-title"><span id="live-state" class="live-state"></span><span id="live-run"></span></div>
+    <div id="live-next" class="live-next"></div>
     <div id="live-acquisition"></div>
     <div id="live-devices"></div>
     <div id="live-saving"></div>
@@ -81,6 +82,7 @@ class LivePanel {
       ? `${s.saved_frames} frames saved to ${s.run_dir}` : "Recordings are not saved.";
     $("live-error").textContent = [s.error, s.save_error].filter(Boolean).join(" · ");
 
+    this.drawNext(s);
     this.drawProgress(s);
 
     const finished = s.state === "finished";
@@ -91,6 +93,16 @@ class LivePanel {
     $("live-stop-btn").disabled = s.state === "stopping";
     $("live-new-btn").hidden = !finished;
     $("live-follow").checked = live.follow;
+  }
+
+  // The countdown to the next recording, the server's (s.progress.next_seconds):
+  // it comes with every poll, twice a second. A pause holds it where it is.
+  drawNext(s) {
+    const next = s.progress.next_seconds;
+    const holder = $("live-next");
+    if (next == null) { holder.textContent = ""; return; }
+    holder.innerHTML = `Next recording in <b>${countdown(next)}</b>${s.state === "paused"
+      ? " · paused: it waits" : ` · at ${LiveRun.clock((Date.now() + next * 1000) / 1000)}`}`;
   }
 
   // The whole test run as one bar: filled as far as the run has got, with a tick
@@ -118,7 +130,6 @@ class LivePanel {
     }
     if (s.recording_name) parts.push(`capturing frame ${s.frame}${s.frames ? ` of ${s.frames}` : ""}`);
     parts.push(`${s.analysed} analysed`);
-    if (s.next_recording && !finished) parts.push(`next recording at ${LiveRun.clock(s.next_recording)}`);
     $("live-progress").textContent = parts.join(" · ");
 
     const ends = new Date(Date.now() + left * 1000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });

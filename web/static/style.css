@@ -755,6 +755,8 @@ td.num.error { color: var(--critical); font-weight: 600; }
 .live-facts { display: grid; gap: 2px; color: var(--text); min-width: 0; }
 .live-facts > div:empty { display: none; }
 .live-title { color: var(--ink); font-weight: 500; }
+.live-next { color: var(--ink); }
+.live-next b { font-weight: 600; font-variant-numeric: tabular-nums; }
 .live-state { display: inline-block; margin-right: 6px; padding: 0 6px; font-size: 12px; font-weight: 600; color: #fff; background: var(--muted); border-radius: 2px; }
 .live-state.running { background: var(--critical); }
 .live-state.paused, .live-state.stopping { background: var(--still); }

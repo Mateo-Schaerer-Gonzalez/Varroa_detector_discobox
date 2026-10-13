@@ -16,7 +16,8 @@ class RunProgress:
 
     def describe(self):
         """{fraction (0-1), alive_bar (the bar shows the mites alive), marks
-        ([{at (0-1 along the bar), state}]), left_seconds}."""
+        ([{at (0-1 along the bar), state}]), left_seconds, next_seconds (until
+        the next recording starts, None when none is to come)}."""
         s = self.status
         line = s.get("timeline")
         alive_bar = bool(s.get("open_ended"))
@@ -30,7 +31,16 @@ class RunProgress:
             "alive_bar": alive_bar,
             "marks": [] if alive_bar else self.marks(line),
             "left_seconds": line["length"] - line["elapsed"] if line else 0,
+            "next_seconds": self.next_seconds(line),
         }
+
+    def next_seconds(self, line):
+        """Seconds until the next recording starts. A pause pushes the starts
+        back as long as it holds the run, so meanwhile this stands still."""
+        if not line or self.status.get("state") not in ("running", "paused"):
+            return None
+        ahead = [start - line["elapsed"] for start in line["starts"] if start > line["elapsed"]]
+        return min(ahead) if ahead else None
 
     def marks(self, line):
         # none before the run has a length, or when there are too many to tell apart
