@@ -109,6 +109,16 @@ source "$("$conda" info --base)/etc/profile.d/conda.sh"
 conda activate discobox_env 2>/dev/null \
     || fail "The discobox_env environment is missing - run install_linux.sh first."
 
+# An environment made by hand, or from an older discobox_env.yaml, may lack a
+# package the app needs: bring it up to discobox_env.yaml before starting.
+needs="import cv2, dotenv, fastapi, matplotlib, numpy, openpyxl, pandas, serial, uvicorn, yaml; from scipy.stats import logrank"
+if ! python -c "$needs" 2>> update.log; then
+    notify-send "Varroa discobox" "Updating the Python environment, this can take a few minutes." 2>/dev/null
+    "$conda" env update -n discobox_env -f discobox_env.yaml >> update.log 2>&1
+    python -c "$needs" 2>> update.log \
+        || fail "The discobox_env environment lacks packages the app needs, and could not be updated (offline?). See update.log."
+fi
+
 # The camera: tell Vimba X where its transport layers are, as run-discobox.sh does.
 if [ -f vimbax.config ]; then
     source ./vimbax.config

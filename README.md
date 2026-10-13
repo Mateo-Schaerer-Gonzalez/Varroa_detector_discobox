@@ -19,7 +19,8 @@ only the browser opens. Right-click the icon and pick *Stop the app* to stop
 it, or run `./start.sh stop`.
 
 In a git clone, `start.sh` first pulls the newest version from GitHub, and it
-updates `discobox_env` if `discobox_env.yaml` changed. If it is offline or the
+updates `discobox_env` if `discobox_env.yaml` changed. `start.sh` and `start.bat`
+also update it when it lacks a package the app needs. If it is offline or the
 pull fails, it starts the current version and says why in `update.log`. So that
 the new version is always the one loaded, it stops a server already running
 (unless a live test run is going on it) and starts it again, on port 8010:
