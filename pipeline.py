@@ -26,6 +26,8 @@ can never reach into the analysis internals.
     truth_view(...)            the ground truth being entered, as saved with the changes not saved yet
     edit_truth(...)            a click or a fill button on the ground-truth page, not saved yet
     save_truth(...)            save the changes made on the ground-truth page
+    poke_view(...)             the poke test of a calibration session, round by round
+    edit_poke(...)             a change on the poke-test page, saved at once
     list_calibration_datasets(...)   the ground truth saved so far, one dataset per folder
     open_saved_calibration(...)      reopen a saved dataset without decoding anything
     delete_calibration_dataset(...)  forget a saved dataset
@@ -99,6 +101,7 @@ from classes import app_config
 from classes.app_config import get_default_config, save_motion_threshold
 from classes import plate_stabilizer
 from classes.plate_stabilizer import PlateStabilizer
+from classes.poke_test import PokeSurvival, PokeTest
 from classes.data_loader import DataLoader
 from classes.deferred_files import DeferredFiles
 from classes.error_map import ErrorMap
@@ -140,6 +143,7 @@ DEFAULT_COORDS_FILE = "coords_pixel.txt"
 LABELS_FILENAME = "labels.json"
 CONTROLS_FILENAME = "controls.json"  # the zones ticked as negative controls
 GROUND_TRUTH_FILENAME = "ground_truth.json"
+POKE_FILENAME = "poke_test.json"  # which mites answered a poke, round by round
 PREVIEW_NAME = "preview.jpg"
 CALIBRATION_SESSION_NAME = "calibration_session.json"
 CLIPS_DIRNAME = "clips"  # in a results folder: the frames the pages play, remade when missing
@@ -1312,6 +1316,92 @@ def _write_ground_truth(stored, truth, out_dir, library_dir, tolerance=10.0):
     return labelled
 
 
+# --- the poke test
+#
+# Mites poked by hand between two recordings: one that moves is alive up to then,
+# one that does not is dead from then on (classes/poke_test.py). The rounds are
+# saved by mite position next to the recordings, like the ground truth, and every
+# change at once: the file is small. The test report draws the survival they show
+# with the detector's laid over it (evaluate_calibration()).
+
+
+def load_poke_test(data_dir):
+    """The poke test saved for a recording folder: {rounds: [{after, mites: [{x,
+    y, state}]}]}, as PokeTest.saved() gives it; {} without one."""
+    path = Path(data_dir) / POKE_FILENAME
+    if not path.is_file():
+        return {}
+    return json.loads(path.read_text(encoding="utf-8"))
+
+
+def _poke_of(source, library_dir):
+    """The poke test of a calibration session or a saved dataset (`source` has
+    its data_dir, mites and times), by mite id. Detections marked not a mite in
+    the ground truth have no part in it."""
+    n_recordings = len(source["times"])
+    truth = source["truth"] if "truth" in source else _saved_truth(source, library_dir)
+    mites = [mite for mite in source["mites"]
+             if not calibration.is_rejected(calibration.per_recording(truth.get(mite["id"]), n_recordings))]
+    return PokeTest(mites, n_recordings, load_poke_test(_recordings_dir(source["data_dir"], library_dir)))
+
+
+def poke_view(out_dir, library_dir=CALIBRATION_LIBRARY):
+    """The poke test of a calibration session as saved now (PokeTest.view())."""
+    return _poke_of(_read_calibration_session(out_dir), library_dir).view()
+
+
+def edit_poke(out_dir, action, after, mite=None, zone=None, state=None, library_dir=CALIBRATION_LIBRARY):
+    """A change on the poke-test page, saved at once: "add" a round poked after
+    the recording `after` (-1: before the first) or "remove" it; "set" what a
+    `mite` did in it to `state` ("moved", "unmoved" or None for not poked); or
+    "fill" the mites of a `zone` (of every zone without one) not poked yet in it
+    with `state`, None taking their pokes back. Returns the view with it."""
+    stored = _read_calibration_session(out_dir)
+    recordings_dir = _recordings_dir(stored["data_dir"], library_dir)
+    if not recordings_dir.is_dir():
+        raise FileNotFoundError(
+            f"The recordings are no longer at {stored['data_dir']} and the library has no copy, "
+            "so the poke test cannot be saved with them.")
+    poke = _poke_of(stored, library_dir)
+    if action == "add":
+        poke.add(after)
+    elif action == "remove":
+        poke.remove(after)
+    elif action == "set":
+        poke.set(after, str(mite), state)
+    elif action == "fill":
+        poke.fill(after, state, None if zone is None else int(zone))
+    else:
+        raise ValueError(f"Unknown change {action!r}.")
+    path = recordings_dir / POKE_FILENAME
+    path.write_text(json.dumps(poke.saved()), encoding="utf-8")
+    # The library's copy of the recordings, which the reports read once the folder is gone.
+    copy = _dataset_dir(dataset_id(stored["data_dir"]), library_dir) / RECORDINGS_DIRNAME
+    if copy.is_dir() and copy.resolve() != recordings_dir.resolve():
+        shutil.copy2(path, copy / POKE_FILENAME)
+    return poke.view()
+
+
+def _poked_mites(dataset, scores, threshold, library_dir):
+    """The poked mites of a dataset with the detector's death of each at
+    `threshold` (PokeSurvival.mites()); [] without a poke test."""
+    poke = _poke_of(dataset, library_dir)
+    if not poke.rounds:
+        return []
+    moving = {mite["id"]: [score >= threshold for score in scores[mite["id"]]] for mite in poke.mites}
+    return PokeSurvival(poke, dataset["times"], moving).mites()
+
+
+def _poke_survival(mites, times):
+    """The survival of the poked mites of the pooled datasets by the pokes and by
+    the detector, for the test report (PokeSurvival.curves()); None without any."""
+    curves = PokeSurvival.curves(mites, times)
+    if curves:
+        for curve in (curves["poke"], curves["detector"]):
+            curve.update({key: _rounded(curve[key], 2) for key in ("alive", "low", "high")})
+    return curves
+
+
 # --- the calibration library ----------------------------------------------------------
 #
 # One dataset per recording folder, in library_dir/<dataset id>/: dataset.json
@@ -1963,7 +2053,9 @@ def evaluate_calibration(out_dir, datasets, metric=None, params=None, library_di
     threshold around the two ("death_curve", see death_calibration.death_curve())
     and the band around it to check by eye, for `checks_per_mite` checks per
     mite at most (REVIEW_CHECKS unless given; "review_band", see
-    _suggested_band()); and every observation with its outcome.
+    _suggested_band()); every observation with its outcome; and, where a poke
+    test was entered, the survival of the poked mites by the pokes and by the
+    detector at the threshold in use ("poke", see _poke_survival()).
     Everything is also written to calibration.xlsx in `out_dir`, a moment later:
     the workbook takes longer to write than the report to work out, so the page
     has the report first (results_file() waits for the workbook).
@@ -1990,7 +2082,7 @@ def evaluate_calibration(out_dir, datasets, metric=None, params=None, library_di
     times = _pooled_times(loaded)
     n_recordings = len(times)
 
-    rows, n_rejected, n_unlabelled, summaries = [], 0, 0, []
+    rows, n_rejected, n_unlabelled, summaries, poked = [], 0, 0, [], []
     for key, dataset in zip(ids, loaded):
         scores = _dataset_scores(key, dataset, metric, params, library_dir, stabilize)
         scores = _normalised_scores(key, dataset, scores, normalizer, Analyzer.roi_padding(metric, params),
@@ -2000,6 +2092,7 @@ def evaluate_calibration(out_dir, datasets, metric=None, params=None, library_di
         last = len(dataset["times"]) - 1
         circles = _dataset_circles(key, dataset, last, library_dir) if benchmark and last < len(dataset["recordings"]) else None
         rows += here
+        poked += _poked_mites(dataset, scores, current, library_dir)
         n_rejected += rejected
         n_unlabelled += unlabelled
         summaries.append(
@@ -2109,6 +2202,8 @@ def evaluate_calibration(out_dir, datasets, metric=None, params=None, library_di
         "zones": _calibration_by_zone(rows),
         # where the calls at the threshold in use go wrong, for the test report's map
         "error_map": ErrorMap(rows).describe(),
+        # the survival of the mites poked by hand, by the pokes and by the detector at the threshold in use; None without a poke test
+        "poke": _poke_survival(poked, times),
     }
     # each outcome as a fraction of its row, for the confusion matrices and the ROC curve
     result["rates"] = {key: None if result[key] is None else calibration.outcome_rates(result[key]) for key in ("current", "best")}

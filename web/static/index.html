@@ -298,8 +298,51 @@
       <p class="hint">Where the mite is on the plate: the dot with the dark edge. Click a dot to go to that mite.</p>
       <ul id="truth-counts" class="group-list"></ul>
       <button id="save-truth-btn" type="button" class="wide secondary" disabled>All changes saved</button>
+      <a class="button secondary wide poke-link" href="#/cal/poke" title="Which mites moved when you poked them, to compare with the detector in the test report">Enter a poke test</a>
       <button id="evaluate-btn" type="button" class="wide">Show report</button>
       <p id="evaluate-status" class="hint"></p>
+    </aside>
+  </div>
+</section>
+
+<!-- 2b · the poke test: which mites moved when poked, round by round ------------- -->
+<section id="view-cal-poke" class="view" hidden>
+  <div class="split truth-split">
+    <div class="split-main">
+      <header class="page-head">
+        <div>
+          <h1>Poke test</h1>
+          <p id="poke-meta" class="meta"></p>
+        </div>
+        <a class="button secondary small" href="#/cal/truth">&larr; Ground truth</a>
+      </header>
+      <div id="poke-brush" class="truth-labels">
+        <span class="hint">A click marks a mite:</span>
+        <button type="button" class="secondary small" data-poke="moved"><span class="truth-key moving" aria-hidden="true">●</span>moved</button>
+        <button type="button" class="secondary small" data-poke="unmoved"><span class="truth-key still" aria-hidden="true">✕</span>did not move</button>
+        <button type="button" class="secondary small" data-poke=""><span class="truth-key unset" aria-hidden="true">?</span>not poked</button>
+      </div>
+      <div id="poke-map" class="plate poke-map"></div>
+      <p class="caption">
+        The first frame of the recordings, with a ring round every mite. Choose what a click marks, then click each mite you poked:
+        one that <b>moved</b> counts as alive up to that poke, one that <b>did not move</b> as dead from it on.
+        A click on a zone's number marks the zone's mites not poked yet; with <b>not poked</b> it takes the zone's pokes back.
+        Every click is saved at once, next to the recordings. Poke between two recordings, not during one: a poked mite moves, and the detector would count it.
+      </p>
+    </div>
+    <aside class="split-side panel">
+      <h2>Poke rounds</h2>
+      <p class="hint">
+        A round is every mite you poked at one moment. Click a round to enter or change it.
+        The test report then draws the survival of the poked mites by the pokes, with the detector's laid over it.
+      </p>
+      <ul id="poke-rounds" class="group-list poke-rounds"></ul>
+      <div class="row poke-new">
+        <select id="poke-after" class="state-select" aria-label="When the mites were poked"></select>
+        <button id="poke-add" type="button" class="secondary small">Add round</button>
+      </div>
+      <button id="poke-report-btn" type="button" class="wide">Show test report</button>
+      <p id="poke-status" class="hint"></p>
     </aside>
   </div>
 </section>
@@ -351,6 +394,7 @@
 <script src="js/calibration/dataset-library.js"></script>
 <script src="js/calibration/ground-truth.js"></script>
 <script src="js/calibration/truth-page.js"></script>
+<script src="js/calibration/poke-page.js"></script>
 <script src="js/calibration/report-figures.js"></script>
 <script src="js/calibration/last-recording.js"></script>
 <script src="js/calibration/report-page.js"></script>

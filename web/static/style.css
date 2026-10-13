@@ -588,6 +588,40 @@ table.clickable tbody tr:hover, table.clickable tbody tr:focus-visible { backgro
 .mite-dot.still { background: var(--still); }
 .mite-dot.rejected { background: var(--series-other); }
 
+/* The poke test: the whole plate, a ring to click round every mite. */
+.poke-link { display: block; margin-top: 8px; text-align: center; }
+.poke-map .poke-zone { pointer-events: none; cursor: default; }
+.poke-map .poke-zone .zone-num { pointer-events: auto; border: 0; border-radius: 0; cursor: pointer; }
+.poke-map .poke-zone .zone-num:hover { background: var(--ink); }
+.poke-mite {
+  position: absolute; z-index: 2;
+  width: 18px; height: 18px; margin: -9px 0 0 -9px; padding: 0;
+  border: 2px dashed #fff; border-radius: 50%; background: none;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.55);
+  cursor: pointer;
+}
+.poke-mite:hover, .poke-mite:focus-visible { width: 22px; height: 22px; margin: -11px 0 0 -11px; outline: none; }
+.poke-mite.unset:hover { background: none; }
+.poke-mite.moved, .poke-mite.moved:hover { border: 2.5px solid #3fdc8f; background: none; box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.55), inset 0 0 0 1px rgba(0, 0, 0, 0.55); }
+/* did not move: a ring with a cross through it, so it does not rest on colour alone */
+.poke-mite.unmoved, .poke-mite.unmoved:hover {
+  border: 2.5px solid #ffb52e;
+  background:
+    linear-gradient(45deg, transparent 44%, #ffb52e 44%, #ffb52e 56%, transparent 56%),
+    linear-gradient(-45deg, transparent 44%, #ffb52e 44%, #ffb52e 56%, transparent 56%);
+}
+.poke-map.no-round .poke-mite { opacity: 0.5; }
+.poke-rounds li.current { box-shadow: inset 3px 0 0 var(--ink); padding-left: 8px; }
+.poke-rounds button.group-name {
+  padding: 0; font: inherit; font-weight: 500; text-align: left;
+  color: var(--ink); background: none; border: 0; cursor: pointer;
+}
+.poke-rounds button.group-name:hover { text-decoration: underline; background: none; }
+.poke-rounds li.current button.group-name { font-weight: 600; }
+.poke-rounds .hint { flex-basis: 100%; }
+.poke-new { margin-top: 12px; }
+.poke-new select { flex: 1; min-width: 0; }
+
 .truth-key { display: inline-block; width: 14px; text-align: center; font-size: 11px; }
 .truth-key.moving { color: var(--moving); }
 .truth-key.still { color: var(--still); }

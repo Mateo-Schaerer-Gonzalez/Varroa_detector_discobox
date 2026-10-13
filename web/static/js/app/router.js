@@ -5,7 +5,7 @@
 // the analysis of a folder:
 //   #/open  #/label  #/results  #/zone/<id>  #/mite/<id>
 // and calibration (Calibration):
-//   #/cal/open  #/cal/truth/<zone id>/<recording>  #/cal/report
+//   #/cal/open  #/cal/truth/<zone id>/<recording>  #/cal/poke  #/cal/report
 // The recordings kept (RecordingsList) are listed on each mode's first page.
 
 class Router {

@@ -1,6 +1,6 @@
 // The calibration report's figures: the confusion matrix, the death error by
 // threshold, the survival rate over time (and per group), the scores against the
-// thresholds, the ROC curve, and where on the plate the errors are. Every observation, from whichever dataset,
+// thresholds, the ROC curve, where on the plate the errors are, and the poke test. Every observation, from whichever dataset,
 // opens its mite in its recording.
 
 class ReportFigures {
@@ -325,6 +325,30 @@ class ReportFigures {
       { name: `moving called still (${counts["missed-positive"]})`, color: token("--series-2"), shape: "circle" },
       { name: `still called moving (${counts["missed-negative"]})`, color: token("--series-7"), shape: "square" },
     ]);
+  }
+
+  // --- the poke test (test report; the server's r.poke, classes/poke_test.py)
+
+  // The Kaplan-Meier curve of the poked mites by the pokes (black, with its
+  // confidence band) against the detector's on the same mites. The last time
+  // may be the poke after the last recording.
+  drawPokeSurvival(container, r) {
+    const { thr } = ReportPage;
+    const curves = r.poke;
+    const count = (name, curve) => `<div class="tip-note">${name}: ${curve.n_mites} mites, ${curve.n_dead} dead</div>`;
+    Charts.line(container, {
+      x: curves.times,
+      yLabel: "Survival rate (%)",
+      yMin: 0, yMax: 100,
+      yFormat: (v) => `${Math.round(v)}`,
+      noDirectLabels: true,
+      series: [
+        { name: `detector, in use ${thr(r.threshold)}`, values: curves.detector.alive, color: token("--series-1"), dashed: true, step: true, markers: false },
+        { name: "poke test", values: curves.poke.alive, band: { low: curves.poke.low, high: curves.poke.high },
+          color: token("--ink"), width: 2.25, step: true, markers: false },
+      ],
+      tooltipExtra: () => count("poke test", curves.poke) + count("detector", curves.detector),
+    });
   }
 
   // Every zone of every pooled dataset, each opening its own recording folder.

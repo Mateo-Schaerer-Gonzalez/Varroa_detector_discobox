@@ -159,6 +159,15 @@ class TruthEdit(BaseModel):
     state: Optional[str] = None  # set: "moving", "still", "not_a_mite", or none for unlabelled
 
 
+class PokeEdit(BaseModel):
+    """A change on the poke-test page (pipeline.edit_poke)."""
+    action: str                  # "add", "remove", "set" or "fill"
+    after: int                   # the round: the recording it was poked after, -1 before the first
+    mite: Optional[str] = None   # set: the mite clicked
+    zone: Optional[int] = None   # fill: the zone; every zone without one
+    state: Optional[str] = None  # set, fill: "moved", "unmoved", or none for not poked
+
+
 class EvaluateRequest(BaseModel):
     # ids of the saved datasets to pool; by default only this session's own
     datasets: Optional[list[str]] = None
@@ -610,6 +619,28 @@ def save_ground_truth(session_id: str):
     try:
         with truth_lock:
             return as_it_is(pipeline.save_truth(session["out_dir"]))
+    except (FileNotFoundError, ValueError) as error:
+        raise HTTPException(status_code=400, detail=str(error))
+
+
+@app.get("/api/calibration/{session_id}/poke")
+def get_poke_test(session_id: str):
+    """The poke test of this session's mites, round by round (pipeline.poke_view)."""
+    session = get_session(session_id)
+    try:
+        return as_it_is(pipeline.poke_view(session["out_dir"]))
+    except (FileNotFoundError, ValueError) as error:
+        raise HTTPException(status_code=400, detail=str(error))
+
+
+@app.post("/api/calibration/{session_id}/poke")
+def edit_poke_test(session_id: str, request: PokeEdit):
+    """A change on the poke-test page, saved at once next to the recordings."""
+    session = get_session(session_id)
+    try:
+        with truth_lock:
+            return as_it_is(pipeline.edit_poke(session["out_dir"], request.action, request.after, mite=request.mite,
+                                               zone=request.zone, state=request.state))
     except (FileNotFoundError, ValueError) as error:
         raise HTTPException(status_code=400, detail=str(error))
 

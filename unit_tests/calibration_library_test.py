@@ -578,3 +578,44 @@ def test_a_copied_librarys_recordings_are_found(library):
     copy = library / pipeline.dataset_id(foreign) / pipeline.RECORDINGS_DIRNAME
     copy.mkdir(parents=True)
     assert pipeline._recordings_dir(foreign, library) == copy
+
+
+def test_the_poke_test_is_saved_next_to_the_recordings_and_reported(tmp_path, library, scorer):
+    data_dir, out_dir = make_session(tmp_path, "a", 3, times=(0.0, 5.0, 10.0))
+    # mite 0 moves to the end, mite 1 only at first, mite 2 is not a mite
+    scorer.scores = {"a": {"0": [9, 9, 9], "1": [9, 0, 0], "2": [0, 0, 0]}}
+    pipeline.save_ground_truth(out_dir, {"0": ["moving", None, None], "2": ["not_a_mite"] * 3}, library_dir=library)
+
+    pipeline.edit_poke(out_dir, "add", 2, library_dir=library)
+    pipeline.edit_poke(out_dir, "set", 2, mite="0", state="unmoved", library_dir=library)
+    view = pipeline.edit_poke(out_dir, "fill", 2, state="moved", library_dir=library)
+    assert view["mites"] == ["0", "1"]  # the detection marked not a mite cannot be poked
+    assert view["rounds"] == [{"after": 2, "states": {"0": "unmoved", "1": "moved"},
+                               "counts": {"moved": 1, "unmoved": 1, "unset": 0}}]
+    assert pipeline.poke_view(out_dir, library_dir=library) == view
+    saved = json.loads((data_dir / pipeline.POKE_FILENAME).read_text(encoding="utf-8"))
+    assert saved["rounds"][0]["mites"][0] == {"x": 10.0, "y": 10.0, "state": "unmoved"}
+
+    key = pipeline.dataset_id(data_dir)
+    poke = pipeline.evaluate_calibration(tmp_path / "report", [key], library_dir=library)["poke"]
+    # mite 0 did not answer the poke after the last recording, where the detector saw nothing;
+    # mite 1 answered it, yet the detector has it dead from the second recording
+    assert poke["times"] == [0.0, 5.0, 10.0, 15.0] and poke["final_poke"]
+    assert (poke["poke"]["n_mites"], poke["poke"]["n_dead"], poke["n_left_out"]) == (2, 1, 0)
+    assert poke["poke"]["alive"] == [100, 100, 100, 50]
+    assert poke["detector"]["alive"] == [100, 50, 50, None]
+
+    # once the folder is gone, the library's copy of the recordings has the poke test too
+    shutil.rmtree(data_dir)
+    again = pipeline.evaluate_calibration(tmp_path / "report", [key], library_dir=library)
+    assert again["poke"] == poke
+    json.dumps(again, allow_nan=False)
+    sheets = pd.read_excel(pipeline.results_file(tmp_path / "report", again["excel"]), sheet_name=None)
+    assert list(sheets["poke_survival"]["survival_by_poke"]) == [100, 100, 100, 50]
+
+
+def test_a_report_without_a_poke_test_has_none(tmp_path, library, scorer):
+    data_dir, out_dir = make_session(tmp_path, "a", 1)
+    scorer.scores = {"a": {"0": [9, 0]}}
+    pipeline.save_ground_truth(out_dir, {"0": ["moving", "still"]}, library_dir=library)
+    assert pipeline.evaluate_calibration(tmp_path / "report", [pipeline.dataset_id(data_dir)], library_dir=library)["poke"] is None

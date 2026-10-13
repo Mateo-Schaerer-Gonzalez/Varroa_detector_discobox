@@ -116,7 +116,7 @@ class ReportPage {
     ].filter(Boolean).join(" · ");
 
     body.innerHTML = `
-    ${cal.reportStale ? `<div class="banner">The ground truth changed since this report.
+    ${cal.reportStale ? `<div class="banner">The ground truth or the poke test changed since this report.
       <button type="button" id="report-refresh" class="small">Update</button></div>` : ""}
     <header class="page-head">
       <div>
@@ -133,6 +133,7 @@ class ReportPage {
           <button type="button" data-mode="test" class="small ${testing ? "" : "secondary"}">Test</button>
         </div>
         ${cal.data ? '<a class="button secondary small" href="#/cal/truth">Edit ground truth</a>' : ""}
+        ${cal.data && testing ? '<a class="button secondary small" href="#/cal/poke">Poke test</a>' : ""}
       </div>
     </header>
     ${section("Data used", this.datasetPicker(r))}
@@ -512,7 +513,29 @@ class ReportPage {
     ${section("The last recording", `<div id="last-recording" data-number="${r.roc ? 6 : 4}">${this.lastRecording.html(r, r.roc ? 6 : 4)}</div>`)}
 
     ${section("Per zone", `<div class="table-wrap"><table class="clickable" id="zone-errors"></table></div>
-      <p class="caption">Counts are mite-recordings, at the threshold in use. Select a zone to review its labels.</p>`)}`;
+      <p class="caption">Counts are mite-recordings, at the threshold in use. Select a zone to review its labels.</p>`)}
+
+    ${section("Poke test", this.pokeReport(r, r.roc ? 8 : 6))}`;
+  }
+
+  // The survival of the mites poked by hand, by the pokes and by the detector at
+  // the threshold in use (the server's r.poke, classes/poke_test.py): a mite that
+  // moved when poked was alive up to then, one that did not is dead from then on.
+  pokeReport(r, number) {
+    const { pooled } = ReportPage;
+    const poke = r.poke;
+    if (!poke) {
+      return `<p class="hint">No poke test was entered for ${pooled(r) ? "these recordings" : "this recording"}.
+        ${cal.data ? '<a href="#/cal/poke">Enter one</a>: which mites moved when you poked them, to compare their survival with that by the detector.' : ""}</p>`;
+    }
+    return Markup.figure("chart-poke-survival", number, "Survival rate of the poked mites: the pokes and the detector",
+      `The Kaplan–Meier survival rate of the ${poke.poke.n_mites} poked mites by the pokes (black, with its 95% confidence band) and as the detector's calls
+      at the threshold in use would have it (dashed), on the same mites. By the pokes a mite dies at the first poke it did not answer, so in the recording after it;
+      one that answered every poke is right-censored at its last one, where it still counts among the living. By the detector a mite dies at the recording after its last movement,
+      one never called moving at the first recording, and one moving in its last recording is right-censored there. A poke only says dead by then, so the black curve
+      falls at the pokes, not at the deaths: the dashed one may fall earlier and still agree, and should not be above it at a poke.
+      ${poke.final_poke ? "The last point is the poke after the last recording, where the detector saw nothing, so its curve ends before it." : ""}
+      ${poke.n_left_out ? `Left out: ${plural(poke.n_left_out, "mite")} that answered a poke after not answering an earlier one.` : ""} Hover for the numbers.`);
   }
 
   // The detector at the threshold in use beside the Discobox's original software:
@@ -566,5 +589,6 @@ class ReportPage {
     }
     figures.drawZoneErrors(r);
     this.lastRecording.draw(r);
+    if (r.poke) figures.drawPokeSurvival($("chart-poke-survival"), r);
   }
 }

@@ -24,6 +24,7 @@ const groundTruth = new GroundTruth();
 const cal = new Calibration();
 const datasetLibrary = new DatasetLibrary();
 const truthPage = new TruthPage();
+const pokePage = new PokePage();
 const reportPage = new ReportPage();
 
 new ServerHeartbeat().start();

@@ -3,6 +3,7 @@
 //
 //   #/cal/open                              choose calibrate or test, then the recordings
 //   #/cal/truth/<mite id>/<recording>       enter the ground truth, a mite at a time (TruthPage)
+//   #/cal/poke                              enter a poke test, round by round (PokePage)
 //   #/cal/report                            the calibration or the test report (ReportPage)
 //
 // The ground truth itself, and saving it, is GroundTruth's; the saved datasets
@@ -66,18 +67,20 @@ class Calibration {
   // --- routing
 
   route(sub, ...args) {
-    const wanted = ["open", "truth", "report"].includes(sub) ? sub : "open";
+    const wanted = ["open", "truth", "poke", "report"].includes(sub) ? sub : "open";
     let step = wanted;
     if (step === "report" && !this.report) step = this.data ? "truth" : "open";
-    if (step === "truth" && !this.data) step = "open";
+    if ((step === "truth" || step === "poke") && !this.data) step = "open";
     if (step !== wanted) { location.replace(`#/cal/${step}`); return; }
 
     router.showView(`cal-${step}`);
-    Router.markSteps("steps-cal", step, { open: true, truth: this.data, report: this.report });
+    // The poke test belongs to the ground truth's step.
+    Router.markSteps("steps-cal", step === "poke" ? "truth" : step, { open: true, truth: this.data, report: this.report });
     Charts.hideTooltip();
 
     if (step === "open") { datasetLibrary.refresh(); recordings.refresh(); }
     if (step === "truth") truthPage.draw(...args);
+    if (step === "poke") pokePage.draw();
     if (step === "report") reportPage.draw();
     window.scrollTo(0, 0);
   }

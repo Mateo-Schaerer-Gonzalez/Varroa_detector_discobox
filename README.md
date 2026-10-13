@@ -132,7 +132,8 @@ that with the detector:
    between the suggested threshold and the one in use. *Test* shows the
    confusion matrix at the threshold in use, the ROC curve with AUC, and where on
    the plate the errors are. Both show the fraction of mites moving per recording
-   by the ground truth against the detector's; *Test* also shows it per group. Everything is
+   by the ground truth against the detector's; *Test* also shows it per group,
+   and a poke test where one was entered (see *Poke test* below). Everything is
    also written to `calibration.xlsx`, in the session's folder in
    `calibration_data/reports/` (named by when it began and what it opened).
    Under *Data used*, switch on *Pool with
@@ -145,6 +146,24 @@ that with the detector:
    until you save a threshold, which saves the metric and parameters with it.
 
 Test a threshold on a different recording from the one it was calibrated on.
+
+**Poke test.** Poking the mites by hand says which are alive: one that moves
+when poked was alive up to then, one that does not is dead from then on.
+*Enter a poke test* on the ground-truth page shows the whole plate; add a round
+for each time you poked (after which recording), choose *moved*, *did not move*
+or *not poked*, and click each mite, or a zone's number for the zone's mites not
+poked yet. Poke between two recordings, not during one: a poked mite moves, and
+the detector would count it. Every click is saved by mite position to
+`poke_test.json` next to the recordings (`classes/poke_test.py`). The *Test*
+report then draws the Kaplan-Meier survival of the poked mites by the pokes, a
+mite dying at the first poke it did not answer and one that answered every poke
+being right-censored at its last, with the detector's laid over it on the same
+mites at the threshold in use, a mite dying at the recording after its last
+movement; `calibration.xlsx` has both as the sheet `poke_survival`. Only the
+mites poked are in it. A poke only says dead by then, not when the mite died, so
+the detector's curve may fall earlier and still agree; it should not be above
+the pokes' at a poke. The recording needs at least one mite labelled moving or
+still, as every report does.
 
 **Saved ground truth.** Every labelled recording is also kept in
 `calibration_data/<folder>-<hash>/`: its mites, ground truth, first frame and a
@@ -324,7 +343,7 @@ to change that).
 
 | Folder | Contents |
 | --- | --- |
-| `recordings/<name>/` | The frames of every recording session: each live test run, and each folder dropped into the page. Its labels, *not a mite* marks, ground truth, `.settings.txt` and, for a live run, `run.json` are kept next to them. |
+| `recordings/<name>/` | The frames of every recording session: each live test run, and each folder dropped into the page. Its labels, *not a mite* marks, ground truth, poke test, `.settings.txt` and, for a live run, `run.json` are kept next to them. |
 | `results/<name>/` | The last analysis of that recording, replaced when it is analysed again (files below). `clips/` holds the frames the result pages play, and `kept/` the scores, so that analysing the same recordings again, with the same metric and the same scoring code, takes a moment instead of scoring every frame again; both can be deleted at any time. |
 | `calibration_data/<dataset>/` | Saved ground truth, one dataset per labelled recording (see *Saved ground truth*). |
 | `calibration_data/reports/<date time> <name>/` | One calibration session: its `calibration.xlsx`. Sessions that made no report are removed at the next start. |
