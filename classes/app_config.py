@@ -1,3 +1,4 @@
+import os
 import re
 import shutil
 from dataclasses import dataclass, field, fields
@@ -9,9 +10,10 @@ import yaml
 
 # config.yaml is this machine's own and not in git, so an update never changes
 # the metric saved from the calibration page. A new copy of the app makes it
-# from config.default.yaml, which is in git.
-DEFAULT_CONFIG_PATH = Path(__file__).resolve().parent.parent / "config.yaml"
-TEMPLATE_CONFIG_PATH = DEFAULT_CONFIG_PATH.with_name("config.default.yaml")
+# from config.default.yaml, which is in git. DISCOBOX_CONFIG names another file
+# to use in its place: the tests', so they never depend on this machine's.
+TEMPLATE_CONFIG_PATH = Path(__file__).resolve().parent.parent / "config.default.yaml"
+DEFAULT_CONFIG_PATH = Path(os.environ.get("DISCOBOX_CONFIG") or TEMPLATE_CONFIG_PATH.with_name("config.yaml"))
 # The movement score of every analysis. It is no longer chosen: a config file's
 # own `mite.metric` is not read, and one without a threshold or parameters for
 # this score (made before it was the one) takes config.default.yaml's.

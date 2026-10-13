@@ -67,16 +67,15 @@ class LivePanel {
     $("live-panel").hidden = false;
     $("live-state").textContent = LivePanel.STATE_NAMES[s.state] || s.state;
     $("live-state").className = `live-state ${s.state}`;
-    $("live-run").textContent = ` ${s.run_name} · ${s.camera} · pools of ${s.pool_size_text}`;
+    $("live-run").textContent = ` ${s.run_name} · ${s.camera}`;
 
     $("live-acquisition").textContent = (s.state === "finished" ? "Acquisition ended" : `Acquisition ${s.fps.toFixed(1)} fps${s.fps_set ? ` (set to ${s.fps_set})` : ""}`)
       + ` · ${s.dropped} frame${s.dropped === 1 ? "" : "s"} dropped · ${s.incomplete} incomplete`;
     $("live-acquisition").classList.toggle("error", s.dropped > 0);
 
     const lights = s.lights;
-    $("live-devices").textContent = !lights ? "A replay: no fan or LEDs."
-      : !lights.connected ? "No fan/LED controller: the run goes on without them."
-        : LiveSetupPage.DEVICES.map(([device, name]) => `${name} ${lights[device].on ? "on" : "off"}`).join(" · ");
+    $("live-devices").textContent = !lights.connected ? "No fan/LED controller: the run goes on without them."
+      : LiveSetupPage.DEVICES.map(([device, name]) => `${name} ${lights[device].on ? "on" : "off"}`).join(" · ");
 
     $("live-saving").textContent = s.saving || s.save_frames
       ? `${s.saved_frames} frames saved to ${s.run_dir}` : "Recordings are not saved.";

@@ -24,10 +24,10 @@ from pathlib import Path
 import cv2
 import numpy as np
 
-from classes import analyzer, frame_source, mite, motion_analysis, plate_stabilizer, pooling, rect, workers
+from classes import analyzer, frame_source, mite, motion_analysis, plate_stabilizer, rect, workers
 
 # Whatever could change a score, were it changed.
-_SCORING = (analyzer, plate_stabilizer, motion_analysis, pooling, frame_source, mite, rect, workers)
+_SCORING = (analyzer, plate_stabilizer, motion_analysis, frame_source, mite, rect, workers)
 
 
 class KeptScores:
@@ -38,7 +38,7 @@ class KeptScores:
         self.path = Path(folder) / self.DIRNAME / self.FILENAME
 
     @staticmethod
-    def key(mites, stabilize, pool_size, frames, first_frame):
+    def key(mites, stabilize, frames, first_frame):
         """The key of the scores of `mites` (Mite objects, as detected, in
         order) over `frames` ([(recording, [(file, size, time written), ...]),
         ...], see FolderSource.frame_files()), the first of which decodes to
@@ -49,16 +49,15 @@ class KeptScores:
             "libraries": [cv2.__version__, np.__version__],
             "mites": [[list(m), m.metric, analyzer.Analyzer.check_metric_params(m.metric, m.metric_params)] for m in mites],
             "stabilize": bool(stabilize),
-            "pool_size": pool_size,
             "frames": frames,
             "first_frame": hashlib.sha1(np.ascontiguousarray(first_frame).tobytes()).hexdigest(),
         }
         return hashlib.sha1(json.dumps(described, sort_keys=True).encode("utf-8")).hexdigest()
 
-    def give(self, key, mites, n_pools):
-        """Record on `mites` the scores kept under `key`, pool by pool, as
-        scoring them would have; False, and nothing recorded, when there are
-        none under that key for that many mites and pools."""
+    def give(self, key, mites, n_recordings):
+        """Record on `mites` the scores kept under `key`, recording by recording,
+        as scoring them would have; False, and nothing recorded, when there are
+        none under that key for that many mites and recordings."""
         try:
             kept = json.loads(self.path.read_text(encoding="utf-8"))
         except (OSError, ValueError):
@@ -67,7 +66,7 @@ class KeptScores:
             return False
         scores, brightness = kept.get("scores"), kept.get("brightness")
         if not (isinstance(scores, list) and isinstance(brightness, list) and len(scores) == len(brightness) == len(mites)
-                and all(isinstance(values, list) and len(values) == n_pools for values in (*scores, *brightness))):
+                and all(isinstance(values, list) and len(values) == n_recordings for values in (*scores, *brightness))):
             return False
         for one, its_scores, its_brightness in zip(mites, scores, brightness):
             for score, bright in zip(its_scores, its_brightness):

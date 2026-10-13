@@ -325,9 +325,9 @@ class ResultsPage {
     svg.appendChild(g);
   }
 
-  // Over each mite marked in `svg`, a crop of the zone `zoneId`, what the score
-  // sees of it in the recording shown (classes/outline_view.py), in place of its
-  // ring: a dot in each direction round its outline, the darker the more the
+  // On the mite's page: over each mite marked in `svg`, a crop of the zone `zoneId`,
+  // what the score sees of it in the recording shown (classes/outline_view.py), in
+  // place of its ring: a dot in each direction round its outline, the darker the more the
   // outline varies there, and an arrow toward the side the variance lies on, as
   // long as that side is marked; green for a mite called moving, orange for one
   // called still. Where the server has no outline (no frames kept), the ring stays.

@@ -94,11 +94,11 @@ class RecordingsList {
     return "";
   }
 
-  // For a live run: the camera (or the folder replayed), the pools, and what went wrong.
+  // For a live run: the camera, and what went wrong.
   howRecorded(r) {
     const run = r.run;
     if (!run) return "";
-    const parts = [esc(run.camera), `pools of ${esc(run.pool_size_text)}`];
+    const parts = [esc(run.camera)];
     if (run.frames_dropped) parts.push(`<span class="error">${plural(run.frames_dropped, "frame")} dropped</span>`);
     if (run.frames_incomplete) parts.push(`${run.frames_incomplete} incomplete`);
     const error = run.error ? `<span class="sub error">${esc(run.error)}</span>` : "";

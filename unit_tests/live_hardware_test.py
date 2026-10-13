@@ -556,7 +556,7 @@ def test_the_status_says_how_far_the_run_is():
 
 # --- connecting --------------------------------------------------------------------------
 
-def test_connecting_switches_the_leds_on_and_labelling_keeps_them_on(tmp_path, monkeypatch):
+def test_both_leds_are_on_from_connecting_until_the_run_starts(tmp_path, monkeypatch):
     settings_path = tmp_path / "settings.txt"
     Settings(led1=120, led2=200).save(settings_path)
     lights = Lights(connection=Port())
@@ -569,8 +569,15 @@ def test_connecting_switches_the_leds_on_and_labelling_keeps_them_on(tmp_path, m
         state = pipeline.live_status("leds")["lights"]
         assert (state["led1"], state["led2"]) == ({"on": True, "level": 120}, {"on": True, "level": 200})
         assert not state["vent"]["on"]
-        # Switched off to check it, an LED comes back on for labelling.
-        pipeline.set_live_light("leds", "led2", on=False)
+        # The fan can be switched to check it, and an LED's intensity set; an LED cannot be switched off.
+        assert pipeline.set_live_light("leds", "vent", on=True, level=90)["vent"] == {"on": True, "level": 90}
+        assert pipeline.set_live_light("leds", "led1", level=60)["led1"] == {"on": True, "level": 60}
+        with pytest.raises(ValueError, match="stay on"):
+            pipeline.set_live_light("leds", "led2", on=False)
+        state = pipeline.live_status("leds")["lights"]
+        assert state["led1"]["on"] and state["led2"] == {"on": True, "level": 200}
+        # Were one off all the same, labelling switches it back on.
+        lights.switch_off("led2")
         pipeline._light_for_labelling(pipeline._live["leds"])
         assert pipeline.live_status("leds")["lights"]["led2"] == {"on": True, "level": 200}
     finally:
@@ -578,11 +585,11 @@ def test_connecting_switches_the_leds_on_and_labelling_keeps_them_on(tmp_path, m
     assert not any(lights.on.values())
 
 
-def test_the_last_movement_is_found_by_recording_even_with_pools():
+def test_the_last_movement_is_found_by_recording():
     recordings = ["2026-09-23-10-00-00_fps-30", "2026-09-23-10-05-00_fps-30", "2026-09-23-10-10-00_fps-30"]
-    # Two pools per recording; a mite moves in the second pool of the second recording.
-    results = {"times": [0, 0.2, 5, 5.2, 10, 10.2],
-               "mites": [{"moving": [False] * 6}, {"moving": [True, False, False, True, False, False]}]}
+    # A mite moves in the first recording and in the second.
+    results = {"times": [0, 5, 10],
+               "mites": [{"moving": [False] * 3}, {"moving": [True, True, False]}]}
     assert pipeline._last_movement(results, recordings) == 1
     assert pipeline._last_movement({**results, "mites": results["mites"][:1]}, recordings) == -1
 

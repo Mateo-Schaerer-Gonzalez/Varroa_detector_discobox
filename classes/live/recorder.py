@@ -26,7 +26,7 @@ _logger = logging.getLogger(__name__)
 
 def grey_or_colour(frame):
     """What to save of a Frame: the camera's grey frame, or a decoded frame's
-    one channel when its three are identical, as for a replayed grey recording."""
+    one channel when its three are identical, as for a grey recording read back from disk."""
     if frame.gray is not None:
         return frame.gray
     image = frame.image

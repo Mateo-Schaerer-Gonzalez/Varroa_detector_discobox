@@ -78,10 +78,9 @@ def test_a_mite_gone_from_a_recording_on_is_censored_in_every_later_one(tmp_path
         corrections.change(50.0, 60.0, 2, detected=False, state="dead")
 
 
-def test_corrections_go_by_position_and_by_pool_size(tmp_path):
+def test_corrections_go_by_position(tmp_path):
     CallCorrections(tmp_path).change(52.0, 61.0, 1, detected=False, state="moving")  # a few pixels off: still mite 0
     assert CallCorrections(tmp_path).apply(mite_data())[1] == {"corrections": {"0": [1]}}
-    assert CallCorrections(tmp_path, pool_size=30).apply(mite_data())[1] == {}
     far = mite_data().assign(x=lambda data: data["x"] + 200)
     assert CallCorrections(tmp_path).apply(far)[1] == {}
 

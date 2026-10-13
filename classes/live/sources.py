@@ -1,9 +1,8 @@
-"""The live frame sources: the camera during a Discobox test run, and a recorded
-folder replayed as if it were the camera.
+"""The live frame source: the camera during a Discobox test run.
 
-Both give what FolderSource gives (classes/frame_source.py), a stream of Frames
-and RecordingEnds, so the analysis reads them all the same way. They also keep the
-newest frame for the live feed, whether or not it belongs to a recording, and say
+It gives what FolderSource gives (classes/frame_source.py), a stream of Frames
+and RecordingEnds, so the analysis reads both the same way. It also keeps the
+newest frame for the live feed, whether or not it belongs to a recording, and says
 how acquisition is going (status()).
 
 CameraSource
@@ -16,13 +15,7 @@ CameraSource
     skipped, and so are frames dropped because the reader fell behind; either way
     the burst goes on until it has `frame_count` frames, as in the Discobox app.
 
-ReplaySource
-    The recordings of a folder, played at `fps` frames per second with `gap`
-    seconds between them. They keep their names, so their times and scores are
-    those of the folder: the live pipeline, its pages and its feed can be
-    developed and tested with no camera.
-
-Both stop cleanly: no more bursts are started, the camera stops streaming, every
+It stops cleanly: no more bursts are started, the camera stops streaming, every
 frame it had already captured is taken in, the recording being captured ends with
 those frames, and the stream ends.
 """
@@ -33,9 +26,8 @@ import threading
 import time
 from collections import deque
 from dataclasses import dataclass, field
-from pathlib import Path
 
-from classes.frame_source import Frame, FolderSource, Recording, RecordingEnd, as_analysis_image
+from classes.frame_source import Frame, Recording, RecordingEnd, as_analysis_image
 from classes.live.camera import QUEUE_SIZE, Camera
 from classes.live.schedule import TestRun
 
@@ -85,7 +77,9 @@ class RateMeter:
         with self._lock:
             if len(self._times) < 2 or time.monotonic() - self._times[-1] > self.window:
                 return 0.0
-            return (len(self._times) - 1) / (self._times[-1] - self._times[0])
+            span = self._times[-1] - self._times[0]
+            # Frames can arrive within one tick of the clock (about 16 ms on Windows).
+            return (len(self._times) - 1) / span if span > 0 else 0.0
 
 
 def rounded(timeline):
@@ -97,7 +91,7 @@ def rounded(timeline):
 
 
 class LiveSource:
-    """What the live sources share: the stream, the live feed, the state."""
+    """What a live source has: the stream, the live feed, the state."""
 
     kind = ""
 
@@ -336,182 +330,5 @@ class CameraSource(LiveSource):
             "completed": self.completed,
             "next_recording": run.next_recording if run else None,
             "lights": self.lights.state(),
-            "timeline": rounded(self.timeline()),
-        }
-
-
-class ReplaySource(LiveSource):
-    """A recorded folder, replayed recording by recording as if from the camera."""
-
-    kind = "replay"
-
-    def __init__(self, data_dir, fps=None, gap=2.0):
-        super().__init__()
-        self.data_dir = Path(data_dir)
-        self.folder = FolderSource(self.data_dir)
-        self.recordings = self.folder.recordings()
-        if not self.recordings:
-            raise FileNotFoundError(f"No recordings found in {self.data_dir}")
-        self.frame_counts = [len(list((self.data_dir / recording.name).glob("*.bmp"))) for recording in self.recordings]
-        self.fps = fps
-        self.gap = gap
-        self.recording_count = 0
-        self.frame = 0
-        self.current = None
-        self.next_recording = None
-        self._playing = None   # (index, recording) being played, from before its first frame
-        self._gap_from = None  # when the gap after the recording just played began
-        self._ended_at = None  # where on the timeline the replay ended
-        self._stop = threading.Event()
-        self._unpaused = threading.Event()
-        self._unpaused.set()
-        self._thread = None
-
-    @property
-    def settings_text(self):
-        path = self.data_dir / ".settings.txt"
-        return path.read_text(encoding="utf-8") if path.is_file() else None
-
-    def open(self):
-        """Show the first frame in the live feed."""
-        first = next(event for event in self.folder.events() if isinstance(event, Frame))
-        self.latest.put(first.image)
-
-    def run(self):
-        self.state = "running"
-        self._thread = threading.Thread(target=self._play, name="replay", daemon=True)
-        self._thread.start()
-
-    def _sleep(self, seconds):
-        return not self._stop.wait(max(0.0, seconds))
-
-    def _play(self):
-        try:
-            next_frame = time.monotonic()
-            for event in self.folder.events():
-                if self._stop.is_set():
-                    break
-                if isinstance(event, RecordingEnd):
-                    self._events.put(event)
-                    self.completed += 1
-                    self.current = self._playing = None
-                    if self.completed < len(self.recordings):
-                        self.next_recording = time.time() + self.gap
-                        self._gap_from = time.monotonic()
-                        if not self._sleep(self.gap):
-                            break
-                    continue
-                if event.index == 0:
-                    # As in a test run, a pause takes effect before the next recording.
-                    if not self._unpaused.is_set():
-                        self.next_recording = None
-                        self._unpaused.wait()
-                        if self._stop.is_set():
-                            break
-                    self.frame, self._gap_from = 0, None
-                    self._playing = (self.recording_count, event.recording)
-                    self.recording_count += 1
-                    self.next_recording = None
-                    next_frame = time.monotonic()
-                fps = self.fps or event.recording.fps
-                if not self._sleep(next_frame - time.monotonic()):
-                    break
-                next_frame += 1.0 / fps
-                self.current = event.recording
-                self.frame = event.index + 1
-                self.rate.tick()
-                self.latest.put(event.image)
-                self._events.put(event)
-            if self.current is not None:
-                # Stopped in the middle of a recording: it ends with the frames it has.
-                self._events.put(RecordingEnd(self.current))
-                self.completed += 1
-        except Exception as error:
-            _logger.exception("The replay failed")
-            self.error = str(error)
-        finally:
-            self._ended_at = self._position(*self._plan())
-            self.current = None
-            self.next_recording = None
-            self.state = "finished"
-            self._end_stream()
-            self._stopped.set()
-
-    def pause(self):
-        if self.state == "running":
-            self._unpaused.clear()
-            self.state = "paused"
-
-    def resume(self):
-        if self.state == "paused":
-            self._unpaused.set()
-            self.state = "running"
-
-    def set_fps(self, fps):
-        self.fps = fps
-
-    def stop(self):
-        self._stop.set()
-        self._unpaused.set()
-        if self._thread is None:
-            self.state = "finished"
-            self._end_stream()
-            self._stopped.set()
-        else:
-            self.state = "stopping"
-
-    def wait_closed(self, timeout=None):
-        return self._stopped.wait(timeout)
-
-    def _plan(self):
-        """When each recording starts on the replay's timeline, and how long it lasts."""
-        durations = [count / (self.fps or recording.fps) for recording, count in zip(self.recordings, self.frame_counts)]
-        starts = [sum(durations[:index]) + self.gap * index for index in range(len(durations))]
-        return starts, durations
-
-    def _position(self, starts, durations):
-        """Where the replay is on its timeline: in a recording, or in the gap after one."""
-        playing = self._playing
-        if playing is not None:
-            index, recording = playing
-            return starts[index] + self.frame / (self.fps or recording.fps)
-        index = self.completed - 1
-        if index < 0:
-            return 0.0
-        gap_from = self._gap_from
-        into_gap = 0.0 if gap_from is None else min(self.gap, time.monotonic() - gap_from)
-        return starts[index] + durations[index] + into_gap
-
-    def timeline(self):
-        """The replay as a test run's timeline (TestRun.timeline): each recording
-        lasts its frames at the replay's frame rate, `gap` seconds apart. Its
-        `minutes` are those of the folder's recordings, which the results keep."""
-        if self.state == "ready":
-            return None
-        starts, durations = self._plan()
-        length = starts[-1] + durations[-1]
-        elapsed = self._ended_at if self._ended_at is not None else self._position(starts, durations)
-        span = (self.recordings[-1].start - self.recordings[0].start).total_seconds() + durations[-1]
-        return {"elapsed": min(elapsed, length), "length": length, "starts": starts, "minutes": span / 60}
-
-    def status(self):
-        return {
-            "source": self.kind,
-            "camera": f"replay of {self.data_dir.name}",
-            "state": self.state,
-            "feed": self.latest.count,
-            "fps": round(self.rate.rate(), 1),
-            "fps_set": self.fps,
-            "dropped": 0,
-            "incomplete": 0,
-            "recording": self.recording_count,
-            "recordings": len(self.recordings),
-            "open_ended": False,
-            "recording_name": self.current.name if self.current else None,
-            "frame": self.frame if self.current else 0,
-            "frames": None,
-            "completed": self.completed,
-            "next_recording": self.next_recording,
-            "lights": None,
             "timeline": rounded(self.timeline()),
         }

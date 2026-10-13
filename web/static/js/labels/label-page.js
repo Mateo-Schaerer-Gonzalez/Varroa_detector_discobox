@@ -7,7 +7,7 @@ class LabelPage {
   constructor() {
     this.editor = new ZoneEditor(this);
     $("run-btn").addEventListener("click", () => (ctx.mode === "live" ? live.startRun() : analysis.run()));
-    $("zones-per-plate").addEventListener("change", (event) => analysis.setZonesPerPlate(Number(event.target.value)));
+    $("zones-per-plate").addEventListener("change", (event) => (ctx.mode === "live" ? live : analysis).setZonesPerPlate(Number(event.target.value)));
   }
 
   showLoadedStatus() {
@@ -134,7 +134,6 @@ class LabelPage {
   // The label page's button runs the analysis of a folder, or starts a live test run.
   drawRunButton() {
     const living = ctx.mode === "live";
-    $("pool-option").hidden = living;
     this.drawZonesOption(living);
     labelReader.draw();
     if (living) live.drawRunButton();
@@ -144,16 +143,14 @@ class LabelPage {
     }
   }
 
-  // How many zones each plate is cut into, as saved with the recording. A live
-  // run's is among its test run settings, on the camera page.
+  // How many zones each plate is cut into: one, or two. Saved with the
+  // recording; a test run's can change until it starts.
   drawZonesOption(living) {
     const { session } = ctx;
-    $("zones-option").hidden = living;
-    if (living) return;
     const select = $("zones-per-plate");
     select.innerHTML = session.zone_layouts.map((zones) => `<option value="${zones}">${zones}</option>`).join("");
     select.value = String(session.zones_per_plate);
-    select.disabled = analysis.running;  // a run going on is of the zones it started with
+    select.disabled = living ? live.started : analysis.running;  // a run going on is of the zones it started with
   }
 
   // Offer labels already typed as autocomplete, so repeating a group is one keystroke.

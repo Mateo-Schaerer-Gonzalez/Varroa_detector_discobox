@@ -1,21 +1,28 @@
 // The live mode's first page: the camera, the test run's settings, the fan and
 // LEDs. One button connects: the camera and the Discobox's Arduino are found by
-// themselves. Replaying a folder instead is folded away below it. How long the
-// run takes comes from the server (Settings.plan in classes/live/settings.py).
+// themselves. The run's name, whether it is saved and every setting can change
+// before and after connecting, until the run starts. How long the run takes
+// comes from the server (Settings.plan in classes/live/settings.py).
 
 class LiveSetupPage {
-  static FIELDS = ["run_minutes", "death_minutes", "death_reset", "recording_timeout", "vent_time", "led1_time", "led2_time", "frame_count", "fps", "zones_per_plate"];
+  static FIELDS = ["run_minutes", "death_minutes", "death_reset", "recording_timeout", "vent_time", "led1_time", "led2_time", "frame_count", "fps"];
   static DEVICES = [["vent", "Fan"], ["led1", "LED 1"], ["led2", "LED 2"]];
 
   constructor() {
-    this.settingsTimer = null;
+    this.settingsTimers = new Map();  // setting -> its save to come: a change of one setting never puts off another's
+    this.optionsTimer = null;
+    this.optionsChanged = false;  // the name or the saving of the connected run, not yet told to the server
+    // Once connected, the run's name and whether it is saved are the server's to keep: told as they change.
+    $("live-run-name").addEventListener("input", () => this.changeOptions());
+    $("live-save").addEventListener("change", () => this.changeOptions());
     // Settings are saved as they change, like the Discobox settings window does.
     document.addEventListener("input", (event) => {
       const input = event.target.closest("[data-setting]");
       if (!input) return;
       if (input.dataset.device) $(`live-level-${input.dataset.device}`).textContent = input.value;
-      clearTimeout(this.settingsTimer);
-      this.settingsTimer = setTimeout(() => this.saveSetting(input), input.type === "range" ? 150 : 500);
+      const name = input.dataset.setting;
+      clearTimeout(this.settingsTimers.get(name));
+      this.settingsTimers.set(name, setTimeout(() => this.saveSetting(input), input.type === "range" ? 150 : 500));
     });
     document.addEventListener("click", (event) => {
       const button = event.target.closest("[data-light]");
@@ -45,9 +52,8 @@ class LiveSetupPage {
   // `notice`: what to say first, e.g. that the last run was lost.
   fill(notice = null) {
     const { cameras, camera_error: cameraError, run_name: runName } = live.options;
-    $("live-run-name").value = runName;
-    if (!cameras.length) $("live-replay").open = true;
-    const noCamera = cameras.length ? "" : `${cameraError || "No camera found."} You can replay a recorded folder instead.`;
+    if (!live.id) $("live-run-name").value = runName;
+    const noCamera = cameras.length ? "" : cameraError || "No camera found.";
     $("live-open-status").className = notice ? "hint error" : "hint";
     $("live-open-status").textContent = [notice, noCamera].filter(Boolean).join(" ");
     this.drawSettings();
@@ -63,14 +69,6 @@ class LiveSetupPage {
         <span class="hint">Each time a mite moves, the time it takes to count as dead starts again, so the run ends only once no mite has moved for that long.</span>
       </label>`;
       }
-      if (name === "zones_per_plate") {
-        // One or the other, nothing in between: each plate whole, or its two halves.
-        const options = [];
-        for (let zones = min; zones <= max; zones += 1) options.push(`<option value="${zones}"${zones === settings[name] ? " selected" : ""}>${zones}</option>`);
-        return `<label for="live-set-${name}">${esc(label)}</label>
-      <select id="live-set-${name}" data-setting="${name}" class="number-input"
-        title="Analyse each plate as one zone, or as two: its upper and its lower half. Saved with the run's recordings.">${options.join("")}</select>`;
-      }
       return `<label for="live-set-${name}">${esc(label)}${unit ? ` <span class="muted">(${unit})</span>` : ""}</label>
       <input id="live-set-${name}" data-setting="${name}" type="number" min="${min}" max="${max}" step="1"
         value="${settings[name]}" class="number-input" title="${min} to ${max}">`;
@@ -80,7 +78,7 @@ class LiveSetupPage {
       <label for="live-set-${device}">${name}</label>
       <input id="live-set-${device}" data-setting="${device}" data-device="${device}" type="range" min="0" max="255" value="${settings[device]}">
       <output id="live-level-${device}">${settings[device]}</output>
-      <button type="button" class="secondary small light-toggle" data-light="${device}" aria-pressed="false">Off</button>
+      ${device === "vent" ? `<button type="button" class="secondary small light-toggle" data-light="${device}" aria-pressed="false">Off</button>` : ""}
     </div>`).join("");
     this.drawRecordingTime();
   }
@@ -104,14 +102,11 @@ class LiveSetupPage {
     $("live-set-death_reset").disabled = !plan.can_run_until_all_dead || live.started;
   }
 
-  // What can be changed now: how to connect before connecting, the settings until the run starts.
+  // What can be changed now: the run's name, whether it is saved and its settings, all until the run starts.
   drawForm() {
     const connected = Boolean(live.id);
     const ready = !live.started;
-    // A replay has no settings of its own: its folder's recordings are what they are.
-    $("live-settings-block").hidden = connected && live.status && live.status.source === "replay";
-    $("live-replay").hidden = connected;
-    document.querySelectorAll(".live-form input").forEach((input) => { input.disabled = connected; });
+    document.querySelectorAll(".live-form input").forEach((input) => { input.disabled = !ready; });
     $("live-connect-btn").hidden = connected;
     $("live-close-btn").hidden = !connected;
     $("live-close-btn").disabled = live.running;
@@ -138,6 +133,35 @@ class LiveSetupPage {
     }
   }
 
+  // The name or the saving of a connected run changed: tell the server once the typing pauses.
+  changeOptions() {
+    if (!live.id || live.started) return;  // before connecting, connecting sends them
+    this.optionsChanged = true;
+    clearTimeout(this.optionsTimer);
+    this.optionsTimer = setTimeout(() => this.saveOptions().catch(() => {}), 500);
+  }
+
+  // Tell the server the name and the saving typed last, if it does not have them
+  // yet. Fails, having said why, when it refuses them, e.g. a name already taken.
+  async saveOptions() {
+    clearTimeout(this.optionsTimer);
+    if (!this.optionsChanged || !live.id || live.started) return;
+    const status = $("live-open-status");
+    this.optionsChanged = false;
+    try {
+      const saved = await post(`/api/live/${live.id}/options`, { run_name: $("live-run-name").value.trim(), save_frames: $("live-save").checked });
+      live.status = saved;
+      router.setFolder("live", saved.run_name, saved.run_dir);
+      status.className = "hint";
+      status.textContent = LiveRun.connectedText(saved);
+    } catch (error) {
+      this.optionsChanged = true;
+      status.className = "hint error";
+      status.textContent = error.message;
+      throw error;
+    }
+  }
+
   async saveSetting(input) {
     const name = input.dataset.setting;
     const value = input.type === "checkbox" ? Number(input.checked) : Number(input.value);
@@ -148,11 +172,6 @@ class LiveSetupPage {
       status.className = "hint";
       status.textContent = "Saved to settings.txt.";
       this.drawRecordingTime();
-      // The plates labelled so far were of the other zones: label them again.
-      if (name === "zones_per_plate" && live.id && !live.started && live.workspace.session) {
-        live.workspace.session = null;
-        live.drawSteps();
-      }
       // A device switched on to check it follows its slider at once.
       const device = input.dataset.device;
       if (device && live.id && live.status.lights && live.status.lights[device].on) {

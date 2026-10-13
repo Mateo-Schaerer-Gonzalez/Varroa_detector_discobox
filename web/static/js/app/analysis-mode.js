@@ -62,12 +62,6 @@ class AnalysisMode {
     if (workspace.sessionId === sessionId) labelReader.read(workspace);
   }
 
-  // Frames scored together, from the label page's option; null for a whole recording.
-  poolSize() {
-    const value = $("pool-size").value.trim();
-    return value ? Number(value) : null;
-  }
-
   status(className, html) {
     workspaces.setStatus("analysis", className, html);
   }
@@ -82,9 +76,7 @@ class AnalysisMode {
     const { workspace } = this;
     const { sessionId } = workspace;
     try {
-      const request = { labels: workspace.collectLabels() };
-      if (this.poolSize() != null) request.pool_size = this.poolSize();
-      const ran = await post(`/api/session/${sessionId}/run`, request);
+      const ran = await post(`/api/session/${sessionId}/run`, { labels: workspace.collectLabels() });
       if (workspace.sessionId !== sessionId) return;  // the folder was closed meanwhile
       Object.assign(workspace, { results: ran, runStamp: Date.now(), shown: ran.times.length - 1, labelsChanged: false });
       this.status("hint", "Done.");
@@ -95,9 +87,8 @@ class AnalysisMode {
       if (!location.hash.startsWith("#/label")) router.go("#/label");
     } finally {
       this.running = false;
-      $("zones-per-plate").disabled = false;
       buttons.forEach((b) => { b.disabled = false; });
-      if (ctx.mode === "live") live.drawRunButton();  // the button is the live run's meanwhile
+      if (ctx.session) labelPage.drawRunButton();  // the button and the zones may be the live run's meanwhile
     }
   }
 }

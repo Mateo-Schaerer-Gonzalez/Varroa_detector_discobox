@@ -15,10 +15,9 @@ recording on leaves the survival numbers there, alive as far as is known
 The corrections are kept next to the recordings, in corrections.json, so they
 survive a restart and another run. Like the ground truth they go by the mite's
 position, not its id, so they still apply after a change of detector settings
-renumbers the mites. They are kept per pool size, as a recording's index means
-another stretch of frames with another one:
+renumbers the mites:
 
-    {"recording": [{"x": 412.5, "y": 230.0, "moving": {"3": true}, "gone": [1], "gone_from": 5}], "30": [...]}
+    {"recording": [{"x": 412.5, "y": 230.0, "moving": {"3": true}, "gone": [1], "gone_from": 5}]}
 
 A call the user looked at and set, the detector's or not, can be kept as checked
 ("checked": [recording, ...]), so the result pages do not ask for it again
@@ -40,17 +39,17 @@ CYCLE = (MOVING, STILL, GONE, GONE_FROM)
 
 class CallCorrections:
     FILENAME = "corrections.json"
-    WHOLE_RECORDINGS = "recording"  # the key of the corrections made without a pool size
+    KEY = "recording"  # what the corrections are saved under in the file
 
-    def __init__(self, data_dir, pool_size=None, tolerance=10.0):
+    def __init__(self, data_dir, tolerance=10.0):
         self.path = Path(data_dir) / self.FILENAME
-        self.key = self.WHOLE_RECORDINGS if pool_size is None else str(int(pool_size))
+        self.key = self.KEY
         self.tolerance = tolerance
 
     # --- the file
 
     def _read(self):
-        """Everything saved, by pool size; nothing from a missing or damaged file."""
+        """Everything saved; nothing from a missing or damaged file."""
         try:
             saved = json.loads(self.path.read_text(encoding="utf-8"))
         except (OSError, ValueError):
@@ -58,7 +57,7 @@ class CallCorrections:
         return saved if isinstance(saved, dict) else {}
 
     def entries(self):
-        """The corrections of this pool size, one entry per mite:
+        """The corrections, one entry per mite:
         [{x, y, moving: {recording: call}, gone: [recording, ...], gone_from: recording or None,
         checked: [recording, ...]}]."""
         saved = self._read().get(self.key, [])

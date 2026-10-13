@@ -23,8 +23,8 @@ def mites(n=2):
     return [Mite(10 * index, 10, 10 * index + 8, 18, config=get_default_config()) for index in range(n)]
 
 
-def key(these=None, stabilize=True, pool_size=None, frames=FRAMES, first=FIRST):
-    return KeptScores.key(these or mites(), stabilize, pool_size, frames, first)
+def key(these=None, stabilize=True, frames=FRAMES, first=FIRST):
+    return KeptScores.key(these or mites(), stabilize, frames, first)
 
 
 # --- the key
@@ -52,9 +52,9 @@ def test_anything_a_score_follows_from_changes_the_key():
     one_less = [[FRAMES[0][0], FRAMES[0][1][:1]]]
     brighter = FIRST.copy()
     brighter[0, 0, 0] += 1
-    keys = {key(), key(moved), key(other_metric), key(mites(3)), key(stabilize=False), key(pool_size=4),
+    keys = {key(), key(moved), key(other_metric), key(mites(3)), key(stabilize=False),
             key(frames=rewritten), key(frames=one_less), key(first=brighter)}
-    assert len(keys) == 9
+    assert len(keys) == 8
     assert key(other_params) != key(same_params) == key(unsaid)
 
 
@@ -71,10 +71,10 @@ def test_a_change_to_the_scoring_code_changes_the_key(monkeypatch):
 AWKWARD = [0.1 + 0.2, 1e-17, 3.4760000000000004, 123456.789012345678, 0.0]
 
 
-def scored(n_pools=len(AWKWARD)):
+def scored(n_recordings=len(AWKWARD)):
     these = mites()
     for index, mite in enumerate(these):
-        for score in AWKWARD[:n_pools]:
+        for score in AWKWARD[:n_recordings]:
             mite.record_motion(score + index, brightness=100.5 + index)
     return these
 
@@ -89,7 +89,7 @@ def test_the_scores_come_back_to_the_last_digit(tmp_path):
         assert mite.color == original.color  # drawn as moving or still by its last score, as when scored
 
 
-def test_nothing_comes_back_under_another_key_or_for_other_mites_or_pools(tmp_path):
+def test_nothing_comes_back_under_another_key_or_for_other_mites_or_recordings(tmp_path):
     kept = KeptScores(tmp_path)
     assert not kept.give("a key", mites(), 5)  # nothing kept yet
     kept.keep("a key", scored())

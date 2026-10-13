@@ -1,10 +1,11 @@
 """A live run must give exactly what folder mode gives on the frames it saved.
 
-Each run here replays a recorded folder through the whole live pipeline (source,
-pools, the analysis core, the recorder, the published results), then runs folder
-mode on the run's folder and compares everything: the results the pages are drawn
-from, the workbook, what each figure draws and the images' pixels. The first test
-also compares the live run with the reference made before live input existed.
+Each run here feeds a recorded folder through the whole live pipeline (a stand-in
+for the camera, the analysis core, the recorder, the published results), then
+runs folder mode on the run's folder and compares everything: the results the
+pages are drawn from, the workbook, what each figure draws and the images'
+pixels. The first test also compares the live run with the reference made before
+live input existed.
 """
 
 import json
@@ -13,28 +14,31 @@ import time
 
 import pytest
 
+import folder_camera
 import pipeline
 import reference
 
 
-def replay(tmp_path, data_dir, name="run", **kwargs):
-    """Replay `data_dir` as a live run as fast as it goes; the run's parts once it
+@pytest.fixture
+def live_run(tmp_path, monkeypatch):
+    """Run `data_dir` as a live run as fast as it goes; the run's parts once it
     has finished, and the figures it drew last."""
-    library = tmp_path / "library"
-    library.mkdir(exist_ok=True)
-    options = {"replay_fps": 100_000, "replay_gap": 0, **kwargs}
-    live_id = f"test-{name}"
-    with reference.capture_figures() as figures:
-        pipeline.open_live(live_id, tmp_path / f"{name}_out", name, source="replay", replay_dir=data_dir,
-                           recordings_root=tmp_path / "recordings", library_dir=library, **options)
-        pipeline.start_live(live_id)
-        run = pipeline._live[live_id]
-        assert run.session.finished.wait(120), "the live run did not finish"
-    status = pipeline.live_status(live_id)
-    results = pipeline.live_results(live_id)["results"]
-    pipeline._live.pop(live_id)  # keep its folder, which close_live() would remove if empty
-    return {"run": run, "status": status, "results": reference.plain(results), "figures": figures,
-            "library": library, **reference.outputs(run.out_dir)}
+    def run_it(data_dir, name="run", **kwargs):
+        library = tmp_path / "library"
+        library.mkdir(exist_ok=True)
+        live_id = f"test-{name}"
+        with reference.capture_figures() as figures:
+            folder_camera.open_live(monkeypatch, live_id, tmp_path / f"{name}_out", name, data_dir,
+                                    recordings_root=tmp_path / "recordings", library_dir=library, **kwargs)
+            pipeline.start_live(live_id)
+            run = pipeline._live[live_id]
+            assert run.session.finished.wait(120), "the live run did not finish"
+        status = pipeline.live_status(live_id)
+        results = pipeline.live_results(live_id)["results"]
+        pipeline._live.pop(live_id)  # keep its folder, which close_live() would remove if empty
+        return {"run": run, "status": status, "results": reference.plain(results), "figures": figures,
+                "library": library, **reference.outputs(run.out_dir)}
+    return run_it
 
 
 def folder(tmp_path, run, **kwargs):
@@ -57,10 +61,10 @@ def assert_live_equals_folder(live, folder_run):
 
 
 @pytest.mark.slow
-def test_a_replayed_live_run_gives_folder_mode_results_and_the_reference(tmp_path):
+def test_a_live_run_gives_folder_mode_results_and_the_reference(tmp_path, live_run):
     if any((reference.SAMPLE_DATA / name).exists() for name in ("labels.json", "ground_truth.json", "corrections.json")):
         pytest.skip("sample_data holds labels, ground truth or corrected calls the reference was made without.")
-    live = replay(tmp_path, reference.SAMPLE_DATA)
+    live = live_run(reference.SAMPLE_DATA)
     assert live["status"]["state"] == "finished" and live["status"]["error"] is None
     assert live["status"]["saved_frames"] == 180
 
@@ -83,52 +87,45 @@ def small_session(tmp_path):
     return session
 
 
-def test_labels_and_not_a_mite_marks_apply_live_as_in_folder_mode(tmp_path, small_session):
-    live = replay(tmp_path, small_session)
+def test_labels_and_not_a_mite_marks_apply_live_as_in_folder_mode(tmp_path, small_session, live_run):
+    live = live_run(small_session)
     assert {g["group"] for g in live["results"]["summary"]["groups"]} >= {"control", "venom"}
     assert reference.REJECTED_MITE not in {m["id"] for m in live["results"]["mites"]}
     assert_live_equals_folder(live, folder(tmp_path, live["run"]))
 
 
-def test_a_pool_size_pools_live_as_in_folder_mode(tmp_path, small_session):
-    live = replay(tmp_path, small_session, pool_size=4)
-    assert live["results"]["n_recordings"] == 3  # 6 frames per recording: one pool of 4, 2 left over
-    assert_live_equals_folder(live, folder(tmp_path, live["run"], pool_size=4))
-
-
-def test_without_saving_frames_the_results_are_the_same(tmp_path, small_session):
-    live = replay(tmp_path, small_session, save_frames=False)
+def test_without_saving_frames_the_results_are_the_same(tmp_path, small_session, live_run):
+    live = live_run(small_session, save_frames=False)
     assert not any(path.suffix == ".bmp" for path in live["run"].run_dir.rglob("*"))
     original = reference.run_folder(small_session, tmp_path / "original_out", live["library"],
                                     pipeline.load_labels(small_session))
     assert_same(original["results"], live["results"], "The live results")
 
 
-def test_a_run_stopped_midway_is_analysed_as_far_as_it_got(tmp_path, small_session):
+def test_a_run_stopped_midway_is_analysed_as_far_as_it_got(tmp_path, small_session, monkeypatch):
     library = tmp_path / "library"
     library.mkdir()
-    pipeline.open_live("stop", tmp_path / "out", "stopped", source="replay", replay_dir=small_session,
-                       replay_fps=40, replay_gap=0.5, recordings_root=tmp_path / "recordings", library_dir=library)
+    folder_camera.open_live(monkeypatch, "stop", tmp_path / "out", "stopped", small_session, gap=30,
+                            recordings_root=tmp_path / "recordings", library_dir=library)
     pipeline.start_live("stop")
     run = pipeline._live["stop"]
     deadline = time.monotonic() + 20
     while pipeline.live_status("stop")["completed"] < 1 and time.monotonic() < deadline:
         time.sleep(0.02)
-    time.sleep(0.1)  # into the gap or the second recording
-    pipeline.stop_live("stop", wait=True, timeout=60)
+    pipeline.stop_live("stop", wait=True, timeout=60)  # between the first recording and the second
     status = pipeline.live_status("stop")
     pipeline._live.pop("stop")
-    assert status["state"] == "finished" and 1 <= status["analysed"] < 3
+    assert status["state"] == "finished" and status["analysed"] == 1
     live = reference.plain(run.session.results)
     again = folder(tmp_path, run)
     assert_same(again["results"], live, "The results of the stopped run")
 
 
-def test_results_are_published_after_each_recording(tmp_path, small_session):
+def test_results_are_published_after_each_recording(tmp_path, small_session, monkeypatch):
     library = tmp_path / "library"
     library.mkdir()
-    pipeline.open_live("steps", tmp_path / "out", "steps", source="replay", replay_dir=small_session,
-                       replay_fps=100_000, replay_gap=0.3, recordings_root=tmp_path / "recordings", library_dir=library)
+    folder_camera.open_live(monkeypatch, "steps", tmp_path / "out", "steps", small_session, gap=0.3,
+                            recordings_root=tmp_path / "recordings", library_dir=library)
     assert pipeline.live_results("steps") == {"version": 0, "results": None}
     pipeline.start_live("steps")
     seen = set()
@@ -142,8 +139,8 @@ def test_results_are_published_after_each_recording(tmp_path, small_session):
     assert seen == {1, 2, 3}
 
 
-def test_labels_changed_during_a_run_show_at_once(tmp_path, small_session):
-    live = replay(tmp_path, small_session)
+def test_labels_changed_during_a_run_show_at_once(tmp_path, small_session, live_run):
+    live = live_run(small_session)
     run = live["run"]
     pipeline._live[run.live_id] = run
     try:
@@ -157,38 +154,65 @@ def test_labels_changed_during_a_run_show_at_once(tmp_path, small_session):
     assert {g["group"] for g in again["results"]["summary"]["groups"]} == groups
 
 
-def test_a_run_name_already_taken_is_refused(tmp_path, small_session):
+def test_a_run_name_already_taken_is_refused(tmp_path, small_session, monkeypatch):
     (tmp_path / "recordings" / "taken").mkdir(parents=True)
     with pytest.raises(ValueError, match="already exists"):
-        pipeline.open_live("taken", tmp_path / "out", "taken", source="replay", replay_dir=small_session,
-                           recordings_root=tmp_path / "recordings")
+        folder_camera.open_live(monkeypatch, "taken", tmp_path / "out", "taken", small_session,
+                                recordings_root=tmp_path / "recordings")
     with pytest.raises(ValueError, match="letters"):
-        pipeline.open_live("bad", tmp_path / "out", "../escape", source="replay", replay_dir=small_session,
-                           recordings_root=tmp_path / "recordings")
+        folder_camera.open_live(monkeypatch, "bad", tmp_path / "out", "../escape", small_session,
+                                recordings_root=tmp_path / "recordings")
 
 
-def test_closing_a_run_that_recorded_nothing_leaves_no_folder(tmp_path, small_session):
-    pipeline.open_live("empty", tmp_path / "out", "empty", source="replay", replay_dir=small_session,
-                       recordings_root=tmp_path / "recordings")
+def test_closing_a_run_that_recorded_nothing_leaves_no_folder(tmp_path, small_session, monkeypatch):
+    folder_camera.open_live(monkeypatch, "empty", tmp_path / "out", "empty", small_session,
+                            recordings_root=tmp_path / "recordings")
     assert (tmp_path / "recordings" / "empty").is_dir()
     pipeline.close_live("empty")
     assert not (tmp_path / "recordings" / "empty").exists()
     shutil.rmtree(tmp_path / "recordings")
 
 
-def test_the_status_says_how_far_a_replay_is(tmp_path, small_session):
-    library = tmp_path / "library"
-    library.mkdir()
-    pipeline.open_live("far", tmp_path / "out", "far", source="replay", replay_dir=small_session,
-                       replay_fps=100, replay_gap=0, recordings_root=tmp_path / "recordings", library_dir=library)
-    assert pipeline.live_status("far")["timeline"] is None
-    pipeline.start_live("far")
-    assert pipeline._live["far"].session.finished.wait(60)
-    line = pipeline.live_status("far")["timeline"]
-    results = pipeline.live_results("far")["results"]
-    pipeline.close_live("far")
-    # Three recordings of 6 frames at 100 fps, back to back, all played (seconds to a tenth).
-    assert line["starts"] == pytest.approx([0.0, 0.06, 0.12], abs=0.05)
-    assert line["elapsed"] == line["length"] == pytest.approx(0.18, abs=0.05)
-    # The results' axis is the folder's own: its recordings' times, not the replay's.
-    assert results["times"][-1] <= line["minutes"] < results["times"][-1] + 0.01
+# --- until the run starts, its name and whether it is saved can change
+
+def test_a_run_not_started_can_be_renamed_and_takes_its_folders_along(tmp_path, small_session, monkeypatch):
+    roots = {"recordings_root": tmp_path / "recordings", "results_root": tmp_path / "results",
+             "library_dir": tmp_path / "library"}
+    (tmp_path / "recordings" / "taken").mkdir(parents=True)
+    (tmp_path / "results" / "earlier").mkdir(parents=True)
+    (tmp_path / "results" / "earlier" / "results.xlsx").write_bytes(b"of an earlier recording")
+    status = folder_camera.open_live(monkeypatch, "rename", None, "earlier", small_session, **roots)
+    try:
+        pipeline.live_preview("rename")  # the label page's picture, in the results folder
+        pipeline.save_labels(status["run_dir"], {"4": "renamed venom"})
+
+        with pytest.raises(ValueError, match="already exists"):
+            pipeline.set_live_options("rename", run_name="taken")
+        with pytest.raises(ValueError, match="letters"):
+            pipeline.set_live_options("rename", run_name="../escape")
+        assert pipeline.live_status("rename")["run_name"] == "earlier"
+
+        status = pipeline.set_live_options("rename", run_name=" hive 3 ", save_frames=False)
+        assert (status["run_name"], status["save_frames"]) == ("hive 3", False)
+        assert status["run_dir"] == str(tmp_path / "recordings" / "hive 3")
+        assert status["out_dir"] == str(tmp_path / "results" / "hive 3")
+        assert not (tmp_path / "recordings" / "earlier").exists()
+        assert pipeline.load_labels(status["run_dir"]) == {"4": "renamed venom"}
+        assert (tmp_path / "results" / "hive 3" / pipeline.PREVIEW_NAME).is_file()
+        # results that were there before the run took the name are not the run's to remove
+        assert (tmp_path / "results" / "earlier" / "results.xlsx").is_file()
+
+        # renamed again, the results folder the run made itself goes along
+        status = pipeline.set_live_options("rename", run_name="hive 4", save_frames=True)
+        assert not (tmp_path / "results" / "hive 3").exists()
+        assert (tmp_path / "results" / "hive 4" / pipeline.PREVIEW_NAME).is_file()
+
+        pipeline.start_live("rename")
+        assert pipeline._live["rename"].session.finished.wait(60)
+        with pytest.raises(ValueError, match="has started"):
+            pipeline.set_live_options("rename", run_name="too late")
+        assert pipeline.live_status("rename")["saved_frames"] == 3 * reference.SMALL_FRAMES
+        assert (tmp_path / "results" / "hive 4" / "results.xlsx").is_file()
+    finally:
+        pipeline.close_live("rename")
+    assert pipeline.list_recordings(**roots)[0]["name"] == "hive 4"

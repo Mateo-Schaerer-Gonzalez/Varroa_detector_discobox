@@ -1,6 +1,21 @@
+import atexit
+import os
+import shutil
+import tempfile
+from pathlib import Path
+
 import pytest
 
-import pipeline
+# The tests run with the settings the app is shipped with, config.default.yaml,
+# in a copy of their own: this machine's config.yaml, with the threshold saved
+# from its calibration page, is neither read nor written. Set before the app is
+# imported, and in the environment, so the command line the tests run takes it too.
+_config_dir = tempfile.mkdtemp(prefix="discobox_test_config_")
+atexit.register(shutil.rmtree, _config_dir, ignore_errors=True)
+os.environ["DISCOBOX_CONFIG"] = str(Path(_config_dir) / "config.yaml")
+shutil.copyfile(Path(__file__).resolve().parent.parent / "config.default.yaml", os.environ["DISCOBOX_CONFIG"])
+
+import pipeline  # noqa: E402
 
 
 @pytest.fixture(autouse=True)

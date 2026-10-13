@@ -1,7 +1,7 @@
 // Live from the Discobox, the mode the app opens on:
-//   #/live/open      the camera (or a replay), the test run's settings, the fan and LEDs,
+//   #/live/open      the camera, the test run's name and settings, the fan and LEDs,
 //                    and under them the recordings kept (LiveSetupPage)
-//   #/live/label     the label page; its button starts the test run
+//   #/live/label     the label page, with the zones per plate; its button starts the test run
 //   #/live/results   the result pages -- the very ones a folder gets -- under a
 //                    small panel with how the run is going (LivePanel), filling in as it goes
 //
@@ -17,6 +17,11 @@ class LiveRun {
     return new Date(seconds * 1000).toLocaleTimeString();
   }
 
+  // What the camera page says of a connected run (`status`, the server's).
+  static connectedText(status) {
+    return `Connected: ${status.camera}. Recordings go to ${status.save_frames ? status.run_dir : "nowhere: they are not saved"}.`;
+  }
+
   constructor() {
     this.id = null;          // the live run's session id
     this.status = null;      // what /status said last
@@ -27,8 +32,7 @@ class LiveRun {
     this.feedBusy = false;
     this.notice = null;      // what the camera page should say when it shows next, e.g. that the run was lost
 
-    $("live-connect-btn").addEventListener("click", () => this.connect("camera"));
-    $("live-replay-btn").addEventListener("click", () => this.connect("replay"));
+    $("live-connect-btn").addEventListener("click", () => this.connect());
     $("live-close-btn").addEventListener("click", () => this.close());
     $("live-label-btn").addEventListener("click", () => this.labelPlates());
     setInterval(() => this.poll(), LiveRun.POLL_MS);
@@ -106,30 +110,25 @@ class LiveRun {
 
   // --- connecting
 
-  // `source`: "camera", or "replay" for the folder under "No camera?".
-  async connect(source) {
+  async connect() {
     const status = $("live-open-status");
     status.className = "hint";
-    status.innerHTML = source === "camera"
-      ? `<span class="spinner"></span> Connecting to the camera and switching the LEDs on…`
-      : `<span class="spinner"></span> Opening the replay…`;
-    const poolSize = $("live-pool-size").value.trim();
+    status.innerHTML = `<span class="spinner"></span> Connecting to the camera and switching the LEDs on…`;
     // The camera found when the page opened saves looking for it again.
     const cameras = this.options ? this.options.cameras : [];
     const body = {
-      source,
       run_name: $("live-run-name").value.trim(),
       save_frames: $("live-save").checked,
-      pool_size: poolSize ? Number(poolSize) : null,
-      camera_id: source === "camera" && cameras.length === 1 ? cameras[0].id : null,
+      camera_id: cameras.length === 1 ? cameras[0].id : null,
       serial_port: "auto",
-      replay_dir: $("live-replay-dir").value.trim(),
-      replay_gap: Number($("live-replay-gap").value || 0),
     };
     try {
       const opened = await post("/api/live", body);
       this.start(opened.session_id, opened);
-      status.textContent = `Connected: ${opened.camera}. Recordings go to ${opened.save_frames ? opened.run_dir : "nowhere: they are not saved"}.`;
+      // The name or the saving changed while connecting: the server takes what is typed now.
+      liveSetup.optionsChanged = body.run_name !== $("live-run-name").value.trim() || body.save_frames !== $("live-save").checked;
+      status.textContent = LiveRun.connectedText(opened);
+      if (liveSetup.optionsChanged) await liveSetup.saveOptions().catch(() => {});
     } catch (error) {
       status.className = "hint error";
       status.textContent = error.message;
@@ -143,6 +142,7 @@ class LiveRun {
     router.setFolder("live", status.run_name, status.run_dir);
     $("live-feed").removeAttribute("src");
     $("live-thumb").removeAttribute("src");
+    liveSetup.optionsChanged = false;
     liveSetup.drawForm();
     this.drawSteps();
     this.poll();
@@ -153,6 +153,9 @@ class LiveRun {
     try {
       const status = await post(`/api/live/${id}/attach`);
       this.start(id, status);
+      // The run's own name and saving, not those of the next run.
+      $("live-run-name").value = status.run_name;
+      $("live-save").checked = status.save_frames;
       if (status.state !== "ready") await this.loadPreview();
       await this.fetchResults();
       $("live-open-status").className = "hint";
@@ -209,7 +212,11 @@ class LiveRun {
   // --- labelling, and the start of the run
 
   async loadPreview() {
-    const preview = await post(`/api/live/${this.id}/preview`);
+    this.takePreview(await post(`/api/live/${this.id}/preview`));
+  }
+
+  // The plates and the mites found on them, for the label page.
+  takePreview(preview) {
     preview.zones.forEach((zone) => { zone.label = zone.label || ""; });
     Object.assign(this.workspace, { session: preview, sessionId: this.id });
     if (ctx.mode === "live") {
@@ -218,6 +225,29 @@ class LiveRun {
     }
     this.drawSteps();
     labelReader.read(this.workspace);
+  }
+
+  // The label page's "Zones per plate", until the run starts: saved as the test
+  // run's setting. The server finds the mites again in the new zones, whose
+  // plates are labelled anew.
+  async setZonesPerPlate(zones) {
+    const { id } = this;
+    const status = $("run-status");
+    labelPage.editor.close();
+    $("zones-per-plate").disabled = true;
+    status.className = "hint";
+    status.innerHTML = `<span class="spinner"></span> Finding the mites in the new zones…`;
+    try {
+      const preview = await post(`/api/session/${id}/zones`, { zones_per_plate: zones });
+      if (this.id !== id) return;  // disconnected meanwhile
+      if (this.options) this.options.settings.zones_per_plate = zones;
+      this.takePreview(preview);
+    } catch (error) {
+      if (this.id !== id) return;
+      status.className = "hint error";
+      status.textContent = error.message;
+      if (location.hash.startsWith("#/live/label")) labelPage.draw();  // the zones as they still are
+    }
   }
 
   async labelPlates() {
@@ -247,6 +277,7 @@ class LiveRun {
     status.className = "hint";
     status.innerHTML = `<span class="spinner"></span> Starting the test run…`;
     try {
+      await liveSetup.saveOptions();  // the name typed last, if the server does not have it yet
       this.status = await post(`/api/live/${this.id}/start`, { labels: this.workspace.collectLabels() });
       status.textContent = "The test run is going; the labels can still change and the results follow them.";
       router.go("#/live/results");

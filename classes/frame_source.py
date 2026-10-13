@@ -4,7 +4,7 @@ the source.
 A source yields, recording by recording, each frame (a Frame) and then the end of
 its recording (a RecordingEnd). A recording is one burst of frames, e.g. the
 folder "2025-09-04-09-28-17_fps-30"; the analysis never needs to know whether it
-was read from disk, replayed or is arriving from the camera right now.
+was read from disk or is arriving from the camera right now.
 
 Every frame is an (H, W, 3) uint8 image exactly as cv2.imread(path,
 cv2.IMREAD_COLOR) decodes a saved recording frame, so the scores of a live frame
@@ -12,8 +12,7 @@ and of the same frame read back from disk are identical. A grey camera frame get
 its three identical channels from as_analysis_image().
 
 FolderSource reads a recording folder the way folder mode always has. The live
-sources (the camera, and ReplaySource, which replays a folder as if it were the
-camera) are in classes/live/.
+source, the camera, is in classes/live/.
 """
 
 from concurrent.futures import ThreadPoolExecutor
@@ -87,6 +86,28 @@ def frame_times(frames, session_start):
     return [(frame.recording.start - session_start).total_seconds() + frame.index / frame.recording.fps for frame in frames]
 
 
+def recordings(events):
+    """Group a stream of Frames and RecordingEnds into recordings: every frame of
+    each, in order, as soon as it has ended.
+
+    A stream that stops without a RecordingEnd ends its last recording there.
+    """
+    current = []
+    for event in events:
+        if isinstance(event, RecordingEnd):
+            if current:
+                yield current
+            current = []
+            continue
+        if not isinstance(event, Frame):
+            raise TypeError(f"Expected a Frame or a RecordingEnd, got {event!r}")
+        if current and event.recording != current[0].recording:
+            raise ValueError(f"A frame of {event.recording.name} came before {current[0].recording.name} ended.")
+        current.append(event)
+    if current:
+        yield current
+
+
 class FolderSource:
     """The recordings of a session folder, in name order, each frame decoded as
     folder mode always has (cv2.IMREAD_COLOR, files sorted by name).
@@ -107,7 +128,7 @@ class FolderSource:
 
     def events(self, decode=True):
         """The stream of Frames and RecordingEnds. With `decode` False the Frames
-        carry no image: enough to know which frames make which pool. With
+        carry no image: enough to know which frames make which recording. With
         FolderSource.FIRST only the first frame of the stream does: enough to
         find the mites as well."""
         recordings = self.recordings()

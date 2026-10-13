@@ -6,6 +6,7 @@ import shutil
 
 import pytest
 
+import folder_camera
 import pipeline
 import reference
 
@@ -56,12 +57,11 @@ def test_a_results_file_is_only_ever_one_in_a_results_folder(tmp_path, name, fil
         pipeline.recording_results_file(name, filename, tmp_path)
 
 
-def test_a_live_run_writes_run_json_and_its_results_go_to_results(tmp_path, roots):
+def test_a_live_run_writes_run_json_and_its_results_go_to_results(tmp_path, roots, monkeypatch):
     small = reference.make_small_session(tmp_path / "small_session")
     library = roots["library_dir"]
     library.mkdir()
-    status = pipeline.open_live("record", None, "run 1", source="replay", replay_dir=small, replay_fps=100_000,
-                                replay_gap=0, pool_size=3, **roots)
+    status = folder_camera.open_live(monkeypatch, "record", None, "run 1", small, **roots)
     assert status["out_dir"] == str(roots["results_root"] / "run 1")
     pipeline.start_live("record")
     listed = pipeline.list_recordings(**roots)
@@ -71,16 +71,15 @@ def test_a_live_run_writes_run_json_and_its_results_go_to_results(tmp_path, root
 
     run_dir = roots["recordings_root"] / "run 1"
     info = json.loads((run_dir / "run.json").read_text())
-    assert info["source"] == "replay" and info["camera"] == "replay of small_session"
-    assert info["replay_of"] == str(small.resolve())
-    assert (info["recordings_planned"], info["recordings_analysed"], info["pool_size"]) == (3, 3, 3)
+    assert info["source"] == "camera" and info["camera"] == "Folder camera (small_session)"
+    assert (info["recordings_planned"], info["recordings_analysed"], info["frames_saved"]) == (3, 3, True)
     assert info["ended_at"] >= info["started_at"] and info["error"] is None
     assert (roots["results_root"] / "run 1" / "results.xlsx").is_file()
 
     [listed] = pipeline.list_recordings(**roots)
-    assert listed["run"]["pool_size_text"] == "3 frames" and not listed["recording_now"]
+    assert listed["run"]["camera"] == info["camera"] and not listed["recording_now"]
     assert listed["results"]["file"] == "results.xlsx"
-    # the replay's settings are kept with its recordings, as the Discobox app keeps them
+    # the run's settings are kept with its recordings, as the Discobox app keeps them
     assert listed["settings"]["recording_timeout"] == 5
 
 

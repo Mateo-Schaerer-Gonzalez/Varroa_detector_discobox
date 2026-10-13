@@ -93,17 +93,13 @@ class DataLoader:
         """Number of frames in one recording."""
         return len(list((self.data_dir / name).glob("*.bmp")))
 
-    def load_recording_region(self, name, x1, y1, x2, y2, step=1, first=0, count=None):
+    def load_recording_region(self, name, x1, y1, x2, y2, step=1):
         """Every `step`-th frame of one recording, cropped to (x1, y1)-(x2, y2).
-        With `count`, only the `count` frames from index `first` on (one pool).
 
         Crops each frame as soon as it is read, so looking at one plate of one
         recording never holds a whole recording of full frames in memory.
         """
-        image_paths = sorted((self.data_dir / name).glob("*.bmp"))
-        if count is not None:
-            image_paths = image_paths[first:first + count]
-        image_paths = image_paths[::step]
+        image_paths = sorted((self.data_dir / name).glob("*.bmp"))[::step]
         if not image_paths:
             raise FileNotFoundError(f"No .bmp images found in {self.data_dir / name}")
         flag = cv2.IMREAD_GRAYSCALE if self.grayscale else cv2.IMREAD_COLOR

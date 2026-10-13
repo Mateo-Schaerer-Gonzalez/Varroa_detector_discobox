@@ -5,8 +5,7 @@ import numpy as np
 import pytest
 
 from classes.data_loader import DataLoader
-from classes.frame_source import Frame, FolderSource, Recording, RecordingEnd, as_analysis_image, frame_times
-from classes.pooling import check_pool_size, pools
+from classes.frame_source import Frame, FolderSource, Recording, RecordingEnd, as_analysis_image, frame_times, recordings
 
 START = datetime(2025, 9, 4, 9, 28, 17)
 
@@ -27,45 +26,26 @@ def stream(*lengths):
 
 
 def shape(result):
-    return [(pool.recording.name[11:19], pool.first_index, len(pool.frames)) for pool in result]
+    return [(frames[0].recording.name[11:19], [frame.index for frame in frames]) for frames in result]
 
 
-def test_by_default_a_pool_is_a_whole_recording():
-    assert shape(pools(stream(30, 28, 31))) == [("09-28-17", 0, 30), ("09-33-17", 0, 28), ("09-38-17", 0, 31)]
-
-
-def test_a_pool_size_splits_each_recording_and_leaves_its_rest_unscored():
-    assert shape(pools(stream(25, 10), pool_size=10)) == [
-        ("09-28-17", 0, 10), ("09-28-17", 10, 10),  # frames 20-24 are left over
-        ("09-33-17", 0, 10),
-    ]
-
-
-def test_a_pool_never_spans_two_recordings():
-    for pool in pools(stream(7, 7, 7), pool_size=4):
-        assert len({frame.recording for frame in pool.frames}) == 1
+def test_the_frames_are_grouped_by_recording_every_one_of_them():
+    assert shape(recordings(stream(30, 28, 31))) == [
+        ("09-28-17", list(range(30))), ("09-33-17", list(range(28))), ("09-38-17", list(range(31)))]
 
 
 def test_a_stream_that_stops_without_an_end_ends_its_recording():
-    events = stream(5)[:-1]
-    assert shape(pools(events)) == [("09-28-17", 0, 5)]
-    assert shape(pools(events, pool_size=2)) == [("09-28-17", 0, 2), ("09-28-17", 2, 2)]
+    assert shape(recordings(stream(5)[:-1])) == [("09-28-17", list(range(5)))]
 
 
 def test_frames_of_a_new_recording_before_the_end_of_the_last_are_refused():
     events = stream(3, 3)
     del events[3]  # the first recording's end
     with pytest.raises(ValueError):
-        list(pools(events))
+        list(recordings(events))
 
 
-@pytest.mark.parametrize("bad", [0, 1, -3, 2.5, "10", True])
-def test_bad_pool_sizes_are_refused(bad):
-    with pytest.raises((ValueError, TypeError)):
-        check_pool_size(bad)
-
-
-def test_pool_times_are_those_folder_mode_gives_each_frame():
+def test_frame_times_are_those_folder_mode_gives_each_frame():
     events = [event for event in stream(4, 4) if isinstance(event, Frame)]
     expected = [0, 1 / 30, 2 / 30, 3 / 30, 300, 300 + 1 / 30, 300 + 2 / 30, 300 + 3 / 30]
     assert frame_times(events, START) == expected
@@ -102,20 +82,17 @@ def test_the_folder_source_needs_recordings(tmp_path):
         list(FolderSource(tmp_path).events())
 
 
-def test_with_a_pool_size_a_clip_plays_its_pool(tmp_path):
+def test_a_clip_plays_every_frame_of_its_recording(tmp_path):
     import pipeline
 
     root = write_session(tmp_path / "session", [5, 4])
     (tmp_path / "out").mkdir()  # a session's output folder, as the app makes it
-    # pools of 2: frames 0-1 and 2-3 of the first recording (4 left over), 0-1 and 2-3 of the second
-    clip = pipeline.analysis_clip(root, tmp_path / "out", 3, pool_size=2)
-    assert len(clip["frames"]) == 2 and "_p2_" in clip["frames"][0]
+    clip = pipeline.analysis_clip(root, tmp_path / "out", 1)
+    assert len(clip["frames"]) == 4 and clip["frames"][0].startswith("clips/clip_r1_plate_")
     frames = [cv2.imread(str(tmp_path / "out" / name), cv2.IMREAD_GRAYSCALE) for name in clip["frames"]]
-    assert [int(np.median(frame)) for frame in frames] == [12, 13]  # recording 1, frames 2 and 3
+    assert [int(np.median(frame)) for frame in frames] == [10, 11, 12, 13]
     with pytest.raises(ValueError):
-        pipeline.analysis_clip(root, tmp_path / "out", 4, pool_size=2)
-    # without a pool size, as always: one clip per recording, named as before, in the clips folder
-    assert pipeline.analysis_clip(root, tmp_path / "out", 1)["frames"][0].startswith("clips/clip_r1_plate_")
+        pipeline.analysis_clip(root, tmp_path / "out", 2)
 
 
 def test_the_folder_source_can_decode_the_first_frame_alone(tmp_path):
