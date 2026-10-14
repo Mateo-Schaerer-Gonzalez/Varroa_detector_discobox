@@ -4,7 +4,7 @@ import numpy as np
 from classes.analyzer import Analyzer
 from classes.app_config import get_default_config
 from classes.mite import Mite
-from classes.plate_stabilizer import PlateStabilizer
+from classes.plate_stabilizer import STRAY_LIMIT, PlateStabilizer
 
 SIZE = 120
 # Dark blobs on a light plate, like mites; (x1, y1, x2, y2) boxes around them.
@@ -51,6 +51,41 @@ class TestShifts:
 
     def test_no_mites_no_shift(self):
         assert PlateStabilizer().shifts(shaken([(0, 0)] * 3), []).shape == (3, 2)
+
+
+def parted(offsets, apart):
+    """`shaken(offsets)`, and the right half of the plate moved by `apart` more
+    in every frame after the first, as when a zone moves on its own."""
+    frames = shaken(offsets)
+    half = shaken([(dx + apart[0], dy + apart[1]) if i else (dx, dy) for i, (dx, dy) in enumerate(offsets)])
+    frames[:, :, SIZE // 2:] = half[:, :, SIZE // 2:]
+    return frames
+
+
+class TestFollow:
+    def test_each_mite_follows_its_own_part_of_the_plate(self):
+        offsets = np.array([(0, 0), (0.2, 0), (0, 0.2), (0.1, 0.1)])
+        frames = parted(offsets, (0.25, -0.2))
+        boxes = BOXES[:4]  # the fifth lies across the seam
+        for box, one in zip(boxes, PlateStabilizer().follow(frames, boxes)):
+            apart = np.array([0.25, -0.2]) if box[0] >= SIZE // 2 else np.zeros(2)
+            assert one.own
+            assert np.abs(one.shifts - (offsets + np.outer([0, 1, 1, 1], apart))).max() < 0.08
+
+    def test_a_shift_that_strays_too_far_falls_back_on_the_plate(self):
+        frames = shaken([(0, 0)] * 4)
+        x1, y1, x2, y2 = BOXES[0]
+        for i in range(1, 4):  # something walks through the first mite's patch, 1 px per frame
+            frames[i, y1 - 8:y2 + 8, x1 - 8:x2 + 8] = np.roll(frames[0, y1 - 8:y2 + 8, x1 - 8:x2 + 8], i, axis=1)
+        followed = PlateStabilizer().follow(frames, BOXES)
+        assert not followed[0].own and followed[0].stray > STRAY_LIMIT
+        assert np.abs(followed[0].shifts).max() < 0.05  # the plate's, which stood still
+        assert all(one.own and one.stray < 0.05 for one in followed[1:])
+
+    def test_shake_is_how_far_the_mite_moved_from_the_first_frame(self):
+        followed = PlateStabilizer().follow(shaken(OFFSETS), BOXES)
+        largest = max(np.hypot(dx, dy) for dx, dy in OFFSETS)
+        assert all(abs(one.shake - largest) < 0.1 for one in followed)
 
 
 class TestCut:

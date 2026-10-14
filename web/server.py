@@ -457,6 +457,23 @@ def analysis_clip(session_id: str, recording: int, zone_id: Optional[int] = None
         raise HTTPException(status_code=400, detail=str(error))
 
 
+@app.get("/api/session/{session_id}/activity-clip/{kind}/{mite}")
+def activity_clip(session_id: str, kind: str, mite: str):
+    """One clip of a fly-off or a rotator, the recordings it spans played one
+    after the other (pipeline.activity_clip). Cached on first request."""
+    session = get_session(session_id)
+    if session.get("live") and not session.get("save_frames"):
+        raise HTTPException(status_code=400, detail="This test run does not save its recordings, so there is no clip to play.")
+    results = session_results(session_id)
+    if results is None or "activity" not in results:
+        raise HTTPException(status_code=400, detail="No results yet.")
+    try:
+        return pipeline.activity_clip(session["data_dir"], session["out_dir"], results["activity"], results["times"],
+                                      kind, mite)
+    except (FileNotFoundError, ValueError) as error:
+        raise HTTPException(status_code=400, detail=str(error))
+
+
 @app.get("/api/session/{session_id}/outline/{recording}/{zone_id}")
 def analysis_outlines(session_id: str, recording: int, zone_id: int):
     """What the score sees of each mite of one zone in one recording: the dots and

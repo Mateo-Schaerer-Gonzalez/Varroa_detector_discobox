@@ -44,9 +44,19 @@ class ResultsPage {
     return mite.censored[recording] ? "gone" : mite.moving[recording] ? "moving" : "still";
   }
 
+  // Whether the mite's recording is set aside because another mite walked by or
+  // its patch was pulled along (results.disturbed, classes/unusual_activity.py).
+  setAside(mite, recording) {
+    return (this.results.disturbed?.[mite.id] || []).includes(recording);
+  }
+
   // The mite's call in a recording, marked when it is the user's, not the
-  // detector's; "gone" where the user marked the mite gone.
+  // detector's; "gone" where the user marked the mite gone, "set aside" where
+  // something disturbed it (see the unusual activity on the overview).
   callBadge(mite, recording) {
+    if (this.setAside(mite, recording)) {
+      return `<span class="status gone" title="Another mite walked by, or its patch was pulled along: censored, it counts neither as moving nor as still. Set the call by hand to count it."><span aria-hidden="true">–</span> set aside</span>`;
+    }
     if (mite.censored[recording]) {
       const since = mite.gone_from != null && recording >= mite.gone_from ? ` from ${minutes(this.results.times[mite.gone_from])} on` : "";
       return `<span class="status gone" title="Marked gone by hand${since}: censored, it counts neither as moving nor as still"><span aria-hidden="true">–</span> gone</span>`;

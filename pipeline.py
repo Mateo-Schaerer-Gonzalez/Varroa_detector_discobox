@@ -125,6 +125,7 @@ from classes.score_normalizer import ScoreNormalizer
 from classes.survival import SurvivalAnalysis, SurvivalReport
 from classes.truth_draft import TruthDraft
 from classes.truth_overlap import TruthOverlap
+from classes.unusual_activity import UnusualActivity
 from classes.upload_plan import UploadPlan
 from classes.workers import one_ahead, side_by_side
 from classes.zone_layout import ZoneLayout
@@ -494,22 +495,42 @@ def _detect_and_score(data_dir, coords_file, labels=None, reject=True, score=Tru
             kept = KeptScores(kept_in)
             key = KeptScores.key(analysis.mites, analysis.analyzer.config.mite.stabilize_plate,
                                  source.frame_files(), analysis.first_frame)
-        if kept is None or not kept.give(key, analysis.mites, len(analysis.recording_times)):
+        if kept is not None and kept.give(key, analysis.mites, len(analysis.recording_times)):
+            analysis.blobs = kept.blobs
+        else:
             analysis.score = True
             analysis.recording_times = []
             analysis.run(source.events())
             if kept is not None:
-                kept.keep(key, analysis.mites)
+                kept.keep(key, analysis.mites, analysis.blobs)
     _arrange(analysis, data_dir, labels, reject, library_dir)
     return _run_view(analysis)
 
 
 def _arrange(analysis, data_dir, labels, reject, library_dir):
     """Name the zones by `labels` and, with `reject`, leave out the detections
-    marked "not a mite" in the ground truth saved for `data_dir`. Folder and live
-    runs both go through here, so the same marks give the same results."""
+    marked "not a mite" in the ground truth saved for `data_dir`, and the mites
+    that flew off (classes/unusual_activity.py: their activity is worked out
+    here, on every detection). Folder and live runs both go through here, so the
+    same marks give the same results."""
     truth = _folder_truth(data_dir, library_dir) if reject else []
-    analysis.arrange(labels, lambda zone_manager: _rejected_detections(zone_manager, truth))
+
+    def left_out(zone_manager):
+        rejected = _rejected_detections(zone_manager, truth)
+        analysis.activity = UnusualActivity.of(analysis, rejected, _activity_reach(analysis.analyzer.config.mite))
+        if not reject:
+            return rejected
+        flown = analysis.activity.fly_off_ids
+        return [*rejected, *(mite for mite in analysis.mites if mite.text in flown and mite not in rejected)]
+
+    analysis.arrange(labels, left_out)
+
+
+def _activity_reach(mite):
+    """Pixels from a mite's centre to the edge of its scored patch: a mite walking
+    closer disturbs its recording (classes/unusual_activity.py)."""
+    params = mite.params_for(mite.metric)
+    return float(mite.radius) + Analyzer.roi_padding(mite.metric, params)
 
 
 def _run_view(analysis):
@@ -519,6 +540,7 @@ def _run_view(analysis):
         first_frame=analysis.first_frame,
         masked=analysis.masked,
         n_recordings=len(analysis.recording_times),
+        activity=analysis.activity,
         # One timestamp per recording, in minutes from the start of the session.
         burst_minutes=np.array(analysis.recording_times) / 60,
     )
@@ -535,7 +557,7 @@ def _write_preview(frame, out_dir):
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
     partial = out_dir / f"partial_{PREVIEW_NAME}"
-    cv2.imwrite(str(partial), frame, [cv2.IMWRITE_JPEG_QUALITY, 85])
+    _write_image(partial, frame, [cv2.IMWRITE_JPEG_QUALITY, 85])
     # Windows refuses to replace a file while it is being sent; that takes moments.
     for attempt in range(20):
         try:
@@ -741,6 +763,8 @@ def _mite_table(run, corrections=None, normalizer=None):
     changes = {}
     if corrections is not None:
         mite_data, changes = corrections.apply(mite_data)
+    if getattr(run, "activity", None) is not None:
+        mite_data, changes = run.activity.censor(mite_data, changes)
     if normalizer is not None:
         mite_data = normalizer.apply(mite_data, run.analyzer.config.mite.motion_threshold)
     return mite_data, changes
@@ -790,6 +814,8 @@ def _results(run, out_dir, labels, write_files=True, corrections=None, normalize
         }
     )
     results.update(changes)
+    if getattr(run, "activity", None) is not None:
+        results["activity"] = run.activity.describe()
     if normalizer is not None:
         results["normalization"] = normalizer.describe()
     band = _review_band(run.analyzer.config.mite.metric)
@@ -958,7 +984,7 @@ def calibration_clip(out_dir, recording, zone_id, library_dir=CALIBRATION_LIBRAR
         raise ValueError(f"No zone {zone_id} in this session.")
 
     # One session can switch between datasets, so clips are named after theirs.
-    name = f"clip_{dataset_id(stored['data_dir'])}_r{recording}_z{zone_id}"
+    name = f"clip_{_clip_key(dataset_id(stored['data_dir']))}_r{recording}_z{zone_id}"
     manifest = Path(out_dir) / CLIPS_DIRNAME / f"{name}.json"
     if manifest.is_file():
         return json.loads(manifest.read_text(encoding="utf-8"))
@@ -972,6 +998,22 @@ def calibration_clip(out_dir, recording, zone_id, library_dir=CALIBRATION_LIBRAR
     source = stored["recordings"][recording]
     box = (zone["x1"] - CLIP_MARGIN, zone["y1"] - CLIP_MARGIN, zone["x2"] + CLIP_MARGIN, zone["y2"] + CLIP_MARGIN)
     return _write_clip(DataLoader(recordings_dir, grayscale=False), source["name"], source["fps"], box, out_dir, name)
+
+
+def _clip_key(dataset):
+    """A short name for `dataset` in its clips' file names: the clips sit in a
+    session folder already named after it, and Windows (without long paths)
+    refuses a path of more than 259 characters, which a long dataset name
+    repeated in both reached."""
+    return hashlib.sha1(str(dataset).encode("utf-8")).hexdigest()[:10]
+
+
+def _write_image(path, image, params=()):
+    """cv2.imwrite(), which only returns False where it cannot write (a path too
+    long for Windows, a folder gone), made to say so."""
+    if not cv2.imwrite(str(path), image, list(params)):
+        raise OSError(f"Could not write {path} ({len(str(path))} characters"
+                      f"{', longer than Windows allows' if len(str(path)) > 259 else ''}).")
 
 
 MITE_CLIP_REACH = 40            # pixels from a mite's centre to the edge of its own clip
@@ -1011,9 +1053,9 @@ def _mite_clip(recordings_dir, source, mite, out_dir, name):
     clips_dir.mkdir(parents=True, exist_ok=True)
     names = [f"{CLIPS_DIRNAME}/{name}_{index:02d}.png" for index in range(len(frames))]
     for frame, frame_name in zip(frames, names):
-        cv2.imwrite(str(Path(out_dir) / frame_name), frame)
+        _write_image(Path(out_dir) / frame_name, frame)
     variation = f"{CLIPS_DIRNAME}/{name}_variation.png"
-    cv2.imwrite(str(Path(out_dir) / variation), _variation_picture(frames))
+    _write_image(Path(out_dir) / variation, _variation_picture(frames))
     clip = {
         "frames": names,
         "variation": variation,
@@ -1043,7 +1085,7 @@ def calibration_mite_clip(out_dir, recording, mite_id, library_dir=CALIBRATION_L
             "so there is no clip to play. The ground truth can still be edited."
         )
     return _mite_clip(recordings_dir, stored["recordings"][recording], mite, out_dir,
-                      f"mite_{dataset_id(stored['data_dir'])}_r{recording}")
+                      f"mite_{_clip_key(dataset_id(stored['data_dir']))}_r{recording}")
 
 
 def _write_clip(loader, recording_name, fps, box, out_dir, name, max_width=None):
@@ -1072,7 +1114,7 @@ def _write_clip(loader, recording_name, fps, box, out_dir, name, max_width=None)
         if scale < 1:
             frame = cv2.resize(frame, (round(width * scale), round(height * scale)), interpolation=cv2.INTER_AREA)
         names.append(f"{CLIPS_DIRNAME}/{name}_{index:02d}.jpg")
-        cv2.imwrite(str(Path(out_dir) / names[-1]), frame, [cv2.IMWRITE_JPEG_QUALITY, 85])
+        _write_image(Path(out_dir) / names[-1], frame, [cv2.IMWRITE_JPEG_QUALITY, 85])
     clip = {
         "frames": names,
         "x": x1,
@@ -1099,7 +1141,7 @@ def dataset_clip(out_dir, dataset, recording, library_dir=CALIBRATION_LIBRARY):
     _check_recordings(saved, recordings_dir, "there is no clip to play")
     source = saved["recordings"][recording]
     return _write_clip(DataLoader(recordings_dir, grayscale=False), source["name"], source["fps"], (0, 0, 10**6, 10**6),
-                       out_dir, f"clip_{dataset}_r{recording}_plate", PLATE_CLIP_WIDTH)
+                       out_dir, f"clip_{_clip_key(dataset)}_r{recording}_plate", PLATE_CLIP_WIDTH)
 
 
 def _recording_name(loader, recording):
@@ -1159,6 +1201,78 @@ def analysis_clip(data_dir, out_dir, recording, zone_id=None, coords_file=None):
         box = (zone.x1 - CLIP_MARGIN, zone.y1 - CLIP_MARGIN, zone.x2 + CLIP_MARGIN, zone.y2 + CLIP_MARGIN)
         name, max_width = f"clip_r{recording}_z{zone_id}", None
     return _write_clip(loader, source, loader.get_fps(source), box, out_dir, name, max_width)
+
+
+ACTIVITY_CLIP_FRAMES = 480      # frames in a clip of unusual activity at most; each recording is thinned to fit
+ACTIVITY_CLIP_RECORDINGS = 60   # recordings in one at most
+ACTIVITY_CLIP_REACH = 40        # pixels round the mite, or its track, in the clip
+ACTIVITY_CLIP_WIDTH = 720       # a wider clip is scaled down to this
+ACTIVITY_CLIP_MIN_WIDTH = 320   # a narrower one is scaled up, a whole number of times
+ROTATOR_CLIP_SPAN = 6           # recordings before and after a rotator first turned past the limit
+
+
+def activity_clip(data_dir, out_dir, activity, times, kind, mite_id):
+    """One clip of a fly-off or a rotator (results["activity"], see
+    classes/unusual_activity.py), every recording it spans played one after
+    the other, each frame marked with its recording's time (`times`, minutes):
+    a fly-off from the recording before it left to the one after it stopped
+    walking, round its whole track; a rotator ROTATOR_CLIP_SPAN recordings
+    either side of when it first turned past the limit, round the mite. Like
+    analysis_clip(), written to `out_dir` once and reused after."""
+    events = activity.get("fly_offs" if kind == "fly_off" else "rotators", []) if kind in ("fly_off", "rotator") else []
+    event = next((e for e in events if e["id"] == str(mite_id)), None)
+    if event is None:
+        raise ValueError(f"No {kind.replace('_', '-')} {mite_id} in these results.")
+    n = len(times)
+    if kind == "fly_off":
+        first, last = max(0, event["from"] - 1), min(n - 1, event.get("walked_to", event["to"]) + 1)
+        points = [(x, y) for r, x, y in event["track"] if first <= r <= last] + [(event["x"], event["y"])]
+    else:
+        first, last = max(0, event["from"] - ROTATOR_CLIP_SPAN), min(n - 1, event["from"] + ROTATOR_CLIP_SPAN)
+        points = [(event["x"], event["y"])]
+    last = min(last, first + ACTIVITY_CLIP_RECORDINGS - 1)
+    xs, ys = [p[0] for p in points], [p[1] for p in points]
+    x1, y1 = max(0, int(min(xs)) - ACTIVITY_CLIP_REACH), max(0, int(min(ys)) - ACTIVITY_CLIP_REACH)
+    x2, y2 = int(max(xs)) + ACTIVITY_CLIP_REACH, int(max(ys)) + ACTIVITY_CLIP_REACH
+    name = f"activity_{kind}_{re.sub(r'[^0-9A-Za-z]+', '-', str(mite_id))}_r{first}-{last}_x{x1}_y{y1}"
+    clips_dir = Path(out_dir) / CLIPS_DIRNAME
+    manifest = clips_dir / f"{name}.json"
+    if manifest.is_file():
+        return json.loads(manifest.read_text(encoding="utf-8"))
+
+    loader = DataLoader(data_dir, grayscale=False)
+    recordings = [_recording_name(loader, recording) for recording in range(first, last + 1)]
+    n_frames = sum(loader.count_frames(recording) for recording in recordings)
+    step = max(1, int(np.ceil(n_frames / ACTIVITY_CLIP_FRAMES)))
+    clips_dir.mkdir(parents=True, exist_ok=True)
+    names, width, height, fps = [], None, None, None
+    for recording, source in zip(range(first, last + 1), recordings):
+        fps = fps or loader.get_fps(source)
+        for frame in loader.load_recording_region(source, x1, y1, x2, y2, step=step):
+            height, width = frame.shape[:2]
+            scale = min(1.0, ACTIVITY_CLIP_WIDTH / width)
+            if scale < 1:
+                frame = cv2.resize(frame, (round(width * scale), round(height * scale)), interpolation=cv2.INTER_AREA)
+            elif width < ACTIVITY_CLIP_MIN_WIDTH:  # a mite's crop: pixels made larger, so the time fits beside it
+                grow = int(np.ceil(ACTIVITY_CLIP_MIN_WIDTH / width))
+                frame = cv2.resize(frame, (width * grow, height * grow), interpolation=cv2.INTER_NEAREST)
+            frame = np.ascontiguousarray(frame)
+            label = f"{times[recording]:.1f} min"
+            for colour, thickness in (((0, 0, 0), 3), ((255, 255, 255), 1)):
+                cv2.putText(frame, label, (6, frame.shape[0] - 8), cv2.FONT_HERSHEY_SIMPLEX, 0.5, colour, thickness, cv2.LINE_AA)
+            names.append(f"{CLIPS_DIRNAME}/{name}_{len(names):03d}.jpg")
+            _write_image(Path(out_dir) / names[-1], frame, [cv2.IMWRITE_JPEG_QUALITY, 85])
+    clip = {
+        "frames": names,
+        "x": x1,
+        "y": y1,
+        "width": int(width),
+        "height": int(height),
+        "interval_ms": int(round(1000 * step / (fps or 10))),
+        "recordings": [first, last],
+    }
+    manifest.write_text(json.dumps(clip), encoding="utf-8")
+    return clip
 
 
 def save_ground_truth(out_dir, truth, library_dir=CALIBRATION_LIBRARY):
@@ -1650,13 +1764,14 @@ def _measure_mites(dataset, recordings_dir, measure, pad=0, stabilize=False):
              for mite_id, (x1, y1, x2, y2) in mite_boxes(dataset["mites"]).items()}
 
     def measured(frames):
-        shifts = PlateStabilizer().shifts(frames, list(local.values())) if stabilize else None
+        # each mite's patch follows its own shift, as an analysis run cuts it
+        followed = dict(zip(local, PlateStabilizer().follow(frames, list(local.values())))) if stabilize else None
 
         def one(mite_id):
             x1, y1, x2, y2 = boxes[mite_id]
-            if shifts is None:
+            if followed is None:
                 return measure(frames[:, max(0, y1) - y0:y2 - y0, max(0, x1) - x0:x2 - x0])
-            return measure(PlateStabilizer.cut(frames, local[mite_id], pad, shifts))
+            return measure(PlateStabilizer.cut(frames, local[mite_id], pad, followed[mite_id].shifts))
 
         return dict(zip(boxes, side_by_side(one, boxes)))
 
