@@ -88,11 +88,13 @@ class Analyzer:
             if followed is None:
                 mite_roi = np.stack([mite.get_ROI(frame, pad) for frame in frames])
                 shifts, activity = np.zeros((len(frames), 2)), {"stray": None, "shake": None}
+                activity.update(MiteLook.observe(frames, box, shifts, mite))
             else:
                 shifts, strays, shakes = followed
                 mite_roi = PlateStabilizer.cut(frames, box, pad, shifts)
                 activity = {"stray": round(strays[index], 4), "shake": round(shakes[index], 4)}
-            activity.update(MiteLook.observe(frames, box, shifts, mite))
+                # its look from the patch just cut: warping every frame again costs as much as scoring it
+                activity.update(MiteLook.observe(frames, box, shifts, mite, cut=mite_roi, pad=pad))
             return self._motion_score(mite_roi, mite.metric, mite.metric_params), float(mite_roi.mean()), activity
 
         for mite, (motion, brightness, activity) in zip(mites, side_by_side(score, range(len(mites)))):

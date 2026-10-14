@@ -19,12 +19,17 @@ class MiteLook:
     image in the first recording, and the orientation of its body."""
 
     @staticmethod
-    def observe(frames, box, shifts, mite):
+    def observe(frames, box, shifts, mite, cut=None, pad=0):
         """{dx, dy, angle, elongation, contrast} of `mite` in this recording: its patch
         (`box` grown by MARGIN) cut from `frames` moved back by `shifts`,
         averaged over the frames, against the first one it was observed in,
-        which it keeps (mite.reference_look)."""
-        image = PlateStabilizer.cut(frames, box, MARGIN, shifts)
+        which it keeps (mite.reference_look). `cut`: the patch already cut that
+        way with a `pad` of MARGIN or more, e.g. the one scored: the image is
+        taken out of it, the very same pixels, instead of cut again."""
+        if cut is not None and pad >= MARGIN:
+            image = MiteLook._inner(cut, frames[0].shape, box, pad)
+        else:
+            image = PlateStabilizer.cut(frames, box, MARGIN, shifts)
         image = np.ascontiguousarray(image.mean(axis=(0, 3)) if image.ndim == 4 else image.mean(axis=0), dtype=np.float32)
         reference = getattr(mite, "reference_look", None)
         if reference is None or reference.shape != image.shape:
@@ -32,6 +37,17 @@ class MiteLook:
         dx, dy = PlateStabilizer._shift(reference, image) if reference is not image else (0.0, 0.0)
         angle, elongation = MiteLook.body(image)
         return {"dx": dx, "dy": dy, "angle": angle, "elongation": elongation, "contrast": MiteLook.contrast(image)}
+
+    @staticmethod
+    def _inner(cut, shape, box, pad):
+        """The part of `cut`, PlateStabilizer.cut() of `box` grown by `pad` in
+        frames of `shape`, that is `box` grown by MARGIN, cut off at the image's
+        edge as cut() cuts it."""
+        height, width = shape[:2]
+        x0, y0 = max(0, box[0] - pad), max(0, box[1] - pad)
+        x1, y1 = max(0, box[0] - MARGIN), max(0, box[1] - MARGIN)
+        x2, y2 = min(width, box[2] + MARGIN), min(height, box[3] + MARGIN)
+        return cut[:, y1 - y0:y2 - y0, x1 - x0:x2 - x0]
 
     @staticmethod
     def contrast(image):
