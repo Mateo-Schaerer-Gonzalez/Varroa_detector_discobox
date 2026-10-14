@@ -52,7 +52,7 @@ class TruthPage {
     $("truth-title").textContent = `Mite ${mite.id} · ${cal.recordingName(recording)}`;
     const source = cal.data.recordings?.[recording];
     $("truth-meta").innerHTML = `mite ${index + 1} of ${mites.length} · zone ${mite.zone_id}${zone?.label ? ` (${esc(zone.label)})` : ""}
-    · <span title="${esc(cal.data.data_dir)}">${esc(folderOf(cal.data.data_dir))}</span>${source ? ` / <code>${esc(source)}</code>` : ""}`;
+    · <span title="${esc(cal.data.data_dir)}">${esc(folderOf(cal.data.data_dir))}</span>${source ? ` / <code>${esc(source)}</code>` : ""}${cal.liveNote()}`;
     $("truth-pager").innerHTML = Markup.pager(mites, index, (m) => cal.truthHref(m.id), (m) => `Mite ${m.id}`);
 
     this.playClip(mite, recording);

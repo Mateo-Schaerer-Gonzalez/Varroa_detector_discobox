@@ -473,7 +473,7 @@ def detection_marks(data_dir, mites, library_dir=CALIBRATION_LIBRARY):
 
 
 def _detect_and_score(data_dir, coords_file, labels=None, reject=True, score=True, library_dir=CALIBRATION_LIBRARY,
-                      kept_in=None):
+                      kept_in=None, names=None):
     """Find the mites and, with `score`, decode every recording and score their motion.
 
     The expensive part shared by an analysis run and a calibration: the analysis
@@ -482,8 +482,9 @@ def _detect_and_score(data_dir, coords_file, labels=None, reject=True, score=Tru
     are dropped, so they appear nowhere in the results. With `kept_in`, a folder,
     the scores are kept there, and read back instead of worked out when these
     very frames were scored there before, by this code (classes/kept_scores.py).
+    With `names`, only the recordings of those names (FolderSource).
     """
-    source = FolderSource(data_dir)
+    source = FolderSource(data_dir, names)
     analysis = MotionAnalysis(_build_zone_manager(_coords_file(data_dir, coords_file)), score=False)
     if not score or kept_in is not None:
         # The mites and the recordings, from the first frame and the names of
@@ -933,9 +934,16 @@ def open_calibration(data_dir, out_dir, coords_file=None, library_dir=CALIBRATIO
     data_dir = Path(data_dir)
     if not data_dir.is_dir():
         raise FileNotFoundError(f"Recording folder not found: {data_dir}")
+    stored = _calibration_session(data_dir, coords_file, out_dir)
+    return _opened_calibration(stored, out_dir, library_dir)
 
+
+def _calibration_session(data_dir, coords_file, out_dir, names=None):
+    """Detect the mites of a calibration session, on the first frame, write its
+    preview to `out_dir`, and keep there what it is (calibration_session.json).
+    With `names`, only the recordings of those names make the session."""
     labels = load_labels(data_dir)
-    run = _detect_and_score(data_dir, coords_file, labels, reject=False, score=False)
+    run = _detect_and_score(data_dir, coords_file, labels, reject=False, score=False, names=names)
     _write_preview(run.first_frame, out_dir)
 
     mites = []
@@ -954,19 +962,40 @@ def open_calibration(data_dir, out_dir, coords_file=None, library_dir=CALIBRATIO
         raise ValueError("No mites were detected, so there is nothing to calibrate.")
     mites.sort(key=lambda mite: Mite.id_order(mite["id"]))
 
-    loader = DataLoader(data_dir, grayscale=False)
     stored = {
         # absolute, so the library can tell later whether the recordings are still there
-        "data_dir": str(data_dir.resolve()),
-        "times": [round(float(minute), 2) for minute in run.burst_minutes],
-        "recordings": [{"name": d.name, "fps": loader.get_fps(d.name)} for d in loader.recording_dirs],
+        "data_dir": str(Path(data_dir).resolve()),
+        **_calibration_recordings(data_dir, names),
         "image": _image_size(run.first_frame),
         "zones": _describe_zones(run.zone_manager, labels),
         "mites": mites,
     }
-    (Path(out_dir) / CALIBRATION_SESSION_NAME).write_text(json.dumps(stored), encoding="utf-8")
+    _write_calibration_session(out_dir, stored)
+    return stored
 
-    return _opened_calibration(stored, out_dir, library_dir)
+
+def _calibration_recordings(data_dir, names=None):
+    """{times, recordings} of a calibration session: each recording's time, in
+    minutes from the start of the first, as the analysis times it
+    (MotionAnalysis.recording_times), and its name and frame rate. Read from
+    the names alone: nothing is decoded."""
+    recordings = FolderSource(data_dir, names).recordings()
+    if not recordings:
+        raise FileNotFoundError(f"No recordings found in {data_dir}")
+    start = recordings[0].start
+    return {
+        "times": [round((recording.start - start).total_seconds() / 60, 2) for recording in recordings],
+        "recordings": [{"name": recording.name, "fps": recording.fps} for recording in recordings],
+    }
+
+
+def _write_calibration_session(out_dir, stored):
+    """Written whole before it takes the name: a live run's session grows while
+    its pages read it."""
+    path = Path(out_dir) / CALIBRATION_SESSION_NAME
+    partial = path.with_name(f"partial_{path.name}")
+    partial.write_text(json.dumps(stored), encoding="utf-8")
+    partial.replace(path)
 
 
 def calibration_clip(out_dir, recording, zone_id, library_dir=CALIBRATION_LIBRARY):
@@ -1578,11 +1607,14 @@ def _recordings_dir(data_dir, library_dir):
 def _copy_recordings(data_dir, target):
     """Bring the library's copy of a recording folder up to date: its own files
     (settings, labels, ground truth) and every recording in it. A file already
-    copied, with the same size and time, is skipped, so saving again is quick."""
+    copied, with the same size and time, is skipped, so saving again is quick.
+    A file still being written (*.part, by a live run's Recorder, say) is not
+    one yet: it comes with the next save."""
     data_dir = Path(data_dir)
     files = [path for path in data_dir.iterdir() if path.is_file()]
     for recording in DataLoader(data_dir).recording_dirs:
         files += [path for path in recording.rglob("*") if path.is_file()]
+    files = [path for path in files if path.suffix != ".part"]
     for source in files:
         copy = target / source.relative_to(data_dir)
         stat = source.stat()
@@ -2906,6 +2938,44 @@ def live_correct_call(live_id, mite_id, recording, state=None, checked=False):
     if run.session.state == "finished":
         _files_later.later(_draft_key(run.out_dir), lambda: _write_live_files(run))
     return live_results(live_id)
+
+
+def open_live_calibration(live_id, out_dir):
+    """A calibration session on a live run's recordings, to enter their ground
+    truth and poke test while the run goes on: open_calibration() of the run's
+    folder, but of the recordings analysed so far alone, the one being captured
+    left out. grow_live_calibration() adds the recordings that come after. The
+    ground truth is judged on the recordings' clips and kept with them, so the
+    run must save its recordings."""
+    run = _get_live(live_id)
+    if not run.save_frames:
+        raise ValueError("This test run does not save its recordings, so there is no clip to enter a ground truth "
+                         "on and no folder to keep it in.")
+    names = list(run.session.recordings)
+    if not names:
+        raise ValueError("The ground truth and the poke test can be entered once the first recording is analysed.")
+    stored = _calibration_session(run.run_dir, run.coords_file, out_dir, names)
+    return _opened_calibration(stored, out_dir, run.library_dir)
+
+
+def grow_live_calibration(out_dir, live_id):
+    """Bring a calibration session made by open_live_calibration() up to the
+    recordings its live run has analysed since: they come unlabelled, and the
+    ground truth's changes not saved yet stay (TruthDraft.grow()). Returns the
+    session as open_live_calibration() does. A session showing another dataset
+    by now, e.g. one a pooled report opened, is left as it is."""
+    run = _get_live(live_id)
+    library_dir = run.library_dir
+    stored = _read_calibration_session(out_dir)
+    names = list(run.session.recordings)
+    if Path(stored["data_dir"]) == run.run_dir.resolve() and len(names) > len(stored["recordings"]):
+        stored.update(_calibration_recordings(run.run_dir, names))
+        _write_calibration_session(out_dir, stored)
+        draft = _draft(out_dir, library_dir)
+        with _drafts_lock:
+            draft.grow(len(stored["times"]))
+    return {**_calibration_view(stored, _saved_truth(stored, library_dir), library_dir),
+            "truth_view": truth_view(out_dir, library_dir)}
 
 
 def _write_live_files(run):

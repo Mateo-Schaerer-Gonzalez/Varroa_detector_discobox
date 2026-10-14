@@ -119,6 +119,20 @@ def test_unknown_mites_and_recordings_are_refused():
         draft().cycle("0", 3)
 
 
+def test_more_recordings_come_unlabelled_and_the_changes_not_saved_stay():
+    d = draft({"0": ["moving", "still", None], "1": ["not_a_mite"] * 3})
+    d.set("2", 1, "moving")
+    d.grow(5)
+    assert d.states("0") == ["moving", "still", None, None, None]
+    assert d.states("1") == ["not_a_mite"] * 5
+    assert d.states("2") == [None, "moving", None, None, None]
+    assert d.unsaved_now() == {"2": {1: "moving"}}
+    d.dead_from("0", 2)  # the new recordings can be labelled
+    assert d.states("0") == ["moving", "still", "still", "still", "still"]
+    d.grow(4)  # never fewer
+    assert d.n == 5
+
+
 def test_the_pipeline_keeps_the_changes_until_saved(tmp_path):
     library = tmp_path / "library"
     data_dir, out_dir = make_session(tmp_path, "a", 2)

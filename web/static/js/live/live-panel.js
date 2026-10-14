@@ -1,6 +1,7 @@
 // The panel over the live result pages: the camera's newest frame, how capture
-// and the fan and LEDs are doing, the whole run as a progress bar, and the
-// buttons to pause, stop or start a new run.
+// and the fan and LEDs are doing, the whole run as a progress bar, the buttons
+// to pause, stop or start a new run, and those to enter the ground truth and the
+// poke test of the recordings so far, on the calibration pages (Calibration.openLive).
 
 class LivePanel {
   static STATE_NAMES = { ready: "Connected", running: "Recording", paused: "Paused", stopping: "Stopping", finished: "Finished" };
@@ -24,6 +25,10 @@ class LivePanel {
       <button id="live-stop-btn" type="button" class="small">Stop test run</button>
       <button id="live-new-btn" type="button" class="secondary small" hidden>New test run</button>
     </div>
+    <div class="row">
+      <button id="live-truth-btn" type="button" class="secondary small">Ground truth</button>
+      <button id="live-poke-btn" type="button" class="secondary small">Poke test</button>
+    </div>
   </div>
   <div class="run-progress">
     <div id="run-bar" class="run-bar" role="progressbar" aria-label="The test run" aria-valuemin="0" aria-valuemax="100">
@@ -39,6 +44,38 @@ class LivePanel {
       if (confirm("Stop the test run? The recording being captured ends with the frames already in; it is analysed and the results are written.")) this.act("stop");
     });
     $("live-new-btn").addEventListener("click", () => live.close());
+    $("live-truth-btn").addEventListener("click", () => this.calibrate("truth"));
+    $("live-poke-btn").addEventListener("click", () => this.calibrate("poke"));
+    this.opening = null;         // the page, "truth" or "poke", the recordings are being opened for
+    this.calibrateError = null;  // why they could not be, last time
+  }
+
+  // Enter the ground truth or the poke test (`page`) of the recordings so far.
+  async calibrate(page) {
+    Object.assign(this, { opening: page, calibrateError: null });
+    this.draw();
+    try {
+      await cal.openLive(live.id, page);
+    } catch (error) {
+      this.calibrateError = `Could not open the recordings for the ${page === "poke" ? "poke test" : "ground truth"}: ${error.message}`;
+    } finally {
+      this.opening = null;
+      this.draw();
+    }
+  }
+
+  // The ground truth and the poke test need the run's recordings, saved and the first analysed.
+  drawCalibrate(s) {
+    const why = !s.save_frames ? "This test run does not save its recordings, so there is no clip to judge them on."
+      : !s.analysed ? "Once the first recording is analysed." : "";
+    [["truth", "Ground truth", "Mark whether each mite moves in each recording, to compare with the detector's calls"],
+      ["poke", "Poke test", "Which mites moved when you poked them between two recordings, to compare with the detector's survival"]]
+      .forEach(([page, name, title]) => {
+        const button = $(`live-${page}-btn`);
+        button.disabled = Boolean(why) || Boolean(this.opening);
+        button.textContent = this.opening === page ? "Opening…" : name;
+        button.title = why || title;
+      });
   }
 
   // Following again moves on to the newest recording at once.
@@ -80,7 +117,7 @@ class LivePanel {
 
     $("live-saving").textContent = s.saving || s.save_frames
       ? `${s.saved_frames} frames saved to ${s.run_dir}` : "Recordings are not saved.";
-    $("live-error").textContent = [s.error, s.save_error].filter(Boolean).join(" · ");
+    $("live-error").textContent = [s.error, s.save_error, this.calibrateError].filter(Boolean).join(" · ");
 
     this.drawNext(s);
     this.drawProgress(s);
@@ -93,6 +130,7 @@ class LivePanel {
     $("live-stop-btn").disabled = s.state === "stopping";
     $("live-new-btn").hidden = !finished;
     $("live-follow").checked = live.follow;
+    this.drawCalibrate(s);
   }
 
   // The countdown to the next recording, the server's (s.progress.next_seconds):
