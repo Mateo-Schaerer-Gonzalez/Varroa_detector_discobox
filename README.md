@@ -191,10 +191,11 @@ from `config.default.yaml`; change the defaults for everyone there.
 
 **A shaking plate.** A shake of half a pixel, too small to see, makes every
 still mite look like it moves, with any metric. With `stabilize_plate: true`
-(the default) each mite's shift in each frame is measured on its own patch,
-and its patch is cut shifted back by it before it is scored, so it follows the
-part of the plate it is glued to, also where the zones move apart
-(`classes/plate_stabilizer.py`). A mite walking by pulls a mite's own shift
+(the default) each mite's centre (the centre of the darkness of its body) is
+found in each frame, and its patch is cut shifted back by how far that centre
+moved from the first frame before it is scored, so it follows the part of the
+plate it is glued to, also where the zones move apart
+(`classes/plate_stabilizer.py`). A mite walking by pulls a mite's centre
 along, but that recording is set aside anyway (see *Unusual activity*), and a
 mite that walks off is left out. On a still plate it changes nothing, so a
 threshold calibrated on still ground truth holds on a shaking plate. The results overview shows the shake: the median over the mites

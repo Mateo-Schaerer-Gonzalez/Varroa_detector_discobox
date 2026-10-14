@@ -193,15 +193,14 @@ def _centres(patches):
     centres = _weighted_centres(dark * body)
     if middle is None or centres is None:
         return None
-    steps = np.round(centres - middle)
-    for step in np.unique(steps[steps.any(axis=1)], axis=0):
-        moved = cv2.warpAffine(body, _move(*step), (width, height), flags=cv2.INTER_NEAREST, borderValue=0)
-        these = (steps == step).all(axis=1)
-        found = _weighted_centres(dark[these] * moved)
-        if found is None:
-            return None
-        centres[these] = found
-    return centres
+    steps = np.round(centres - middle).astype(int)
+    if not steps.any():
+        return centres
+    # each frame's body moved by its whole pixels, cut from the body with room around it
+    reach = int(np.abs(steps).max())
+    around = np.pad(body, reach)
+    moved = np.stack([around[reach - dy:reach - dy + height, reach - dx:reach - dx + width] for dx, dy in steps])
+    return _weighted_centres(dark * moved)
 
 
 def _weighted_centres(weights):
