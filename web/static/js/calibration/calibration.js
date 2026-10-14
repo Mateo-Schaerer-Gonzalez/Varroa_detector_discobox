@@ -113,11 +113,11 @@ class Calibration {
   // Enter the ground truth or the poke test (`page`: "truth" or "poke") of the
   // live test run `liveId` while it goes on: of its recordings analysed so far,
   // and of each one after as it is analysed (grow). Already open, they stay as
-  // they are; another dataset open first has its changes saved or dropped.
+  // they are; another dataset open first has its last changes saved.
   // Throws when they cannot be opened.
   async openLive(liveId, page) {
     if (!this.showsLive(liveId)) {
-      await this.saveOrDropChanges();
+      await this.saveChanges();
       this.start(await post(`/api/live/${liveId}/calibration`, {}), liveId);
       // a recording analysed while they were being opened
       this.grow();
@@ -160,7 +160,7 @@ class Calibration {
   async goToMite(datasetId, zoneId, recording, miteId = null) {
     if (!(this.data && this.datasetId === datasetId)) {
       try {
-        await this.saveOrDropChanges();
+        await this.saveChanges();
         this.showDataset(await post(`/api/calibration/${this.id}/dataset/${encodeURIComponent(datasetId)}`, {}));
       } catch (error) {
         alert(`Could not open that recording: ${error.message}`);
@@ -172,22 +172,17 @@ class Calibration {
     if (mite != null) router.go(this.truthHref(mite, recording));
   }
 
-  // Before another dataset replaces the one on screen: ask whether to save its
-  // unsaved changes, and wait for the changes and a save under way, so the server
-  // reads the ground truth with them. Throws when the save fails; the changes then
-  // stay on screen. Changes not saved go with the dataset they were made on.
-  async saveOrDropChanges() {
+  // Before another dataset replaces the one on screen: wait for its changes and
+  // their saves, so the server reads the ground truth with them. Throws when the
+  // save fails; the changes then stay on screen.
+  async saveChanges() {
     await groundTruth.settled();
-    if (groundTruth.hasUnsaved() && confirm("Save your changes to the ground truth first?\n\nOK saves them, Cancel discards them.")) {
-      await groundTruth.save();
-    } else {
-      await groundTruth.saves;
-    }
+    await groundTruth.save();
   }
 
   async openWithTruthSaved(status, open) {
     try {
-      await this.saveOrDropChanges();
+      await this.saveChanges();
     } catch (error) {
       status.className = "hint error";
       status.textContent = `Not opened: the last changes could not be saved (${error.message}).`;
@@ -196,11 +191,11 @@ class Calibration {
     await open();
   }
 
-  // The Back button: close the dataset or the pooled report, after saving or
-  // dropping the unsaved changes. What was saved stays in the saved ground truth.
+  // The Back button: close the dataset or the pooled report, after saving the
+  // last changes. What was saved stays in the saved ground truth.
   async quit() {
     try {
-      await this.saveOrDropChanges();
+      await this.saveChanges();
     } catch (error) {
       alert(`Not closed: the last changes could not be saved (${error.message}).`);
       return;

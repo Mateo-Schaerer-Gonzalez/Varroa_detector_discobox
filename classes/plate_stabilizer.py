@@ -2,16 +2,17 @@
 
 A shake of half a pixel, too small to see, moves every mite's outline across
 its pixels and makes a still mite score like a moving one with any metric. Each
-mite's shift from the first frame is measured on its patch, and its patch is
-cut from each frame moved back by its own shift, then scored as usual
-(follow()). A glued mite moves with what it is glued to, so that follows the
-plate where the mite is, also where the plate's parts move apart.
+mite's centre is found in every frame (the centre of the darkness of its body),
+and its shift is how far that centre moved from the first frame. Its patch is
+cut from each frame moved back by that shift, then scored as usual (follow()).
+A glued mite moves with what it is glued to, so that follows the plate where
+the mite is, also where the plate's parts move apart.
 
-A mite's own shift is not always the plate's: the legs of a moving mite pull it
-by up to a quarter of a pixel, and another mite walking through its patch pulls
-it along (notebooks/per_mite_stabilization.ipynb). Its own shift is used all the
-same: a mite that walks off is left out of the analysis, and a recording another
-one walked through is set aside (classes/unusual_activity.py).
+A mite's own shift is not always the plate's: the legs of a moving mite pull its
+centre along, and so does another mite walking through its patch
+(notebooks/per_mite_stabilization.ipynb). Its own shift is used all the same: a
+mite that walks off is left out of the analysis, and a recording another one
+walked through is set aside (classes/unusual_activity.py).
 """
 
 import math
@@ -24,6 +25,8 @@ from classes.workers import side_by_side
 
 # How far beyond the patch the Lanczos interpolation reads, in pixels.
 _LANCZOS_REACH = 4
+# The outermost pixels of a mite's patch, read for the plate's light: the plate, never the mite.
+_RIM = 6
 _ECC_CRITERIA = (cv2.TERM_CRITERIA_EPS | cv2.TERM_CRITERIA_COUNT, 50, 1e-4)
 # The most ECC may move phase correlation's first guess, in pixels: that is off by
 # up to about a pixel on the sample data, where ECC brings it back.
@@ -66,10 +69,12 @@ class PlateStabilizer:
                 for own in per_mite]
 
     def _mite_shifts(self, frames, box):
-        """Per frame, how far one mite's patch moved since the first frame."""
+        """Per frame, how far one mite's centre moved since the first frame."""
         patches = _gray(_patches(frames, box[0] - self.pad, box[1] - self.pad, box[2] + self.pad, box[3] + self.pad))
-        window = cv2.createHanningWindow(patches.shape[:0:-1], cv2.CV_32F)  # the same for every frame
-        return [self._shift(patches[0], patch, window) for patch in patches]
+        centres = _centres(patches)
+        if centres is None:
+            return np.zeros((len(patches), 2))  # nothing dark to follow, e.g. a blank patch
+        return centres - centres[0]
 
     @staticmethod
     def _shift(reference, moved, window=None):
@@ -150,6 +155,64 @@ def _mirror(index, size):
     period = 2 * size - 2 if size > 1 else 1
     index = np.abs(index) % period
     return np.where(index >= size, period - index, index)
+
+
+def _centres(patches):
+    """(N, 2): the mite's centre (x, y) in each of a stack of grey patches, or
+    None for a patch without a mite.
+
+    The centre is that of the darkness of the mite's body, as
+    Analyzer._outline_rays() finds it: a pixel's darkness is the share of the
+    plate's light it takes away, the plate's light read off the patch's
+    outermost pixels frame by frame, so a lamp that flickers changes nothing.
+    The body is what is at least 30% as dark as the darkest of the mite in the
+    mean of the frames, the piece closest to the middle of the patch (where the
+    mite's box is; another piece is a neighbour), and two pixels around it.
+    Where the mite moved by a pixel or more, the body is moved along to where it
+    is and the centre found again, so none of the mite is left outside it."""
+    height, width = patches.shape[1:]
+    rim = np.ones((height, width), dtype=bool)
+    rim[_RIM:-_RIM, _RIM:-_RIM] = False
+    if rim.all():
+        return None
+    plate = np.median(patches[:, rim], axis=1)
+    if plate.min() <= 0:
+        return None
+    dark = np.clip(1 - patches / plate[:, None, None], 0, None)
+    still = dark.mean(axis=0)
+    if still[~rim].max() <= 0:
+        return None
+    dark_enough = (still > 0.3 * still[~rim].max()) & ~rim
+    pieces = cv2.connectedComponents(dark_enough.astype(np.uint8))[1]
+    yy, xx = np.ogrid[:height, :width]
+    from_middle = np.hypot(yy - (height - 1) / 2, xx - (width - 1) / 2)
+    body = (pieces == pieces.ravel()[np.where(dark_enough, from_middle, np.inf).argmin()]).astype(np.uint8)
+    body = cv2.dilate(body, np.ones((3, 3), np.uint8), iterations=2).astype(np.float32)
+
+    middle = _weighted_centres((still * body)[None])
+    centres = _weighted_centres(dark * body)
+    if middle is None or centres is None:
+        return None
+    steps = np.round(centres - middle)
+    for step in np.unique(steps[steps.any(axis=1)], axis=0):
+        moved = cv2.warpAffine(body, _move(*step), (width, height), flags=cv2.INTER_NEAREST, borderValue=0)
+        these = (steps == step).all(axis=1)
+        found = _weighted_centres(dark[these] * moved)
+        if found is None:
+            return None
+        centres[these] = found
+    return centres
+
+
+def _weighted_centres(weights):
+    """(N, 2): the centre (x, y) of each of a stack of (N, h, w) weights, or None
+    where one has no weight at all."""
+    total = weights.sum(axis=(1, 2), dtype=np.float64)
+    if not (total > 0).all():
+        return None
+    x = weights.sum(axis=1, dtype=np.float64) @ np.arange(weights.shape[2])
+    y = weights.sum(axis=2, dtype=np.float64) @ np.arange(weights.shape[1])
+    return np.stack([x / total, y / total], axis=1)
 
 
 def _gray(patches):

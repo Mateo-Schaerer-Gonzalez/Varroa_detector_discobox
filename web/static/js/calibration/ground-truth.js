@@ -1,8 +1,9 @@
 // The ground truth of the dataset on the ground-truth page, as the server's draft
 // describes it (classes/truth_draft.py): every mite's statuses, what is done, and
-// how many mites have changes waiting for "Save changes". A click or a fill
-// button goes to the server, one after another, and the page shows the view it
-// sends back; each view has a version, so a late reply never replaces a newer one.
+// how many mites have changes not saved yet. A click or a fill button goes to the
+// server, one after another, and the page shows the view it sends back; each view
+// has a version, so a late reply never replaces a newer one. Every change is saved
+// as soon as its reply is in, without holding up the next click.
 
 class GroundTruth {
   constructor() {
@@ -11,11 +12,11 @@ class GroundTruth {
     this.queue = Promise.resolve();  // the changes, sent one after another
     this.saves = Promise.resolve();  // the saves, one after another
     this.savesUnderWay = 0;
-
-    $("save-truth-btn").addEventListener("click", () => this.save().catch(() => {}));
+    this.changesUnderWay = 0;        // changes sent, not yet saved or refused
+    this.retry = null;               // the timer of the next try after a failed save
     // Closing or reloading the window with changes not saved yet, or still saving, asks first.
     window.addEventListener("beforeunload", (event) => {
-      if (!this.hasUnsaved() && !this.savesUnderWay) return;
+      if (!this.busy()) return;
       event.preventDefault();
       event.returnValue = "";
     });
@@ -28,9 +29,11 @@ class GroundTruth {
 
   // Another dataset replaces the one on screen: its view as the server opened it.
   load(view) {
+    clearTimeout(this.retry);
+    this.retry = null;
     this.view = view;
     this.version = view ? view.version : 0;
-    this.drawSaveButton();
+    this.drawSaveState();
   }
 
   // Show a view the server sent, unless a newer one is shown; returns whether it was.
@@ -39,7 +42,7 @@ class GroundTruth {
     this.view = view;
     this.version = view.version;
     if (view.changed) cal.markReportStale();
-    this.drawSaveButton();
+    this.drawSaveState();
     return true;
   }
 
@@ -60,14 +63,25 @@ class GroundTruth {
     return Boolean(this.view && this.view.unsaved);
   }
 
+  // Changes on their way to the server or not saved yet, or a save under way.
+  busy() {
+    return this.hasUnsaved() || this.changesUnderWay > 0 || this.savesUnderWay > 0;
+  }
+
   // A click ({ action: "cycle", mite, recording, backwards }) or a fill button
-  // ({ action: "fill", zone, recording, kind }), after the changes before it.
-  // Resolves with whether its view is the one shown now.
+  // ({ action: "fill", zone, recording, kind }), after the changes before it, and
+  // then saved. Resolves with whether its view is the one shown now.
   edit(change) {
     const id = cal.id;
     const sent = this.queue.then(() => post(`/api/calibration/${id}/truth/edit`, change))
       .then((view) => id === cal.id && this.take(view));
     this.queue = sent.catch(() => {});
+    this.changesUnderWay++;
+    this.drawSaveState();
+    sent.then(() => this.save()).catch(() => {}).finally(() => {
+      this.changesUnderWay--;
+      this.drawSaveState();
+    });
     return sent;
   }
 
@@ -76,23 +90,26 @@ class GroundTruth {
     return this.queue;
   }
 
-  drawSaveButton() {
-    const button = $("save-truth-btn");
-    const n = this.view ? this.view.unsaved : 0;
-    button.disabled = !n || this.savesUnderWay > 0;
-    button.textContent = this.savesUnderWay ? "Saving…"
-      : n ? `Save changes (${n} mite${n === 1 ? "" : "s"})` : "All changes saved";
+  drawSaveState() {
+    const state = $("truth-save-state");
+    const failed = Boolean(this.retry) && !this.changesUnderWay && !this.savesUnderWay;
+    state.classList.toggle("error", failed);
+    state.textContent = failed ? "Not saved yet: trying again…"
+      : this.busy() ? "Saving…" : this.view ? "All changes saved" : "";
   }
 
   // Save the changes made so far, after any save under way; resolves once saved,
-  // or throws, the changes then still waiting on the server for the next try.
+  // or throws, the changes then still waiting on the server for the next try,
+  // which comes by itself a moment later.
   save() {
     const id = cal.id;
     const run = Promise.all([this.queue, this.saves]).then(async () => {
       if (!this.hasUnsaved() || id !== cal.id) return;
       const status = $("evaluate-status");
+      clearTimeout(this.retry);
+      this.retry = null;
       this.savesUnderWay++;
-      this.drawSaveButton();
+      this.drawSaveState();
       let view;
       let taken = false;
       try {
@@ -102,11 +119,12 @@ class GroundTruth {
       } catch (error) {
         status.className = "hint error";
         status.dataset.saveError = "1";
-        status.textContent = `Could not save the ground truth: ${error.message}. Click "Save changes" to try again.`;
+        status.textContent = `Could not save the ground truth: ${error.message}. It is tried again in a few seconds.`;
+        this.retry = setTimeout(() => this.save().catch(() => {}), 5000);
         throw error;
       } finally {
         this.savesUnderWay--;
-        this.drawSaveButton();
+        this.drawSaveState();
       }
       if (status.classList.contains("error") && status.dataset.saveError) {
         status.className = "hint";

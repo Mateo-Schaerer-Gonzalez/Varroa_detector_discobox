@@ -146,6 +146,24 @@ def test_the_pipeline_keeps_the_changes_until_saved(tmp_path):
     assert pipeline.list_calibration_datasets(library)[0]["n_moving"] == 1
 
 
+def test_saving_leaves_the_library_copy_of_the_recordings_for_the_background(tmp_path):
+    library = tmp_path / "library"
+    _data_dir, out_dir = make_session(tmp_path, "a", 2)
+    pipeline.edit_truth(out_dir, "set", mite="0", recording=0, state="moving", library_dir=library)
+    pipeline.save_truth(out_dir, library)
+    dataset = library / pipeline.list_calibration_datasets(library)[0]["id"]
+    copy = dataset / pipeline.RECORDINGS_DIRNAME / pipeline.GROUND_TRUTH_FILENAME
+    assert not copy.exists()  # the save did not wait for it
+    pipeline.finish_library_copies()
+    assert copy.is_file()
+
+    # Nothing labelled any more: the dataset goes, and no copy brings it back.
+    pipeline.edit_truth(out_dir, "set", mite="0", recording=0, state=None, library_dir=library)
+    pipeline.save_truth(out_dir, library)
+    pipeline.finish_library_copies()
+    assert not dataset.exists()
+
+
 def test_the_view_follows_a_change_saved_elsewhere(tmp_path):
     library = tmp_path / "library"
     _data_dir, out_dir = make_session(tmp_path, "a", 2)

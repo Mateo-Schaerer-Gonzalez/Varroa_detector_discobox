@@ -60,12 +60,27 @@ class TestShifts:
             return 1.0, warp
 
         monkeypatch.setattr(cv2, "findTransformECC", runaway)
-        shifts = PlateStabilizer().shifts(shaken(OFFSETS), BOXES)
-        assert np.abs(shifts - np.array(OFFSETS)).max() < 0.5   # phase correlation's guess
+        frames = shaken(OFFSETS).mean(axis=-1)
+        x1, y1, x2, y2 = BOXES[4]
+        for frame, offset in zip(frames[1:], OFFSETS[1:]):
+            shift = PlateStabilizer._shift(frames[0, y1 - 8:y2 + 8, x1 - 8:x2 + 8], frame[y1 - 8:y2 + 8, x1 - 8:x2 + 8])
+            assert np.abs(np.array(shift) - offset).max() < 0.5   # phase correlation's guess
 
     def test_a_blank_patch_has_no_shift(self):
         blank = np.zeros((30, 30), np.float32)
         assert PlateStabilizer._shift(blank, blank) == (0.0, 0.0)
+        frames = np.full((3, 60, 60, 3), 200, np.float32)
+        assert np.abs(PlateStabilizer().follow(frames, [(20, 20, 36, 36)])[0].shifts).max() == 0
+
+    def test_it_follows_the_mite_s_centre_further_than_its_body_reaches(self):
+        offsets = [(0, 0), (2.5, -1.5), (-3.2, 2.7), (4.0, 0.5)]
+        shifts = PlateStabilizer().shifts(shaken(offsets), BOXES)
+        assert np.abs(shifts - np.array(offsets)).max() < 0.08
+
+    def test_a_flickering_lamp_moves_no_centre(self):
+        frames = shaken([(0, 0)] * 4)
+        frames *= np.array([1.0, 0.8, 1.15, 0.9], np.float32)[:, None, None, None]
+        assert np.abs(PlateStabilizer().shifts(frames, BOXES)).max() < 0.01
 
 
 def parted(offsets, apart):

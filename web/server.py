@@ -634,7 +634,7 @@ def get_ground_truth(session_id: str):
 
 @app.post("/api/calibration/{session_id}/truth/edit")
 def edit_ground_truth(session_id: str, request: TruthEdit):
-    """A change on the ground-truth page; it waits for "Save changes"."""
+    """A change on the ground-truth page; the page saves it next (save_ground_truth)."""
     session = get_session(session_id)
     try:
         return as_it_is(pipeline.edit_truth(session["out_dir"], request.action, mite=request.mite, zone=request.zone,

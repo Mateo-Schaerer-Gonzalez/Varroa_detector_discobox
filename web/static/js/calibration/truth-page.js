@@ -187,7 +187,7 @@ class TruthPage {
     const { cells, done, ready } = view;
     $("truth-progress").innerHTML = `<b>${done}</b> of ${cells} mite-recordings labelled · this mite: ${view.mites_done[mite.id]} of ${cal.nRecordings}`;
     $("truth-progress-bar").style.width = `${(done / cells) * 100}%`;
-    groundTruth.drawSaveButton();
+    groundTruth.drawSaveState();
 
     $("evaluate-btn").disabled = !ready;
     $("evaluate-btn").textContent = cal.mode === "test" ? "Show test report" : "Show calibration";

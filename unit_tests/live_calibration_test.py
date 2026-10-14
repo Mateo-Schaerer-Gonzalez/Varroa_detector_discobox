@@ -60,6 +60,7 @@ def test_the_recordings_so_far_are_opened_and_grow_with_the_run(tmp_path, librar
     mite = opened["mites"][0]["id"]
     pipeline.edit_truth(out, "set", mite=mite, recording=0, state="moving", library_dir=library)
     pipeline.save_truth(out, library)  # the library's copy leaves the frame being written for later
+    pipeline.finish_library_copies()
     copy = library / opened["dataset_id"] / pipeline.RECORDINGS_DIRNAME
     assert copy.is_dir() and not list(copy.rglob("*.part"))
     shutil.rmtree(capturing)
@@ -75,7 +76,7 @@ def test_the_recordings_so_far_are_opened_and_grow_with_the_run(tmp_path, librar
     grown = pipeline.grow_live_calibration(out, "cal")
     assert grown["n_recordings"] == 3 == len(grown["times"]) == len(grown["recordings"])
     assert grown["truth_view"]["states"][mite] == ["still", None, None]
-    assert grown["truth_view"]["unsaved"] == 1  # the change waits for "Save changes", as before
+    assert grown["truth_view"]["unsaved"] == 1  # the change waits for its save, as before
     pipeline.edit_truth(out, "dead", mite=mite, recording=2, library_dir=library)
     pipeline.save_truth(out, library)
     pipeline.edit_poke(out, "add", 2, library_dir=library)  # after a recording that came since
