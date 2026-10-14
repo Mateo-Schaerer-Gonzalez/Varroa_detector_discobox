@@ -2707,12 +2707,12 @@ def open_live(live_id, out_dir, run_name, camera_id=None, serial_port="auto", sa
             out_dir=out_dir, results_root=Path(results_root) if own_results else None, new_results=new_results,
             save_frames=bool(save_frames), library_dir=library_dir,
             coords_file=coords_file, layout=layout, feed=(None, None), feed_lock=threading.Lock(), started_at=None,
-            movement=(0, -1),
+            movement=(0, -1), preview_written=False, files_due=None,
         )
         run.analysis = analysis = MotionAnalysis(_live_zone_manager(run))
         live_source.movement = lambda: run.movement
         run.session = LiveSession(live_source, analysis, publish=lambda session, write: _publish_live(run, write),
-                                  on_finish=lambda session: _write_run_info(run, ended=True))
+                                  on_finish=lambda session: _live_run_ended(run))
         _live[live_id] = run
     return live_status(live_id)
 
@@ -2793,10 +2793,18 @@ def _light_for_labelling(run):
         time.sleep(LIGHTS_SETTLE)
 
 
+# Seconds at most between two writes of a live run's workbook and figures while it
+# goes on. On a long run they take seconds of work, which grows with every
+# recording: too much to do after each one. A download waits for them
+# (results_file()), and the end of the run writes them at once.
+LIVE_FILES_EVERY = 600
+
+
 def _publish_live(run, write_files):
     """The results of a live run so far, exactly as run_analysis() describes a
     folder: the same labels and "not a mite" marks, read from the run's folder.
-    After each recording (`write_files`), run.json says how far the run got."""
+    After each recording (`write_files`), run.json says how far the run got,
+    and the files follow (_write_live_files_later())."""
     labels = load_labels(run.run_dir)
     recordings = list(run.session.recordings)
     # A call corrected after the run's end writes the files again, and nothing else.
@@ -2805,12 +2813,39 @@ def _publish_live(run, write_files):
         run.movement = (len(recordings), run.movement[1])
     _arrange(run.analysis, run.run_dir, labels, True, run.library_dir)
     # The scores are normalised over a whole run, so not while it goes on.
-    results = _results(_run_view(run.analysis), run.out_dir, labels, write_files,
+    results = _results(_run_view(run.analysis), run.out_dir, labels, False,
                        corrections=CallCorrections(run.run_dir), normalizer=ScoreNormalizer())
+    if write_files:
+        if not run.preview_written:  # the first frame, which the pages draw on: it never changes
+            _write_preview(run.analysis.first_frame, run.out_dir)
+            run.preview_written = True
+        _write_live_files_later(run)
     if going:
         run.movement = (len(recordings), _last_movement(results, recordings))
         _write_run_info(run)
     return results
+
+
+def _live_run_ended(run):
+    """The test run is over: its run.json says so, and its last files are
+    written before the session counts as finished."""
+    _write_run_info(run, ended=True)
+    finish_files(run.out_dir)
+
+
+def _write_live_files_later(run):
+    """Write a live run's workbook and figures in the background: at most
+    LIVE_FILES_EVERY seconds after the recording that first changed them, and
+    at once when its stream has ended. They all go through _files_later, one
+    after another, so the last written is always of the latest results."""
+    if run.source.state == "finished":
+        delay = 0.0
+    else:
+        now = time.monotonic()
+        if run.files_due is None:
+            run.files_due = now + LIVE_FILES_EVERY
+        delay = max(0.0, run.files_due - now)
+    _files_later.later(_draft_key(run.out_dir), lambda: _write_live_files(run), delay)
 
 
 def _last_movement(results, recordings):
@@ -3013,8 +3048,10 @@ def grow_live_calibration(out_dir, live_id):
 
 
 def _write_live_files(run):
-    """The workbook and the figures of a live run that is over, as its corrections
-    are now. The lock is held only to read the run, not while the files are written."""
+    """The workbook and the figures of a live run, as its recordings and
+    corrections are now. The lock is held only to read the run, not while the
+    files are written."""
+    run.files_due = None  # a recording from now on is in the next write
     with run.session.lock:
         view = _run_view(run.analysis)
         mite_data, _changes = _mite_table(view, CallCorrections(run.run_dir), ScoreNormalizer())

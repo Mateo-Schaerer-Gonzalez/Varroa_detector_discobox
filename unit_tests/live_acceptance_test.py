@@ -17,6 +17,7 @@ import pytest
 import folder_camera
 import pipeline
 import reference
+import reporting
 
 
 @pytest.fixture
@@ -119,6 +120,26 @@ def test_a_run_stopped_midway_is_analysed_as_far_as_it_got(tmp_path, small_sessi
     live = reference.plain(run.session.results)
     again = folder(tmp_path, run)
     assert_same(again["results"], live, "The results of the stopped run")
+
+
+def test_the_workbook_is_written_in_the_background_while_the_run_goes_on(tmp_path, small_session, monkeypatch):
+    library = tmp_path / "library"
+    library.mkdir()
+    folder_camera.open_live(monkeypatch, "files", tmp_path / "out", "files", small_session, gap=30,
+                            recordings_root=tmp_path / "recordings", library_dir=library)
+    pipeline.start_live("files")
+    run = pipeline._live["files"]
+    try:
+        deadline = time.monotonic() + 20
+        while pipeline.live_results("files")["results"] is None and time.monotonic() < deadline:
+            time.sleep(0.02)
+        workbook = run.out_dir / reporting.EXCEL_NAME
+        assert (run.out_dir / pipeline.PREVIEW_NAME).is_file()  # the pages draw on it at once
+        assert not workbook.exists()  # not after every recording: LIVE_FILES_EVERY later
+        assert pipeline.results_file(run.out_dir, workbook.name).is_file()  # a download does not wait for that
+    finally:
+        pipeline.stop_live("files", wait=True, timeout=60)
+        pipeline._live.pop("files")
 
 
 def test_results_are_published_after_each_recording(tmp_path, small_session, monkeypatch):
