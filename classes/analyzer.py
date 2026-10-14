@@ -5,6 +5,7 @@ import cv2
 from classes.app_config import AppConfig, get_default_config
 from classes.mite import Mite
 from classes.plate_stabilizer import PlateStabilizer
+from classes.mite_look import MiteLook
 from classes.workers import side_by_side
 import numpy as np
 
@@ -74,22 +75,49 @@ class Analyzer:
 
         Each mite's ROI is cut from each frame and the cuts stacked, without
         ever holding a second copy of the frames. With mite.stabilize_plate the
-        cuts follow the plate as it shakes (see PlateStabilizer). The mites are
-        cut and scored side by side (classes/workers.py)."""
-        shifts = None
-        if self.config.mite.stabilize_plate:
-            shifts = PlateStabilizer().shifts(frames, [tuple(mite) for mite in mites])
+        cuts follow the plate as it shakes (see PlateStabilizer). How far each
+        mite's own patch moved, and how the mite looks, are recorded with its
+        score (MiteLook, classes/unusual_activity.py). The mites are cut and
+        scored side by side (classes/workers.py)."""
+        boxes = [tuple(mite) for mite in mites]
+        followed = self._follow_plate(frames, boxes) if self.config.mite.stabilize_plate else None
 
-        def score(mite):
+        def score(index):
+            mite, box = mites[index], boxes[index]
             pad = self.roi_padding(mite.metric, mite.metric_params)
-            if shifts is None:
+            if followed is None:
                 mite_roi = np.stack([mite.get_ROI(frame, pad) for frame in frames])
+                shifts, activity = np.zeros((len(frames), 2)), {"stray": None, "shake": None}
             else:
-                mite_roi = PlateStabilizer.cut(frames, tuple(mite), pad, shifts)
-            return self._motion_score(mite_roi, mite.metric, mite.metric_params), float(mite_roi.mean())
+                shifts, strays, shakes = followed
+                mite_roi = PlateStabilizer.cut(frames, box, pad, shifts)
+                activity = {"stray": round(strays[index], 4), "shake": round(shakes[index], 4)}
+            activity.update(MiteLook.observe(frames, box, shifts, mite))
+            return self._motion_score(mite_roi, mite.metric, mite.metric_params), float(mite_roi.mean()), activity
 
-        for mite, (motion, brightness) in zip(mites, side_by_side(score, mites)):
-            mite.record_motion(motion, brightness=brightness)
+        for mite, (motion, brightness, activity) in zip(mites, side_by_side(score, range(len(mites)))):
+            mite.record_motion(motion, brightness=brightness, activity=activity)
+
+    @staticmethod
+    def _follow_plate(frames, boxes):
+        """(plate, strays, shakes): the plate's shift per frame, exactly as
+        PlateStabilizer.shifts() gives it (the median of the mites' own shifts),
+        and per mite the most its own shift strayed from the plate's and moved
+        from the first frame, in pixels. Measured once, for both."""
+        if not boxes or len(frames) < 2:
+            return np.zeros((len(frames), 2)), [0.0] * len(boxes), [0.0] * len(boxes)
+        stabilizer = PlateStabilizer()
+        per_mite = np.array(side_by_side(lambda box: stabilizer._mite_shifts(frames, box), boxes))
+        plate = np.median(per_mite, axis=0)
+        strays = [float(np.hypot(*(own - plate).T).max()) for own in per_mite]
+        shakes = [float(np.hypot(*own.T).max()) for own in per_mite]
+        return plate, strays, shakes
+
+    def blobs(self, masked_image):
+        """[[x, y], ...]: the centre of every blob the detector finds on a masked
+        frame, as the mites are found on the first one, but without making mites
+        of them (that would count the ids on)."""
+        return [[round(float(kp.pt[0]), 1), round(float(kp.pt[1]), 1)] for kp in self.blob_detector.detect(masked_image)]
 
     @staticmethod
     def _metrics():

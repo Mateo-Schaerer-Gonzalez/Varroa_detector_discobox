@@ -847,3 +847,27 @@ td.num.error { color: var(--critical); font-weight: 600; }
 .death-field { display: inline-flex; align-items: baseline; gap: 6px; }
 .death-field .number-input { width: 84px; padding: 3px 6px; font-size: 12.5px; }
 .death-status { margin: 0; }
+
+/* unusual activity and plate shake (js/results/activity-section.js) */
+.mover-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 12px; }
+.mover-card { display: block; color: var(--text); }
+.mover-card[href]:hover .mover-frame { stroke: var(--ink); }
+.mover-head { font-size: 12px; margin-bottom: 4px; }
+.mover-plot { width: 100%; height: auto; display: block; }
+.mover-frame { fill: var(--paper); stroke: var(--rule); }
+.mover-zone { fill: none; stroke: var(--series-other); stroke-width: 1; stroke-dasharray: 3 2; }
+.mover-step { stroke-width: 1.4; stroke-linecap: round; }
+.mover-scale { font-size: 9px; fill: var(--muted); }
+.activity-plate { position: relative; max-width: 1100px; }
+.activity-plate .track-layer { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+.track line { stroke-width: 4; stroke-linecap: round; }
+.track-edge { fill: none; stroke: #ffffff; stroke-width: 8; stroke-linejoin: round; stroke-linecap: round; opacity: 0.85; }
+.track, .track-disturbed, .track-rotator { pointer-events: visiblePainted; }
+.track-start { fill: #ffffff; stroke: var(--ink); stroke-width: 2; }
+.track-label, .track-disturbed text, .track-rotator text { font: 600 22px var(--sans); fill: #ffffff; paint-order: stroke; stroke: var(--ink); stroke-width: 4px; }
+.track-disturbed circle { fill: none; stroke: var(--series-2); stroke-width: 3; }
+.track-rotator circle { fill: none; stroke: var(--series-7); stroke-width: 3; }
+.activity-events { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 16px; margin-bottom: 24px; }
+.activity-card { margin: 0; }
+.activity-text { font-size: 13px; margin: 4px 0 8px; }
+.activity-clip img { width: 100%; height: auto; display: block; image-rendering: pixelated; background: var(--wash); }

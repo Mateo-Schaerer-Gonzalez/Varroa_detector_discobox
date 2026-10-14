@@ -188,11 +188,32 @@ once, the median of their shifts, so a few walking mites don't pull it, and
 each mite's patch is cut shifted back before it is scored
 (`classes/plate_stabilizer.py`). On a still plate it changes nothing, so a
 threshold calibrated on still ground truth holds on a shaking plate. The
+results overview shows the shake: the median over the mites of how far each
+one's own patch moved within each recording, recording by recording, to spot a
+recording or a stretch of time in which the plate shook, and the 10 mites that
+drifted furthest from their zone across the recordings, each as its path. The
 *Stabilize plate* checkbox next to the metric on the calibration report tries
 it on or off with *Score again*; saving a threshold saves it with the metric.
 `python scripts/shake_robustness.py` shakes the saved ground truth by
 0.5 to 2 px and reports each metric's accuracy at its unshaken threshold, with
 and without stabilization.
+
+**Unusual activity.** A mite can come unglued (`classes/unusual_activity.py`).
+One that walks off, a *fly-off*, is found when its place is empty in 3
+recordings in a row: no blob there on the first or last frame, and its image
+faded to less than half its first contrast. It is left out of the analysis, as
+a detection marked *not a mite* is, and followed from blob to blob as it walks.
+Wherever a mite that is not in its place, and was elsewhere the recording
+before, comes within reach of another mite's scored patch (or a fly-off's track
+passes there while it lies against that mite, one blob with it), that
+recording of that mite is set aside:
+censored, it counts neither as moving nor as still; setting the call by hand
+counts it again. A mite whose body turns by more than 30° where it is, a
+*rotator*, stays in the analysis. The results overview lists them under
+*Unusual activity*: the tracks of the fly-offs on the plate, the mites they
+disturbed, the recordings set aside, and for each fly-off and rotator a clip of
+every recording it spans, played one after the other. What is measured for this
+is kept with the scores, so a run read back from them has it too.
 
 **Scores on one scale per mite.** A still mite does not score 0: camera noise
 gives it a floor, which differs from mite to mite, so one threshold sits inside
