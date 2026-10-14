@@ -528,13 +528,20 @@ class ReportPage {
       return `<p class="hint">No poke test was entered for ${pooled(r) ? "these recordings" : "this recording"}.
         ${cal.data ? '<a href="#/cal/poke">Enter one</a>: which mites moved when you poked them, to compare their survival with that by the detector.' : ""}</p>`;
     }
-    return Markup.figure("chart-poke-survival", number, "Survival rate of the poked mites: the pokes and the detector",
+    const byImage = poke.shrinkage && poke.change;
+    return Markup.figure("chart-poke-survival", number,
+      `Survival rate of the poked mites: the pokes, the detector${byImage ? " and the mites' images" : ""}`,
       `The Kaplan–Meier survival rate of the ${poke.poke.n_mites} poked mites by the pokes (black, with its 95% confidence band) and as the detector's calls
       at the threshold in use would have it (dashed), on the same mites. By the pokes a mite dies at the first poke it did not answer, so in the recording after it;
       one that answered every poke is right-censored at its last one, where it still counts among the living. By the detector a mite dies at the recording after its last movement,
       one never called moving at the first recording, and one moving in its last recording is right-censored there. A poke only says dead by then, so the black curve
       falls at the pokes, not at the deaths: the dashed one may fall earlier and still agree, and should not be above it at a poke.
-      ${poke.final_poke ? "The last point is the poke after the last recording, where the detector saw nothing, so its curve ends before it." : ""}
+      ${byImage ? `Two more by the mite's mean image in each recording, from the long run's notebooks: by <b>size reduction</b> a mite is dead from where its silhouette
+      stays more than 4.2% below the highest it has had for 5 recordings in a row, which comes hours after the death, so this curve should fall late;
+      by <b>change between recordings</b> it dies at the recording after the last whose image differed from the one before by more than the camera's noise
+      (0.75 grey levels), the one before having changed too. A mite not dead by either by its last recording is right-censored there.`
+      : "The curves by the mites' images are missing: their recordings are gone, so they could not be measured."}
+      ${poke.final_poke ? `The last point is the poke after the last recording, where ${byImage ? "the detector and the camera saw nothing, so their curves end" : "the detector saw nothing, so its curve ends"} before it.` : ""}
       ${poke.n_left_out ? `Left out: ${plural(poke.n_left_out, "mite")} that answered a poke after not answering an earlier one.` : ""} Hover for the numbers.`);
   }
 

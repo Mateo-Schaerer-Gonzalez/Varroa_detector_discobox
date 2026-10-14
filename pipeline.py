@@ -93,6 +93,8 @@ import numpy as np
 import reporting
 from classes import calibration
 from classes import death_calibration
+from classes import image_signs as image_signs_module
+from classes import recording_change
 from classes.analyzer import Analyzer
 from classes import benchmark as benchmark_module
 from classes.benchmark import Benchmark
@@ -106,6 +108,7 @@ from classes.data_loader import DataLoader
 from classes.deferred_files import DeferredFiles
 from classes.error_map import ErrorMap
 from classes.frame_source import FolderSource, as_analysis_image
+from classes.image_signs import ImageSigns
 from classes.kept_scores import KeptScores
 from classes.label_reader import LabelReader, LabelReadError
 from classes.live import camera as live_camera
@@ -1525,23 +1528,61 @@ def edit_poke(out_dir, action, after, mite=None, zone=None, state=None, library_
     return poke.view()
 
 
-def _poked_mites(dataset, scores, threshold, library_dir):
+def _poked_mites(key, dataset, scores, threshold, library_dir, stabilize=False):
     """The poked mites of a dataset with the detector's death of each at
-    `threshold` (PokeSurvival.mites()); [] without a poke test."""
+    `threshold` and those by their images (PokeSurvival.mites()); [] without a
+    poke test."""
     poke = _poke_of(dataset, library_dir)
     if not poke.rounds:
         return []
     moving = {mite["id"]: [score >= threshold for score in scores[mite["id"]]] for mite in poke.mites}
-    return PokeSurvival(poke, dataset["times"], moving).mites()
+    signs = _dataset_image_signs(key, dataset, poke.mites, library_dir, stabilize)
+    return PokeSurvival(poke, dataset["times"], moving, signs).mites()
+
+
+def _image_signs_mites(dataset, mites, recordings_dir, stabilize=False):
+    """The silhouette and the change between recordings of each of `mites` in
+    every recording of a dataset (ImageSigns.measured()). Slow: every frame is
+    decoded, see _measure_mites()."""
+    _check_recordings(dataset, recordings_dir, "the images of its mites cannot be measured")
+    signs = ImageSigns([mite["id"] for mite in mites])
+    for recording in _measure_mites({**dataset, "mites": mites}, recordings_dir, ImageSigns.mean_image,
+                                    ImageSigns.PAD, stabilize):
+        signs.add(recording)
+    return signs.measured()
+
+
+def _dataset_image_signs(key, dataset, mites, library_dir, stabilize=False):
+    """_image_signs_mites() of the dataset's `mites`, from the cache when this
+    code has measured exactly these mites before; None when the recordings are
+    gone and they never were, so the report goes on without them."""
+    if not mites:
+        return {}
+    version = hashlib.sha1(json.dumps(
+        [inspect.getsource(image_signs_module.ImageSigns), inspect.getsource(recording_change),
+         inspect.getsource(plate_stabilizer), bool(stabilize),
+         [[m["id"], m["x"], m["y"], m["r"]] for m in mites]]).encode("utf-8")).hexdigest()[:12]
+    cache = _dataset_dir(key, library_dir) / SCORES_DIRNAME / f"image-signs-{version}.json"
+    if cache.is_file():
+        return json.loads(cache.read_text(encoding="utf-8"))["signs"]
+    try:
+        signs = _image_signs_mites(dataset, mites, _recordings_dir(dataset["data_dir"], library_dir), stabilize)
+    except FileNotFoundError:
+        return None
+    cache.parent.mkdir(parents=True, exist_ok=True)
+    cache.write_text(json.dumps({"signs": signs}), encoding="utf-8")
+    return signs
 
 
 def _poke_survival(mites, times):
-    """The survival of the poked mites of the pooled datasets by the pokes and by
-    the detector, for the test report (PokeSurvival.curves()); None without any."""
+    """The survival of the poked mites of the pooled datasets by the pokes, by
+    the detector and by their images, for the test report (PokeSurvival.curves());
+    None without any."""
     curves = PokeSurvival.curves(mites, times)
     if curves:
-        for curve in (curves["poke"], curves["detector"]):
-            curve.update({key: _rounded(curve[key], 2) for key in ("alive", "low", "high")})
+        for curve in (curves["poke"], curves["detector"], *(curves[key] for key in PokeSurvival.IMAGE_DEATHS)):
+            if curve:
+                curve.update({key: _rounded(curve[key], 2) for key in ("alive", "low", "high")})
     return curves
 
 
@@ -2201,8 +2242,10 @@ def evaluate_calibration(out_dir, datasets, metric=None, params=None, library_di
     and the band around it to check by eye, for `checks_per_mite` checks per
     mite at most (REVIEW_CHECKS unless given; "review_band", see
     _suggested_band()); every observation with its outcome; and, where a poke
-    test was entered, the survival of the poked mites by the pokes and by the
-    detector at the threshold in use ("poke", see _poke_survival()).
+    test was entered, the survival of the poked mites by the pokes, by the
+    detector at the threshold in use and by their images ("poke", see
+    _poke_survival(); measuring the images is slow the first time a dataset
+    meets it).
     Everything is also written to calibration.xlsx in `out_dir`, a moment later:
     the workbook takes longer to write than the report to work out, so the page
     has the report first (results_file() waits for the workbook).
@@ -2239,7 +2282,7 @@ def evaluate_calibration(out_dir, datasets, metric=None, params=None, library_di
         last = len(dataset["times"]) - 1
         circles = _dataset_circles(key, dataset, last, library_dir) if benchmark and last < len(dataset["recordings"]) else None
         rows += here
-        poked += _poked_mites(dataset, scores, current, library_dir)
+        poked += _poked_mites(key, dataset, scores, current, library_dir, stabilize)
         n_rejected += rejected
         n_unlabelled += unlabelled
         summaries.append(

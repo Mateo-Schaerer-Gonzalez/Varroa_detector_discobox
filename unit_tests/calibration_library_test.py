@@ -580,7 +580,16 @@ def test_a_copied_librarys_recordings_are_found(library):
     assert pipeline._recordings_dir(foreign, library) == copy
 
 
-def test_the_poke_test_is_saved_next_to_the_recordings_and_reported(tmp_path, library, scorer):
+def test_the_poke_test_is_saved_next_to_the_recordings_and_reported(tmp_path, library, scorer, monkeypatch):
+    measured = []
+
+    def image_signs(_dataset, mites, _recordings_dir, stabilize=False):
+        # mite 0's image changes to the end; mite 1's only once, which does not count; neither shrinks
+        measured.append([mite["id"] for mite in mites])
+        return {"0": {"silhouette": [100.0] * 3, "change": [None, 2.0, 2.0]},
+                "1": {"silhouette": [100.0] * 3, "change": [None, 2.0, 0.3]}}
+
+    monkeypatch.setattr(pipeline, "_image_signs_mites", image_signs)
     data_dir, out_dir = make_session(tmp_path, "a", 3, times=(0.0, 5.0, 10.0))
     # mite 0 moves to the end, mite 1 only at first, mite 2 is not a mite
     scorer.scores = {"a": {"0": [9, 9, 9], "1": [9, 0, 0], "2": [0, 0, 0]}}
@@ -604,14 +613,19 @@ def test_the_poke_test_is_saved_next_to_the_recordings_and_reported(tmp_path, li
     assert (poke["poke"]["n_mites"], poke["poke"]["n_dead"], poke["n_left_out"]) == (2, 1, 0)
     assert poke["poke"]["alive"] == [100, 100, 100, 50]
     assert poke["detector"]["alive"] == [100, 50, 50, None]
+    # only the mites that can be poked are measured; by its image mite 1 is dead from the first recording
+    assert measured == [["0", "1"]]
+    assert poke["change"]["alive"] == [50, 50, 50, None]
+    assert poke["shrinkage"]["alive"] == [100, 100, 100, None]
 
     # once the folder is gone, the library's copy of the recordings has the poke test too
     shutil.rmtree(data_dir)
     again = pipeline.evaluate_calibration(tmp_path / "report", [key], library_dir=library)
-    assert again["poke"] == poke
+    assert again["poke"] == poke and measured == [["0", "1"]]  # the images' signs come from the cache
     json.dumps(again, allow_nan=False)
     sheets = pd.read_excel(pipeline.results_file(tmp_path / "report", again["excel"]), sheet_name=None)
     assert list(sheets["poke_survival"]["survival_by_poke"]) == [100, 100, 100, 50]
+    assert list(sheets["poke_survival"]["survival_by_change"])[:3] == [50, 50, 50]
 
 
 def test_a_report_without_a_poke_test_has_none(tmp_path, library, scorer):

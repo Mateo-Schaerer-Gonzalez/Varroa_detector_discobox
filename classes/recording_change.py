@@ -59,15 +59,29 @@ class RecordingChange:
         recording to the one `lag` later. `images`: per mite, its
         recording_images()."""
         n_pairs = len(images[0]) - lag
-        per_mite = [[PlateStabilizer._shift(mite[at], mite[at + lag]) for at in range(n_pairs)] for mite in images]
-        return np.median(np.array(per_mite, dtype=float).reshape(len(images), n_pairs, 2), axis=0)
+        return np.array([self.plate_shift([mite[at] for mite in images], [mite[at + lag] for mite in images])
+                         for at in range(n_pairs)], dtype=float).reshape(n_pairs, 2)
+
+    @staticmethod
+    def plate_shift(earlier, later):
+        """(dx, dy): how far the plate moved from one recording to another, the
+        median of its mites' shifts. `earlier`, `later`: each mite's image in the two."""
+        shifts = [PlateStabilizer._shift(before, after) for before, after in zip(earlier, later)]
+        return np.median(np.array(shifts, dtype=float).reshape(len(shifts), 2), axis=0)
+
+    def pair_changes(self, earlier, later):
+        """Each mite's change() from one recording to another, the plate's shift
+        between them taken out. `earlier`, `later`: each mite's image in the two."""
+        shift = self.plate_shift(earlier, later)
+        return [self.change(before, after, shift) for before, after in zip(earlier, later)]
 
     def changes(self, images, lag=1):
         """(mites, recordings - lag): each mite's change() from each recording
         to the one `lag` later, the plate's shift between them taken out."""
-        shifts = self.plate_shifts(images, lag)
-        return np.array([[self.change(mite[at], mite[at + lag], shifts[at]) for at in range(len(shifts))]
-                         for mite in images])
+        n_pairs = len(images[0]) - lag
+        pairs = [self.pair_changes([mite[at] for mite in images], [mite[at + lag] for mite in images])
+                 for at in range(n_pairs)]
+        return np.array(pairs, dtype=float).reshape(n_pairs, len(images)).T
 
     def change(self, earlier, later, shift=(0.0, 0.0)):
         """The mean absolute difference between two images of a mite, the later

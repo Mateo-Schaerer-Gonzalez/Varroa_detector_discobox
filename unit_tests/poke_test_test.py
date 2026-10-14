@@ -47,11 +47,14 @@ def test_the_survival_of_the_poked_mites_by_the_pokes_and_by_the_detector():
         "4": [True, True, True, True],
     }
     rows = PokeSurvival(poke, TIMES, moving).mites()
-    assert rows == [{"n_recordings": 4, "death": 4, "alive_until": 4, "dead_from": None},
-                    {"n_recordings": 4, "death": 2, "alive_until": 2, "dead_from": 4},
-                    {"n_recordings": 4, "death": 0, "alive_until": None, "dead_from": 4},
-                    {"n_recordings": 4, "death": 4, "alive_until": 4, "dead_from": 2}]
+    unmeasured = {"shrinkage": None, "change": None}
+    assert rows == [{"n_recordings": 4, "death": 4, **unmeasured, "alive_until": 4, "dead_from": None},
+                    {"n_recordings": 4, "death": 2, **unmeasured, "alive_until": 2, "dead_from": 4},
+                    {"n_recordings": 4, "death": 0, **unmeasured, "alive_until": None, "dead_from": 4},
+                    {"n_recordings": 4, "death": 4, **unmeasured, "alive_until": 4, "dead_from": 2}]
     curves = PokeSurvival.curves(rows, TIMES)
+    # without the mites' images there are no curves by them
+    assert curves["shrinkage"] is None and curves["change"] is None
     # one more time than recordings: the poke after the last one, which mites 1 and 2 did not answer
     assert curves["final_poke"] and curves["times"] == [0.0, 10.0, 20.0, 30.0, 40.0]
     assert (curves["poke"]["n_mites"], curves["poke"]["n_dead"], curves["n_left_out"]) == (3, 2, 1)
@@ -71,6 +74,28 @@ def test_without_a_poke_after_the_last_recording_the_curves_end_with_the_recordi
     assert curves["poke"]["alive"] == [100, 100, 50, 50]     # mite 0 dead from the third recording, where mite 1 is censored
     assert curves["detector"]["alive"] == [100, 50, 0, 0]  # mite 0 dead from the second, mite 1 from the third
     assert PokeSurvival.curves([], TIMES) is None
+
+
+def test_the_survival_of_the_poked_mites_by_their_images():
+    poke = poked({3: {"0": "moved", "1": "unmoved"}})
+    moving = {"0": [True] * 4, "1": [True, False, False, False], "2": [True] * 4}
+    big = 100.0
+    signs = {
+        # never shrinks, its image changes to the end: censored by both
+        "0": {"silhouette": [big] * 4, "change": [None, 2.0, 2.0, 2.0]},
+        # its image last changes in the third recording, after a change in the second too: dead from the fourth
+        "1": {"silhouette": [big] * 4, "change": [None, 2.0, 2.0, 0.3]},
+        "2": {"silhouette": [big] * 4, "change": [None] * 4},
+    }
+    rows = PokeSurvival(poke, TIMES, moving, signs).mites()
+    assert [(row["shrinkage"], row["change"]) for row in rows] == [(4, 4), (4, 3)]
+    curves = PokeSurvival.curves(rows, TIMES)
+    assert curves["change"]["alive"] == [100, 100, 100, 50, None]
+    assert curves["shrinkage"]["alive"] == [100, 100, 100, 100, None]
+    assert (curves["change"]["n_mites"], curves["change"]["n_dead"]) == (2, 1)
+
+    # a mite of a dataset whose images could not be measured leaves those curves out
+    assert PokeSurvival.curves(rows + [{**rows[0], "shrinkage": None, "change": None}], TIMES)["change"] is None
 
 
 def test_filling_leaves_the_mites_already_poked():

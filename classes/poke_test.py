@@ -3,7 +3,9 @@
 A mite that moves when poked is alive up to that poke; one that does not is dead
 from it on. That gives the poked mites a survival curve of their own, which the
 test report draws with the detector's laid over it, by which a mite dies at the
-recording after its last movement (classes/survival.py).
+recording after its last movement (classes/survival.py), and those by the two
+signs of death in the mites' images, shrinking and no more change between
+recordings (classes/image_signs.py).
 
 A round is every mite poked at one moment, after the recording `after` (counted
 from 0; -1 before the first). Deaths and pokes are counted in recordings: a poke
@@ -18,6 +20,7 @@ settings that renumbers the mites. PokeSurvival draws the two curves.
 
 import numpy as np
 
+from classes.image_signs import ImageDeaths
 from classes.survival import SurvivalAnalysis, kaplan_meier
 
 MOVED = "moved"      # the mite moved when poked: alive up to then
@@ -148,25 +151,34 @@ class PokeTest:
 
 
 class PokeSurvival:
-    def __init__(self, poke, times, moving):
+    # the deaths by the mites' images besides the detector's (classes/image_signs.py)
+    IMAGE_DEATHS = ("shrinkage", "change")
+
+    def __init__(self, poke, times, moving, signs=None):
         """`poke`: a PokeTest; `times`: its recordings' times in minutes;
-        `moving`: mite id -> the detector's call in each recording."""
+        `moving`: mite id -> the detector's call in each recording; `signs`:
+        mite id -> its ImageSigns.measured() row, None when they could not be
+        measured."""
         self.poke = poke
         self.times = list(times)
         self.moving = moving
+        self.signs = signs
 
     def mites(self):
         """One row per mite poked at least once: {n_recordings (of its dataset),
         death (the detector's, in recordings: the one after its last movement, 0
-        for a mite it never saw moving), alive_until, dead_from (what the pokes
-        say, see PokeTest.bounds())}."""
+        for a mite it never saw moving), shrinkage and change (the deaths by its
+        image, ImageDeaths.deaths(); None without `signs`), alive_until,
+        dead_from (what the pokes say, see PokeTest.bounds())}."""
         rows = []
         for mite in self.poke.mites:
             if self.poke.pokes(mite["id"]):
                 alive_until, dead_from = self.poke.bounds(mite["id"])
+                by_image = (ImageDeaths.deaths(self.signs[mite["id"]]) if self.signs
+                            else dict.fromkeys(self.IMAGE_DEATHS))
                 rows.append({"n_recordings": len(self.times),
                              "death": SurvivalAnalysis.last_movement(self.moving[mite["id"]]) + 1,
-                             "alive_until": alive_until, "dead_from": dead_from})
+                             **by_image, "alive_until": alive_until, "dead_from": dead_from})
         return rows
 
     @staticmethod
@@ -186,8 +198,16 @@ class PokeSurvival:
                          last movement, one never seen moving at the first, and one
                          moving in its last recording is censored there. None past the
                          last recording, where the detector saw nothing
+            shrinkage    the same by the mites' silhouettes: a mite dies where it has
+                         shrunk (ImageDeaths.shrinkage()), and one never shrunk is
+                         censored at its last recording
+            change       the same by the change of their images between recordings: a
+                         mite dies at the recording after its image last changed
+                         (ImageDeaths.change()), one whose image changed up to its last
+                         recording is censored there
+                         (shrinkage and change None when a mite's images were not measured)
             n_left_out   the mites that answered a poke after not answering an earlier
-                         one: the pokes cannot both be right, so they are in neither curve
+                         one: the pokes cannot both be right, so they are in no curve
 
         None without poked mites."""
         if not mites:
@@ -203,9 +223,10 @@ class PokeSurvival:
                 return grid[mite["dead_from"]], True
             return grid[mite["alive_until"]], False
 
-        def by_detector(mite):
-            if mite["death"] < mite["n_recordings"]:
-                return grid[mite["death"]], True
+        def by_death(mite, key):
+            # dead from the recording `mite[key]`, censored at the last when that is past it
+            if mite[key] < mite["n_recordings"]:
+                return grid[mite[key]], True
             return grid[mite["n_recordings"] - 1], False
 
         def curve(survivals, until):
@@ -213,10 +234,16 @@ class PokeSurvival:
             return {**{key: values[:until] + [None] * (len(grid) - until) for key, values in described.items()},
                     "n_mites": len(survivals), "n_dead": sum(1 for _time, dead in survivals if dead)}
 
+        def by_image(key):
+            if any(mite.get(key) is None for mite in poked):
+                return None
+            return curve([by_death(mite, key) for mite in poked], n)
+
         return {
             "times": grid,
             "final_poke": final_poke,
             "poke": curve([by_poke(mite) for mite in poked], len(grid)),
-            "detector": curve([by_detector(mite) for mite in poked], n),
+            "detector": curve([by_death(mite, "death") for mite in poked], n),
+            **{key: by_image(key) for key in PokeSurvival.IMAGE_DEATHS},
             "n_left_out": len(mites) - len(poked),
         }

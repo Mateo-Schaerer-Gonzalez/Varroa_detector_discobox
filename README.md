@@ -160,7 +160,14 @@ report then draws the Kaplan-Meier survival of the poked mites by the pokes, a
 mite dying at the first poke it did not answer and one that answered every poke
 being right-censored at its last, with the detector's laid over it on the same
 mites at the threshold in use, a mite dying at the recording after its last
-movement; `calibration.xlsx` has both as the sheet `poke_survival`. Only the
+movement. Two more curves come from each mite's mean image in every recording
+(`classes/image_signs.py`, from `notebooks/alive_dead_shrinkage.ipynb` and
+`notebooks/dead_mite_change.ipynb`): by *size reduction* a mite is dead from
+where its silhouette stays more than 4.2% below its highest for 5 recordings in
+a row (hours after the death), and by *change between recordings* it dies at
+the recording after its image last changed beyond the camera's noise. Measuring
+them decodes the recordings once per dataset; they are kept in `scores/`.
+`calibration.xlsx` has all of them as the sheet `poke_survival`. Only the
 mites poked are in it. A poke only says dead by then, not when the mite died, so
 the detector's curve may fall earlier and still agree; it should not be above
 the pokes' at a poke. The recording needs at least one mite labelled moving or
