@@ -330,13 +330,11 @@ class ReportFigures {
   // --- the poke test (test report; the server's r.poke, classes/poke_test.py)
 
   // The Kaplan-Meier curve of the poked mites by the pokes (black, with its
-  // confidence band) against the detector's on the same mites, and those by
-  // their images (shrinking, no more change between recordings) when the
-  // server could measure them. The last time may be the poke after the last recording.
+  // confidence band) against the detector's on the same mites. The last time
+  // may be the poke after the last recording.
   drawPokeSurvival(container, r) {
     const { thr } = ReportPage;
     const curves = r.poke;
-    const byImage = ReportFigures.POKE_IMAGE_DEATHS.filter((death) => curves[death.key]);
     const count = (name, curve) => `<div class="tip-note">${name}: ${curve.n_mites} mites, ${curve.n_dead} dead</div>`;
     Charts.line(container, {
       x: curves.times,
@@ -346,20 +344,12 @@ class ReportFigures {
       noDirectLabels: true,
       series: [
         { name: `detector, in use ${thr(r.threshold)}`, values: curves.detector.alive, color: token("--series-1"), dashed: true, step: true, markers: false },
-        ...byImage.map((death) => ({ name: death.name, values: curves[death.key].alive, color: token(death.color), step: true, markers: false })),
         { name: "poke test", values: curves.poke.alive, band: { low: curves.poke.low, high: curves.poke.high },
           color: token("--ink"), width: 2.25, step: true, markers: false },
       ],
-      tooltipExtra: () => count("poke test", curves.poke) + count("detector", curves.detector)
-        + byImage.map((death) => count(death.name, curves[death.key])).join(""),
+      tooltipExtra: () => count("poke test", curves.poke) + count("detector", curves.detector),
     });
   }
-
-  // The deaths by the mites' images in the poke test's chart (classes/image_signs.py).
-  static POKE_IMAGE_DEATHS = [
-    { key: "shrinkage", name: "size reduction", color: "--series-2" },
-    { key: "change", name: "change between recordings", color: "--series-3" },
-  ];
 
   // Every zone of every pooled dataset, each opening its own recording folder.
   drawZoneErrors(r) {

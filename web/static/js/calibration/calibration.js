@@ -7,8 +7,7 @@
 //   #/cal/report                            the calibration or the test report (ReportPage)
 //
 // The ground truth itself, and saving it, is GroundTruth's; the saved datasets
-// are DatasetLibrary's. A live test run's recordings can be opened while it goes
-// on (openLive): they grow as the run analyses more of them.
+// are DatasetLibrary's.
 
 class Calibration {
   constructor() {
@@ -29,8 +28,6 @@ class Calibration {
     this.checksAllowed = null;    // checks by eye per mite the suggested band may ask for; null: the server's
     this.mapDataset = null;       // the dataset the error map of a pooled report shows
     this.lastDataset = null;      // the dataset whose last recording a pooled test report plays
-    this.liveId = null;           // the live test run whose recordings are open, growing with it; null for a folder
-    this.liveDataset = null;      // the dataset of its recordings
 
     this.modeRadios = document.querySelectorAll('input[name="cal-mode"]');
     this.modeRadios.forEach((radio) => radio.addEventListener("change", () => { this.mode = radio.value; }));
@@ -98,53 +95,10 @@ class Calibration {
   // Start labelling what the server opened: a folder just detected, or a saved dataset.
   // Callers first save or drop the unsaved changes (openWithTruthSaved), so that
   // reopening the dataset just edited shows what was saved.
-  start(data, liveId = null) {
+  start(data) {
     Object.assign(this, { id: data.session_id, report: null, reportStale: false, selected: [data.dataset_id] });
-    Object.assign(this, { liveId, liveDataset: liveId ? data.dataset_id : null });
     this.showDataset(data);
     router.go("#/cal/truth");
-  }
-
-  // Whether the dataset shown is the recordings of a live test run, `liveId` or any.
-  showsLive(liveId = this.liveId) {
-    return Boolean(this.data && liveId && this.liveId === liveId && this.datasetId === this.liveDataset);
-  }
-
-  // Enter the ground truth or the poke test (`page`: "truth" or "poke") of the
-  // live test run `liveId` while it goes on: of its recordings analysed so far,
-  // and of each one after as it is analysed (grow). Already open, they stay as
-  // they are; another dataset open first has its last changes saved.
-  // Throws when they cannot be opened.
-  async openLive(liveId, page) {
-    if (!this.showsLive(liveId)) {
-      await this.saveChanges();
-      this.start(await post(`/api/live/${liveId}/calibration`, {}), liveId);
-      // a recording analysed while they were being opened
-      this.grow();
-    }
-    // From the live mode, router.go() would only keep the page for later.
-    location.hash = `#/cal/${page}`;
-  }
-
-  // What the pages say of a live test run's recordings while it goes on.
-  liveNote() {
-    return this.showsLive() && live.id === this.liveId && live.running
-      ? " · live: each recording is added once the test run has analysed it" : "";
-  }
-
-  // The live test run shown analysed another recording: add it, unlabelled.
-  async grow() {
-    const { id } = this;
-    try {
-      const data = await post(`/api/calibration/${id}/grow`, {});
-      if (id !== this.id || !this.showsLive() || data.dataset_id !== this.datasetId) return;
-      Object.assign(this.data, { times: data.times, n_recordings: data.n_recordings, recordings: data.recordings });
-      groundTruth.take(data.truth_view);
-      if (location.hash.startsWith("#/cal/truth")) truthPage.refreshPanel();
-      if (location.hash.startsWith("#/cal/poke")) pokePage.grown();
-    } catch {
-      // the recordings shown stay; the next one analysed tries again
-    }
   }
 
   // Put a dataset on the ground-truth page; the report and the pooled datasets stay.
@@ -160,7 +114,7 @@ class Calibration {
   async goToMite(datasetId, zoneId, recording, miteId = null) {
     if (!(this.data && this.datasetId === datasetId)) {
       try {
-        await this.saveChanges();
+        await this.saveOrDropChanges();
         this.showDataset(await post(`/api/calibration/${this.id}/dataset/${encodeURIComponent(datasetId)}`, {}));
       } catch (error) {
         alert(`Could not open that recording: ${error.message}`);
@@ -172,17 +126,22 @@ class Calibration {
     if (mite != null) router.go(this.truthHref(mite, recording));
   }
 
-  // Before another dataset replaces the one on screen: wait for its changes and
-  // their saves, so the server reads the ground truth with them. Throws when the
-  // save fails; the changes then stay on screen.
-  async saveChanges() {
+  // Before another dataset replaces the one on screen: ask whether to save its
+  // unsaved changes, and wait for the changes and a save under way, so the server
+  // reads the ground truth with them. Throws when the save fails; the changes then
+  // stay on screen. Changes not saved go with the dataset they were made on.
+  async saveOrDropChanges() {
     await groundTruth.settled();
-    await groundTruth.save();
+    if (groundTruth.hasUnsaved() && confirm("Save your changes to the ground truth first?\n\nOK saves them, Cancel discards them.")) {
+      await groundTruth.save();
+    } else {
+      await groundTruth.saves;
+    }
   }
 
   async openWithTruthSaved(status, open) {
     try {
-      await this.saveChanges();
+      await this.saveOrDropChanges();
     } catch (error) {
       status.className = "hint error";
       status.textContent = `Not opened: the last changes could not be saved (${error.message}).`;
@@ -191,17 +150,16 @@ class Calibration {
     await open();
   }
 
-  // The Back button: close the dataset or the pooled report, after saving the
-  // last changes. What was saved stays in the saved ground truth.
+  // The Back button: close the dataset or the pooled report, after saving or
+  // dropping the unsaved changes. What was saved stays in the saved ground truth.
   async quit() {
     try {
-      await this.saveChanges();
+      await this.saveOrDropChanges();
     } catch (error) {
       alert(`Not closed: the last changes could not be saved (${error.message}).`);
       return;
     }
-    Object.assign(this, { id: null, data: null, datasetId: null, selected: [], report: null, reportStale: false, miteId: null, recording: 0,
-      liveId: null, liveDataset: null });
+    Object.assign(this, { id: null, data: null, datasetId: null, selected: [], report: null, reportStale: false, miteId: null, recording: 0 });
     groundTruth.load(null);
     router.setFolder("cal", "");
     router.go("#/cal/open");

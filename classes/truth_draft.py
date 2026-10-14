@@ -122,18 +122,6 @@ class TruthDraft:
         if not 0 <= recording < self.n:
             raise ValueError(f"No recording {recording} in this dataset.")
 
-    def grow(self, n_recordings):
-        """The dataset has more recordings, e.g. a live run's, recorded since: they
-        come unlabelled, and the changes not saved yet stay. A mite marked "not a
-        mite" is marked in them too."""
-        if n_recordings <= self.n:
-            return
-        self.n = n_recordings
-        self.saved = {mite_id: [NOT_A_MITE] * n_recordings if is_rejected(states) else per_recording(states, n_recordings)
-                      for mite_id, states in self.saved.items()}
-        self.before_rejection = {mite_id: per_recording(states, n_recordings)
-                                 for mite_id, states in self.before_rejection.items()}
-
     # --- saving
 
     def load(self, saved):

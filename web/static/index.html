@@ -288,7 +288,7 @@
       <h2>Ground truth</h2>
       <p class="hint">
         The detector's own call is hidden until the report, so it cannot sway you.
-        Every label is saved as you set it, also to the saved ground truth you can pool later.
+        <b>Save changes</b> or showing the report saves your labels, also to the saved ground truth you can pool later.
       </p>
       <div class="progress truth-progress">
         <div class="progress-bar"><div id="truth-progress-bar"></div></div>
@@ -297,7 +297,7 @@
       <div id="truth-map" class="plate truth-map"></div>
       <p class="hint">Where the mite is on the plate: the dot with the dark edge. Click a dot to go to that mite.</p>
       <ul id="truth-counts" class="group-list"></ul>
-      <p id="truth-save-state" class="hint" aria-live="polite"></p>
+      <button id="save-truth-btn" type="button" class="wide secondary" disabled>All changes saved</button>
       <a class="button secondary wide poke-link" href="#/cal/poke" title="Which mites moved when you poked them, to compare with the detector in the test report">Enter a poke test</a>
       <button id="evaluate-btn" type="button" class="wide">Show report</button>
       <p id="evaluate-status" class="hint"></p>
@@ -387,7 +387,6 @@
 <script src="js/results/zone-page.js"></script>
 <script src="js/results/review-check.js"></script>
 <script src="js/results/mite-page.js"></script>
-<script src="js/results/activity-section.js"></script>
 <script src="js/live/live-run.js"></script>
 <script src="js/live/live-setup-page.js"></script>
 <script src="js/live/live-panel.js"></script>

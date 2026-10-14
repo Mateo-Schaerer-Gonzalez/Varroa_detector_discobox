@@ -12,7 +12,6 @@ class OverviewPage extends ResultsPage {
     const span = times.length > 1 ? `over ${minutes(times[times.length - 1] - times[0])}` : "";
     const { stat, figure, section, movingBadge } = Markup;
     const review = new ReviewCheck(this);
-    const activity = new ActivitySection(this);
 
     body.innerHTML = `
     ${this.staleBanner()}
@@ -70,8 +69,6 @@ class OverviewPage extends ResultsPage {
       Each ridge is a smoothed distribution scaled to its own peak, with a tick along its base for every rest and a line at the median.
       <span id="intervals-left"></span>Hover a ridge for its numbers; select it to open the zone.`)}</div>
 
-    ${activity.html(6)}
-
     ${section("Files", `<ul class="files">
         <li><a href="${ctx.fileUrl(results.excel)}" download>${esc(results.excel)}</a> <span class="muted">when each mite last moved, every score, a picture of the plate with the mite IDs, and the group summaries</span></li>
       </ul>
@@ -98,7 +95,6 @@ class OverviewPage extends ResultsPage {
     this.drawGroupTable(groups);
     new SurvivalTable(this, groups).draw($("logrank-table"), $("logrank-caption"));
     new ScoreFigures(this, groups).draw();
-    activity.draw();
   }
 
   // Where the workbook and figures are saved on disk: results/<recording>/.

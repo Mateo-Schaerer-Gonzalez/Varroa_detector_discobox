@@ -380,8 +380,6 @@ def write_calibration_excel(result, out_dir):
         if result.get("poke"):
             poke = result["poke"]
             pd.DataFrame({"time": poke["times"], "survival_by_poke": poke["poke"]["alive"], "ci_low": poke["poke"]["low"],
-                          "ci_high": poke["poke"]["high"], "survival_by_detector": poke["detector"]["alive"],
-                          # by the mites' images, when they could be measured
-                          **{f"survival_by_{key}": poke[key]["alive"] for key in ("shrinkage", "change") if poke.get(key)}
-                          }).to_excel(writer, sheet_name="poke_survival", index=False)
+                          "ci_high": poke["poke"]["high"], "survival_by_detector": poke["detector"]["alive"]}).to_excel(
+                writer, sheet_name="poke_survival", index=False)
     return path.name

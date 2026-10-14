@@ -8,11 +8,6 @@ most 8, so that a live run's capture keeps the rest. A process that is itself
 one of several workers (the scripts' process pools) works alone: its siblings
 have the other processors.
 
-OpenCV would share out each of its own calls too, over every processor, and its
-threads wait for the next call spinning: on a mite's small patch that only
-burns them, keeping every processor busy for nothing (the Discobox's mouse
-lagged during a live run). So OpenCV works in the thread that calls it.
-
 Reading the frames of a recording waits for the disk and the decoder, not for
 the scoring, so the next recording is read while this one is scored (one_ahead()).
 
@@ -25,11 +20,7 @@ import os
 import threading
 from concurrent.futures import ThreadPoolExecutor
 
-import cv2
-
 WORKERS = 1 if multiprocessing.parent_process() is not None else max(1, min(8, (os.cpu_count() or 2) // 2))
-
-cv2.setNumThreads(1)
 
 _threads = None
 _starting = threading.Lock()

@@ -52,69 +52,6 @@ class TestShifts:
     def test_no_mites_no_shift(self):
         assert PlateStabilizer().shifts(shaken([(0, 0)] * 3), []).shape == (3, 2)
 
-    def test_an_ecc_that_runs_off_keeps_the_first_guess(self, monkeypatch):
-        # OpenCV 5's ECC can end hundreds of thousands of pixels away instead of failing
-        def runaway(reference, moved, warp, *args):
-            warp = warp.copy()
-            warp[:, 2] = 262612.0
-            return 1.0, warp
-
-        monkeypatch.setattr(cv2, "findTransformECC", runaway)
-        frames = shaken(OFFSETS).mean(axis=-1)
-        x1, y1, x2, y2 = BOXES[4]
-        for frame, offset in zip(frames[1:], OFFSETS[1:]):
-            shift = PlateStabilizer._shift(frames[0, y1 - 8:y2 + 8, x1 - 8:x2 + 8], frame[y1 - 8:y2 + 8, x1 - 8:x2 + 8])
-            assert np.abs(np.array(shift) - offset).max() < 0.5   # phase correlation's guess
-
-    def test_a_blank_patch_has_no_shift(self):
-        blank = np.zeros((30, 30), np.float32)
-        assert PlateStabilizer._shift(blank, blank) == (0.0, 0.0)
-        frames = np.full((3, 60, 60, 3), 200, np.float32)
-        assert np.abs(PlateStabilizer().follow(frames, [(20, 20, 36, 36)])[0].shifts).max() == 0
-
-    def test_it_follows_the_mite_s_centre_further_than_its_body_reaches(self):
-        offsets = [(0, 0), (2.5, -1.5), (-3.2, 2.7), (4.0, 0.5)]
-        shifts = PlateStabilizer().shifts(shaken(offsets), BOXES)
-        assert np.abs(shifts - np.array(offsets)).max() < 0.08
-
-    def test_a_flickering_lamp_moves_no_centre(self):
-        frames = shaken([(0, 0)] * 4)
-        frames *= np.array([1.0, 0.8, 1.15, 0.9], np.float32)[:, None, None, None]
-        assert np.abs(PlateStabilizer().shifts(frames, BOXES)).max() < 0.01
-
-
-def parted(offsets, apart):
-    """`shaken(offsets)`, and the right half of the plate moved by `apart` more
-    in every frame after the first, as when a zone moves on its own."""
-    frames = shaken(offsets)
-    half = shaken([(dx + apart[0], dy + apart[1]) if i else (dx, dy) for i, (dx, dy) in enumerate(offsets)])
-    frames[:, :, SIZE // 2:] = half[:, :, SIZE // 2:]
-    return frames
-
-
-class TestFollow:
-    def test_each_mite_follows_its_own_part_of_the_plate(self):
-        offsets = np.array([(0, 0), (0.2, 0), (0, 0.2), (0.1, 0.1)])
-        frames = parted(offsets, (0.25, -0.2))
-        boxes = BOXES[:4]  # the fifth lies across the seam
-        for box, one in zip(boxes, PlateStabilizer().follow(frames, boxes)):
-            apart = np.array([0.25, -0.2]) if box[0] >= SIZE // 2 else np.zeros(2)
-            assert np.abs(one.shifts - (offsets + np.outer([0, 1, 1, 1], apart))).max() < 0.08
-
-    def test_a_mite_follows_its_own_shift_however_far_it_strays(self):
-        frames = shaken([(0, 0)] * 4)
-        x1, y1, x2, y2 = BOXES[0]
-        for i in range(1, 4):  # the first mite's patch moves 1 px per frame
-            frames[i, y1 - 8:y2 + 8, x1 - 8:x2 + 8] = np.roll(frames[0, y1 - 8:y2 + 8, x1 - 8:x2 + 8], i, axis=1)
-        followed = PlateStabilizer().follow(frames, BOXES)
-        assert abs(followed[0].shifts[-1][0] - 3) < 0.1 and followed[0].stray > 2.5  # its own, not the plate's
-        assert all(one.stray < 0.05 for one in followed[1:])
-
-    def test_shake_is_how_far_the_mite_moved_from_the_first_frame(self):
-        followed = PlateStabilizer().follow(shaken(OFFSETS), BOXES)
-        largest = max(np.hypot(dx, dy) for dx, dy in OFFSETS)
-        assert all(abs(one.shake - largest) < 0.1 for one in followed)
-
 
 class TestCut:
     def test_it_cuts_the_same_box_as_get_roi(self):

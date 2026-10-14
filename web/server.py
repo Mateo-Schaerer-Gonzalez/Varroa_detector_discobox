@@ -457,23 +457,6 @@ def analysis_clip(session_id: str, recording: int, zone_id: Optional[int] = None
         raise HTTPException(status_code=400, detail=str(error))
 
 
-@app.get("/api/session/{session_id}/activity-clip/{kind}/{mite}")
-def activity_clip(session_id: str, kind: str, mite: str):
-    """One clip of a fly-off or a rotator, the recordings it spans played one
-    after the other (pipeline.activity_clip). Cached on first request."""
-    session = get_session(session_id)
-    if session.get("live") and not session.get("save_frames"):
-        raise HTTPException(status_code=400, detail="This test run does not save its recordings, so there is no clip to play.")
-    results = session_results(session_id)
-    if results is None or "activity" not in results:
-        raise HTTPException(status_code=400, detail="No results yet.")
-    try:
-        return pipeline.activity_clip(session["data_dir"], session["out_dir"], results["activity"], results["times"],
-                                      kind, mite)
-    except (FileNotFoundError, ValueError) as error:
-        raise HTTPException(status_code=400, detail=str(error))
-
-
 @app.get("/api/session/{session_id}/outline/{recording}/{zone_id}")
 def analysis_outlines(session_id: str, recording: int, zone_id: int):
     """What the score sees of each mite of one zone in one recording: the dots and
@@ -490,17 +473,13 @@ def analysis_outlines(session_id: str, recording: int, zone_id: int):
         raise HTTPException(status_code=400, detail=str(error))
 
 
-def new_calibration_session(name, open_it, live_id=None):
+def new_calibration_session(name, open_it):
     """Run `open_it(out_dir)` in a fresh calibration session and remember it.
-    Its folder is named by when it began and by `name`, what it opened. A
-    session on a live run's recordings keeps the run's `live_id`, to grow with it."""
+    Its folder is named by when it began and by `name`, what it opened."""
     session_id = uuid.uuid4().hex[:8]
     out_dir = pipeline.new_calibration_report_dir(name)
     try:
-        calibration = live_call(open_it, out_dir) if live_id else open_it(out_dir)
-    except HTTPException:
-        shutil.rmtree(out_dir, ignore_errors=True)
-        raise
+        calibration = open_it(out_dir)
     except (FileNotFoundError, ValueError) as error:
         shutil.rmtree(out_dir, ignore_errors=True)
         raise HTTPException(status_code=400, detail=str(error))
@@ -509,7 +488,6 @@ def new_calibration_session(name, open_it, live_id=None):
         "data_dir": calibration["data_dir"],
         "out_dir": out_dir,
         "dataset_id": calibration["dataset_id"],
-        "live_id": live_id,
     }
     return as_it_is({"session_id": session_id, **calibration})
 
@@ -578,17 +556,6 @@ def switch_dataset(session_id: str, dataset_id: str):
     return as_it_is({"session_id": session_id, **calibration})
 
 
-@app.post("/api/calibration/{session_id}/grow")
-def grow_calibration(session_id: str):
-    """A calibration session on a live run's recordings, with those analysed since
-    it was opened or last grown (pipeline.grow_live_calibration)."""
-    session = get_session(session_id)
-    if not session.get("live_id"):
-        raise HTTPException(status_code=400, detail="This calibration is not of a live run.")
-    return as_it_is({"session_id": session_id,
-                     **live_call(pipeline.grow_live_calibration, session["out_dir"], session["live_id"])})
-
-
 @app.get("/api/calibration/{session_id}/clip/{recording}/{zone_id}")
 def calibration_clip(session_id: str, recording: int, zone_id: int):
     """Frames of one zone during one recording, cropped and cached on first request."""
@@ -634,7 +601,7 @@ def get_ground_truth(session_id: str):
 
 @app.post("/api/calibration/{session_id}/truth/edit")
 def edit_ground_truth(session_id: str, request: TruthEdit):
-    """A change on the ground-truth page; the page saves it next (save_ground_truth)."""
+    """A change on the ground-truth page; it waits for "Save changes"."""
     session = get_session(session_id)
     try:
         return as_it_is(pipeline.edit_truth(session["out_dir"], request.action, mite=request.mite, zone=request.zone,
@@ -832,16 +799,6 @@ def live_preview(session_id: str):
 def start_live(session_id: str, request: LabelsRequest):
     live_session(session_id)
     return live_call(pipeline.start_live, session_id, request.labels)
-
-
-@app.post("/api/live/{session_id}/calibration")
-def calibrate_live(session_id: str):
-    """A calibration session on the test run's recordings so far, to enter their
-    ground truth and poke test while it goes on (pipeline.open_live_calibration)."""
-    session = live_session(session_id)
-    return new_calibration_session(Path(session["data_dir"]).name,
-                                   lambda out_dir: pipeline.open_live_calibration(session_id, out_dir),
-                                   live_id=session_id)
 
 
 @app.post("/api/live/{session_id}/{action}")

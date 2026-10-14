@@ -45,10 +45,6 @@ class MotionAnalysis:
         self.masked = None
         self.mites = []
         self.recording_times = []
-        # Per recording: the blobs on its first and last frame (Analyzer.blobs()),
-        # to tell where the mites are (classes/unusual_activity.py).
-        self.blobs = []
-        self.activity = None  # the UnusualActivity of the mites, once arranged
         self._session_start = None
         self._zone_mites = {}
 
@@ -87,22 +83,7 @@ class MotionAnalysis:
             self._detect(frames[0])
         if self.score:
             self.analyzer.score_pool(self.mites, [frame.image for frame in frames])
-            self.blobs.append(self._blobs(frames[0].image, frames[-1].image))
         self.recording_times.append(frame_times(frames[:1], self._session_start)[0])
-
-    def _blobs(self, *images):
-        """The blobs on `images` (a recording's first and last frame), those of
-        the later one within 1 px of one of the earlier left out."""
-        found = []
-        for image in images:
-            for blob in self.analyzer.blobs(self.zone_manager.mask_image_to_valid_rois(image)):
-                if all(abs(blob[0] - x) > 1 or abs(blob[1] - y) > 1 for x, y in found):
-                    found.append(blob)
-        return found
-
-    def zone_mites(self, zone):
-        """Every mite detected in `zone`, the ones left out too."""
-        return list(self._zone_mites.get(id(zone), []))
 
     def arrange(self, labels=None, reject=None):
         """Put every mite detected back in its zone, name the zones by `labels`

@@ -119,16 +119,12 @@ class FolderSource:
 
     FIRST = "first"  # for events(): decode only the first frame of the stream
 
-    def __init__(self, data_dir, names=None):
-        """`names`: only the recordings of these names, e.g. those of a live run
-        complete so far; every recording without."""
+    def __init__(self, data_dir):
         self.data_dir = Path(data_dir)
         self.loader = DataLoader(self.data_dir, grayscale=False)
-        self.names = None if names is None else set(names)
 
     def recordings(self):
-        return [Recording.from_folder(self.loader, d.name) for d in self.loader.recording_dirs
-                if self.names is None or d.name in self.names]
+        return [Recording.from_folder(self.loader, d.name) for d in self.loader.recording_dirs]
 
     def events(self, decode=True):
         """The stream of Frames and RecordingEnds. With `decode` False the Frames

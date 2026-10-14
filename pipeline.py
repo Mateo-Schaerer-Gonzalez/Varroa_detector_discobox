@@ -93,8 +93,6 @@ import numpy as np
 import reporting
 from classes import calibration
 from classes import death_calibration
-from classes import image_signs as image_signs_module
-from classes import recording_change
 from classes.analyzer import Analyzer
 from classes import benchmark as benchmark_module
 from classes.benchmark import Benchmark
@@ -108,7 +106,6 @@ from classes.data_loader import DataLoader
 from classes.deferred_files import DeferredFiles
 from classes.error_map import ErrorMap
 from classes.frame_source import FolderSource, as_analysis_image
-from classes.image_signs import ImageSigns
 from classes.kept_scores import KeptScores
 from classes.label_reader import LabelReader, LabelReadError
 from classes.live import camera as live_camera
@@ -128,7 +125,6 @@ from classes.score_normalizer import ScoreNormalizer
 from classes.survival import SurvivalAnalysis, SurvivalReport
 from classes.truth_draft import TruthDraft
 from classes.truth_overlap import TruthOverlap
-from classes.unusual_activity import UnusualActivity
 from classes.upload_plan import UploadPlan
 from classes.workers import one_ahead, side_by_side
 from classes.zone_layout import ZoneLayout
@@ -476,7 +472,7 @@ def detection_marks(data_dir, mites, library_dir=CALIBRATION_LIBRARY):
 
 
 def _detect_and_score(data_dir, coords_file, labels=None, reject=True, score=True, library_dir=CALIBRATION_LIBRARY,
-                      kept_in=None, names=None):
+                      kept_in=None):
     """Find the mites and, with `score`, decode every recording and score their motion.
 
     The expensive part shared by an analysis run and a calibration: the analysis
@@ -485,9 +481,8 @@ def _detect_and_score(data_dir, coords_file, labels=None, reject=True, score=Tru
     are dropped, so they appear nowhere in the results. With `kept_in`, a folder,
     the scores are kept there, and read back instead of worked out when these
     very frames were scored there before, by this code (classes/kept_scores.py).
-    With `names`, only the recordings of those names (FolderSource).
     """
-    source = FolderSource(data_dir, names)
+    source = FolderSource(data_dir)
     analysis = MotionAnalysis(_build_zone_manager(_coords_file(data_dir, coords_file)), score=False)
     if not score or kept_in is not None:
         # The mites and the recordings, from the first frame and the names of
@@ -499,42 +494,22 @@ def _detect_and_score(data_dir, coords_file, labels=None, reject=True, score=Tru
             kept = KeptScores(kept_in)
             key = KeptScores.key(analysis.mites, analysis.analyzer.config.mite.stabilize_plate,
                                  source.frame_files(), analysis.first_frame)
-        if kept is not None and kept.give(key, analysis.mites, len(analysis.recording_times)):
-            analysis.blobs = kept.blobs
-        else:
+        if kept is None or not kept.give(key, analysis.mites, len(analysis.recording_times)):
             analysis.score = True
             analysis.recording_times = []
             analysis.run(source.events())
             if kept is not None:
-                kept.keep(key, analysis.mites, analysis.blobs)
+                kept.keep(key, analysis.mites)
     _arrange(analysis, data_dir, labels, reject, library_dir)
     return _run_view(analysis)
 
 
 def _arrange(analysis, data_dir, labels, reject, library_dir):
     """Name the zones by `labels` and, with `reject`, leave out the detections
-    marked "not a mite" in the ground truth saved for `data_dir`, and the mites
-    that flew off (classes/unusual_activity.py: their activity is worked out
-    here, on every detection). Folder and live runs both go through here, so the
-    same marks give the same results."""
+    marked "not a mite" in the ground truth saved for `data_dir`. Folder and live
+    runs both go through here, so the same marks give the same results."""
     truth = _folder_truth(data_dir, library_dir) if reject else []
-
-    def left_out(zone_manager):
-        rejected = _rejected_detections(zone_manager, truth)
-        analysis.activity = UnusualActivity.of(analysis, rejected, _activity_reach(analysis.analyzer.config.mite))
-        if not reject:
-            return rejected
-        flown = analysis.activity.fly_off_ids
-        return [*rejected, *(mite for mite in analysis.mites if mite.text in flown and mite not in rejected)]
-
-    analysis.arrange(labels, left_out)
-
-
-def _activity_reach(mite):
-    """Pixels from a mite's centre to the edge of its scored patch: a mite walking
-    closer disturbs its recording (classes/unusual_activity.py)."""
-    params = mite.params_for(mite.metric)
-    return float(mite.radius) + Analyzer.roi_padding(mite.metric, params)
+    analysis.arrange(labels, lambda zone_manager: _rejected_detections(zone_manager, truth))
 
 
 def _run_view(analysis):
@@ -544,7 +519,6 @@ def _run_view(analysis):
         first_frame=analysis.first_frame,
         masked=analysis.masked,
         n_recordings=len(analysis.recording_times),
-        activity=analysis.activity,
         # One timestamp per recording, in minutes from the start of the session.
         burst_minutes=np.array(analysis.recording_times) / 60,
     )
@@ -561,7 +535,7 @@ def _write_preview(frame, out_dir):
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
     partial = out_dir / f"partial_{PREVIEW_NAME}"
-    _write_image(partial, frame, [cv2.IMWRITE_JPEG_QUALITY, 85])
+    cv2.imwrite(str(partial), frame, [cv2.IMWRITE_JPEG_QUALITY, 85])
     # Windows refuses to replace a file while it is being sent; that takes moments.
     for attempt in range(20):
         try:
@@ -612,10 +586,6 @@ _runs_lock = threading.Lock()
 # quiet (classes/deferred_files.py): the workbook and the figures after a page's
 # run and after every call corrected by hand, and a calibration report's workbook.
 _files_later = DeferredFiles()
-# The library's copy of a recording folder, brought up to date in the background
-# after the ground-truth page saves: checking every file of the recordings takes
-# a while, too long for a save made at every click.
-_library_copies = DeferredFiles(delay=5.0)
 # One at a time: matplotlib's figures are not made for two threads at once.
 _files_lock = threading.Lock()
 
@@ -771,8 +741,6 @@ def _mite_table(run, corrections=None, normalizer=None):
     changes = {}
     if corrections is not None:
         mite_data, changes = corrections.apply(mite_data)
-    if getattr(run, "activity", None) is not None:
-        mite_data, changes = run.activity.censor(mite_data, changes)
     if normalizer is not None:
         mite_data = normalizer.apply(mite_data, run.analyzer.config.mite.motion_threshold)
     return mite_data, changes
@@ -822,8 +790,6 @@ def _results(run, out_dir, labels, write_files=True, corrections=None, normalize
         }
     )
     results.update(changes)
-    if getattr(run, "activity", None) is not None:
-        results["activity"] = run.activity.describe()
     if normalizer is not None:
         results["normalization"] = normalizer.describe()
     band = _review_band(run.analyzer.config.mite.metric)
@@ -941,16 +907,9 @@ def open_calibration(data_dir, out_dir, coords_file=None, library_dir=CALIBRATIO
     data_dir = Path(data_dir)
     if not data_dir.is_dir():
         raise FileNotFoundError(f"Recording folder not found: {data_dir}")
-    stored = _calibration_session(data_dir, coords_file, out_dir)
-    return _opened_calibration(stored, out_dir, library_dir)
 
-
-def _calibration_session(data_dir, coords_file, out_dir, names=None):
-    """Detect the mites of a calibration session, on the first frame, write its
-    preview to `out_dir`, and keep there what it is (calibration_session.json).
-    With `names`, only the recordings of those names make the session."""
     labels = load_labels(data_dir)
-    run = _detect_and_score(data_dir, coords_file, labels, reject=False, score=False, names=names)
+    run = _detect_and_score(data_dir, coords_file, labels, reject=False, score=False)
     _write_preview(run.first_frame, out_dir)
 
     mites = []
@@ -969,40 +928,19 @@ def _calibration_session(data_dir, coords_file, out_dir, names=None):
         raise ValueError("No mites were detected, so there is nothing to calibrate.")
     mites.sort(key=lambda mite: Mite.id_order(mite["id"]))
 
+    loader = DataLoader(data_dir, grayscale=False)
     stored = {
         # absolute, so the library can tell later whether the recordings are still there
-        "data_dir": str(Path(data_dir).resolve()),
-        **_calibration_recordings(data_dir, names),
+        "data_dir": str(data_dir.resolve()),
+        "times": [round(float(minute), 2) for minute in run.burst_minutes],
+        "recordings": [{"name": d.name, "fps": loader.get_fps(d.name)} for d in loader.recording_dirs],
         "image": _image_size(run.first_frame),
         "zones": _describe_zones(run.zone_manager, labels),
         "mites": mites,
     }
-    _write_calibration_session(out_dir, stored)
-    return stored
+    (Path(out_dir) / CALIBRATION_SESSION_NAME).write_text(json.dumps(stored), encoding="utf-8")
 
-
-def _calibration_recordings(data_dir, names=None):
-    """{times, recordings} of a calibration session: each recording's time, in
-    minutes from the start of the first, as the analysis times it
-    (MotionAnalysis.recording_times), and its name and frame rate. Read from
-    the names alone: nothing is decoded."""
-    recordings = FolderSource(data_dir, names).recordings()
-    if not recordings:
-        raise FileNotFoundError(f"No recordings found in {data_dir}")
-    start = recordings[0].start
-    return {
-        "times": [round((recording.start - start).total_seconds() / 60, 2) for recording in recordings],
-        "recordings": [{"name": recording.name, "fps": recording.fps} for recording in recordings],
-    }
-
-
-def _write_calibration_session(out_dir, stored):
-    """Written whole before it takes the name: a live run's session grows while
-    its pages read it."""
-    path = Path(out_dir) / CALIBRATION_SESSION_NAME
-    partial = path.with_name(f"partial_{path.name}")
-    partial.write_text(json.dumps(stored), encoding="utf-8")
-    partial.replace(path)
+    return _opened_calibration(stored, out_dir, library_dir)
 
 
 def calibration_clip(out_dir, recording, zone_id, library_dir=CALIBRATION_LIBRARY):
@@ -1020,7 +958,7 @@ def calibration_clip(out_dir, recording, zone_id, library_dir=CALIBRATION_LIBRAR
         raise ValueError(f"No zone {zone_id} in this session.")
 
     # One session can switch between datasets, so clips are named after theirs.
-    name = f"clip_{_clip_key(dataset_id(stored['data_dir']))}_r{recording}_z{zone_id}"
+    name = f"clip_{dataset_id(stored['data_dir'])}_r{recording}_z{zone_id}"
     manifest = Path(out_dir) / CLIPS_DIRNAME / f"{name}.json"
     if manifest.is_file():
         return json.loads(manifest.read_text(encoding="utf-8"))
@@ -1034,22 +972,6 @@ def calibration_clip(out_dir, recording, zone_id, library_dir=CALIBRATION_LIBRAR
     source = stored["recordings"][recording]
     box = (zone["x1"] - CLIP_MARGIN, zone["y1"] - CLIP_MARGIN, zone["x2"] + CLIP_MARGIN, zone["y2"] + CLIP_MARGIN)
     return _write_clip(DataLoader(recordings_dir, grayscale=False), source["name"], source["fps"], box, out_dir, name)
-
-
-def _clip_key(dataset):
-    """A short name for `dataset` in its clips' file names: the clips sit in a
-    session folder already named after it, and Windows (without long paths)
-    refuses a path of more than 259 characters, which a long dataset name
-    repeated in both reached."""
-    return hashlib.sha1(str(dataset).encode("utf-8")).hexdigest()[:10]
-
-
-def _write_image(path, image, params=()):
-    """cv2.imwrite(), which only returns False where it cannot write (a path too
-    long for Windows, a folder gone), made to say so."""
-    if not cv2.imwrite(str(path), image, list(params)):
-        raise OSError(f"Could not write {path} ({len(str(path))} characters"
-                      f"{', longer than Windows allows' if len(str(path)) > 259 else ''}).")
 
 
 MITE_CLIP_REACH = 40            # pixels from a mite's centre to the edge of its own clip
@@ -1089,9 +1011,9 @@ def _mite_clip(recordings_dir, source, mite, out_dir, name):
     clips_dir.mkdir(parents=True, exist_ok=True)
     names = [f"{CLIPS_DIRNAME}/{name}_{index:02d}.png" for index in range(len(frames))]
     for frame, frame_name in zip(frames, names):
-        _write_image(Path(out_dir) / frame_name, frame)
+        cv2.imwrite(str(Path(out_dir) / frame_name), frame)
     variation = f"{CLIPS_DIRNAME}/{name}_variation.png"
-    _write_image(Path(out_dir) / variation, _variation_picture(frames))
+    cv2.imwrite(str(Path(out_dir) / variation), _variation_picture(frames))
     clip = {
         "frames": names,
         "variation": variation,
@@ -1121,7 +1043,7 @@ def calibration_mite_clip(out_dir, recording, mite_id, library_dir=CALIBRATION_L
             "so there is no clip to play. The ground truth can still be edited."
         )
     return _mite_clip(recordings_dir, stored["recordings"][recording], mite, out_dir,
-                      f"mite_{_clip_key(dataset_id(stored['data_dir']))}_r{recording}")
+                      f"mite_{dataset_id(stored['data_dir'])}_r{recording}")
 
 
 def _write_clip(loader, recording_name, fps, box, out_dir, name, max_width=None):
@@ -1150,7 +1072,7 @@ def _write_clip(loader, recording_name, fps, box, out_dir, name, max_width=None)
         if scale < 1:
             frame = cv2.resize(frame, (round(width * scale), round(height * scale)), interpolation=cv2.INTER_AREA)
         names.append(f"{CLIPS_DIRNAME}/{name}_{index:02d}.jpg")
-        _write_image(Path(out_dir) / names[-1], frame, [cv2.IMWRITE_JPEG_QUALITY, 85])
+        cv2.imwrite(str(Path(out_dir) / names[-1]), frame, [cv2.IMWRITE_JPEG_QUALITY, 85])
     clip = {
         "frames": names,
         "x": x1,
@@ -1177,7 +1099,7 @@ def dataset_clip(out_dir, dataset, recording, library_dir=CALIBRATION_LIBRARY):
     _check_recordings(saved, recordings_dir, "there is no clip to play")
     source = saved["recordings"][recording]
     return _write_clip(DataLoader(recordings_dir, grayscale=False), source["name"], source["fps"], (0, 0, 10**6, 10**6),
-                       out_dir, f"clip_{_clip_key(dataset)}_r{recording}_plate", PLATE_CLIP_WIDTH)
+                       out_dir, f"clip_{dataset}_r{recording}_plate", PLATE_CLIP_WIDTH)
 
 
 def _recording_name(loader, recording):
@@ -1239,78 +1161,6 @@ def analysis_clip(data_dir, out_dir, recording, zone_id=None, coords_file=None):
     return _write_clip(loader, source, loader.get_fps(source), box, out_dir, name, max_width)
 
 
-ACTIVITY_CLIP_FRAMES = 480      # frames in a clip of unusual activity at most; each recording is thinned to fit
-ACTIVITY_CLIP_RECORDINGS = 60   # recordings in one at most
-ACTIVITY_CLIP_REACH = 40        # pixels round the mite, or its track, in the clip
-ACTIVITY_CLIP_WIDTH = 720       # a wider clip is scaled down to this
-ACTIVITY_CLIP_MIN_WIDTH = 320   # a narrower one is scaled up, a whole number of times
-ROTATOR_CLIP_SPAN = 6           # recordings before and after a rotator first turned past the limit
-
-
-def activity_clip(data_dir, out_dir, activity, times, kind, mite_id):
-    """One clip of a fly-off or a rotator (results["activity"], see
-    classes/unusual_activity.py), every recording it spans played one after
-    the other, each frame marked with its recording's time (`times`, minutes):
-    a fly-off from the recording before it left to the one after it stopped
-    walking, round its whole track; a rotator ROTATOR_CLIP_SPAN recordings
-    either side of when it first turned past the limit, round the mite. Like
-    analysis_clip(), written to `out_dir` once and reused after."""
-    events = activity.get("fly_offs" if kind == "fly_off" else "rotators", []) if kind in ("fly_off", "rotator") else []
-    event = next((e for e in events if e["id"] == str(mite_id)), None)
-    if event is None:
-        raise ValueError(f"No {kind.replace('_', '-')} {mite_id} in these results.")
-    n = len(times)
-    if kind == "fly_off":
-        first, last = max(0, event["from"] - 1), min(n - 1, event.get("walked_to", event["to"]) + 1)
-        points = [(x, y) for r, x, y in event["track"] if first <= r <= last] + [(event["x"], event["y"])]
-    else:
-        first, last = max(0, event["from"] - ROTATOR_CLIP_SPAN), min(n - 1, event["from"] + ROTATOR_CLIP_SPAN)
-        points = [(event["x"], event["y"])]
-    last = min(last, first + ACTIVITY_CLIP_RECORDINGS - 1)
-    xs, ys = [p[0] for p in points], [p[1] for p in points]
-    x1, y1 = max(0, int(min(xs)) - ACTIVITY_CLIP_REACH), max(0, int(min(ys)) - ACTIVITY_CLIP_REACH)
-    x2, y2 = int(max(xs)) + ACTIVITY_CLIP_REACH, int(max(ys)) + ACTIVITY_CLIP_REACH
-    name = f"activity_{kind}_{re.sub(r'[^0-9A-Za-z]+', '-', str(mite_id))}_r{first}-{last}_x{x1}_y{y1}"
-    clips_dir = Path(out_dir) / CLIPS_DIRNAME
-    manifest = clips_dir / f"{name}.json"
-    if manifest.is_file():
-        return json.loads(manifest.read_text(encoding="utf-8"))
-
-    loader = DataLoader(data_dir, grayscale=False)
-    recordings = [_recording_name(loader, recording) for recording in range(first, last + 1)]
-    n_frames = sum(loader.count_frames(recording) for recording in recordings)
-    step = max(1, int(np.ceil(n_frames / ACTIVITY_CLIP_FRAMES)))
-    clips_dir.mkdir(parents=True, exist_ok=True)
-    names, width, height, fps = [], None, None, None
-    for recording, source in zip(range(first, last + 1), recordings):
-        fps = fps or loader.get_fps(source)
-        for frame in loader.load_recording_region(source, x1, y1, x2, y2, step=step):
-            height, width = frame.shape[:2]
-            scale = min(1.0, ACTIVITY_CLIP_WIDTH / width)
-            if scale < 1:
-                frame = cv2.resize(frame, (round(width * scale), round(height * scale)), interpolation=cv2.INTER_AREA)
-            elif width < ACTIVITY_CLIP_MIN_WIDTH:  # a mite's crop: pixels made larger, so the time fits beside it
-                grow = int(np.ceil(ACTIVITY_CLIP_MIN_WIDTH / width))
-                frame = cv2.resize(frame, (width * grow, height * grow), interpolation=cv2.INTER_NEAREST)
-            frame = np.ascontiguousarray(frame)
-            label = f"{times[recording]:.1f} min"
-            for colour, thickness in (((0, 0, 0), 3), ((255, 255, 255), 1)):
-                cv2.putText(frame, label, (6, frame.shape[0] - 8), cv2.FONT_HERSHEY_SIMPLEX, 0.5, colour, thickness, cv2.LINE_AA)
-            names.append(f"{CLIPS_DIRNAME}/{name}_{len(names):03d}.jpg")
-            _write_image(Path(out_dir) / names[-1], frame, [cv2.IMWRITE_JPEG_QUALITY, 85])
-    clip = {
-        "frames": names,
-        "x": x1,
-        "y": y1,
-        "width": int(width),
-        "height": int(height),
-        "interval_ms": int(round(1000 * step / (fps or 10))),
-        "recordings": [first, last],
-    }
-    manifest.write_text(json.dumps(clip), encoding="utf-8")
-    return clip
-
-
 def save_ground_truth(out_dir, truth, library_dir=CALIBRATION_LIBRARY):
     """Store the ground truth next to the recordings, by mite position, and in the
     calibration library by mite id.
@@ -1325,29 +1175,28 @@ def save_ground_truth(out_dir, truth, library_dir=CALIBRATION_LIBRARY):
     return len(_write_ground_truth(_read_calibration_session(out_dir), truth, out_dir, library_dir))
 
 
-def update_ground_truth(out_dir, changes, library_dir=CALIBRATION_LIBRARY, copy_later=False):
+def update_ground_truth(out_dir, changes, library_dir=CALIBRATION_LIBRARY):
     """Save the changes made on screen on top of what is saved, which another
     window (marking a detection "not a mite" before a run, say) may have changed
     since this session opened. `changes` maps mite id to the statuses that
     changed, by recording index, or to a list of every recording's (see
     calibration.apply_changes()); only those recordings change, so a page that
-    has not caught up with a change made elsewhere cannot undo it. With
-    `copy_later`, the library's copy of the recordings is brought up to date in
-    the background (finish_library_copies() waits for it). Returns the whole
-    ground truth by mite id, as save_ground_truth() takes it."""
+    has not caught up with a change made elsewhere cannot undo it. Returns the
+    whole ground truth by mite id, as save_ground_truth() takes it."""
     stored = _read_calibration_session(out_dir)
     truth = _saved_truth(stored, library_dir)
     for mite_id, changed in changes.items():
         truth[mite_id] = calibration.apply_changes(truth.get(mite_id), changed, len(stored["times"]))
-    return _write_ground_truth(stored, truth, out_dir, library_dir, copy_later=copy_later)
+    return _write_ground_truth(stored, truth, out_dir, library_dir)
 
 
 # --- the ground truth being entered
 #
 # The changes made on the ground-truth page wait here, one draft per calibration
-# session (keyed by its folder), until they are saved: the page saves them as soon
-# as they are made, and a click need not wait for the disk. What the page shows
-# is always what saving them will store (see classes/truth_draft.py). Every view carries a version, higher for every view
+# session (keyed by its folder), until they are saved: saving also brings the
+# library's copy of the recordings up to date, which is too slow to do on every
+# click. What the page shows is always what saving them will store (see
+# classes/truth_draft.py). Every view carries a version, higher for every view
 # made, so the page can tell which reply is the latest.
 
 _drafts = {}
@@ -1422,14 +1271,13 @@ def edit_truth(out_dir, action, mite=None, zone=None, recording=0, backwards=Fal
 
 def save_truth(out_dir, library_dir=CALIBRATION_LIBRARY):
     """Save the changes made on the ground-truth page on top of what is saved
-    (update_ground_truth()); changes made while saving wait for the next save.
-    Quick: the library's copy of the recordings follows in the background."""
+    (update_ground_truth()); changes made while saving wait for the next save."""
     draft = _draft(out_dir, library_dir)
     with _drafts_lock:
         sent = draft.unsaved_now()
     changed = False
     if sent:
-        saved = update_ground_truth(out_dir, sent, library_dir, copy_later=True)
+        saved = update_ground_truth(out_dir, sent, library_dir)
         with _drafts_lock:
             changed = draft.saved_as(sent, saved)
     with _drafts_lock:
@@ -1446,7 +1294,7 @@ def _saved_truth(stored, library_dir):
     return calibration.match_ground_truth(stored["mites"], _folder_truth(stored["data_dir"], library_dir), len(stored["times"]))
 
 
-def _write_ground_truth(stored, truth, out_dir, library_dir, tolerance=10.0, copy_later=False):
+def _write_ground_truth(stored, truth, out_dir, library_dir, tolerance=10.0):
     n_recordings = len(stored["times"])
     labelled = {}
     for mite in stored["mites"]:
@@ -1464,7 +1312,7 @@ def _write_ground_truth(stored, truth, out_dir, library_dir, tolerance=10.0, cop
         entries += [entry for entry in load_ground_truth(recordings_dir)
                     if all(np.hypot(entry["x"] - m["x"], entry["y"] - m["y"]) > tolerance for m in stored["mites"])]
         (recordings_dir / GROUND_TRUTH_FILENAME).write_text(json.dumps(entries), encoding="utf-8")
-    _save_to_library(stored, labelled, out_dir, library_dir, copy_later)
+    _save_to_library(stored, labelled, out_dir, library_dir)
     return labelled
 
 
@@ -1534,61 +1382,23 @@ def edit_poke(out_dir, action, after, mite=None, zone=None, state=None, library_
     return poke.view()
 
 
-def _poked_mites(key, dataset, scores, threshold, library_dir, stabilize=False):
+def _poked_mites(dataset, scores, threshold, library_dir):
     """The poked mites of a dataset with the detector's death of each at
-    `threshold` and those by their images (PokeSurvival.mites()); [] without a
-    poke test."""
+    `threshold` (PokeSurvival.mites()); [] without a poke test."""
     poke = _poke_of(dataset, library_dir)
     if not poke.rounds:
         return []
     moving = {mite["id"]: [score >= threshold for score in scores[mite["id"]]] for mite in poke.mites}
-    signs = _dataset_image_signs(key, dataset, poke.mites, library_dir, stabilize)
-    return PokeSurvival(poke, dataset["times"], moving, signs).mites()
-
-
-def _image_signs_mites(dataset, mites, recordings_dir, stabilize=False):
-    """The silhouette and the change between recordings of each of `mites` in
-    every recording of a dataset (ImageSigns.measured()). Slow: every frame is
-    decoded, see _measure_mites()."""
-    _check_recordings(dataset, recordings_dir, "the images of its mites cannot be measured")
-    signs = ImageSigns([mite["id"] for mite in mites])
-    for recording in _measure_mites({**dataset, "mites": mites}, recordings_dir, ImageSigns.mean_image,
-                                    ImageSigns.PAD, stabilize):
-        signs.add(recording)
-    return signs.measured()
-
-
-def _dataset_image_signs(key, dataset, mites, library_dir, stabilize=False):
-    """_image_signs_mites() of the dataset's `mites`, from the cache when this
-    code has measured exactly these mites before; None when the recordings are
-    gone and they never were, so the report goes on without them."""
-    if not mites:
-        return {}
-    version = hashlib.sha1(json.dumps(
-        [inspect.getsource(image_signs_module.ImageSigns), inspect.getsource(recording_change),
-         inspect.getsource(plate_stabilizer), bool(stabilize),
-         [[m["id"], m["x"], m["y"], m["r"]] for m in mites]]).encode("utf-8")).hexdigest()[:12]
-    cache = _dataset_dir(key, library_dir) / SCORES_DIRNAME / f"image-signs-{version}.json"
-    if cache.is_file():
-        return json.loads(cache.read_text(encoding="utf-8"))["signs"]
-    try:
-        signs = _image_signs_mites(dataset, mites, _recordings_dir(dataset["data_dir"], library_dir), stabilize)
-    except FileNotFoundError:
-        return None
-    cache.parent.mkdir(parents=True, exist_ok=True)
-    cache.write_text(json.dumps({"signs": signs}), encoding="utf-8")
-    return signs
+    return PokeSurvival(poke, dataset["times"], moving).mites()
 
 
 def _poke_survival(mites, times):
-    """The survival of the poked mites of the pooled datasets by the pokes, by
-    the detector and by their images, for the test report (PokeSurvival.curves());
-    None without any."""
+    """The survival of the poked mites of the pooled datasets by the pokes and by
+    the detector, for the test report (PokeSurvival.curves()); None without any."""
     curves = PokeSurvival.curves(mites, times)
     if curves:
-        for curve in (curves["poke"], curves["detector"], *(curves[key] for key in PokeSurvival.IMAGE_DEATHS)):
-            if curve:
-                curve.update({key: _rounded(curve[key], 2) for key in ("alive", "low", "high")})
+        for curve in (curves["poke"], curves["detector"]):
+            curve.update({key: _rounded(curve[key], 2) for key in ("alive", "low", "high")})
     return curves
 
 
@@ -1654,14 +1464,11 @@ def _recordings_dir(data_dir, library_dir):
 def _copy_recordings(data_dir, target):
     """Bring the library's copy of a recording folder up to date: its own files
     (settings, labels, ground truth) and every recording in it. A file already
-    copied, with the same size and time, is skipped, so saving again is quick.
-    A file still being written (*.part, by a live run's Recorder, say) is not
-    one yet: it comes with the next save."""
+    copied, with the same size and time, is skipped, so saving again is quick."""
     data_dir = Path(data_dir)
     files = [path for path in data_dir.iterdir() if path.is_file()]
     for recording in DataLoader(data_dir).recording_dirs:
         files += [path for path in recording.rglob("*") if path.is_file()]
-    files = [path for path in files if path.suffix != ".part"]
     for source in files:
         copy = target / source.relative_to(data_dir)
         stat = source.stat()
@@ -1673,13 +1480,12 @@ def _copy_recordings(data_dir, target):
         partial.replace(copy)  # only a complete file ever has the real name
 
 
-def _save_to_library(stored, truth, out_dir, library_dir, copy_later=False):
+def _save_to_library(stored, truth, out_dir, library_dir):
     """Keep this session's mites, ground truth and recordings in the library; a
-    session with nothing labelled has no dataset. With `copy_later`, the
-    recordings are copied in the background."""
+    session with nothing labelled has no dataset."""
     folder = _dataset_dir(dataset_id(stored["data_dir"]), library_dir)
     if not truth:
-        _remove_dataset_folder(folder)
+        shutil.rmtree(folder, ignore_errors=True)
         return
     folder.mkdir(parents=True, exist_ok=True)
     preview = Path(out_dir) / PREVIEW_NAME
@@ -1692,36 +1498,8 @@ def _save_to_library(stored, truth, out_dir, library_dir, copy_later=False):
         "truth": truth,
     }
     (folder / DATASET_NAME).write_text(json.dumps(dataset), encoding="utf-8")
-    if not Path(stored["data_dir"]).is_dir():
-        return
-    key = str(folder.resolve())
-    if copy_later:
-        _library_copies.later(key, partial(_copy_into_dataset, stored["data_dir"], folder))
-    else:
-        _library_copies.forget(key)
-        _library_copies.finish(key)  # not two copies of one file at once
+    if Path(stored["data_dir"]).is_dir():
         _copy_recordings(stored["data_dir"], folder / RECORDINGS_DIRNAME)
-
-
-def _remove_dataset_folder(folder, ignore_errors=True):
-    """Remove a dataset's folder from the library, after a copy of its recordings
-    under way, which would bring it back."""
-    key = str(folder.resolve())
-    _library_copies.forget(key)
-    _library_copies.finish(key)
-    shutil.rmtree(folder, ignore_errors=ignore_errors)
-
-
-def _copy_into_dataset(data_dir, folder):
-    """The background copy of _save_to_library(): only into a dataset still saved."""
-    if (folder / DATASET_NAME).is_file() and Path(data_dir).is_dir():
-        _copy_recordings(data_dir, folder / RECORDINGS_DIRNAME)
-
-
-def finish_library_copies():
-    """Return once the library's copies of the recordings are up to date with
-    the ground truth saved: before the program ends."""
-    _library_copies.finish()
 
 
 def _library_positions(data_dir, library_dir):
@@ -1744,7 +1522,7 @@ def _update_library_truth(data_dir, saved, library_dir):
     dataset = json.loads(path.read_text(encoding="utf-8"))
     truth = calibration.match_ground_truth(dataset["mites"], saved, len(dataset["times"]))
     if not truth:
-        _remove_dataset_folder(folder)  # as _save_to_library() does
+        shutil.rmtree(folder, ignore_errors=True)  # as _save_to_library() does
         return
     dataset.update(truth=truth, saved_at=datetime.now().isoformat(timespec="seconds"))
     path.write_text(json.dumps(dataset), encoding="utf-8")
@@ -1824,7 +1602,7 @@ def delete_calibration_dataset(dataset, library_dir=CALIBRATION_LIBRARY):
     folder = _dataset_dir(dataset, library_dir)
     if not (folder / DATASET_NAME).is_file():
         raise FileNotFoundError(f"No saved ground truth called {dataset}.")
-    _remove_dataset_folder(folder, ignore_errors=False)
+    shutil.rmtree(folder)
     return dataset
 
 
@@ -1872,14 +1650,13 @@ def _measure_mites(dataset, recordings_dir, measure, pad=0, stabilize=False):
              for mite_id, (x1, y1, x2, y2) in mite_boxes(dataset["mites"]).items()}
 
     def measured(frames):
-        # each mite's patch follows its own shift, as an analysis run cuts it
-        followed = dict(zip(local, PlateStabilizer().follow(frames, list(local.values())))) if stabilize else None
+        shifts = PlateStabilizer().shifts(frames, list(local.values())) if stabilize else None
 
         def one(mite_id):
             x1, y1, x2, y2 = boxes[mite_id]
-            if followed is None:
+            if shifts is None:
                 return measure(frames[:, max(0, y1) - y0:y2 - y0, max(0, x1) - x0:x2 - x0])
-            return measure(PlateStabilizer.cut(frames, local[mite_id], pad, followed[mite_id].shifts))
+            return measure(PlateStabilizer.cut(frames, local[mite_id], pad, shifts))
 
         return dict(zip(boxes, side_by_side(one, boxes)))
 
@@ -2277,10 +2054,8 @@ def evaluate_calibration(out_dir, datasets, metric=None, params=None, library_di
     and the band around it to check by eye, for `checks_per_mite` checks per
     mite at most (REVIEW_CHECKS unless given; "review_band", see
     _suggested_band()); every observation with its outcome; and, where a poke
-    test was entered, the survival of the poked mites by the pokes, by the
-    detector at the threshold in use and by their images ("poke", see
-    _poke_survival(); measuring the images is slow the first time a dataset
-    meets it).
+    test was entered, the survival of the poked mites by the pokes and by the
+    detector at the threshold in use ("poke", see _poke_survival()).
     Everything is also written to calibration.xlsx in `out_dir`, a moment later:
     the workbook takes longer to write than the report to work out, so the page
     has the report first (results_file() waits for the workbook).
@@ -2317,7 +2092,7 @@ def evaluate_calibration(out_dir, datasets, metric=None, params=None, library_di
         last = len(dataset["times"]) - 1
         circles = _dataset_circles(key, dataset, last, library_dir) if benchmark and last < len(dataset["recordings"]) else None
         rows += here
-        poked += _poked_mites(key, dataset, scores, current, library_dir, stabilize)
+        poked += _poked_mites(dataset, scores, current, library_dir)
         n_rejected += rejected
         n_unlabelled += unlabelled
         summaries.append(
@@ -3018,44 +2793,6 @@ def live_correct_call(live_id, mite_id, recording, state=None, checked=False):
     return live_results(live_id)
 
 
-def open_live_calibration(live_id, out_dir):
-    """A calibration session on a live run's recordings, to enter their ground
-    truth and poke test while the run goes on: open_calibration() of the run's
-    folder, but of the recordings analysed so far alone, the one being captured
-    left out. grow_live_calibration() adds the recordings that come after. The
-    ground truth is judged on the recordings' clips and kept with them, so the
-    run must save its recordings."""
-    run = _get_live(live_id)
-    if not run.save_frames:
-        raise ValueError("This test run does not save its recordings, so there is no clip to enter a ground truth "
-                         "on and no folder to keep it in.")
-    names = list(run.session.recordings)
-    if not names:
-        raise ValueError("The ground truth and the poke test can be entered once the first recording is analysed.")
-    stored = _calibration_session(run.run_dir, run.coords_file, out_dir, names)
-    return _opened_calibration(stored, out_dir, run.library_dir)
-
-
-def grow_live_calibration(out_dir, live_id):
-    """Bring a calibration session made by open_live_calibration() up to the
-    recordings its live run has analysed since: they come unlabelled, and the
-    ground truth's changes not saved yet stay (TruthDraft.grow()). Returns the
-    session as open_live_calibration() does. A session showing another dataset
-    by now, e.g. one a pooled report opened, is left as it is."""
-    run = _get_live(live_id)
-    library_dir = run.library_dir
-    stored = _read_calibration_session(out_dir)
-    names = list(run.session.recordings)
-    if Path(stored["data_dir"]) == run.run_dir.resolve() and len(names) > len(stored["recordings"]):
-        stored.update(_calibration_recordings(run.run_dir, names))
-        _write_calibration_session(out_dir, stored)
-        draft = _draft(out_dir, library_dir)
-        with _drafts_lock:
-            draft.grow(len(stored["times"]))
-    return {**_calibration_view(stored, _saved_truth(stored, library_dir), library_dir),
-            "truth_view": truth_view(out_dir, library_dir)}
-
-
 def _write_live_files(run):
     """The workbook and the figures of a live run that is over, as its corrections
     are now. The lock is held only to read the run, not while the files are written."""
@@ -3136,10 +2873,8 @@ def live_running():
 
 def close_all_live():
     """Stop every live run cleanly and release the camera: on shutdown. The
-    files a correction left to write, and the library's copies of the
-    recordings, are written first."""
+    files a correction left to write are written first."""
     finish_files()
-    finish_library_copies()
     with _live_lock:
         for live_id in list(_live):
             _close_live(live_id)

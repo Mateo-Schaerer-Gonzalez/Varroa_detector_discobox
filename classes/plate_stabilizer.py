@@ -1,22 +1,15 @@
 """Takes a shaking plate out of the frames before the mites are scored.
 
 A shake of half a pixel, too small to see, moves every mite's outline across
-its pixels and makes a still mite score like a moving one with any metric. Each
-mite's centre is found in every frame (the centre of the darkness of its body),
-and its shift is how far that centre moved from the first frame. Its patch is
-cut from each frame moved back by that shift, then scored as usual (follow()).
-A glued mite moves with what it is glued to, so that follows the plate where
-the mite is, also where the plate's parts move apart.
-
-A mite's own shift is not always the plate's: the legs of a moving mite pull its
-centre along, and so does another mite walking through its patch
-(notebooks/per_mite_stabilization.ipynb). Its own shift is used all the same: a
-mite that walks off is left out of the analysis, and a recording another one
-walked through is set aside (classes/unusual_activity.py).
+its pixels and makes a still mite score like a moving one with any metric. The
+plate is rigid, so in each frame every mite moves by the same shift; a mite that
+walks moves by its own. Each mite's shift from the first frame is measured, and
+the median over the mites is the plate's: the walking few can't pull it. Each
+mite's patch is then cut from its frame moved back by that shift, and scored as
+usual.
 """
 
 import math
-from collections import namedtuple
 
 import cv2
 import numpy as np
@@ -25,16 +18,7 @@ from classes.workers import side_by_side
 
 # How far beyond the patch the Lanczos interpolation reads, in pixels.
 _LANCZOS_REACH = 4
-# The outermost pixels of a mite's patch, read for the plate's light: the plate, never the mite.
-_RIM = 6
 _ECC_CRITERIA = (cv2.TERM_CRITERIA_EPS | cv2.TERM_CRITERIA_COUNT, 50, 1e-4)
-# The most ECC may move phase correlation's first guess, in pixels: that is off by
-# up to about a pixel on the sample data, where ECC brings it back.
-_ECC_REACH = 3.0
-# How one mite's patch follows the plate in one recording: `shifts` (N, 2), its
-# own, what its frames are moved back by; `stray`, the most they strayed from the
-# plate's (px); `shake`, the most they moved from the first frame (px).
-Following = namedtuple("Following", "shifts stray shake")
 
 
 class PlateStabilizer:
@@ -46,35 +30,19 @@ class PlateStabilizer:
 
     def shifts(self, frames, boxes):
         """(N, 2) array: per frame, how far (dx, dy) the plate moved since the
-        first frame, in pixels: the median of the mites' own shifts. `frames` is
-        a stack or a list of (H, W, C) frames, `boxes` the mites' (x1, y1, x2,
-        y2) in those frames."""
-        return self.measure(frames, boxes)[1]
-
-    def measure(self, frames, boxes):
-        """(per mite, plate): each mite's own shifts, (mites, N, 2), and the
-        plate's, their median, (N, 2)."""
+        first frame, in pixels. `frames` is a stack or a list of (H, W, C)
+        frames, `boxes` the mites' (x1, y1, x2, y2) in those frames."""
         if not boxes or len(frames) < 2:
-            return np.zeros((len(boxes), len(frames), 2)), np.zeros((len(frames), 2))
+            return np.zeros((len(frames), 2))
         # one mite's shifts say nothing of another's: they are measured side by side
-        per_mite = np.array(side_by_side(lambda box: self._mite_shifts(frames, box), boxes), dtype=float)
-        return per_mite, np.median(per_mite, axis=0)
-
-    def follow(self, frames, boxes):
-        """Per mite, a Following: its own shifts, and how far they strayed from
-        the plate's and moved from the first frame."""
-        per_mite, plate = self.measure(frames, boxes)
-        return [Following(own, float(np.hypot(*(own - plate).T).max()) if len(own) else 0.0,
-                          float(np.hypot(*own.T).max()) if len(own) else 0.0)
-                for own in per_mite]
+        per_mite = side_by_side(lambda box: self._mite_shifts(frames, box), boxes)
+        return np.median(np.array(per_mite), axis=0)
 
     def _mite_shifts(self, frames, box):
-        """Per frame, how far one mite's centre moved since the first frame."""
+        """Per frame, how far one mite's patch moved since the first frame."""
         patches = _gray(_patches(frames, box[0] - self.pad, box[1] - self.pad, box[2] + self.pad, box[3] + self.pad))
-        centres = _centres(patches)
-        if centres is None:
-            return np.zeros((len(patches), 2))  # nothing dark to follow, e.g. a blank patch
-        return centres - centres[0]
+        window = cv2.createHanningWindow(patches.shape[:0:-1], cv2.CV_32F)  # the same for every frame
+        return [self._shift(patches[0], patch, window) for patch in patches]
 
     @staticmethod
     def _shift(reference, moved, window=None):
@@ -87,19 +55,13 @@ class PlateStabilizer:
             window = cv2.createHanningWindow(reference.shape[::-1], cv2.CV_32F)
         # Copies: phaseCorrelate multiplies float32 images by the window in
         # place, which would spoil the reference for every later frame.
-        (dx, dy), response = cv2.phaseCorrelate(reference.copy(), moved.copy(), window)
-        if not (response > 0 and math.isfinite(dx) and math.isfinite(dy)):
-            return 0.0, 0.0  # nothing to correlate, e.g. a blank patch
+        (dx, dy), _response = cv2.phaseCorrelate(reference.copy(), moved.copy(), window)
+        warp = _move(dx, dy)
         try:
-            _, warp = cv2.findTransformECC(reference, moved, _move(dx, dy), cv2.MOTION_TRANSLATION, _ECC_CRITERIA, None, 1)
+            _, warp = cv2.findTransformECC(reference, moved, warp, cv2.MOTION_TRANSLATION, _ECC_CRITERIA, None, 1)
         except cv2.error:
-            return float(dx), float(dy)  # a flat patch: keep the first guess
-        x, y = float(warp[0, 2]), float(warp[1, 2])
-        # ECC only refines the first guess. Far from it, it ran off (OpenCV 5 can,
-        # instead of failing, by hundreds of thousands of pixels): keep the guess.
-        if not (math.isfinite(x) and math.isfinite(y)) or math.hypot(x - dx, y - dy) > _ECC_REACH:
-            return float(dx), float(dy)
-        return x, y
+            pass  # a flat patch: keep the first guess
+        return float(warp[0, 2]), float(warp[1, 2])
 
     @staticmethod
     def cut(frames, box, pad, shifts):
@@ -155,63 +117,6 @@ def _mirror(index, size):
     period = 2 * size - 2 if size > 1 else 1
     index = np.abs(index) % period
     return np.where(index >= size, period - index, index)
-
-
-def _centres(patches):
-    """(N, 2): the mite's centre (x, y) in each of a stack of grey patches, or
-    None for a patch without a mite.
-
-    The centre is that of the darkness of the mite's body, as
-    Analyzer._outline_rays() finds it: a pixel's darkness is the share of the
-    plate's light it takes away, the plate's light read off the patch's
-    outermost pixels frame by frame, so a lamp that flickers changes nothing.
-    The body is what is at least 30% as dark as the darkest of the mite in the
-    mean of the frames, the piece closest to the middle of the patch (where the
-    mite's box is; another piece is a neighbour), and two pixels around it.
-    Where the mite moved by a pixel or more, the body is moved along to where it
-    is and the centre found again, so none of the mite is left outside it."""
-    height, width = patches.shape[1:]
-    rim = np.ones((height, width), dtype=bool)
-    rim[_RIM:-_RIM, _RIM:-_RIM] = False
-    if rim.all():
-        return None
-    plate = np.median(patches[:, rim], axis=1)
-    if plate.min() <= 0:
-        return None
-    dark = np.clip(1 - patches / plate[:, None, None], 0, None)
-    still = dark.mean(axis=0)
-    if still[~rim].max() <= 0:
-        return None
-    dark_enough = (still > 0.3 * still[~rim].max()) & ~rim
-    pieces = cv2.connectedComponents(dark_enough.astype(np.uint8))[1]
-    yy, xx = np.ogrid[:height, :width]
-    from_middle = np.hypot(yy - (height - 1) / 2, xx - (width - 1) / 2)
-    body = (pieces == pieces.ravel()[np.where(dark_enough, from_middle, np.inf).argmin()]).astype(np.uint8)
-    body = cv2.dilate(body, np.ones((3, 3), np.uint8), iterations=2).astype(np.float32)
-
-    middle = _weighted_centres((still * body)[None])
-    centres = _weighted_centres(dark * body)
-    if middle is None or centres is None:
-        return None
-    steps = np.round(centres - middle).astype(int)
-    if not steps.any():
-        return centres
-    # each frame's body moved by its whole pixels, cut from the body with room around it
-    reach = int(np.abs(steps).max())
-    around = np.pad(body, reach)
-    moved = np.stack([around[reach - dy:reach - dy + height, reach - dx:reach - dx + width] for dx, dy in steps])
-    return _weighted_centres(dark * moved)
-
-
-def _weighted_centres(weights):
-    """(N, 2): the centre (x, y) of each of a stack of (N, h, w) weights, or None
-    where one has no weight at all."""
-    total = weights.sum(axis=(1, 2), dtype=np.float64)
-    if not (total > 0).all():
-        return None
-    x = weights.sum(axis=1, dtype=np.float64) @ np.arange(weights.shape[2])
-    y = weights.sum(axis=2, dtype=np.float64) @ np.arange(weights.shape[1])
-    return np.stack([x / total, y / total], axis=1)
 
 
 def _gray(patches):

@@ -52,7 +52,7 @@ class TruthPage {
     $("truth-title").textContent = `Mite ${mite.id} · ${cal.recordingName(recording)}`;
     const source = cal.data.recordings?.[recording];
     $("truth-meta").innerHTML = `mite ${index + 1} of ${mites.length} · zone ${mite.zone_id}${zone?.label ? ` (${esc(zone.label)})` : ""}
-    · <span title="${esc(cal.data.data_dir)}">${esc(folderOf(cal.data.data_dir))}</span>${source ? ` / <code>${esc(source)}</code>` : ""}${cal.liveNote()}`;
+    · <span title="${esc(cal.data.data_dir)}">${esc(folderOf(cal.data.data_dir))}</span>${source ? ` / <code>${esc(source)}</code>` : ""}`;
     $("truth-pager").innerHTML = Markup.pager(mites, index, (m) => cal.truthHref(m.id), (m) => `Mite ${m.id}`);
 
     this.playClip(mite, recording);
@@ -187,7 +187,7 @@ class TruthPage {
     const { cells, done, ready } = view;
     $("truth-progress").innerHTML = `<b>${done}</b> of ${cells} mite-recordings labelled · this mite: ${view.mites_done[mite.id]} of ${cal.nRecordings}`;
     $("truth-progress-bar").style.width = `${(done / cells) * 100}%`;
-    groundTruth.drawSaveState();
+    groundTruth.drawSaveButton();
 
     $("evaluate-btn").disabled = !ready;
     $("evaluate-btn").textContent = cal.mode === "test" ? "Show test report" : "Show calibration";

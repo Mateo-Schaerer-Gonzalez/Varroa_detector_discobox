@@ -89,19 +89,6 @@ def test_the_scores_come_back_to_the_last_digit(tmp_path):
         assert mite.color == original.color  # drawn as moving or still by its last score, as when scored
 
 
-def test_the_activity_and_the_blobs_come_back(tmp_path):
-    kept = KeptScores(tmp_path)
-    originals = scored()
-    for mite in originals:
-        mite.activity = [{"stray": 0.1 * index, "dx": -0.25, "angle": None} for index in range(len(AWKWARD))]
-    blobs = [[[1.5, 2.0]] for _ in AWKWARD]
-    kept.keep("a key", originals, blobs)
-    back = mites()
-    assert kept.give("a key", back, len(AWKWARD))
-    assert [mite.activity for mite in back] == [mite.activity for mite in originals]
-    assert kept.blobs == blobs
-
-
 def test_nothing_comes_back_under_another_key_or_for_other_mites_or_recordings(tmp_path):
     kept = KeptScores(tmp_path)
     assert not kept.give("a key", mites(), 5)  # nothing kept yet

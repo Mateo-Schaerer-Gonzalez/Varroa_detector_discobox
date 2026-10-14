@@ -16,13 +16,11 @@ class MitePage extends ResultsPage {
     this.breadcrumb([["Results", ctx.href("results")], [this.zoneName(zone), ctx.href(`zone/${zone.id}`)], [`Mite ${mite.id}`, ""]]);
 
     const nCorrected = mite.corrected.filter(Boolean).length;
-    const nAside = mite.censored.filter((gone, i) => gone && this.setAside(mite, i)).length;
-    const nGone = mite.censored.filter(Boolean).length - nAside;
+    const nGone = mite.censored.filter(Boolean).length;
     const { STATES, STATE_NAMES } = ResultsPage;
     const movingNote = [
       nCorrected ? `${nCorrected} call${nCorrected === 1 ? "" : "s"} corrected by hand` : "",
       nGone ? `gone in ${nGone} more` : "",
-      nAside ? `set aside in ${nAside} more (disturbed)` : "",
     ].filter(Boolean).join(", ");
     const review = new ReviewCheck(this);
     const body = this.body;
