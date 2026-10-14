@@ -40,7 +40,7 @@ class PokePage {
   async draw() {
     const key = this.key();
     if (this.shownFor !== key) { this.view = null; this.after = null; }
-    $("poke-meta").innerHTML = `<span title="${esc(cal.data.data_dir)}">${esc(folderOf(cal.data.data_dir))}</span> · ${cal.nRecordings} recordings`;
+    this.drawMeta();
     this.setStatus("");
     try {
       const view = await getJson(`/api/calibration/${cal.id}/poke`, "Could not load the poke test");
@@ -52,6 +52,17 @@ class PokePage {
     }
     this.drawMap();
     this.refresh();
+  }
+
+  drawMeta() {
+    $("poke-meta").innerHTML = `<span title="${esc(cal.data.data_dir)}">${esc(folderOf(cal.data.data_dir))}</span>
+    · ${plural(cal.nRecordings, "recording")}${cal.liveNote()}`;
+  }
+
+  // A live test run analysed another recording: a round can be poked after it.
+  grown() {
+    this.drawMeta();
+    if (this.view && this.shownFor === this.key()) this.drawRounds();
   }
 
   take(view, key = this.key()) {

@@ -119,6 +119,20 @@ def test_unknown_mites_and_recordings_are_refused():
         draft().cycle("0", 3)
 
 
+def test_more_recordings_come_unlabelled_and_the_changes_not_saved_stay():
+    d = draft({"0": ["moving", "still", None], "1": ["not_a_mite"] * 3})
+    d.set("2", 1, "moving")
+    d.grow(5)
+    assert d.states("0") == ["moving", "still", None, None, None]
+    assert d.states("1") == ["not_a_mite"] * 5
+    assert d.states("2") == [None, "moving", None, None, None]
+    assert d.unsaved_now() == {"2": {1: "moving"}}
+    d.dead_from("0", 2)  # the new recordings can be labelled
+    assert d.states("0") == ["moving", "still", "still", "still", "still"]
+    d.grow(4)  # never fewer
+    assert d.n == 5
+
+
 def test_the_pipeline_keeps_the_changes_until_saved(tmp_path):
     library = tmp_path / "library"
     data_dir, out_dir = make_session(tmp_path, "a", 2)
@@ -130,6 +144,24 @@ def test_the_pipeline_keeps_the_changes_until_saved(tmp_path):
     assert saved["unsaved"] == 0 and saved["version"] > view["version"]
     assert pipeline.load_calibration_truth(out_dir, library) == {"0": ["moving", None]}
     assert pipeline.list_calibration_datasets(library)[0]["n_moving"] == 1
+
+
+def test_saving_leaves_the_library_copy_of_the_recordings_for_the_background(tmp_path):
+    library = tmp_path / "library"
+    _data_dir, out_dir = make_session(tmp_path, "a", 2)
+    pipeline.edit_truth(out_dir, "set", mite="0", recording=0, state="moving", library_dir=library)
+    pipeline.save_truth(out_dir, library)
+    dataset = library / pipeline.list_calibration_datasets(library)[0]["id"]
+    copy = dataset / pipeline.RECORDINGS_DIRNAME / pipeline.GROUND_TRUTH_FILENAME
+    assert not copy.exists()  # the save did not wait for it
+    pipeline.finish_library_copies()
+    assert copy.is_file()
+
+    # Nothing labelled any more: the dataset goes, and no copy brings it back.
+    pipeline.edit_truth(out_dir, "set", mite="0", recording=0, state=None, library_dir=library)
+    pipeline.save_truth(out_dir, library)
+    pipeline.finish_library_copies()
+    assert not dataset.exists()
 
 
 def test_the_view_follows_a_change_saved_elsewhere(tmp_path):

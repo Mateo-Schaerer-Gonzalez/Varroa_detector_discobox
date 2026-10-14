@@ -315,6 +315,8 @@ class LiveRun {
       // The list of recordings on the camera page shows the run from its first recording on.
       const changed = !was || was.state !== this.status.state || was.analysed !== this.status.analysed;
       if (changed && this.onOpenPage) recordings.refresh();
+      // The ground truth and the poke test of this run's recordings take the one just analysed.
+      if (was && was.analysed !== this.status.analysed && cal.showsLive(id)) cal.grow();
       // How the run is going first: the progress bar and the feed never wait on the results.
       livePanel.draw();
       this.drawSteps();

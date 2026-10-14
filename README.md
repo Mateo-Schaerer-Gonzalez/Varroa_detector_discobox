@@ -109,9 +109,9 @@ that with the detector:
    *moving*, *still*, *not a mite* (a false detection) and back to unlabelled;
    clicking on past a *not a mite* you just set brings back the mite's labels.
    <kbd>↑</kbd> <kbd>↓</kbd> change recording, <kbd>←</kbd> <kbd>→</kbd> change
-   zone. The detector's own call is hidden so it cannot bias you. *Save changes*,
-   or showing the report, saves the labels by position in `ground_truth.json`
-   next to the recordings, so they survive a change in detector settings.
+   zone. The detector's own call is hidden so it cannot bias you. Every label
+   is saved as it is set, by position in `ground_truth.json` next to the
+   recordings, so they survive a change in detector settings.
 3. **Report**: every labelled (mite, recording) is compared with the
    detector's call there, moving when that recording's score reaches the
    threshold. *Calibration* suggests the threshold that puts the mites' deaths
@@ -153,7 +153,8 @@ when poked was alive up to then, one that does not is dead from then on.
 for each time you poked (after which recording), choose *moved*, *did not move*
 or *not poked*, and click each mite, or a zone's number for the zone's mites not
 poked yet. Poke between two recordings, not during one: a poked mite moves, and
-the detector would count it. Every click is saved by mite position to
+the detector would count it. During a live test run, enter it from the live
+panel as you go (see *Live from the Discobox*). Every click is saved by mite position to
 `poke_test.json` next to the recordings (`classes/poke_test.py`). The *Test*
 report then draws the Kaplan-Meier survival of the poked mites by the pokes, a
 mite dying at the first poke it did not answer and one that answered every poke
@@ -310,6 +311,17 @@ is analysed as soon as it is in, and the usual result pages fill in as the run g
    *Follow the latest recording* shows each new recording as it comes; choose
    an older one and the page stays on it. Labels and *not a mite* marks can
    still change; the results follow them.
+
+**Ground truth and poke test during a run.** *Ground truth* and *Poke test* on
+the live panel open the calibration's pages on the run's recordings so far,
+once the first is analysed: label the mites as the recordings come in, and enter
+each round of pokes right after you poke, between two recordings. Each recording
+is added, unlabelled, once the run has analysed it; the one being captured is
+not there yet. They are kept next to the recordings, as for any folder
+(`ground_truth.json`, `poke_test.json`), so opening the run's folder in
+*Calibration* later finds them. The *Live* tab goes back to the run; the buttons
+go back to the same labels. They need the recordings saved: without them there is
+no clip to judge.
 
 Each recording is saved, as the Discobox app saves it, to
 `recordings/<run name>/<YYYY-MM-DD-HH-MM-SS>_fps-<fps>/<recording>_<frame id>.bmp`
