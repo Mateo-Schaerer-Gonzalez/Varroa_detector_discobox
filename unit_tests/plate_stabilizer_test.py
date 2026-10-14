@@ -52,6 +52,21 @@ class TestShifts:
     def test_no_mites_no_shift(self):
         assert PlateStabilizer().shifts(shaken([(0, 0)] * 3), []).shape == (3, 2)
 
+    def test_an_ecc_that_runs_off_keeps_the_first_guess(self, monkeypatch):
+        # OpenCV 5's ECC can end hundreds of thousands of pixels away instead of failing
+        def runaway(reference, moved, warp, *args):
+            warp = warp.copy()
+            warp[:, 2] = 262612.0
+            return 1.0, warp
+
+        monkeypatch.setattr(cv2, "findTransformECC", runaway)
+        shifts = PlateStabilizer().shifts(shaken(OFFSETS), BOXES)
+        assert np.abs(shifts - np.array(OFFSETS)).max() < 0.5   # phase correlation's guess
+
+    def test_a_blank_patch_has_no_shift(self):
+        blank = np.zeros((30, 30), np.float32)
+        assert PlateStabilizer._shift(blank, blank) == (0.0, 0.0)
+
 
 def parted(offsets, apart):
     """`shaken(offsets)`, and the right half of the plate moved by `apart` more

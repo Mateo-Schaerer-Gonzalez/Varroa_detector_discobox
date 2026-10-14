@@ -25,6 +25,9 @@ from classes.workers import side_by_side
 # How far beyond the patch the Lanczos interpolation reads, in pixels.
 _LANCZOS_REACH = 4
 _ECC_CRITERIA = (cv2.TERM_CRITERIA_EPS | cv2.TERM_CRITERIA_COUNT, 50, 1e-4)
+# The most ECC may move phase correlation's first guess, in pixels: that is off by
+# up to about a pixel on the sample data, where ECC brings it back.
+_ECC_REACH = 3.0
 # How one mite's patch follows the plate in one recording: `shifts` (N, 2), its
 # own, what its frames are moved back by; `stray`, the most they strayed from the
 # plate's (px); `shake`, the most they moved from the first frame (px).
@@ -79,13 +82,19 @@ class PlateStabilizer:
             window = cv2.createHanningWindow(reference.shape[::-1], cv2.CV_32F)
         # Copies: phaseCorrelate multiplies float32 images by the window in
         # place, which would spoil the reference for every later frame.
-        (dx, dy), _response = cv2.phaseCorrelate(reference.copy(), moved.copy(), window)
-        warp = _move(dx, dy)
+        (dx, dy), response = cv2.phaseCorrelate(reference.copy(), moved.copy(), window)
+        if not (response > 0 and math.isfinite(dx) and math.isfinite(dy)):
+            return 0.0, 0.0  # nothing to correlate, e.g. a blank patch
         try:
-            _, warp = cv2.findTransformECC(reference, moved, warp, cv2.MOTION_TRANSLATION, _ECC_CRITERIA, None, 1)
+            _, warp = cv2.findTransformECC(reference, moved, _move(dx, dy), cv2.MOTION_TRANSLATION, _ECC_CRITERIA, None, 1)
         except cv2.error:
-            pass  # a flat patch: keep the first guess
-        return float(warp[0, 2]), float(warp[1, 2])
+            return float(dx), float(dy)  # a flat patch: keep the first guess
+        x, y = float(warp[0, 2]), float(warp[1, 2])
+        # ECC only refines the first guess. Far from it, it ran off (OpenCV 5 can,
+        # instead of failing, by hundreds of thousands of pixels): keep the guess.
+        if not (math.isfinite(x) and math.isfinite(y)) or math.hypot(x - dx, y - dy) > _ECC_REACH:
+            return float(dx), float(dy)
+        return x, y
 
     @staticmethod
     def cut(frames, box, pad, shifts):
