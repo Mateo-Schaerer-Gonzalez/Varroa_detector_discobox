@@ -19,11 +19,13 @@ last frame (MotionAnalysis). From those, UnusualActivity finds:
   contrast in the first recording (the detector alone misses a mite now and
   then). It is left out of the analysis from the start, and followed from
   blob to blob as it walks (its track).
-- a **disturbed** recording of another mite: a blob that is not a mite in its
-  place and was not there the recording before (something walking) comes
-  within reach of its scored patch, or the mite's own shift strayed further
-  than STRAY_LIMIT from the plate's (something pulled its patch along). Its
-  call there is set aside: censored, it counts neither as moving nor as still.
+- a **disturbed** recording of another mite: something walked by it. A blob
+  that is not a mite in its place and was not there the recording before comes
+  within reach of its scored patch; or a fly-off's track passes there in a
+  recording in which the fly-off was not seen on its own (it lay against the
+  mite, one blob with it), where it was between the recordings it was seen in.
+  Its call there is set aside: censored, it counts neither as moving nor as
+  still.
 - a **rotator**: a mite whose body turned by more than TURN_LIMIT from its
   first recordings, in AWAY_COUNT recordings. It stays in the analysis.
 - the plate's **shake** per recording (the median of the mites' shake) and
@@ -35,7 +37,6 @@ Notebooks/per_mite_stabilization.ipynb sets the limits.
 import numpy as np
 import pandas as pd
 
-from classes.plate_stabilizer import STRAY_LIMIT
 
 PRESENT_RADIUS = 6.0  # px: a blob this close to a mite's place is the mite
 ABSENT_RUN = 3        # recordings in a row without the mite in its place: it flew off
@@ -69,7 +70,7 @@ class UnusualActivity:
         self.present = self._present()
         self.flown = self._fly_offs()            # mite index -> first recording without it
         self.tracks = self._tracks()             # mite index -> [(recording, x, y)]
-        self.disturbed = self._disturbed()       # (mites, recordings) -> "passing", "pulled" or None
+        self.disturbed = self._disturbed()       # (mites, recordings) -> "passing" or None
         self.turns = self._turns()               # (mites, recordings) degrees, nan where unknown
         self.rotating = self._rotators()         # mite index -> first recording past TURN_LIMIT
 
@@ -176,15 +177,29 @@ class UnusualActivity:
         distance = np.hypot(*(loose[:, None, :] - before[None, :, :]).transpose(2, 0, 1))
         return loose[distance.min(axis=1) > NEW_RADIUS]
 
+    def _places(self, m):
+        """Where the fly-off `m` was in every recording of its track, those it
+        was not seen in put where it was between the ones before and after:
+        [(recording, x, y, seen)]."""
+        seen = np.array(self.tracks[m], dtype=float)
+        between = np.arange(int(seen[0, 0]), int(seen[-1, 0]) + 1)
+        found = set(seen[:, 0].astype(int))
+        return list(zip(between, np.interp(between, seen[:, 0], seen[:, 1]), np.interp(between, seen[:, 0], seen[:, 2]),
+                        (r in found for r in between)))
+
     def _disturbed(self):
         disturbed = np.full((len(self.mites), self.n), None, dtype=object)
-        disturbed[self.values["stray"] > STRAY_LIMIT] = "pulled"
         for recording in range(self.n if self.blobs else 0):
             walking = self._walking(recording)
             if not len(walking):
                 continue
             distance = np.hypot(*(self.centres[:, None, :] - walking[None, :, :]).transpose(2, 0, 1)).min(axis=1)
             disturbed[distance <= self.reach, recording] = "passing"
+        for m, start in self.flown.items():
+            for recording, x, y, seen in self._places(m):
+                if recording >= start and not seen:
+                    distance = np.hypot(self.centres[:, 0] - x, self.centres[:, 1] - y)
+                    disturbed[distance <= self.reach, recording] = "passing"
         for m, start in self.flown.items():
             disturbed[m, :] = None
         for m, mite_id in enumerate(self.ids):
@@ -300,9 +315,7 @@ class UnusualActivity:
             # the mites whose recording it disturbed: within reach of where it was then, where it
             # was between two recordings it was seen in if it was not seen (merged with a mite)
             seen = np.array(track, dtype=float)
-            between = np.arange(int(seen[0, 0]), int(seen[-1, 0]) + 1)
-            places = zip(between, np.interp(between, seen[:, 0], seen[:, 1]), np.interp(between, seen[:, 0], seen[:, 2]))
-            near = sorted({self.ids[k] for r, x, y in places if r >= start for k in kept
+            near = sorted({self.ids[k] for r, x, y, _ in self._places(m) if r >= start for k in kept
                            if self.disturbed[k, r] is not None
                            and np.hypot(x - self.centres[k][0], y - self.centres[k][1]) <= self.reach + PRESENT_RADIUS},
                           key=lambda mite_id: [int(p) if p.isdigit() else p for p in mite_id.split(".")])
@@ -323,5 +336,5 @@ class UnusualActivity:
                       "stray": None if np.isnan(self.values["stray"][m, r]) else round(float(self.values["stray"][m, r]), 3)}
                      for m in kept for r in range(self.n) if self.disturbed[m, r] is not None]
         return {"fly_offs": fly_offs, "rotators": rotators, "disturbed": disturbed, "shake": self._shake(),
-                "movers": self._movers(steady), "stray_limit": STRAY_LIMIT, "turn_limit": TURN_LIMIT,
+                "movers": self._movers(steady), "turn_limit": TURN_LIMIT,
                 "measured": bool(self.blobs)}

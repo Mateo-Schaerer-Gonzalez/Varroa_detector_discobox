@@ -186,12 +186,10 @@ still mite look like it moves, with any metric. With `stabilize_plate: true`
 (the default) each mite's shift in each frame is measured on its own patch,
 and its patch is cut shifted back by it before it is scored, so it follows the
 part of the plate it is glued to, also where the zones move apart
-(`classes/plate_stabilizer.py`). Where a mite's own shift strays more than
-0.3 px from the plate's (the median of all the mites' shifts), something else
-moved its patch, a mite walking by, and the plate's shift is used instead; that
-recording of the mite is set aside (see *Unusual activity*). On a still plate it
-changes nothing, so a threshold calibrated on still ground truth holds on a
-shaking plate. The results overview shows the shake: the median over the mites
+(`classes/plate_stabilizer.py`). A mite walking by pulls a mite's own shift
+along, but that recording is set aside anyway (see *Unusual activity*), and a
+mite that walks off is left out. On a still plate it changes nothing, so a
+threshold calibrated on still ground truth holds on a shaking plate. The results overview shows the shake: the median over the mites
 of how far each one's patch moved within each recording, recording by
 recording, to spot a recording or a stretch of time in which the plate shook,
 and the 10 mites that drifted furthest from their zone across the recordings,
@@ -209,8 +207,9 @@ recordings in a row: no blob there on the first or last frame, and its image
 faded to less than half its first contrast. It is left out of the analysis, as
 a detection marked *not a mite* is, and followed from blob to blob as it walks.
 Wherever a mite that is not in its place, and was elsewhere the recording
-before, comes within reach of another mite's scored patch, or that mite's own
-shift strays too far from the plate's, that recording of that mite is set aside:
+before, comes within reach of another mite's scored patch (or a fly-off's track
+passes there while it lies against that mite, one blob with it), that
+recording of that mite is set aside:
 censored, it counts neither as moving nor as still; setting the call by hand
 counts it again. A mite whose body turns by more than 30° where it is, a
 *rotator*, stays in the analysis. The results overview lists them under

@@ -9,10 +9,9 @@ plate where the mite is, also where the plate's parts move apart.
 
 A mite's own shift is not always the plate's: the legs of a moving mite pull it
 by up to a quarter of a pixel, and another mite walking through its patch pulls
-it along (notebooks/per_mite_stabilization.ipynb). Where it strays further than
-STRAY_LIMIT from the plate's shift (the median over the mites, which the few
-can't pull), the patch is moved back by the plate's shift instead, and the stray
-is reported, so that recording can be set aside (classes/unusual_activity.py).
+it along (notebooks/per_mite_stabilization.ipynb). Its own shift is used all the
+same: a mite that walks off is left out of the analysis, and a recording another
+one walked through is set aside (classes/unusual_activity.py).
 """
 
 import math
@@ -26,15 +25,10 @@ from classes.workers import side_by_side
 # How far beyond the patch the Lanczos interpolation reads, in pixels.
 _LANCZOS_REACH = 4
 _ECC_CRITERIA = (cv2.TERM_CRITERIA_EPS | cv2.TERM_CRITERIA_COUNT, 50, 1e-4)
-# Pixels a mite's own shift may stray from the plate's before the plate's is used:
-# above the 0.26 px the legs of a glued moving mite reach, far above the 0.06 px of a still one.
-STRAY_LIMIT = 0.3
-
-# How one mite's patch follows the plate in one recording: `shifts` (N, 2), what
-# its frames are moved back by; `stray`, the most its own shift strayed from the
-# plate's (px); `shake`, the most its own shift moved from the first frame (px);
-# `own`, whether its own shifts were used (else the plate's).
-Following = namedtuple("Following", "shifts stray shake own")
+# How one mite's patch follows the plate in one recording: `shifts` (N, 2), its
+# own, what its frames are moved back by; `stray`, the most they strayed from the
+# plate's (px); `shake`, the most they moved from the first frame (px).
+Following = namedtuple("Following", "shifts stray shake")
 
 
 class PlateStabilizer:
@@ -61,16 +55,12 @@ class PlateStabilizer:
         return per_mite, np.median(per_mite, axis=0)
 
     def follow(self, frames, boxes):
-        """Per mite, a Following: its own shifts, or the plate's where its own
-        stray further than STRAY_LIMIT from them."""
+        """Per mite, a Following: its own shifts, and how far they strayed from
+        the plate's and moved from the first frame."""
         per_mite, plate = self.measure(frames, boxes)
-        followed = []
-        for own in per_mite:
-            stray = float(np.hypot(*(own - plate).T).max()) if len(own) else 0.0
-            shake = float(np.hypot(*own.T).max()) if len(own) else 0.0
-            keep = stray <= STRAY_LIMIT
-            followed.append(Following(own if keep else plate, stray, shake, keep))
-        return followed
+        return [Following(own, float(np.hypot(*(own - plate).T).max()) if len(own) else 0.0,
+                          float(np.hypot(*own.T).max()) if len(own) else 0.0)
+                for own in per_mite]
 
     def _mite_shifts(self, frames, box):
         """Per frame, how far one mite's patch moved since the first frame."""

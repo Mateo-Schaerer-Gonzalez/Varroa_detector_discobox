@@ -79,14 +79,20 @@ class TestDisturbed:
         activity = UnusualActivity(mites(), blobs(lambda r: [[175, 100]]), TIMES, reach=22)
         assert activity.describe()["disturbed"] == []
 
-    def test_a_patch_pulled_along_is_set_aside(self):
+    def test_a_patch_pulled_along_without_a_walker_counts(self):
         pulled = mites(lambda mite_id, r: seen(stray=1.2) if (mite_id, r) == ("2.1", 7) else None)
-        activity = UnusualActivity(pulled, blobs(), TIMES)
-        assert activity.describe()["disturbed"] == [{"mite": "2.1", "recording": 7, "reason": "pulled", "stray": 1.2}]
+        assert UnusualActivity(pulled, blobs(), TIMES).describe()["disturbed"] == []
+
+    def test_a_fly_off_lying_against_a_mite_disturbs_it_where_the_track_passes(self):
+        # at recording 6 the walker lies against 1.3: one blob with it, not seen on its own
+        merged = lambda r: [] if r == 6 else walker(r)
+        activity = UnusualActivity(mites(fly_off_activity), blobs(merged, {"1.1": 4}), TIMES, reach=26)
+        assert ("1.3", 6) in {(row["mite"], row["recording"]) for row in activity.describe()["disturbed"]}
 
     def test_censor_sets_the_recordings_aside_unless_set_by_hand(self):
-        pulled = mites(lambda mite_id, r: seen(stray=1.2) if mite_id == "2.1" and r in (2, 7) else None)
-        activity = UnusualActivity(pulled, blobs(), TIMES)
+        # something walks by 2.1 at recordings 2 and 7: there, and 20 px off
+        passing = lambda r: [[420, 300]] if r in (2, 7) else []
+        activity = UnusualActivity(mites(), blobs(passing), TIMES, reach=22)
         rows = [{"mite_ID": mite_id, "time": t, "moving": True, "corrected": mite_id == "2.1" and t == TIMES[7]}
                 for mite_id in PLACES for t in TIMES]
         data, changes = activity.censor(pd.DataFrame(rows), {"censored": {"1.1": [0]}})

@@ -50,12 +50,12 @@ class ActivitySection {
   html(first) {
     if (!this.activity) return "";
     const { figure, section, stat } = Markup;
-    const { fly_offs: flyOffs, rotators, disturbed, movers, stray_limit: strayLimit, turn_limit: turnLimit } = this.activity;
+    const { fly_offs: flyOffs, rotators, disturbed, movers, turn_limit: turnLimit } = this.activity;
     const shake = `
       <div class="block">${figure("chart-shake", first, "Plate shake per recording",
         `In each recording, how far each mite's patch moved from the recording's first frame at most, as its own shift measures it; the line is the median over the mites in their place.
         A recording or a stretch of time above the rest is one in which the plate shook more: a door, a fan, a bench knocked.
-        Each mite's patch is moved back by its own shift before it is scored, or by the plate's (the median of all mites') where its own strays more than ${strayLimit} px from it.
+        Each mite's patch is moved back by its own shift before it is scored.
         Click a time to show that recording.${this.page.stillToCome()}`)}</div>
       <div class="block">${figure("activity-movers", first + 1, `The ${movers.length} mites that drifted furthest`,
         `Each mite's path across the recordings: where its image sits against its image in the first recording (px, py, in pixels), from light (first recording) to dark (last).
@@ -69,7 +69,7 @@ class ActivitySection {
       <div class="stats">
         ${stat("Fly-offs", flyOffs.length, "left out of the analysis")}
         ${stat("Rotators", rotators.length, `turned more than ${turnLimit}°`)}
-        ${stat("Recordings set aside", nAside, "a mite walked by, or the patch was pulled")}
+        ${stat("Recordings set aside", nAside, "a mite walked by")}
       </div>
       ${flyOffs.length ? `<div class="block">${figure("activity-tracks", first + 2, "Fly-off tracks",
         `The first frame with the track of every mite that flew off: from where it was detected (its id, white dot) to where it was last followed,
@@ -78,9 +78,8 @@ class ActivitySection {
       <div id="activity-events" class="activity-events"></div>
       ${nAside ? section("Recordings set aside", `<div class="table-wrap"><table id="activity-aside"></table></div>
         <p class="caption">In these recordings the mite's call is set aside: censored, it counts neither as moving nor as still, as a mite marked gone in one recording.
-        <b>Walked by</b>: a blob that is no mite in its place, and was elsewhere the recording before, came within reach of the patch the mite is scored on.
-        <b>Pulled</b>: the mite's own shift strayed more than ${strayLimit} px from the plate's, which the legs of a glued mite never do.
-        Set the call by hand on the mite's page to count it again.</p>`) : ""}`;
+        A mite walked by: a blob that is no mite in its place, and was elsewhere the recording before, came within reach of the patch the mite is scored on,
+        or a fly-off's track passed there while it lay against the mite. Set the call by hand on the mite's page to count it again.</p>`) : ""}`;
 
     return `${section("Plate shake", shake)}${section("Unusual activity", this.activity.measured ? activity
       : `<p class="caption">Not measured for these results: run the analysis again.</p>`)}`;
@@ -253,11 +252,10 @@ class ActivitySection {
   drawAside() {
     const table = $("activity-aside");
     if (!table) return;
-    const reason = (row) => (row.reason === "passing" ? "walked by" : `pulled (${row.stray} px)`);
     table.innerHTML = `
-      <thead><tr><th>Mite</th><th class="num">Recording</th><th>Why</th></tr></thead>
+      <thead><tr><th>Mite</th><th class="num">Recording</th></tr></thead>
       <tbody>${this.activity.disturbed.map((row) => `<tr>
-        <td>${this.miteLink(row.mite)}</td><td class="num">${this.at(row.recording)}</td><td>${reason(row)}</td></tr>`).join("")}</tbody>`;
+        <td>${this.miteLink(row.mite)}</td><td class="num">${this.at(row.recording)}</td></tr>`).join("")}</tbody>`;
   }
 
   // Stop the clips when the page goes.

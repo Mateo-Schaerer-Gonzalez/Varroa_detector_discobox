@@ -44,8 +44,8 @@ class ResultsPage {
     return mite.censored[recording] ? "gone" : mite.moving[recording] ? "moving" : "still";
   }
 
-  // Whether the mite's recording is set aside because another mite walked by or
-  // its patch was pulled along (results.disturbed, classes/unusual_activity.py).
+  // Whether the mite's recording is set aside because another mite walked by
+  // (results.disturbed, classes/unusual_activity.py).
   setAside(mite, recording) {
     return (this.results.disturbed?.[mite.id] || []).includes(recording);
   }
@@ -55,7 +55,7 @@ class ResultsPage {
   // something disturbed it (see the unusual activity on the overview).
   callBadge(mite, recording) {
     if (this.setAside(mite, recording)) {
-      return `<span class="status gone" title="Another mite walked by, or its patch was pulled along: censored, it counts neither as moving nor as still. Set the call by hand to count it."><span aria-hidden="true">–</span> set aside</span>`;
+      return `<span class="status gone" title="Another mite walked by: censored, it counts neither as moving nor as still. Set the call by hand to count it."><span aria-hidden="true">–</span> set aside</span>`;
     }
     if (mite.censored[recording]) {
       const since = mite.gone_from != null && recording >= mite.gone_from ? ` from ${minutes(this.results.times[mite.gone_from])} on` : "";
