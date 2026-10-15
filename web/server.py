@@ -251,6 +251,16 @@ def upload_manifest(name: str, request: ManifestRequest):
         raise HTTPException(status_code=400, detail=str(error))
 
 
+@app.post("/api/uploads/{name}/finish")
+def upload_finish(name: str):
+    """Every file of a dropped folder is in: shrink its frames to the mites'
+    surroundings (pipeline.finish_upload)."""
+    try:
+        return pipeline.finish_upload(name, UPLOAD_ROOT)
+    except (FileNotFoundError, ValueError, RuntimeError) as error:
+        raise HTTPException(status_code=400, detail=str(error))
+
+
 @app.put("/api/uploads/{name}/file")
 async def upload_file(name: str, path: str, request: Request):
     """Receive one file of a dropped folder as the raw request body."""
@@ -453,6 +463,22 @@ def analysis_clip(session_id: str, recording: int, zone_id: Optional[int] = None
         raise HTTPException(status_code=400, detail="This test run does not save its recordings, so there is no clip to play.")
     try:
         return pipeline.analysis_clip(session["data_dir"], session["out_dir"], recording, zone_id)
+    except (FileNotFoundError, ValueError) as error:
+        raise HTTPException(status_code=400, detail=str(error))
+
+
+@app.get("/api/session/{session_id}/mite-clip/{recording}/{mite}")
+def analysis_mite_clip(session_id: str, recording: int, mite: str):
+    """Frames of one mite during one recording, cut close around it: the clip of
+    a session saved as the mites' ROIs. Cached on first request."""
+    session = get_session(session_id)
+    if session.get("live") and not session.get("save_frames"):
+        raise HTTPException(status_code=400, detail="This test run does not save its recordings, so there is no clip to play.")
+    results = session_results(session_id)
+    if results is None:
+        raise HTTPException(status_code=400, detail="No results yet.")
+    try:
+        return pipeline.analysis_mite_clip(session["data_dir"], session["out_dir"], recording, mite, results["mites"])
     except (FileNotFoundError, ValueError) as error:
         raise HTTPException(status_code=400, detail=str(error))
 

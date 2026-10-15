@@ -81,6 +81,15 @@ class DataLoader:
         dirs = [d for d in self.data_dir.iterdir() if d.is_dir() and self.TIMESTAMP_RE.match(d.name)]
         return sorted(dirs, key=lambda d: d.name)
 
+    @property
+    def recording_names(self):
+        return [d.name for d in self.recording_dirs]
+
+    def covers(self, x1, y1, x2, y2):
+        """Whether the frames hold all of (x1, y1)-(x2, y2): whole frames always do
+        (see RoiRecordings.covers())."""
+        return True
+
     def get_settings(self, name):
         """Session-level settings, overridden by the recording's own .settings.txt if present."""
         merged = dict(self.settings)

@@ -82,7 +82,8 @@ class ZonePage extends ResultsPage {
     const radius = PlateView.ringRadius(zone);
     mites.forEach((mite) => this.miteMarker(crop, mite, radius, { onClick: () => resultsView.openMite(mite), hint: "Click to open" }));
     $("zone-crop").appendChild(crop);
-    this.playClip(`/api/session/${ctx.sessionId}/clip/${ctx.shown}/${zone.id}`, $("zone-crop"), $("zone-crop").nextElementSibling,
+    if (this.onlyMiteClips()) this.showFirstFrame($("zone-crop").nextElementSibling);
+    else this.playClip(`/api/session/${ctx.sessionId}/clip/${ctx.shown}/${zone.id}`, $("zone-crop"), $("zone-crop").nextElementSibling,
       (clip) => ClipPlayer.onSvg(crop, clip));
   }
 

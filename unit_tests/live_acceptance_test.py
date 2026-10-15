@@ -72,7 +72,8 @@ def test_a_live_run_gives_folder_mode_results_and_the_reference(tmp_path, live_r
     assert_live_equals_folder(live, folder(tmp_path, live["run"]))
 
     expected = reference.load("folder_sample_data")
-    assert_same(expected["results"], live["results"], "The live results, against the reference,")
+    # a folder of whole frames, against the mites' ROIs the live run saved
+    assert_same({**expected["results"], "frames": "rois"}, live["results"], "The live results, against the reference,")
     assert_same(expected["excel"], live["excel"], "The live results.xlsx, against the reference,")
     assert_same(expected["figures"], live["figures"], "The live figures, against the reference,")
 
@@ -97,10 +98,10 @@ def test_labels_and_not_a_mite_marks_apply_live_as_in_folder_mode(tmp_path, smal
 
 def test_without_saving_frames_the_results_are_the_same(tmp_path, small_session, live_run):
     live = live_run(small_session, save_frames=False)
-    assert not any(path.suffix == ".bmp" for path in live["run"].run_dir.rglob("*"))
+    assert not any(path.suffix in (".bmp", ".mkv", ".png") for path in live["run"].run_dir.rglob("*"))
     original = reference.run_folder(small_session, tmp_path / "original_out", live["library"],
                                     pipeline.load_labels(small_session))
-    assert_same(original["results"], live["results"], "The live results")
+    assert_same({**original["results"], "frames": "none"}, live["results"], "The live results")
 
 
 def test_a_run_stopped_midway_is_analysed_as_far_as_it_got(tmp_path, small_session, monkeypatch):

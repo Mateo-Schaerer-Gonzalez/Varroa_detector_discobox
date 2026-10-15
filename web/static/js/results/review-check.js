@@ -198,6 +198,6 @@ class ReviewCheck {
     const own = mite.to_check.find((recording) => recording !== ctx.shown);
     const other = this.mites().find((m) => m.id !== mite.id);
     [own != null && [mite, own], other && [other, other.to_check[0]]].filter(Boolean).forEach(([m, recording]) =>
-      player.warm(`/api/session/${ctx.sessionId}/clip/${recording}/${m.zone_id}`, this.page.frameUrl()));
+      player.warm(this.page.miteClipUrl(m, recording), this.page.frameUrl()));
   }
 }

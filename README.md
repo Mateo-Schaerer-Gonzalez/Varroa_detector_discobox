@@ -50,9 +50,12 @@ To analyse a folder, in *Analysis*:
 
 1. **Recordings**: pick one of the previous recordings, or drag the session
    folder (the one holding the `..._fps-30` folders) onto the page, or click
-   *Choose folder*. The images are copied to `recordings/<folder name>/`.
-   Dropping the same folder again only sends files that changed, and keeps the
-   labels you already typed. You can also type a path instead, and then labels
+   *Choose folder*. The images are copied to `recordings/<folder name>/`, then
+   shrunk to what a live run saves, the mites' surroundings (about a thirtieth
+   of the space, the same results; your own folder is left as it is). Its
+   labels, ground truth and poke test come along. Dropping the same folder
+   again only sends files that changed (no frames already shrunk; new
+   recordings join the others), and keeps the labels you already typed. You can also type a path instead, and then labels
    are saved next to the recordings.
 2. **Plate labels**: click a plate and type its group (e.g. the venom extract).
    <kbd>Tab</kbd> saves and moves to the next plate. Labels are saved to
@@ -323,16 +326,33 @@ not there yet. They are kept next to the recordings, as for any folder
 go back to the same labels. They need the recordings saved: without them there is
 no clip to judge.
 
-Each recording is saved, as the Discobox app saves it, to
-`recordings/<run name>/<YYYY-MM-DD-HH-MM-SS>_fps-<fps>/<recording>_<frame id>.bmp`
-(8-bit grey), with the settings, labels and marks next to them, and `run.json`:
-how the run was made (the camera, frames dropped) and how
-far it got, brought up to date after every recording. Only the bursts are
-saved, never the camera image in between. That folder is a session like any
-other: it is listed with the previous recordings, and analysed there it gives
-exactly the results the live run gave. The live results go to
-`results/<run name>/`. Untick *Save the recordings* for long runs; the results
-are the same, but there is then no clip to play and nothing to open again.
+Only what the analysis reads of the recordings is saved, to `recordings/<run name>/`
+(classes/roi_recordings.py):
+
+| File | What |
+|---|---|
+| `first_frame.png` | The first frame of the first recording, whole: the mites are found and the zones labelled on it |
+| `rois/mite_000.mkv` ... | Per mite, its surroundings (its box and 32 px round it, at least 40 px round its centre) in every frame of every recording, one recording after the other: one lossless (FFV1) grey video |
+| `rois/index.json` | Where each mite's video was cut from, and per recording its name, frame rate, number of frames and the blobs found on its whole first and last frame (fly-offs, see below) |
+
+While the run goes on, each recording is saved as its own short videos in
+`rois/parts/`; once it is over, they are stitched onto the end of each mite's
+video. A run of `sample_data`'s 6 recordings takes 17.5 MB this way, against
+574 MB of BMPs. The settings, labels and marks are next to them, and `run.json`:
+how the run was made (the camera, frames dropped) and how far it got, brought
+up to date after every recording. Only the bursts are saved, never the camera
+image in between. That folder is a session like any other: it is listed with
+the previous recordings, and analysed there it gives exactly the results the
+live run gave, the scores to the last digit. The live results go to
+`results/<run name>/`.
+
+Since only the mites' surroundings are saved, the pages of such a session play
+only a mite's own clip (its page, the ground truth, a rotator): the plate map
+and the zones show the first frame, and a fly-off's walk across the plate
+cannot be played. The mites are those found when the run started; the
+detector's settings changed later find no others there. Untick *Save the
+recordings* for long runs; the results are the same, but there is then no clip
+to play and nothing to open again. Folders of BMPs opened by path, from the Discobox app or from runs before this, are read as before; folders dropped onto the page are shrunk (classes/roi_conversion.py).
 
 *Stop* ends the recording being captured with the frames already in, analyses it
 and writes the results; so does Ctrl+C on the server. Closing the page does not
@@ -419,8 +439,8 @@ unit_tests/   includes test_layering.py, which enforces the boundary above
 
 Folder and live runs go through one analysis core, `MotionAnalysis`: it finds the
 mites on the first frame, then scores each recording, from all of its frames, as
-it comes, from a folder (`FolderSource`) or the camera (`CameraSource`), without
-knowing which. vmbpy and pyserial are only imported for a live run.
+it comes, from a folder (`FolderSource`), a live run's saved ROIs (`RoiSource`)
+or the camera (`CameraSource`), without knowing which. vmbpy and pyserial are only imported for a live run.
 
 `pipeline.open_session()` and `pipeline.run_analysis()` exchange only plain dicts,
 lists, strings and numbers with the web layer -- never a `Zone`, `Mite`,

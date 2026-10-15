@@ -285,6 +285,24 @@ class ResultsPage {
     }
   }
 
+  // Of a session saved as the mites' ROIs (results.frames "rois") only a mite's
+  // own clip plays: the plate and the zones show the first frame.
+  onlyMiteClips() {
+    return this.results.frames === "rois";
+  }
+
+  showFirstFrame(status) {
+    status.className = "hint clip-status";
+    status.textContent = "Only the mites' surroundings are saved of these recordings, so this is the first frame. Open a mite to play its recording.";
+  }
+
+  // The clip a mite's close-up plays: its zone's, or its own where only the mites' surroundings are saved.
+  miteClipUrl(mite, recording) {
+    return this.onlyMiteClips()
+      ? `/api/session/${ctx.sessionId}/mite-clip/${recording}/${encodeURIComponent(mite.id)}`
+      : `/api/session/${ctx.sessionId}/clip/${recording}/${mite.zone_id}`;
+  }
+
   // Where the frames of this session's clips are, by their names.
   frameUrl() {
     const { sessionId } = ctx;

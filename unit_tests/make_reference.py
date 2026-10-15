@@ -6,7 +6,9 @@ They were made from the code as it was before live input was added (commit
 b83b180), on sample_data, and made again when the frames became grey
 (2026-10-15): the brightness changed in its 7th digit, as float32 averages one
 channel instead of three, and preview.jpg became a grey JPEG; every call,
-count and figure stayed. Run this again only to accept a deliberate change to
+count and figure stayed. It writes the reference of the OpenCV it runs with
+(reference.py: one for OpenCV 4, one for 5), so run it in both Pythons; the
+OpenCV 5 one was first made from commit 76dba5e. Run this again only to accept a deliberate change to
 what folder mode produces, and say why in the commit.
 """
 

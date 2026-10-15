@@ -5852,6 +5852,7 @@
    "score_over_time.png",
    "score_distribution.png"
   ],
+  "frames": "whole",
   "groups": [
    {
     "group": "unlabeled",

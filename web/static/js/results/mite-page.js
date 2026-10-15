@@ -98,7 +98,7 @@ class MitePage extends ResultsPage {
     });
   }
 
-  // 56 × 56 px of the zone's clip around the mite: the crop's view box shows only that part.
+  // 56 × 56 px of the zone's clip, or of the mite's own, around the mite: the crop's view box shows only that part.
   drawCloseUp(mite, zone) {
     const size = 56;
     const crop = this.crop(mite.x - size / 2, mite.y - size / 2, size, size);
@@ -112,7 +112,7 @@ class MitePage extends ResultsPage {
     });
     $("mite-crop").appendChild(crop);
     this.drawOutlines(crop, zone.id);
-    this.playClip(`/api/session/${ctx.sessionId}/clip/${ctx.shown}/${zone.id}`, $("mite-crop"), $("mite-crop").nextElementSibling,
+    this.playClip(this.miteClipUrl(mite, ctx.shown), $("mite-crop"), $("mite-crop").nextElementSibling,
       (clip) => ClipPlayer.onSvg(crop, clip));
   }
 }

@@ -3,7 +3,7 @@ recording still being analysed when the next is due, or memory running short.
 
 The live path is run as it is (classes/live/): the camera's frame handler
 (copying each frame out of the camera's buffer), the frame router, the burst,
-the Recorder writing BMPs, LiveSession, and MotionAnalysis scoring every mite.
+the Recorder saving the mites' ROIs, LiveSession, and MotionAnalysis scoring every mite.
 Only the camera is a stand-in: it streams real frames of a recording folder,
 grey and full size, at the frame rate asked, and its frames go through the
 real FrameHandler. The GigE transfer itself, the fan and the LEDs are not

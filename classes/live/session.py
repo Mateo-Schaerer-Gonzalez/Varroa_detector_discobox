@@ -4,8 +4,8 @@ as each recording is captured, with results published after each one.
 Threads, and what each may do:
 
   camera             capture only (classes/live/sources.py)
-  analysis           reads the source's stream, saves the frames (through the
-                     Recorder's own thread), scores each recording, publishes results
+  analysis           reads the source's stream, scores each recording, saves the
+                     mites' ROIs (through the Recorder's own thread), publishes results
   anyone else        reads `results` (a finished dict, replaced whole, never
                      changed in place) and status(), which take no lock the
                      capture needs
@@ -71,13 +71,19 @@ class LiveSession:
 
     def _events(self):
         for event in self.source.events():
-            if self.recorder is not None and isinstance(event, Frame):
-                self.recorder.save(event)
             yield event
+            # The analysis has taken the event in by now: the mites are found
+            # on the first frame, and each recording is scored at its end.
+            if self.recorder is not None and isinstance(event, Frame):
+                if not self.recorder.started:
+                    self.recorder.start(self.analysis.first_frame, [tuple(mite) for mite in self.analysis.mites])
+                self.recorder.save(event)
             if isinstance(event, RecordingEnd):
-                # The recording is scored by now. Its frames must be on
-                # disk before results pointing at them go out: the page plays them.
+                # Its frames must be on disk before results pointing at them
+                # go out: the page plays them.
                 if self.recorder is not None:
+                    blobs = self.analysis.blobs[-1] if self.analysis.score and self.analysis.blobs else None
+                    self.recorder.end_recording(event.recording, blobs)
                     self.recorder.flush(event.recording.name)
                 self.recordings.append(event.recording.name)
                 self.publish(write_files=True)

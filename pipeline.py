@@ -105,7 +105,7 @@ from classes.poke_test import PokeSurvival, PokeTest
 from classes.data_loader import DataLoader
 from classes.deferred_files import DeferredFiles
 from classes.error_map import ErrorMap
-from classes.frame_source import FolderSource
+from classes.frame_source import RoiSource, open_source
 from classes.kept_scores import KeptScores
 from classes.label_reader import LabelReader, LabelReadError
 from classes.live import camera as live_camera
@@ -120,6 +120,8 @@ from classes.motion_analysis import MotionAnalysis, detect_mites
 from classes.outline_view import OutlineView
 from classes.movement_stats import MovementReport
 from classes.recording_info import RecordingInfo
+from classes.roi_conversion import RoiConversion
+from classes.roi_recordings import ROI_DIRNAME, RoiRecordings, RoiVideo, is_roi_session, open_recordings, remove_tree
 from classes.review_band import ReviewBand
 from classes.score_normalizer import ScoreNormalizer
 from classes.survival import SurvivalAnalysis, SurvivalReport
@@ -346,7 +348,7 @@ def open_session(data_dir, out_dir, coords_file=None, library_dir=CALIBRATION_LI
     out_dir.mkdir(parents=True, exist_ok=True)
     _clear_clips(out_dir)
 
-    loader = DataLoader(data_dir)
+    loader = open_recordings(data_dir)
     n_recordings = loader.count_recordings()
     if n_recordings == 0:
         raise FileNotFoundError(f"No recordings found in {data_dir}")
@@ -356,7 +358,7 @@ def open_session(data_dir, out_dir, coords_file=None, library_dir=CALIBRATION_LI
 
     zone_manager = _build_zone_manager(_coords_file(data_dir, coords_file))
     # The same detection as an analysis run, on the same first frame.
-    detect_mites(zone_manager, frame, Analyzer())
+    detect_mites(zone_manager, frame, Analyzer(), getattr(loader, "boxes", None))
     return _session_view(zone_manager, frame, data_dir, n_recordings, library_dir)
 
 
@@ -482,14 +484,21 @@ def _detect_and_score(data_dir, coords_file, labels=None, reject=True, score=Tru
     are dropped, so they appear nowhere in the results. With `kept_in`, a folder,
     the scores are kept there, and read back instead of worked out when these
     very frames were scored there before, by this code (classes/kept_scores.py).
-    With `names`, only the recordings of those names (FolderSource).
+    With `names`, only the recordings of those names (FolderSource). A session
+    saved as the mites' ROIs has its mites and blobs saved with them (RoiSource).
     """
-    source = FolderSource(data_dir, names)
-    analysis = MotionAnalysis(_build_zone_manager(_coords_file(data_dir, coords_file)), score=False)
+    source = open_source(data_dir, names)
+    rois = isinstance(source, RoiSource)
+    analysis = MotionAnalysis(_build_zone_manager(_coords_file(data_dir, coords_file)), score=False,
+                              boxes=source.boxes if rois else None, known_blobs=source.blobs() if rois else None)
+    if rois and score:
+        mite = analysis.analyzer.config.mite
+        source.loader.check_margin(Analyzer.roi_padding(mite.metric, mite.params_for(mite.metric))
+                                   + (STABILIZE_MARGIN if mite.stabilize_plate else 0))
     if not score or kept_in is not None:
         # The mites and the recordings, from the first frame and the names of
         # the others: those are counted, not decoded.
-        analysis.run(source.events(decode=FolderSource.FIRST))
+        analysis.run(source.events(decode=source.FIRST))
     if score:
         kept = key = None
         if kept_in is not None:
@@ -505,7 +514,7 @@ def _detect_and_score(data_dir, coords_file, labels=None, reject=True, score=Tru
             if kept is not None:
                 kept.keep(key, analysis.mites, analysis.blobs)
     _arrange(analysis, data_dir, labels, reject, library_dir)
-    return _run_view(analysis)
+    return _run_view(analysis, "rois" if rois else "whole")
 
 
 def _arrange(analysis, data_dir, labels, reject, library_dir):
@@ -534,8 +543,11 @@ def _activity_reach(mite):
     return float(mite.radius) + Analyzer.roi_padding(mite.metric, params)
 
 
-def _run_view(analysis):
+def _run_view(analysis, frames):
+    """`frames`: what was saved of the recordings, for the pages: "whole"
+    frames, or the mites' "rois" alone (classes/roi_recordings.py)."""
     return SimpleNamespace(
+        frames=frames,
         zone_manager=analysis.zone_manager,
         analyzer=analysis.analyzer,
         first_frame=analysis.first_frame,
@@ -813,6 +825,8 @@ def _results(run, out_dir, labels, write_files=True, corrections=None, normalize
             "threshold": float(run.analyzer.config.mite.motion_threshold),
             "preview": PREVIEW_NAME,
             "image": _image_size(run.first_frame),
+            # "rois": only the mites' surroundings were saved, so the only clips are the mites'
+            "frames": run.frames,
             "zones": reporting.describe_zones(mite_data, _describe_zones(run.zone_manager, labels), burst_minutes),
             "mites": reporting.describe_mites(mite_data),
             "groups": reporting.describe_groups(mite_data, burst_minutes),
@@ -983,7 +997,7 @@ def _calibration_recordings(data_dir, names=None):
     minutes from the start of the first, as the analysis times it
     (MotionAnalysis.recording_times), and its name and frame rate. Read from
     the names alone: nothing is decoded."""
-    recordings = FolderSource(data_dir, names).recordings()
+    recordings = open_source(data_dir, names).recordings()
     if not recordings:
         raise FileNotFoundError(f"No recordings found in {data_dir}")
     start = recordings[0].start
@@ -1030,7 +1044,7 @@ def calibration_clip(out_dir, recording, zone_id, library_dir=CALIBRATION_LIBRAR
 
     source = stored["recordings"][recording]
     box = (zone["x1"] - CLIP_MARGIN, zone["y1"] - CLIP_MARGIN, zone["x2"] + CLIP_MARGIN, zone["y2"] + CLIP_MARGIN)
-    return _write_clip(DataLoader(recordings_dir), source["name"], source["fps"], box, out_dir, name)
+    return _write_clip(open_recordings(recordings_dir), source["name"], source["fps"], box, out_dir, name)
 
 
 def _clip_key(dataset):
@@ -1081,7 +1095,7 @@ def _mite_clip(recordings_dir, source, mite, out_dir, name):
     manifest = clips_dir / f"{name}.json"
     if manifest.is_file():
         return json.loads(manifest.read_text(encoding="utf-8"))
-    frames = DataLoader(recordings_dir).load_recording_region(
+    frames = open_recordings(recordings_dir).load_recording_region(
         source["name"], x1, y1, x + MITE_CLIP_REACH, y + MITE_CLIP_REACH)
     clips_dir.mkdir(parents=True, exist_ok=True)
     names = [f"{CLIPS_DIRNAME}/{name}_{index:02d}.png" for index in range(len(frames))]
@@ -1135,6 +1149,7 @@ def _write_clip(loader, recording_name, fps, box, out_dir, name, max_width=None)
         return json.loads(manifest.read_text(encoding="utf-8"))
     clips_dir.mkdir(parents=True, exist_ok=True)
 
+    _check_saved(loader, *box)
     n_frames = loader.count_frames(recording_name)
     step = max(1, int(np.ceil(n_frames / CLIP_MAX_FRAMES)))
     x1, y1 = max(0, int(box[0])), max(0, int(box[1]))
@@ -1163,6 +1178,13 @@ def _write_clip(loader, recording_name, fps, box, out_dir, name, max_width=None)
 PLATE_CLIP_WIDTH = 1400  # the whole plate is scaled down to this width in its clip
 
 
+def _check_saved(loader, x1, y1, x2, y2):
+    """Refuse a clip of more than was saved: of a session saved as the mites'
+    ROIs, only a mite's own clip can be played."""
+    if not loader.covers(int(x1), int(y1), int(x2), int(y2)):
+        raise ValueError("Only the mites' surroundings of these recordings were saved, so only a mite's own clip can be played.")
+
+
 def dataset_clip(out_dir, dataset, recording, library_dir=CALIBRATION_LIBRARY):
     """Frames of the whole plate, scaled down, during one recording of a saved
     dataset, for the test report to draw the calls on. Like calibration_clip(),
@@ -1173,16 +1195,16 @@ def dataset_clip(out_dir, dataset, recording, library_dir=CALIBRATION_LIBRARY):
     recordings_dir = _recordings_dir(saved["data_dir"], library_dir)
     _check_recordings(saved, recordings_dir, "there is no clip to play")
     source = saved["recordings"][recording]
-    return _write_clip(DataLoader(recordings_dir), source["name"], source["fps"], (0, 0, 10**6, 10**6),
+    return _write_clip(open_recordings(recordings_dir), source["name"], source["fps"], (0, 0, 10**6, 10**6),
                        out_dir, f"clip_{_clip_key(dataset)}_r{recording}_plate", PLATE_CLIP_WIDTH)
 
 
 def _recording_name(loader, recording):
     """The name of recording `recording` of an analysis, counted from 0."""
-    recordings = loader.recording_dirs
+    recordings = loader.recording_names
     if not 0 <= recording < len(recordings):
         raise ValueError(f"No recording {recording} in this session.")
-    return recordings[recording].name
+    return recordings[recording]
 
 
 def analysis_outlines(data_dir, out_dir, recording, zone_id, mites):
@@ -1191,7 +1213,7 @@ def analysis_outlines(data_dir, out_dir, recording, zone_id, mites):
     OutlineView.describe(), None for a mite it finds no outline of. `mites` are
     the results' ({id, zone_id, x, y}). Like analysis_clip(), worked out from
     the frames once, kept in `out_dir` and reused after."""
-    loader = DataLoader(data_dir)
+    loader = open_recordings(data_dir)
     source = _recording_name(loader, recording)
     mites = [mite for mite in mites if mite["zone_id"] == zone_id]
     manifest = Path(out_dir) / CLIPS_DIRNAME / f"outline_r{recording}_z{zone_id}.json"
@@ -1222,7 +1244,7 @@ def analysis_clip(data_dir, out_dir, recording, zone_id=None, coords_file=None):
     """Frames of one recording of an analysis session: of one zone, or with no
     `zone_id` of the whole plate, scaled down. Like calibration_clip(), written
     to `out_dir` once and reused after."""
-    loader = DataLoader(data_dir)
+    loader = open_recordings(data_dir)
     source = _recording_name(loader, recording)
 
     if zone_id is None:
@@ -1236,7 +1258,19 @@ def analysis_clip(data_dir, out_dir, recording, zone_id=None, coords_file=None):
     return _write_clip(loader, source, loader.get_fps(source), box, out_dir, name, max_width)
 
 
-ACTIVITY_CLIP_FRAMES = 480      # frames in a clip of unusual activity at most; each recording is thinned to fit
+def analysis_mite_clip(data_dir, out_dir, recording, mite_id, mites):
+    """Frames of one mite during one recording of an analysis, cut close around
+    it, for the mite page of a session saved as the mites' ROIs, which has no
+    zone clip (see _mite_clip()). `mites` are the results' ({id, x, y})."""
+    mite = next((mite for mite in mites if mite["id"] == str(mite_id)), None)
+    if mite is None:
+        raise ValueError(f"No mite {mite_id} in these results.")
+    loader = open_recordings(data_dir)
+    name = _recording_name(loader, recording)
+    return _mite_clip(data_dir, {"name": name, "fps": loader.get_fps(name)}, mite, out_dir, f"mite_r{recording}")
+
+
+ACTIVITY_CLIP_FRAMES = 480     # frames in a clip of unusual activity at most; each recording is thinned to fit
 ACTIVITY_CLIP_RECORDINGS = 60   # recordings in one at most
 ACTIVITY_CLIP_REACH = 40        # pixels round the mite, or its track, in the clip
 ACTIVITY_CLIP_WIDTH = 720       # a wider clip is scaled down to this
@@ -1273,7 +1307,8 @@ def activity_clip(data_dir, out_dir, activity, times, kind, mite_id):
     if manifest.is_file():
         return json.loads(manifest.read_text(encoding="utf-8"))
 
-    loader = DataLoader(data_dir)
+    loader = open_recordings(data_dir)
+    _check_saved(loader, x1, y1, x2, y2)
     recordings = [_recording_name(loader, recording) for recording in range(first, last + 1)]
     n_frames = sum(loader.count_frames(recording) for recording in recordings)
     step = max(1, int(np.ceil(n_frames / ACTIVITY_CLIP_FRAMES)))
@@ -1610,14 +1645,19 @@ def _recordings_dir(data_dir, library_dir):
     return _dataset_dir(dataset_id(data_dir), library_dir) / RECORDINGS_DIRNAME
 
 
+# Files never written again once they have their name: the frames, the mites'
+# videos (a stitch writes a new one) and a session's whole first frame.
+_WRITTEN_ONCE = {".bmp", ".mkv", ".png"}
+
+
 def _keep_once(source, target):
     """`target`, the library's copy of a recording file. A frame is never
     written again once it has its name, so its copy is a hard link: the frame
     is on disk once, and stays when the original folder is deleted. The
-    folder's own files (settings, labels, ground truth) are written in place,
-    so they are copied, and so is a frame where a link cannot be made (another
-    drive, a file system without them)."""
-    if source.suffix.lower() == ".bmp":
+    folder's own files (settings, labels, ground truth, a session's index of
+    ROIs) are written in place, so they are copied, and so is a frame where a
+    link cannot be made (another drive, a file system without them)."""
+    if source.suffix.lower() in _WRITTEN_ONCE:
         try:
             os.link(source, target)
             return
@@ -1632,11 +1672,18 @@ def _copy_recordings(data_dir, target):
     linked rather than copied where it can be (_keep_once()). A file already
     there, with the same size and time, is skipped, so saving again is quick.
     A file still being written (*.part, by a live run's Recorder, say) is not
-    one yet: it comes with the next save."""
+    one yet: it comes with the next save. Of a session saved as the mites' ROIs
+    the copy holds what the session does: the parts of the recordings stitched
+    into the mites' videos since go (classes/roi_recordings.py)."""
     data_dir = Path(data_dir)
     files = [path for path in data_dir.iterdir() if path.is_file()]
-    for recording in DataLoader(data_dir).recording_dirs:
-        files += [path for path in recording.rglob("*") if path.is_file()]
+    rois = is_roi_session(data_dir)
+    if rois:
+        rois_dir = data_dir / ROI_DIRNAME
+        files += [path for path in rois_dir.rglob("*") if path.is_file()
+                  and not any(part.endswith(".part") or part == "stitching" for part in path.relative_to(rois_dir).parts)]
+    for name in [] if rois else DataLoader(data_dir).recording_names:
+        files += [path for path in (data_dir / name).rglob("*") if path.is_file()]
     files = [path for path in files if path.suffix != ".part"]
     for source in files:
         copy = target / source.relative_to(data_dir)
@@ -1648,6 +1695,16 @@ def _copy_recordings(data_dir, target):
         partial.unlink(missing_ok=True)  # left by a copy cut short: a link needs the name free
         _keep_once(source, partial)
         partial.replace(copy)  # only a complete file ever has the real name
+    if rois:
+        # frames of recordings shrunk to the mites' surroundings since the last copy
+        for name in DataLoader(target).recording_names if target.is_dir() else []:
+            remove_tree(target / name, ignore_errors=True)
+        kept = {target / path.relative_to(data_dir) for path in files}
+        for copy in sorted((target / ROI_DIRNAME).rglob("*"), reverse=True):  # files before their folders
+            if copy.is_file() and copy not in kept and copy.suffix != ".part":
+                copy.unlink(missing_ok=True)
+            elif copy.is_dir() and not any(copy.iterdir()):
+                remove_tree(copy, ignore_errors=True)
 
 
 def _save_to_library(stored, truth, out_dir, library_dir, copy_later=False):
@@ -1837,7 +1894,7 @@ def _measure_mites(dataset, recordings_dir, measure, pad=0, stabilize=False):
     is kept; the mites of a recording are measured side by side. With
     `stabilize`, the cuts follow a shaking plate, as mite.stabilize_plate makes
     an analysis run cut them."""
-    loader = DataLoader(recordings_dir)
+    loader = open_recordings(recordings_dir)
     boxes = mite_boxes(dataset["mites"], pad)
     # Stabilizing reads a little around each cut; keep real pixels there.
     margin = STABILIZE_MARGIN if stabilize else 0
@@ -1960,7 +2017,7 @@ def _benchmark_mites(dataset, recordings_dir):
             "library has no copy, so the benchmark cannot be run on them. "
             "Move them back and save its ground truth again, or leave this dataset out."
         )
-    loader = DataLoader(recordings_dir, grayscale=True)
+    loader = open_recordings(recordings_dir)
     boxes = mite_boxes(dataset["mites"])
     x0 = max(0, min(box[0] for box in boxes.values()) - Benchmark.MARGIN)
     y0 = max(0, min(box[1] for box in boxes.values()) - Benchmark.MARGIN)
@@ -1993,7 +2050,10 @@ def _dataset_benchmark(key, dataset, library_dir):
 
 def _benchmark_circles(recordings_dir, recording_name):
     """The circles the benchmark draws on one recording (Benchmark.circles()).
-    Slow: every whole frame is decoded and denoised."""
+    Slow: every whole frame is decoded and denoised. None for a session saved
+    as the mites' ROIs: there are no whole frames to draw them on."""
+    if is_roi_session(recordings_dir):
+        return None
     return Benchmark.circles(DataLoader(recordings_dir, grayscale=True).load_recording(recording_name))
 
 
@@ -2831,7 +2891,7 @@ def _publish_live(run, write_files):
         run.movement = (len(recordings), run.movement[1])
     _arrange(run.analysis, run.run_dir, labels, True, run.library_dir)
     # The scores are normalised over a whole run, so not while it goes on.
-    results = _results(_run_view(run.analysis), run.out_dir, labels, False,
+    results = _results(_run_view(run.analysis, _live_frames(run)), run.out_dir, labels, False,
                        corrections=CallCorrections(run.run_dir), normalizer=ScoreNormalizer())
     if write_files:
         if not run.preview_written:  # the first frame, which the pages draw on: it never changes
@@ -2864,6 +2924,11 @@ def _write_live_files_later(run):
             run.files_due = now + LIVE_FILES_EVERY
         delay = max(0.0, run.files_due - now)
     _files_later.later(_draft_key(run.out_dir), lambda: _write_live_files(run), delay)
+
+
+def _live_frames(run):
+    """What a live run saves of its recordings (see _run_view()): the mites' ROIs, or nothing."""
+    return "rois" if run.save_frames else "none"
 
 
 def _last_movement(results, recordings):
@@ -2961,6 +3026,8 @@ def start_live(live_id, labels=None):
         save_labels(run.run_dir, labels)
     run.lights.all_off()  # the LEDs, and the fan if it was switched on to check it: the test run's from here on
     (run.run_dir / SETTINGS_FILENAME).write_text(run.source.settings_text, encoding="utf-8")
+    if run.save_frames:
+        RoiVideo.check_codec(run.run_dir)
     run.session.recorder = Recorder(run.run_dir) if run.save_frames else None
     run.started_at = datetime.now().isoformat(timespec="seconds")
     _write_run_info(run)
@@ -3070,7 +3137,7 @@ def _write_live_files(run):
     files are written."""
     run.files_due = None  # a recording from now on is in the next write
     with run.session.lock:
-        view = _run_view(run.analysis)
+        view = _run_view(run.analysis, _live_frames(run))
         mite_data, _changes = _mite_table(view, CallCorrections(run.run_dir), ScoreNormalizer())
         annotated = _annotated(view)
     _write_files(annotated, run.out_dir, mite_data)
@@ -3135,7 +3202,7 @@ def _close_live(live_id):
     run.session.stop(wait=True, timeout=60)
     run.source.wait_closed(30)
     run.lights.close()
-    if run.run_dir.is_dir() and not DataLoader(run.run_dir).recording_dirs:
+    if run.run_dir.is_dir() and not open_recordings(run.run_dir).recording_names:
         shutil.rmtree(run.run_dir, ignore_errors=True)
 
 
@@ -3205,7 +3272,73 @@ def plan_upload(name, files, uploads_root=RECORDINGS_ROOT):
         path = folder.joinpath(*target.split("/"))
         return path.stat().st_size if path.is_file() else None
 
-    return {"name": plan.name, "data_dir": str(folder), "missing": plan.missing(size_of)}
+    # recordings dropped before, whose frames were shrunk to the mites' surroundings since
+    converted = set(RoiRecordings(folder).recording_names) if is_roi_session(folder) else set()
+    return {"name": plan.name, "data_dir": str(folder), "missing": plan.missing(size_of, converted)}
+
+
+def finish_upload(name, uploads_root=RECORDINGS_ROOT, library_dir=CALIBRATION_LIBRARY):
+    """Once every file of a dropped folder is in: its recordings of whole frames
+    are shrunk to what a live run saves, the mites' surroundings
+    (classes/roi_conversion.py), so they take a thirtieth of the space and give
+    the same results. {data_dir, converted (recordings)}."""
+    UploadPlan.check_part(name)
+    folder = Path(uploads_root) / name
+    if not folder.is_dir():
+        raise FileNotFoundError(f"Nothing was copied to {folder}.")
+    return {"data_dir": str(folder), "converted": convert_folder(folder, library_dir)}
+
+
+def convert_folder(folder, library_dir=CALIBRATION_LIBRARY):
+    """Shrink the recordings of whole frames in `folder` to the mites'
+    surroundings (classes/roi_conversion.py). Returns how many were."""
+    folder = Path(folder)
+    converted = RoiConversion(folder, _build_zone_manager(_coords_file(folder))).run()
+    if converted:
+        _clear_clips(results_dir(folder))  # clips of the whole frames, which are gone
+        # A dataset of the folder in the library: its copy follows, and lets the frames' space go.
+        dataset = _dataset_dir(dataset_id(folder), library_dir)
+        if (dataset / DATASET_NAME).is_file():
+            _copy_recordings(folder, dataset / RECORDINGS_DIRNAME)
+    return converted
+
+
+def convert_stored_recordings(recordings_root=RECORDINGS_ROOT, library_dir=CALIBRATION_LIBRARY, report=None):
+    """Shrink every recording folder the app keeps to the mites' surroundings:
+    each folder in `recordings_root`, then the library's copy of each dataset
+    whose original folder is gone. A copy of a folder still elsewhere is left
+    alone: the app reads that folder, and the copy's frames are links to its
+    own. Only for scripts/convert_stored_recordings.py, run before the server
+    starts: nothing may read a folder while it changes. `report(text)` hears
+    of each folder. Returns {folder: recordings converted, or the error}."""
+    report = report or (lambda text: None)
+    todo = [folder for folder in sorted(Path(recordings_root).iterdir()) if folder.is_dir()] \
+        if Path(recordings_root).is_dir() else []
+    copies = []
+    for dataset in sorted(Path(library_dir).iterdir()) if Path(library_dir).is_dir() else []:
+        saved = _read_json(dataset / DATASET_NAME)
+        if isinstance(saved, dict) and not Path(saved.get("data_dir", "")).is_dir():
+            copies.append(dataset / RECORDINGS_DIRNAME)
+    done = {}
+    for folder in todo + copies:
+        if not folder.is_dir() or not DataLoader(folder).recording_names:
+            continue  # no whole frames left
+        frames = sum(path.stat().st_size for path in folder.rglob("*.bmp"))
+        report(f"Shrinking {folder} ({frames / 1e9:.1f} GB of frames)...")
+        try:
+            # a library copy is no recording folder of its own: no results, no dataset
+            done[str(folder)] = (convert_folder(folder, library_dir) if folder in todo
+                                 else RoiConversion(folder, _build_zone_manager(_coords_file(folder))).run())
+        except Exception as error:  # the next folder all the same; this one stays as it was, or carries on next time
+            _logger.exception("Could not shrink %s", folder)
+            done[str(folder)] = f"{type(error).__name__}: {error}"
+        report(f"  {done[str(folder)]}" if isinstance(done[str(folder)], str) else
+               f"  {done[str(folder)]} recordings shrunk" if done[str(folder)] else "  left whole: no mites found")
+    if any(isinstance(result, int) and result for result in done.values()):
+        # the calibration reports' clips, cut from frames that are gone: remade from the ROIs when asked for
+        for clips in Path(library_dir).glob(f"reports/*/{CLIPS_DIRNAME}"):
+            remove_tree(clips, ignore_errors=True)
+    return done
 
 
 def describe_recording(data_dir, results_root=RESULTS_ROOT, library_dir=CALIBRATION_LIBRARY):
@@ -3214,11 +3347,11 @@ def describe_recording(data_dir, results_root=RESULTS_ROOT, library_dir=CALIBRAT
     .settings.txt and, for a live run, its run.json -- and what the app has of it:
     plate labels, ground truth and results."""
     data_dir = Path(data_dir)
-    loader = DataLoader(data_dir)
-    recordings = loader.recording_dirs
+    loader = open_recordings(data_dir)
+    recordings = loader.recording_names
     if not recordings:
         return None
-    first, last = recordings[0].name, recordings[-1].name
+    first, last = recordings[0], recordings[-1]
     fps = loader.get_fps(first)
     frames = loader.count_frames(first)
     ended = DataLoader.parse_start_time(last) + timedelta(seconds=loader.count_frames(last) / loader.get_fps(last))

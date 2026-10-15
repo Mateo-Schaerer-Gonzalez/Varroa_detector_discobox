@@ -1,23 +1,31 @@
 """Which files of a folder dropped into the page are copied to the server, and
 where they go.
 
-Only the frames (.bmp), the Discobox settings (.settings.txt) and the app's own
-files (labels, negative controls, ground truth, run.json) matter; everything else
+Only the frames (.bmp, or of a session saved as the mites' ROIs its first frame,
+its index and the mites' videos, see classes/roi_recordings.py), the Discobox
+settings (.settings.txt) and the app's own files (labels, negative controls,
+ground truth, poke test, run.json) matter; everything else
 stays on the user's disk. A single recording folder (..._fps-30) dropped on its
 own becomes a one-recording session named after it. A file already on the
 server with the same size is not copied again, so dropping the same folder twice
 is instant, and the app's labels, controls and ground truth already on the
 server are never replaced: they hold what was entered in this app, which is
-newer than the copy in the dropped folder.
+newer than the copy in the dropped folder. Once copied, the frames are shrunk
+to the mites' surroundings (classes/roi_conversion.py); dropping the folder
+again sends none of the frames shrunk already.
 """
 
 import re
 from pathlib import PurePosixPath
 
 # labels_2.json and controls_2.json: those of two zones per plate (classes/zone_layout.py)
-KEPT = ("labels.json", "controls.json", "labels_2.json", "controls_2.json", "ground_truth.json", "corrections.json")
+KEPT = ("labels.json", "controls.json", "labels_2.json", "controls_2.json", "ground_truth.json", "corrections.json",
+        "poke_test.json")
 FRAME = re.compile(r"\.bmp$", re.IGNORECASE)
-APP_FILE = re.compile(r"(^|/)(\.settings\.txt|(labels|controls)(_2)?\.json|(ground_truth|corrections|run)\.json)$")
+# a session saved as the mites' ROIs: its index says it is one
+ROI_INDEX = re.compile(r"^rois/index\.json$")
+ROI_FILE = re.compile(r"^(first_frame\.png|rois/index\.json|rois/(parts/[^/]+(?<!\.part)/)?mite_\d+\.mkv)$")
+APP_FILE = re.compile(r"(^|/)(\.settings\.txt|(labels|controls)(_2)?\.json|(ground_truth|corrections|poke_test|run)\.json)$")
 SINGLE_RECORDING = re.compile(r"_fps-\d+")
 
 
@@ -34,13 +42,14 @@ class UploadPlan:
             self.check_path(target)
             if UploadPlan.wanted(target):
                 self.files.append({"path": file["path"], "target": target, "size": int(file["size"])})
-        if not any(FRAME.search(file["target"]) for file in self.files):
+        if not any(FRAME.search(file["target"]) or ROI_INDEX.search(file["target"]) for file in self.files):
             raise ValueError(f"No .bmp images found in “{self.name}”. Drop the folder that holds the ..._fps-30 folders.")
 
     @staticmethod
     def wanted(path):
-        """Whether a file matters to the app: a frame, or one of its own files by its exact name."""
-        return bool(FRAME.search(path) or APP_FILE.search(path))
+        """Whether a file matters to the app: a frame, a file of a session saved
+        as ROIs, or one of its own files by its exact name."""
+        return bool(FRAME.search(path) or ROI_FILE.search(path) or APP_FILE.search(path))
 
     @staticmethod
     def check_part(name):
@@ -53,11 +62,15 @@ class UploadPlan:
         if not parts or ".." in parts or ":" in path or path.startswith("/"):
             raise ValueError(f"Bad path: {path}")
 
-    def missing(self, size_of):
+    def missing(self, size_of, converted=()):
         """The files to copy: [{path (as dropped), target (in the folder on the
-        server)}]. `size_of(target)` is the size of the file already there, or None."""
+        server)}]. `size_of(target)` is the size of the file already there, or None.
+        `converted`: the recordings whose frames were shrunk to the mites'
+        surroundings on the server; their frames are not sent again."""
         missing = []
         for file in self.files:
+            if FRAME.search(file["target"]) and file["target"].split("/")[0] in converted:
+                continue
             size = size_of(file["target"])
             if PurePosixPath(file["target"]).name in KEPT and size is not None:
                 continue

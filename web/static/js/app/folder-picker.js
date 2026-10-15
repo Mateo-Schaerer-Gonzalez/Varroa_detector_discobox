@@ -140,8 +140,11 @@ class FolderPicker {
       }
     };
     await Promise.all([worker(), worker(), worker(), worker()]);
-    text.textContent = `Copied “${name}”. Opening…`;
-    await this.open(manifest.data_dir);
+    // The server keeps only the mites' surroundings of the frames: a moment per recording.
+    text.textContent = `Copied “${name}”. Keeping only the mites' surroundings…`;
+    const finished = await post(`/api/uploads/${encodeURIComponent(name)}/finish`);
+    text.textContent = `${finished.converted ? `Shrunk ${finished.converted} recordings to the mites' surroundings. ` : ""}Opening…`;
+    await this.open(finished.data_dir);
     progress.hidden = true;
   }
 }

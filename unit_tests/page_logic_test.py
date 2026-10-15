@@ -118,12 +118,28 @@ def test_only_the_files_the_app_needs_are_copied():
              {"path": "labels.json", "size": 2}, {"path": "Labels.json", "size": 2}]
     plan = UploadPlan("session", files)
     assert [f["target"] for f in plan.files] == ["r_fps-30/a.BMP", ".settings.txt", "labels.json"]
+    kept = UploadPlan("session", [{"path": "r_fps-30/a.bmp", "size": 3}, {"path": "ground_truth.json", "size": 2},
+                                  {"path": "poke_test.json", "size": 2}])
+    assert [f["target"] for f in kept.files] == ["r_fps-30/a.bmp", "ground_truth.json", "poke_test.json"]
+    assert kept.missing(lambda target: 1 if target.endswith(".json") else None) == [
+        {"path": "r_fps-30/a.bmp", "target": "r_fps-30/a.bmp"}]  # what was entered in this app is never replaced
 
 
 def test_a_single_recording_folder_becomes_a_session():
     plan = UploadPlan("2025-09-04_fps-30", [{"path": "a.bmp", "size": 3}])
     assert plan.name == "2025-09-04_fps-30_session"
     assert plan.files[0]["target"] == "2025-09-04_fps-30/a.bmp"
+
+
+def test_a_session_saved_as_the_mites_rois_is_copied_whole_but_for_its_unfinished_parts():
+    files = [{"path": path, "size": 1} for path in (
+        "first_frame.png", "rois/index.json", "rois/mite_000.mkv", "rois/parts/r_fps-30/mite_000.mkv",
+        "rois/parts/r_fps-30.part/mite_000.mkv", "rois/stitching/mite_000.mkv", "rois/index.json.part", ".settings.txt")]
+    plan = UploadPlan("run", files)
+    assert [f["target"] for f in plan.files] == [
+        "first_frame.png", "rois/index.json", "rois/mite_000.mkv", "rois/parts/r_fps-30/mite_000.mkv", ".settings.txt"]
+    with pytest.raises(ValueError, match="No .bmp images"):
+        UploadPlan("run", [{"path": "rois/mite_000.mkv", "size": 1}])
 
 
 def test_a_folder_without_frames_or_with_a_bad_path_is_refused():

@@ -126,6 +126,10 @@ if [ -f vimbax.config ]; then
     [ -n "$cti_path" ] && export GENICAM_GENTL64_PATH=":$cti_path"
 fi
 
+# Once: the recordings stored as whole frames shrink to the mites' surroundings,
+# before the server can read them. Quick once done; delete with the script.
+python scripts/convert_stored_recordings.py >> update.log 2>&1
+
 # The server stops by itself once the last browser tab is closed (unless a live
 # test run is still going; then once it has ended).
 DISCOBOX_AUTO_STOP=1 nohup python -m uvicorn web.server:app --host 127.0.0.1 --port $PORT > server.log 2>&1 &

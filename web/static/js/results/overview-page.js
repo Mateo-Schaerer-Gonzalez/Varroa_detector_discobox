@@ -158,7 +158,8 @@ class OverviewPage extends ResultsPage {
 
     // The whole plate, scaled down; the zones and dots sit on it in percent.
     const img = plate.querySelector("img");
-    this.playClip(`/api/session/${ctx.sessionId}/clip/${ctx.shown}`, plate, plate.nextElementSibling, () => (src) => { img.src = src; });
+    if (this.onlyMiteClips()) this.showFirstFrame(plate.nextElementSibling);
+    else this.playClip(`/api/session/${ctx.sessionId}/clip/${ctx.shown}`, plate, plate.nextElementSibling, () => (src) => { img.src = src; });
   }
 
   // Small multiples: one framed mini plot of the fraction moving per zone.

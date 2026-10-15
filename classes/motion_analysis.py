@@ -18,14 +18,17 @@ from classes.mite import Mite
 DETECTION_LOCK = threading.Lock()
 
 
-def detect_mites(zone_manager, image, analyzer):
+def detect_mites(zone_manager, image, analyzer, boxes=None):
     """Find the mites on one frame and put each in its zone, which numbers them
     ("<zone id>.<number>", in reading order: ZoneManager.number_mites()).
-    Returns the frame masked to the plates, which is what the detection saw."""
+    Returns the frame masked to the plates, which is what the detection saw.
+    With `boxes`, (x1, y1, x2, y2) each, those are the mites: the ones found
+    when the frames were saved as their ROIs, the only ones they hold."""
     with DETECTION_LOCK:
         Mite.reset_ids()
         masked = zone_manager.mask_image_to_valid_rois(image)
-        zone_manager.assign_mites(analyzer.detect(masked))
+        mites = analyzer.detect(masked) if boxes is None else [Mite(*box, config=analyzer.config) for box in boxes]
+        zone_manager.assign_mites(mites)
     return masked
 
 
@@ -37,10 +40,15 @@ class MotionAnalysis:
     first recording to its own.
     """
 
-    def __init__(self, zone_manager, analyzer=None, score=True):
+    def __init__(self, zone_manager, analyzer=None, score=True, boxes=None, known_blobs=None):
+        """`boxes` and `known_blobs`, of frames saved as the mites' ROIs (a
+        RoiSource's): the mites found then, and per recording name the blobs
+        then found on its whole first and last frame, which are not saved."""
         self.zone_manager = zone_manager
         self.analyzer = analyzer or Analyzer()
         self.score = score
+        self.boxes = boxes
+        self.known_blobs = known_blobs
         self.first_frame = None
         self.masked = None
         self.mites = []
@@ -74,26 +82,30 @@ class MotionAnalysis:
         for event in events:
             if not self.started and isinstance(event, Frame):
                 with lock:
-                    self._detect(event)
+                    self.detect(event)
             yield event
 
-    def _detect(self, frame):
+    def detect(self, frame):
+        """Find the mites on `frame`, the first of the session."""
         self.first_frame = frame.image
         self._session_start = frame.recording.start
-        self.masked = detect_mites(self.zone_manager, frame.image, self.analyzer)
+        self.masked = detect_mites(self.zone_manager, frame.image, self.analyzer, self.boxes)
         self.mites = [mite for zone in self.zone_manager.zones for mite in zone.mites]
         self._zone_mites = {id(zone): list(zone.mites) for zone in self.zone_manager.zones}
 
     def add_recording(self, frames):
         """Score the mites over `frames`, every frame of one recording."""
         if not self.started:
-            self._detect(frames[0])
+            self.detect(frames[0])
         if self.score:
             self.analyzer.score_pool(self.mites, [frame.image for frame in frames])
-            self.blobs.append(self._blobs(frames[0].image, frames[-1].image))
+            if self.known_blobs is not None:
+                self.blobs.append(self.known_blobs.get(frames[0].recording.name) or [])
+            else:
+                self.blobs.append(self.blobs_on(frames[0].image, frames[-1].image))
         self.recording_times.append(frame_times(frames[:1], self._session_start)[0])
 
-    def _blobs(self, *images):
+    def blobs_on(self, *images):
         """The blobs on `images` (a recording's first and last frame), those of
         the later one within 1 px of one of the earlier left out."""
         found = []

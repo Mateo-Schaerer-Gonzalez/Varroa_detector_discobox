@@ -213,13 +213,16 @@ class ActivitySection {
       container.innerHTML = `<p class="caption">No mite flew off or turned in these recordings.</p>`;
       return;
     }
+    // Of a session saved as the mites' ROIs, a fly-off's walk across the plate was not saved.
+    const playable = (kind) => kind !== "fly_off" || !this.page.onlyMiteClips();
     container.innerHTML = events.map(({ kind, event, title, text }, index) => `
       <figure class="fig activity-card">
         <div class="fig-title">${esc(title)}</div>
         <p class="activity-text">${text}</p>
         <div class="activity-clip" data-index="${index}"><img alt="${esc(title)}" hidden></div>
-        <p class="hint clip-status"><button type="button" class="secondary small" data-play="${index}">Play the recordings</button>
-          <span class="muted">${kind === "fly_off" ? "from the recording before it left to the one after it stopped" : "the recordings around its turn"}, one after the other</span></p>
+        <p class="hint clip-status">${playable(kind) ? `<button type="button" class="secondary small" data-play="${index}">Play the recordings</button>
+          <span class="muted">${kind === "fly_off" ? "from the recording before it left to the one after it stopped" : "the recordings around its turn"}, one after the other</span>`
+          : `<span class="muted">Only the mites' surroundings are saved of these recordings, so its walk cannot be played.</span>`}</p>
       </figure>`).join("");
     container.querySelectorAll("[data-play]").forEach((button) => button.addEventListener("click", () => {
       const index = Number(button.dataset.play);

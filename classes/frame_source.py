@@ -12,8 +12,10 @@ the scores of a live frame and of the same frame read back from disk are
 identical. The Discobox camera and its recordings are grey; a frame is held in
 one channel, not three identical ones, a third of the memory.
 
-FolderSource reads a recording folder the way folder mode always has. The live
-source, the camera, is in classes/live/.
+FolderSource reads a recording folder the way folder mode always has, RoiSource
+a session saved as the mites' ROIs (classes/roi_recordings.py), and
+open_source() whichever `data_dir` holds. The live source, the camera, is in
+classes/live/.
 """
 
 from concurrent.futures import ThreadPoolExecutor
@@ -26,6 +28,7 @@ import cv2
 import numpy as np
 
 from classes.data_loader import DataLoader
+from classes.roi_recordings import RoiRecordings, is_roi_session
 from classes.workers import one_ahead
 
 
@@ -168,3 +171,72 @@ class FolderSource:
         if image is None:
             raise ValueError(f"Could not read the image {path}")
         return image
+
+
+class RoiSource:
+    """The recordings of a session saved as ROIs (classes/roi_recordings.py), as
+    FolderSource gives those of a folder: each frame whole, black away from the
+    mites, but for the first, which was saved whole. The scores, read only
+    from the ROIs, are those of the whole frames.
+
+    The mites are those found when the frames were saved (`boxes`), and the
+    blobs on each recording's first and last frame those found then on the
+    whole frames (`blobs()`): there is nothing to find them on again.
+    """
+
+    FIRST = FolderSource.FIRST
+
+    def __init__(self, data_dir, names=None):
+        self.data_dir = Path(data_dir)
+        self.loader = RoiRecordings(self.data_dir)
+        self.names = None if names is None else set(names)
+
+    @property
+    def boxes(self):
+        return self.loader.boxes
+
+    def blobs(self):
+        return self.loader.blobs()
+
+    def recordings(self):
+        return [Recording(name=name, start=self.loader.get_start_time(name), fps=self.loader.get_fps(name))
+                for name in self.loader.recording_names if self.names is None or name in self.names]
+
+    def events(self, decode=True):
+        """As FolderSource.events()."""
+        recordings = self.recordings()
+        if not recordings:
+            raise FileNotFoundError(f"No recordings found in {self.data_dir}")
+        whole_first = recordings[0].name == self.loader.recording_names[0]
+        if decode is True:
+            loads = (partial(self.loader.load_recording, recording.name) for recording in recordings)
+            for number, (recording, frames) in enumerate(zip(recordings, one_ahead(loads))):
+                for index, image in enumerate(frames):
+                    if number == 0 and index == 0 and whole_first:
+                        image = self.loader.load_preview_frame()
+                    yield Frame(recording, index, _frame_name(recording, index), image)
+                yield RecordingEnd(recording)
+            return
+        first = decode == self.FIRST
+        for recording in recordings:
+            for index in range(self.loader.count_frames(recording.name)):
+                image = None
+                if first:
+                    image = (self.loader.load_preview_frame() if whole_first
+                             else self.loader.load_recording_region(recording.name, 0, 0, *self.loader.image_size)[0])
+                yield Frame(recording, index, _frame_name(recording, index), image)
+                first = False
+            yield RecordingEnd(recording)
+
+    def frame_files(self):
+        """As FolderSource.frame_files(): what tells these frames from others (RoiRecordings.files())."""
+        return [entry for entry in self.loader.files() if entry[0] == "rois" or self.names is None or entry[0] in self.names]
+
+
+def _frame_name(recording, index):
+    return f"{recording.name}_{index:06}"
+
+
+def open_source(data_dir, names=None):
+    """The source of the recordings in `data_dir`, whichever way they were saved."""
+    return RoiSource(data_dir, names) if is_roi_session(data_dir) else FolderSource(data_dir, names)

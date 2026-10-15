@@ -226,13 +226,22 @@ def run_cli(args, replacements):
     return text
 
 
+def _path(name):
+    """A reference per OpenCV line: OpenCV 5 measures the plate's shift a few
+    hundredths of a pixel otherwise than 4, which moves the scores in their
+    last digits. name.json is OpenCV 4's, name.opencv5.json OpenCV 5's, both
+    made by make_reference.py from the same code."""
+    major = int(cv2.__version__.split(".")[0])
+    return REFERENCE_DIR / (f"{name}.json" if major < 5 else f"{name}.opencv{major}.json")
+
+
 def load(name):
-    return json.loads((REFERENCE_DIR / f"{name}.json").read_text(encoding="utf-8"))
+    return json.loads(_path(name).read_text(encoding="utf-8"))
 
 
 def save(name, data):
     REFERENCE_DIR.mkdir(exist_ok=True)
-    (REFERENCE_DIR / f"{name}.json").write_text(json.dumps(data, indent=1, sort_keys=True), encoding="utf-8")
+    _path(name).write_text(json.dumps(data, indent=1, sort_keys=True), encoding="utf-8")
 
 
 def differences(expected, actual, path="", limit=10):
