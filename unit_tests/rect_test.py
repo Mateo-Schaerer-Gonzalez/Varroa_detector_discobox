@@ -138,8 +138,13 @@ class TestGetROI:
         frame = np.zeros((10, 10, 3), dtype=np.uint8)
         assert Rect(1, 1, 8, 8).get_ROI(frame, pad=3).shape == (10, 10, 3)
 
+    def test_single_grey_frame_roi(self):
+        frame = np.arange(10 * 10).reshape(10, 10).astype(np.uint8)
+        roi = Rect(2, 3, 5, 7).get_ROI(frame, pad=1)
+        np.testing.assert_array_equal(roi, frame[2:8, 1:6])
+
     def test_invalid_dimensions_raises(self):
-        frames = np.zeros((10, 10))  # 2D, unsupported
+        frames = np.zeros(10)  # 1D, unsupported
         r = Rect(0, 0, 5, 5)
         with pytest.raises(ValueError):
             r.get_ROI(frames)

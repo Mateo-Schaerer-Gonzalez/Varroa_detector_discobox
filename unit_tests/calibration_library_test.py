@@ -294,6 +294,34 @@ def test_the_library_keeps_a_copy_of_the_recording_folder(tmp_path, library):
     assert (copy / pipeline.GROUND_TRUTH_FILENAME).read_text() == (data_dir / pipeline.GROUND_TRUTH_FILENAME).read_text()
 
 
+def test_the_frames_are_kept_once_on_disk_and_the_folder_files_copied(tmp_path, library):
+    data_dir, out_dir = make_session(tmp_path, "a", 1)
+    write_frames(data_dir)
+    pipeline.save_ground_truth(out_dir, {"0": ["still", "moving"]}, library_dir=library)
+    copy = library / pipeline.dataset_id(data_dir) / pipeline.RECORDINGS_DIRNAME
+    for frame in (data_dir / RECORDING).glob("*.bmp"):
+        assert (copy / RECORDING / frame.name).samefile(frame)  # one file, two names
+    assert not (copy / ".settings.txt").samefile(data_dir / ".settings.txt")
+    assert not (copy / pipeline.GROUND_TRUTH_FILENAME).samefile(data_dir / pipeline.GROUND_TRUTH_FILENAME)
+    # saving again leaves the frames as they are
+    pipeline.save_ground_truth(out_dir, {"0": ["moving", "moving"]}, library_dir=library)
+    assert all((copy / RECORDING / frame.name).samefile(frame) for frame in (data_dir / RECORDING).glob("*.bmp"))
+
+
+def test_a_frame_is_copied_where_it_cannot_be_linked(tmp_path, library, monkeypatch):
+    data_dir, out_dir = make_session(tmp_path, "a", 1)
+    write_frames(data_dir)
+
+    def no_links(source, target):
+        raise OSError("no hard links here")
+
+    monkeypatch.setattr(pipeline.os, "link", no_links)
+    pipeline.save_ground_truth(out_dir, {"0": ["still", "moving"]}, library_dir=library)
+    copy = library / pipeline.dataset_id(data_dir) / pipeline.RECORDINGS_DIRNAME / RECORDING
+    for frame in (data_dir / RECORDING).glob("*.bmp"):
+        assert not (copy / frame.name).samefile(frame) and (copy / frame.name).read_bytes() == frame.read_bytes()
+
+
 def test_a_dataset_works_from_its_copy_once_the_original_is_gone(tmp_path, library):
     data_dir, out_dir = make_session(tmp_path, "a", 4, times=(0.0,))
     write_frames(data_dir)

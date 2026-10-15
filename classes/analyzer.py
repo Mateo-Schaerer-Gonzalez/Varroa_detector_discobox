@@ -71,7 +71,7 @@ class Analyzer:
 
     def score_pool(self, mites, frames):
         """Records one motion score on each mite for one pool of frames: `frames`
-        is a list, or a stack, of (H, W, C) frames, in order.
+        is a list, or a stack, of (H, W) grey frames (or (H, W, C)), in order.
 
         Each mite's ROI is cut from each frame and the cuts stacked, without
         ever holding a second copy of the frames. With mite.stabilize_plate the
@@ -95,7 +95,7 @@ class Analyzer:
                 activity = {"stray": round(strays[index], 4), "shake": round(shakes[index], 4)}
                 # its look from the patch just cut: warping every frame again costs as much as scoring it
                 activity.update(MiteLook.observe(frames, box, shifts, mite, cut=mite_roi, pad=pad))
-            return self._motion_score(mite_roi, mite.metric, mite.metric_params), float(mite_roi.mean()), activity
+            return self._motion_score(mite_roi, mite.metric, mite.metric_params), self.brightness(mite_roi), activity
 
         for mite, (motion, brightness, activity) in zip(mites, side_by_side(score, range(len(mites)))):
             mite.record_motion(motion, brightness=brightness, activity=activity)
@@ -189,13 +189,29 @@ class Analyzer:
         return checked
 
     @staticmethod
+    def grey(roi):
+        """An ROI stack as the metrics take it: grey, (N, H, W). A stack cut
+        with one channel, (N, H, W, 1) as PlateStabilizer.cut() cuts grey
+        frames, loses it; one with colour, (N, H, W, C), is made grey as the
+        mean of its channels."""
+        roi = np.asarray(roi)
+        if roi.ndim == 4:
+            return roi[..., 0] if roi.shape[-1] == 1 else roi.mean(axis=-1)
+        return roi
+
+    @staticmethod
+    def brightness(roi):
+        """The mean grey level of an ROI stack."""
+        return float(Analyzer.grey(roi).mean())
+
+    @staticmethod
     def _motion_score(roi, metric, params=None):
-        """Reduces an (N, H, W, C) ROI stack to one scalar using the named metric,
-        with `params` overriding its default parameters."""
+        """Reduces an ROI stack, grey (N, H, W) (or see grey()), to one scalar
+        using the named metric, with `params` overriding its default parameters."""
         metrics = Analyzer._metrics()
         if metric not in metrics:
             raise ValueError(f"Unknown motility metric: {metric!r}")
-        return metrics[metric](roi.astype(np.float32), **Analyzer.check_metric_params(metric, params))
+        return metrics[metric](Analyzer.grey(roi).astype(np.float32), **Analyzer.check_metric_params(metric, params))
 
     @staticmethod
     def _max_diff(roi):
@@ -209,7 +225,7 @@ class Analyzer:
 
     @staticmethod
     def _vector_diff_min_max(roi):
-        pixel_max = np.abs(np.diff(roi, axis=0)).max(axis=(0, -1))
+        pixel_max = np.abs(np.diff(roi, axis=0)).max(axis=0)
         h, w = pixel_max.shape
         dy, dx = np.mgrid[:h, :w].astype(np.float32)
         dy -= (h - 1) / 2
@@ -223,7 +239,7 @@ class Analyzer:
     @staticmethod
     def _vector_variance(roi):
         """Magnitude of the spatial vector weighted by per-pixel variance."""
-        pixel_variance = roi.var(axis=0).max(axis=-1)
+        pixel_variance = roi.var(axis=0)
         h, w = pixel_variance.shape
         dy, dx = np.mgrid[:h, :w].astype(np.float32)
         dy -= (h - 1) / 2
@@ -276,8 +292,8 @@ class Analyzer:
         A shaking plate is taken out before any metric sees the ROI, see
         PlateStabilizer."""
 
-        # Farneback wants 8-bit single-channel frames
-        gray = np.clip(roi.mean(axis=-1), 0, 255).astype(np.uint8)
+        # Farneback wants 8-bit frames
+        gray = np.clip(roi, 0, 255).astype(np.uint8)
         step = min(step, len(gray) - 1)
         # The ROI is only a few mite-widths across, so keep the pyramid shallow
         # and the averaging window small or the flow is smeared over the edges.
@@ -307,7 +323,7 @@ class Analyzer:
         A leg moving on one side of the mite adds up in one direction, while
         changes spread evenly around the centre (lighting, the whole body
         shifting) cancel out."""
-        pixel_range = (roi.max(axis=0) - roi.min(axis=0)).max(axis=-1)
+        pixel_range = roi.max(axis=0) - roi.min(axis=0)
         h, w = pixel_range.shape
         dy, dx = np.mgrid[:h, :w].astype(np.float32)
         dy -= (h - 1) / 2
@@ -355,7 +371,7 @@ class Analyzer:
         legs and for bare plate at the patch's edge. It should be 12 or more.
 
         notebooks/alive_dead_legs.ipynb shows what it sees."""
-        gray = roi.mean(axis=-1)
+        gray = Analyzer.grey(roi)
         height, width = gray.shape[1:]
         edge = np.ones((height, width), dtype=bool)
         edge[6:-6, 6:-6] = False               # the outermost pixels: the plate, never the mite
@@ -466,7 +482,7 @@ class Analyzer:
         whole mite, as when the plate shakes: each frame's rays start at the
         mite's centre in that frame, the centre of the darkness of the body
         and the two pixels around it."""
-        gray = roi.mean(axis=-1)
+        gray = Analyzer.grey(roi)
         height, width = gray.shape[1:]
         edge = np.ones((height, width), dtype=bool)
         edge[6:-6, 6:-6] = False               # the outermost pixels: the plate, never the mite

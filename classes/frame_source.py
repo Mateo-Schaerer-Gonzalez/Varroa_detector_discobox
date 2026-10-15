@@ -6,10 +6,11 @@ its recording (a RecordingEnd). A recording is one burst of frames, e.g. the
 folder "2025-09-04-09-28-17_fps-30"; the analysis never needs to know whether it
 was read from disk or is arriving from the camera right now.
 
-Every frame is an (H, W, 3) uint8 image exactly as cv2.imread(path,
-cv2.IMREAD_COLOR) decodes a saved recording frame, so the scores of a live frame
-and of the same frame read back from disk are identical. A grey camera frame gets
-its three identical channels from as_analysis_image().
+Every frame is an (H, W) uint8 grey image: the camera's frame as it comes, or
+a saved recording frame as cv2.imread(path, cv2.IMREAD_GRAYSCALE) decodes it, so
+the scores of a live frame and of the same frame read back from disk are
+identical. The Discobox camera and its recordings are grey; a frame is held in
+one channel, not three identical ones, a third of the memory.
 
 FolderSource reads a recording folder the way folder mode always has. The live
 source, the camera, is in classes/live/.
@@ -53,15 +54,13 @@ class Frame:
 
     `index` is its position in the recording in the order folder mode reads the
     recording's files (sorted by name), and `filename` the name it has, or is
-    saved under, in the recording's folder. `gray` is the camera's own
-    single-channel frame, when the frame comes from the camera.
+    saved under, in the recording's folder. `image` is (H, W) grey.
     """
 
     recording: Recording
     index: int
     filename: str
     image: np.ndarray = field(repr=False)
-    gray: np.ndarray = field(default=None, repr=False)
 
 
 @dataclass(frozen=True)
@@ -69,15 +68,6 @@ class RecordingEnd:
     """No more frames of `recording` will come."""
 
     recording: Recording
-
-
-def as_analysis_image(frame):
-    """A frame as the analysis reads it: (H, W, 3) uint8. A grey (H, W) frame
-    becomes three identical channels, which is exactly what cv2.imread() with
-    IMREAD_COLOR gives for the same frame saved as an 8-bit grey BMP."""
-    if frame.ndim == 2:
-        return cv2.cvtColor(frame, cv2.COLOR_GRAY2BGR)
-    return frame
 
 
 def frame_times(frames, session_start):
@@ -109,8 +99,8 @@ def recordings(events):
 
 
 class FolderSource:
-    """The recordings of a session folder, in name order, each frame decoded as
-    folder mode always has (cv2.IMREAD_COLOR, files sorted by name).
+    """The recordings of a session folder, in name order, each frame decoded in
+    grey (cv2.IMREAD_GRAYSCALE, files sorted by name).
 
     A recording is decoded in parallel, and the one after it while it is worked
     on, so the session is never held in memory as a whole: the recording in
@@ -123,7 +113,7 @@ class FolderSource:
         """`names`: only the recordings of these names, e.g. those of a live run
         complete so far; every recording without."""
         self.data_dir = Path(data_dir)
-        self.loader = DataLoader(self.data_dir, grayscale=False)
+        self.loader = DataLoader(self.data_dir)
         self.names = None if names is None else set(names)
 
     def recordings(self):
@@ -174,7 +164,7 @@ class FolderSource:
 
     @staticmethod
     def _read(path):
-        image = cv2.imread(str(path), cv2.IMREAD_COLOR)
+        image = cv2.imread(str(path), cv2.IMREAD_GRAYSCALE)
         if image is None:
             raise ValueError(f"Could not read the image {path}")
         return image

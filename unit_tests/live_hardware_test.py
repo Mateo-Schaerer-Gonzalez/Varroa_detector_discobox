@@ -500,7 +500,7 @@ def test_a_burst_is_handed_over_whole_in_file_name_order():
     assert {name[-10:-4] for name in names} >= {"065535", "000001"}
     assert [frame.index for frame in frames] == list(range(6))
     assert isinstance(events[-1], RecordingEnd)
-    assert frames[0].image.shape == (8, 10, 3) and frames[0].gray.shape == (8, 10)
+    assert frames[0].image.shape == (8, 10)
 
 
 def test_stopping_mid_burst_keeps_every_frame_already_captured():
@@ -516,7 +516,7 @@ def test_stopping_mid_burst_keeps_every_frame_already_captured():
     assert frames and isinstance(events[-1], RecordingEnd)
     assert not source.camera.streaming and source.frames.empty()
     # The last frame taken in before the camera stopped is the burst's last.
-    assert np.array_equal(frames[-1].gray, source.latest.get()[1])
+    assert frames[-1].image is source.latest.get()[1]  # the camera's own frame, never copied
 
 
 def test_the_camera_and_schedule_run_a_whole_test_run():

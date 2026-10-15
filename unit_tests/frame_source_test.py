@@ -5,7 +5,7 @@ import numpy as np
 import pytest
 
 from classes.data_loader import DataLoader
-from classes.frame_source import Frame, FolderSource, Recording, RecordingEnd, as_analysis_image, frame_times, recordings
+from classes.frame_source import Frame, FolderSource, Recording, RecordingEnd, frame_times, recordings
 
 START = datetime(2025, 9, 4, 9, 28, 17)
 
@@ -51,10 +51,13 @@ def test_frame_times_are_those_folder_mode_gives_each_frame():
     assert frame_times(events, START) == expected
 
 
-def test_a_grey_frame_becomes_what_folder_mode_decodes_from_its_file(tmp_path):
+def test_a_saved_grey_frame_reads_back_as_it_was_and_as_each_channel_of_a_colour_read(tmp_path):
     gray = np.random.default_rng(0).integers(0, 256, (6, 8), dtype=np.uint8)
     cv2.imwrite(str(tmp_path / "frame.bmp"), gray)
-    assert np.array_equal(as_analysis_image(gray), cv2.imread(str(tmp_path / "frame.bmp"), cv2.IMREAD_COLOR))
+    read = FolderSource._read(tmp_path / "frame.bmp")
+    assert read.shape == (6, 8) and np.array_equal(read, gray)
+    colour = cv2.imread(str(tmp_path / "frame.bmp"), cv2.IMREAD_COLOR)
+    assert all(np.array_equal(colour[..., channel], read) for channel in range(3))
 
 
 def write_session(root, lengths):
@@ -71,7 +74,7 @@ def test_the_folder_source_reads_what_the_data_loader_reads(tmp_path):
     root = write_session(tmp_path, [3, 2])
     events = list(FolderSource(root).events())
     frames = [event for event in events if isinstance(event, Frame)]
-    loaded, times = DataLoader(root, grayscale=False).load_folder()
+    loaded, times = DataLoader(root).load_folder()
     assert np.array_equal(np.stack([frame.image for frame in frames]), loaded)
     assert frame_times(frames, frames[0].recording.start) == list(times)
     assert [type(event).__name__ for event in events] == ["Frame"] * 3 + ["RecordingEnd"] + ["Frame"] * 2 + ["RecordingEnd"]

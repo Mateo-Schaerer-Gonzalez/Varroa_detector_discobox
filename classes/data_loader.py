@@ -6,6 +6,38 @@ from pathlib import Path
 import cv2
 import numpy as np
 
+# An 8-bit BMP's grey palette: entry i is (i, i, i, 0), so its pixels are the grey levels.
+_GREY_PALETTE = bytes(value for level in range(256) for value in (level, level, level, 0))
+
+
+def _bmp_region(path, x1, y1, x2, y2):
+    """The grey pixels [y1:y2, x1:x2] (cut off at the image's edge) of an 8-bit
+    uncompressed BMP with a grey palette, as the Discobox saves its frames,
+    read straight off the file: only the region's rows, nothing decoded. None
+    for any other file."""
+    with open(path, "rb") as f:
+        head = f.read(54)
+        if len(head) < 54 or head[:2] != b"BM":
+            return None
+        number = lambda start, signed=False: int.from_bytes(head[start:start + 4], "little", signed=signed)  # noqa: E731
+        offset, info, width, height = number(10), number(14), number(18, True), number(22, True)
+        bits, compression = int.from_bytes(head[28:30], "little"), number(30)
+        if bits != 8 or compression != 0 or info < 40 or width <= 0 or height == 0 or (number(46) or 256) != 256:
+            return None
+        f.seek(14 + info)
+        if f.read(1024) != _GREY_PALETTE:
+            return None
+        rows, stride = abs(height), (width + 3) & ~3
+        x1, y1, x2, y2 = max(0, x1), max(0, y1), min(width, x2), min(rows, y2)
+        if x2 <= x1 or y2 <= y1:
+            return np.empty((max(0, y2 - y1), max(0, x2 - x1)), dtype=np.uint8)
+        f.seek(offset + (y1 if height < 0 else rows - y2) * stride)  # rows are stored bottom-up, unless the height is negative
+        data = f.read((y2 - y1) * stride)
+    if len(data) < (y2 - y1) * stride:
+        return None  # cut short: let the decoder say so
+    block = np.frombuffer(data, dtype=np.uint8).reshape(y2 - y1, stride)
+    return np.ascontiguousarray((block if height < 0 else block[::-1])[:, x1:x2])
+
 
 class DataLoader:
     # Recording folder names look like "2025-09-04-09-28-17_fps-30" or
@@ -97,7 +129,9 @@ class DataLoader:
         """Every `step`-th frame of one recording, cropped to (x1, y1)-(x2, y2).
 
         Crops each frame as soon as it is read, so looking at one plate of one
-        recording never holds a whole recording of full frames in memory.
+        recording never holds a whole recording of full frames in memory. In
+        grey, a frame saved as the Discobox saves them is not even decoded: the
+        region is read straight off its file (read_region()).
         """
         image_paths = sorted((self.data_dir / name).glob("*.bmp"))[::step]
         if not image_paths:
@@ -105,12 +139,30 @@ class DataLoader:
         flag = cv2.IMREAD_GRAYSCALE if self.grayscale else cv2.IMREAD_COLOR
 
         def read(path):
+            if self.grayscale:
+                return self.read_region(path, x1, y1, x2, y2)
             frame = cv2.imread(str(path), flag)
             height, width = frame.shape[:2]
             return frame[max(0, y1):min(height, y2), max(0, x1):min(width, x2)].copy()
 
         with ThreadPoolExecutor() as executor:
             return np.stack(list(executor.map(read, image_paths)), axis=0)
+
+    @staticmethod
+    def read_region(path, x1, y1, x2, y2):
+        """The grey pixels [y1:y2, x1:x2] of one frame file, cut off at the
+        image's edge, exactly as cv2.imread(path, cv2.IMREAD_GRAYSCALE) gives
+        them: read straight off an 8-bit grey BMP (a fraction of a
+        millisecond, against several to decode the whole frame), any other
+        file decoded and cut."""
+        region = _bmp_region(path, x1, y1, x2, y2)
+        if region is not None:
+            return region
+        frame = cv2.imread(str(path), cv2.IMREAD_GRAYSCALE)
+        if frame is None:
+            raise ValueError(f"Could not read the image {path}")
+        height, width = frame.shape
+        return frame[max(0, y1):min(height, y2), max(0, x1):min(width, x2)].copy()
 
     def load_all(self):
         return {d.name: self.load_recording(d.name) for d in self.recording_dirs}

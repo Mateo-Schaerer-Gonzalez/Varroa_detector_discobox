@@ -64,6 +64,9 @@ class MotionAnalysis:
         for frames in recordings(self._watch(events, lock)):
             with lock:
                 self.add_recording(frames)
+            # Let the recording's frames go now: kept until the loop takes the
+            # next one, they would be held while that one is captured.
+            del frames
 
     def _watch(self, events, lock):
         # The mites are found on the first frame of the stream, before its

@@ -17,9 +17,10 @@ class OutlineView:
 
     @staticmethod
     def describe(roi, x0=0.0, y0=0.0, width=1.5, pad=16):
-        """The outline of the mite in `roi` (frames, height, width, 3), a patch
-        cut `pad` pixels around its box with its corner at (`x0`, `y0`) of the
-        image; `width` is the score's. In image pixels:
+        """The outline of the mite in `roi` (frames, height, width), grey, or
+        (frames, height, width, channels), a patch cut `pad` pixels around its
+        box with its corner at (`x0`, `y0`) of the image; `width` is the
+        score's. In image pixels:
 
             x, y    the mite's centre
             dots    [x, y, share] per direction: where the dot is, and the
@@ -29,6 +30,7 @@ class OutlineView:
             share   the share of the variance on one side, 0 to 1
 
         None for a patch without a mite."""
+        roi = Analyzer.grey(roi)
         rays = Analyzer._outline_rays(roi, pad)
         if rays is None:
             return None

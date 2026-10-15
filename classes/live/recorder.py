@@ -19,20 +19,8 @@ import threading
 from pathlib import Path
 
 import cv2
-import numpy as np
 
 _logger = logging.getLogger(__name__)
-
-
-def grey_or_colour(frame):
-    """What to save of a Frame: the camera's grey frame, or a decoded frame's
-    one channel when its three are identical, as for a grey recording read back from disk."""
-    if frame.gray is not None:
-        return frame.gray
-    image = frame.image
-    if image.ndim == 3 and np.array_equal(image[..., 0], image[..., 1]) and np.array_equal(image[..., 0], image[..., 2]):
-        return image[..., 0]
-    return image
 
 
 class Recorder:
@@ -80,7 +68,7 @@ class Recorder:
     def _write(self, frame):
         folder = self.run_dir / frame.recording.name
         folder.mkdir(parents=True, exist_ok=True)
-        ok, data = cv2.imencode(".bmp", grey_or_colour(frame))
+        ok, data = cv2.imencode(".bmp", frame.image)
         if not ok:
             raise ValueError("the frame could not be encoded")
         partial = folder / (frame.filename + ".part")

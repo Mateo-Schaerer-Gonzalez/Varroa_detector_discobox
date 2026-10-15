@@ -235,3 +235,22 @@ class TestLoadBursts:
         loader = DataLoader(tmp_path)
         with pytest.raises(FileNotFoundError):
             loader.load_bursts()
+
+
+@pytest.mark.parametrize("width", [64, 63, 61])  # rows padded to 4 bytes but at 64
+def test_a_region_of_a_grey_bmp_is_what_imread_cuts(tmp_path, width):
+    frame = np.random.default_rng(width).integers(0, 256, (37, width), dtype=np.uint8)
+    path = tmp_path / "frame.bmp"
+    cv2.imwrite(str(path), frame)
+    for x1, y1, x2, y2 in [(0, 0, width, 37), (5, 3, 20, 30), (-4, -6, 9, 7), (50, 30, 80, 60), (10, 10, 10, 20)]:
+        expected = frame[max(0, y1):min(37, y2), max(0, x1):min(width, x2)]
+        got = DataLoader.read_region(path, x1, y1, x2, y2)
+        assert got.shape == expected.shape and np.array_equal(got, expected)
+
+
+def test_a_region_of_any_other_image_is_decoded_and_cut(tmp_path):
+    frame = np.random.default_rng(1).integers(0, 256, (20, 30), dtype=np.uint8)
+    cv2.imwrite(str(tmp_path / "frame.png"), frame)
+    cv2.imwrite(str(tmp_path / "colour.bmp"), cv2.cvtColor(frame, cv2.COLOR_GRAY2BGR))
+    for name in ("frame.png", "colour.bmp"):
+        assert np.array_equal(DataLoader.read_region(tmp_path / name, 3, 4, 13, 19), frame[4:19, 3:13])

@@ -46,16 +46,19 @@ class Rect:
         """
         Extract ROI from frames, grown by `pad` pixels on each side (cut off at
         the image's edge).
-        Supports single image (H, W, C) or batch (N, H, W, C).
+        Supports a single grey image (H, W), a single image (H, W, C) or a batch
+        (N, H, W, C).
         """
         x1, y1 = max(0, self.x1 - pad), max(0, self.y1 - pad)
         x2, y2 = self.x2 + pad, self.y2 + pad
+        if frames.ndim == 2:  # Single grey frame
+            return frames[y1:y2, x1:x2]
         if frames.ndim == 3:  # Single frame
             return frames[y1:y2, x1:x2, :]
         elif frames.ndim == 4:  # Multiple frames
             return frames[:, y1:y2, x1:x2, :]
         else:
-            raise ValueError(f"Expected 3D or 4D array, got {frames.ndim}D")
+            raise ValueError(f"Expected 2D, 3D or 4D array, got {frames.ndim}D")
 
 
 class TextZone(Rect):

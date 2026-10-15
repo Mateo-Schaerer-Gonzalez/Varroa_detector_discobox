@@ -27,7 +27,7 @@ import time
 from collections import deque
 from dataclasses import dataclass, field
 
-from classes.frame_source import Frame, Recording, RecordingEnd, as_analysis_image
+from classes.frame_source import Frame, Recording, RecordingEnd
 from classes.live.camera import QUEUE_SIZE, Camera
 from classes.live.schedule import TestRun
 
@@ -114,8 +114,7 @@ class LiveSource:
             if event is _END:
                 return
             if isinstance(event, tuple):  # a camera frame, made a Frame here, off the camera's threads
-                recording, index, filename, gray = event
-                event = Frame(recording, index, filename, as_analysis_image(gray), gray=gray)
+                event = Frame(*event)  # the very grey frame the camera gave: never copied
             yield event
 
     def _end_stream(self):

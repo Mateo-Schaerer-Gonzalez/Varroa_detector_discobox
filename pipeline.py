@@ -105,7 +105,7 @@ from classes.poke_test import PokeSurvival, PokeTest
 from classes.data_loader import DataLoader
 from classes.deferred_files import DeferredFiles
 from classes.error_map import ErrorMap
-from classes.frame_source import FolderSource, as_analysis_image
+from classes.frame_source import FolderSource
 from classes.kept_scores import KeptScores
 from classes.label_reader import LabelReader, LabelReadError
 from classes.live import camera as live_camera
@@ -346,7 +346,7 @@ def open_session(data_dir, out_dir, coords_file=None, library_dir=CALIBRATION_LI
     out_dir.mkdir(parents=True, exist_ok=True)
     _clear_clips(out_dir)
 
-    loader = DataLoader(data_dir, grayscale=False)
+    loader = DataLoader(data_dir)
     n_recordings = loader.count_recordings()
     if n_recordings == 0:
         raise FileNotFoundError(f"No recordings found in {data_dir}")
@@ -619,7 +619,7 @@ _files_lock = threading.Lock()
 
 def _annotated(run):
     """The first frame of a run with its zones and mites drawn on it."""
-    return run.zone_manager.draw(run.masked.copy())
+    return run.zone_manager.draw(cv2.cvtColor(run.masked, cv2.COLOR_GRAY2BGR))  # the frames are grey, the zones drawn in colour
 
 
 def _write_files(annotated, out_dir, mite_data):
@@ -1030,7 +1030,7 @@ def calibration_clip(out_dir, recording, zone_id, library_dir=CALIBRATION_LIBRAR
 
     source = stored["recordings"][recording]
     box = (zone["x1"] - CLIP_MARGIN, zone["y1"] - CLIP_MARGIN, zone["x2"] + CLIP_MARGIN, zone["y2"] + CLIP_MARGIN)
-    return _write_clip(DataLoader(recordings_dir, grayscale=False), source["name"], source["fps"], box, out_dir, name)
+    return _write_clip(DataLoader(recordings_dir), source["name"], source["fps"], box, out_dir, name)
 
 
 def _clip_key(dataset):
@@ -1054,11 +1054,11 @@ MITE_VARIATION = (1.0, 8.0)     # grey levels: the standard deviations the varia
 
 
 def _variation_picture(frames):
-    """How much each pixel of `frames` (frames, height, width, 3) varies over
-    them, as a picture: its standard deviation in grey, from black at the
+    """How much each pixel of `frames` (frames, height, width), grey, varies
+    over them, as a picture: its standard deviation, from black at the
     first of MITE_VARIATION (the camera's noise) through orange to nearly
     white at the second."""
-    variation = frames.astype(np.float32).mean(axis=-1).std(axis=0)
+    variation = frames.astype(np.float32).std(axis=0)
     least, most = MITE_VARIATION
     shade = np.clip((variation - least) / (most - least), 0, 1)
     colours = np.array([[0, 0, 0], [52, 104, 235], [224, 244, 255]], dtype=np.float32)  # BGR; one hue, growing lighter
@@ -1081,7 +1081,7 @@ def _mite_clip(recordings_dir, source, mite, out_dir, name):
     manifest = clips_dir / f"{name}.json"
     if manifest.is_file():
         return json.loads(manifest.read_text(encoding="utf-8"))
-    frames = DataLoader(recordings_dir, grayscale=False).load_recording_region(
+    frames = DataLoader(recordings_dir).load_recording_region(
         source["name"], x1, y1, x + MITE_CLIP_REACH, y + MITE_CLIP_REACH)
     clips_dir.mkdir(parents=True, exist_ok=True)
     names = [f"{CLIPS_DIRNAME}/{name}_{index:02d}.png" for index in range(len(frames))]
@@ -1173,7 +1173,7 @@ def dataset_clip(out_dir, dataset, recording, library_dir=CALIBRATION_LIBRARY):
     recordings_dir = _recordings_dir(saved["data_dir"], library_dir)
     _check_recordings(saved, recordings_dir, "there is no clip to play")
     source = saved["recordings"][recording]
-    return _write_clip(DataLoader(recordings_dir, grayscale=False), source["name"], source["fps"], (0, 0, 10**6, 10**6),
+    return _write_clip(DataLoader(recordings_dir), source["name"], source["fps"], (0, 0, 10**6, 10**6),
                        out_dir, f"clip_{_clip_key(dataset)}_r{recording}_plate", PLATE_CLIP_WIDTH)
 
 
@@ -1191,7 +1191,7 @@ def analysis_outlines(data_dir, out_dir, recording, zone_id, mites):
     OutlineView.describe(), None for a mite it finds no outline of. `mites` are
     the results' ({id, zone_id, x, y}). Like analysis_clip(), worked out from
     the frames once, kept in `out_dir` and reused after."""
-    loader = DataLoader(data_dir, grayscale=False)
+    loader = DataLoader(data_dir)
     source = _recording_name(loader, recording)
     mites = [mite for mite in mites if mite["zone_id"] == zone_id]
     manifest = Path(out_dir) / CLIPS_DIRNAME / f"outline_r{recording}_z{zone_id}.json"
@@ -1222,7 +1222,7 @@ def analysis_clip(data_dir, out_dir, recording, zone_id=None, coords_file=None):
     """Frames of one recording of an analysis session: of one zone, or with no
     `zone_id` of the whole plate, scaled down. Like calibration_clip(), written
     to `out_dir` once and reused after."""
-    loader = DataLoader(data_dir, grayscale=False)
+    loader = DataLoader(data_dir)
     source = _recording_name(loader, recording)
 
     if zone_id is None:
@@ -1273,7 +1273,7 @@ def activity_clip(data_dir, out_dir, activity, times, kind, mite_id):
     if manifest.is_file():
         return json.loads(manifest.read_text(encoding="utf-8"))
 
-    loader = DataLoader(data_dir, grayscale=False)
+    loader = DataLoader(data_dir)
     recordings = [_recording_name(loader, recording) for recording in range(first, last + 1)]
     n_frames = sum(loader.count_frames(recording) for recording in recordings)
     step = max(1, int(np.ceil(n_frames / ACTIVITY_CLIP_FRAMES)))
@@ -1610,10 +1610,27 @@ def _recordings_dir(data_dir, library_dir):
     return _dataset_dir(dataset_id(data_dir), library_dir) / RECORDINGS_DIRNAME
 
 
+def _keep_once(source, target):
+    """`target`, the library's copy of a recording file. A frame is never
+    written again once it has its name, so its copy is a hard link: the frame
+    is on disk once, and stays when the original folder is deleted. The
+    folder's own files (settings, labels, ground truth) are written in place,
+    so they are copied, and so is a frame where a link cannot be made (another
+    drive, a file system without them)."""
+    if source.suffix.lower() == ".bmp":
+        try:
+            os.link(source, target)
+            return
+        except OSError:
+            pass
+    shutil.copy2(source, target)
+
+
 def _copy_recordings(data_dir, target):
     """Bring the library's copy of a recording folder up to date: its own files
-    (settings, labels, ground truth) and every recording in it. A file already
-    copied, with the same size and time, is skipped, so saving again is quick.
+    (settings, labels, ground truth) and every recording in it, each frame
+    linked rather than copied where it can be (_keep_once()). A file already
+    there, with the same size and time, is skipped, so saving again is quick.
     A file still being written (*.part, by a live run's Recorder, say) is not
     one yet: it comes with the next save."""
     data_dir = Path(data_dir)
@@ -1628,7 +1645,8 @@ def _copy_recordings(data_dir, target):
             continue
         copy.parent.mkdir(parents=True, exist_ok=True)
         partial = copy.with_name(copy.name + ".part")
-        shutil.copy2(source, partial)
+        partial.unlink(missing_ok=True)  # left by a copy cut short: a link needs the name free
+        _keep_once(source, partial)
         partial.replace(copy)  # only a complete file ever has the real name
 
 
@@ -1819,7 +1837,7 @@ def _measure_mites(dataset, recordings_dir, measure, pad=0, stabilize=False):
     is kept; the mites of a recording are measured side by side. With
     `stabilize`, the cuts follow a shaking plate, as mite.stabilize_plate makes
     an analysis run cut them."""
-    loader = DataLoader(recordings_dir, grayscale=False)
+    loader = DataLoader(recordings_dir)
     boxes = mite_boxes(dataset["mites"], pad)
     # Stabilizing reads a little around each cut; keep real pixels there.
     margin = STABILIZE_MARGIN if stabilize else 0
@@ -1879,7 +1897,7 @@ def _brightness_mites(dataset, recordings_dir, pad=0, stabilize=False):
     brightness = {mite["id"]: [] for mite in dataset["mites"]}
 
     def mean(roi):
-        return round(float(np.asarray(roi, dtype=np.float32).mean()), 3)
+        return round(Analyzer.brightness(np.asarray(roi, dtype=np.float32)), 3)
 
     for recording in _measure_mites(dataset, recordings_dir, mean, pad, stabilize):
         for mite_id, value in recording.items():
@@ -2900,7 +2918,6 @@ def live_preview(live_id, out_dir=None):
         _count, frame = run.source.latest.get()
         if frame is None:
             raise ValueError("No frame has come from the camera yet.")
-        frame = as_analysis_image(frame)
     out_dir = Path(out_dir or run.out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
     _write_preview(frame, out_dir)
