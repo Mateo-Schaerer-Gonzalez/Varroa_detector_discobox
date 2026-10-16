@@ -76,25 +76,25 @@ def test_a_dropped_folder_brings_the_labels_of_both_layouts():
 
 
 def test_the_zones_saved_are_those_of_the_next_session(tmp_path):
-    data_dir, out_dir, library = one_frame_folder(tmp_path), tmp_path / "out", tmp_path / "library"
-    opened = pipeline.open_session(data_dir, out_dir, library_dir=library)
+    data_dir, out_dir = one_frame_folder(tmp_path), tmp_path / "out"
+    opened = pipeline.open_session(data_dir, out_dir)
     assert (opened["zones_per_plate"], opened["zone_layouts"]) == (1, [1, 2])
 
-    halved = pipeline.save_zones_per_plate(data_dir, out_dir, 2, library_dir=library)
+    halved = pipeline.save_zones_per_plate(data_dir, out_dir, 2)
     assert halved["zones_per_plate"] == 2 and len(halved["zones"]) == 2 * len(opened["zones"])
     assert {mite["zone_id"] for mite in halved["mites"]} <= {zone["id"] for zone in halved["zones"]}
     # kept with the recordings: opening them again, or describing them, says the same
-    again = pipeline.open_session(data_dir, out_dir, library_dir=library)
+    again = pipeline.open_session(data_dir, out_dir)
     assert len(again["zones"]) == len(halved["zones"])
-    assert pipeline.describe_recording(data_dir, tmp_path / "results", library)["zones_per_plate"] == 2
+    assert pipeline.describe_recording(data_dir, tmp_path / "results")["zones_per_plate"] == 2
     with pytest.raises(ValueError):
-        pipeline.save_zones_per_plate(data_dir, out_dir, 3, library_dir=library)
+        pipeline.save_zones_per_plate(data_dir, out_dir, 3)
 
 
 def test_a_run_uses_the_zones_saved_with_its_recordings(tmp_path):
-    data_dir, library = one_frame_folder(tmp_path), tmp_path / "library"
+    data_dir = one_frame_folder(tmp_path)
     ZoneLayout(2).save(data_dir)
-    results = pipeline.run_analysis(data_dir, tmp_path / "out", library_dir=library)
+    results = pipeline.run_analysis(data_dir, tmp_path / "out")
     assert len(results["zones"]) == len(pipeline._build_zone_manager(ZoneLayout(2).coords_file).labelled_zones)
     zone = next(zone for zone in results["zones"] if zone["n_mites"])
     clip = pipeline.analysis_clip(data_dir, tmp_path / "out", 0, zone["id"])
@@ -107,7 +107,7 @@ def test_a_live_run_takes_the_zones_of_its_settings_and_the_label_page_can_chang
     pipeline.save_labels(data_dir, {"4": "venom"})
     settings_path = data_dir / pipeline.SETTINGS_FILENAME
     status = folder_camera.open_live(monkeypatch, "zones-test", tmp_path / "out", "run", data_dir,
-                                     recordings_root=tmp_path / "recordings", library_dir=tmp_path / "library")
+                                     recordings_root=tmp_path / "recordings")
     try:
         assert status["zones_per_plate"] == 2
         run_dir = Path(status["run_dir"])

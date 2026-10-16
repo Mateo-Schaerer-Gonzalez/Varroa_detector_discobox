@@ -142,8 +142,8 @@ def test_the_survival_rate_takes_a_lost_mite_out_of_the_count():
 @pytest.mark.slow
 def test_a_call_corrected_on_the_result_pages_changes_the_results_and_stays(tmp_path):
     session = reference.make_small_session(tmp_path / "small_session")
-    out, library = tmp_path / "out", tmp_path / "library"
-    results = pipeline.run_analysis(session, out, library_dir=library)
+    out = tmp_path / "out"
+    results = pipeline.run_analysis(session, out)
     assert "corrections" not in results and "censored" not in results
     mite = results["mites"][0]
     zone = next(zone for zone in results["zones"] if zone["id"] == mite["zone_id"])
@@ -159,7 +159,7 @@ def test_a_call_corrected_on_the_result_pages_changes_the_results_and_stays(tmp_
     measurements = pd.read_excel(out / "results.xlsx", sheet_name="measurements")
     assert int(measurements["corrected"].sum()) == 1  # and so does the workbook
 
-    again = pipeline.run_analysis(session, out, library_dir=library)  # another run keeps it
+    again = pipeline.run_analysis(session, out)  # another run keeps it
     assert again["mites"][0]["moving"] == after["moving"]
 
     assert pipeline.correct_call(out, mite["id"], 1, detected)["mites"] == results["mites"]  # back to the detector's
@@ -172,8 +172,8 @@ def test_a_call_corrected_on_the_result_pages_changes_the_results_and_stays(tmp_
 @pytest.mark.slow
 def test_a_mite_marked_gone_counts_in_no_number_of_the_results(tmp_path):
     session = reference.make_small_session(tmp_path / "small_session")
-    out, library = tmp_path / "out", tmp_path / "library"
-    results = pipeline.run_analysis(session, out, library_dir=library)
+    out = tmp_path / "out"
+    results = pipeline.run_analysis(session, out)
     mite = results["mites"][0]
     n_last = len(results["times"]) - 1
 

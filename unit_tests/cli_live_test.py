@@ -41,7 +41,7 @@ def test_a_live_run_saves_a_folder_folder_mode_reads_the_same(tmp_path, recordin
     assert "Test run cli run: Folder camera (small_session)" in printed
     assert "3/3" in printed and "30 mites across 3 recordings" in printed
 
-    folder = reference.run_folder(recordings_root / "cli run", tmp_path / "folder_out", tmp_path / "no_library")
+    folder = reference.run_folder(recordings_root / "cli run", tmp_path / "folder_out")
     assert reference.outputs(out)["excel"] == folder["excel"]
 
 

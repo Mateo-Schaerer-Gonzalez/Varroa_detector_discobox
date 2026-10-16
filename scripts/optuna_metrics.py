@@ -1,7 +1,7 @@
 """Bayesian search (Optuna, TPE) of every movement score's parameters against the
 saved ground truth.
 
-Every (mite, recording) labelled moving or still in calibration_data/ is scored
+Every (mite, recording) labelled moving or still in recordings/ is scored
 as a calibration would score it (see tune_optical_flow.load_observations()), and
 each metric's parameters are searched for the best AUC. A metric without
 parameters is scored once. Each search starts from the metric's defaults, with
@@ -14,7 +14,7 @@ therefore split into two halves, and each metric is searched twice:
     <study>/<metric>/holdout   searched on half A only, then judged on half B,
                                which the search never saw: the honest estimate
 
-The studies are kept in calibration_data/reports/optuna_metrics.db, so running
+The studies are kept in results/scripts/optuna_metrics.db, so running
 again with the same --study name carries on where it stopped (Ctrl+C is safe).
 notebooks/metric_calibration.ipynb draws the results.
 
@@ -22,7 +22,7 @@ notebooks/metric_calibration.ipynb draws the results.
     python scripts/optuna_metrics.py --metrics optical_flow --trials 500
     python scripts/optuna_metrics.py --study shake --shake 1  # as if the plate shook
 
-The best of each is written to calibration_data/reports/optuna_metrics_<study>_<time>.csv.
+The best of each is written to results/scripts/optuna_metrics_<study>_<time>.csv.
 """
 import argparse
 import csv
@@ -45,7 +45,7 @@ from classes.analyzer import Analyzer
 from classes.app_config import get_default_config
 from tune_optical_flow import POLY_SIGMA, evaluate, load_observations
 
-STORAGE_FILE = pipeline.CALIBRATION_REPORTS / "optuna_metrics.db"
+STORAGE_FILE = pipeline.SCRIPTS_OUTPUT / "optuna_metrics.db"
 STORAGE = f"sqlite:///{STORAGE_FILE.as_posix()}"
 PADS = [0, 4, 8, 12, 16, 20, 24]
 FRAMES = 30  # per recording; optical_flow's `step` must stay below it
@@ -207,7 +207,7 @@ def main():
     print("Loading labelled observations...")
     rois, moving, mites, _recordings = load_observations(PADS, args.shake, args.seed, args.stabilize_plate)
     if not calibration.has_both_classes(moving):
-        sys.exit("Need both moving and still labels in calibration_data/ to tune anything.")
+        sys.exit("Need both moving and still labels in recordings/ to tune anything.")
     print(f"{len(moving)} observations ({moving.sum()} moving, {(~moving).sum()} still), {len(set(mites))} mites")
     in_a = split_halves(mites, args.seed)
 
@@ -239,7 +239,7 @@ def main():
     for row in sorted((r for r in rows if r["searched_on"] == "half A"), key=lambda r: -r["auc_b"]):
         print(f"  {row['metric']:<28}{row['auc_b']:>8.4f}{row['accuracy_b']:>8.3f}   {row['params']}")
 
-    out = pipeline.CALIBRATION_REPORTS / f"optuna_metrics_{args.study}_{datetime.now():%Y-%m-%d_%H-%M-%S}.csv"
+    out = pipeline.SCRIPTS_OUTPUT / f"optuna_metrics_{args.study}_{datetime.now():%Y-%m-%d_%H-%M-%S}.csv"
     with open(out, "w", newline="", encoding="utf-8") as f:
         writer = csv.DictWriter(f, fieldnames=list(rows[0]))
         writer.writeheader()

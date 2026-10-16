@@ -1,7 +1,7 @@
 """How well each movement score holds up when the plate shakes, with and without
 plate stabilization (mite.stabilize_plate in config.yaml).
 
-The ground truth in calibration_data/ was recorded on a still plate. Every
+The ground truth in recordings/ was recorded on a still plate. Every
 labelled (mite, recording) is scored as recorded, and the threshold is chosen
 there (Youden's J), as a calibration would. The plate is then shaken by
 --shakes pixels (see tune_optical_flow.shaken()) and scored again at that same
@@ -12,7 +12,7 @@ calls still mites moving.
     python scripts/shake_robustness.py
     python scripts/shake_robustness.py --shakes 0.25 0.5 1 --metrics topN_variability optical_flow
 
-The table is also written to calibration_data/reports/shake_robustness_<time>.csv.
+The table is also written to results/scripts/shake_robustness_<time>.csv.
 """
 import argparse
 import csv
@@ -70,7 +70,7 @@ def main():
                 for metric, result in zip(args.metrics, pool.map(_score, jobs)):
                     scores[metric, stabilize, shake] = result
     if not calibration.has_both_classes(moving):
-        sys.exit("Need both moving and still labels in calibration_data/.")
+        sys.exit("Need both moving and still labels in recordings/.")
 
     rows = []
     for metric in args.metrics:
@@ -94,7 +94,7 @@ def main():
             print(f"{metric:<28}{'yes' if stabilize else 'no':<11}"
                   + "".join(f"{r['accuracy']:>8.3f} ({r['auc']:.3f})" for r in cells))
 
-    out = pipeline.CALIBRATION_REPORTS / f"shake_robustness_{datetime.now():%Y-%m-%d_%H-%M-%S}.csv"
+    out = pipeline.SCRIPTS_OUTPUT / f"shake_robustness_{datetime.now():%Y-%m-%d_%H-%M-%S}.csv"
     out.parent.mkdir(parents=True, exist_ok=True)
     with open(out, "w", newline="", encoding="utf-8") as f:
         writer = csv.DictWriter(f, fieldnames=list(rows[0]))

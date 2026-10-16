@@ -137,8 +137,8 @@ that with the detector:
    the plate the errors are. Both show the fraction of mites moving per recording
    by the ground truth against the detector's; *Test* also shows it per group,
    and a poke test where one was entered (see *Poke test* below). Everything is
-   also written to `calibration.xlsx`, in the session's folder in
-   `calibration_data/reports/` (named by when it began and what it opened).
+   also written to `calibration.xlsx`, in `results/<recording>/calibration/`
+   (a report pooled over saved ground truth alone in `results/pooled/<date time>/`).
    Under *Data used*, switch on *Pool with
    saved ground truth* to add other labelled recordings, and untick any you
    want left out. Every point, map dot and zone row names the folder and
@@ -169,15 +169,20 @@ the detector's curve may fall earlier and still agree; it should not be above
 the pokes' at a poke. The recording needs at least one mite labelled moving or
 still, as every report does.
 
-**Saved ground truth.** Every labelled recording is also kept in
-`calibration_data/<folder>-<hash>/`: its mites, ground truth, first frame and a
-copy of its recordings, never its scores. The *Saved ground truth* list on the
-first calibration page lets you reopen a dataset to go on labelling it (nothing
-is decoded), delete it, or tick several and report on them pooled. Every report
-scores the pooled datasets again from their recordings with the movement score
-chosen, so old ground truth can judge a new metric. `scores/` in each dataset
-only caches the scores of one exact metric, parameters and scoring code, to
-skip decoding again; it can be deleted at any time.
+**Saved ground truth.** A recording's ground truth and poke test are kept with
+it, in `recordings/<name>/`, never its scores: there is no second copy. The
+*Saved ground truth* list on the first calibration page shows every recording
+in `recordings/` with ground truth, and lets you reopen one to go on labelling
+it, delete its ground truth (its recordings stay), or tick several and report
+on them pooled. Every report scores the pooled recordings again with the
+movement score chosen, so old ground truth can judge a new metric.
+`scores/` in a recording's folder only caches the scores of one exact metric,
+parameters and scoring code, to skip decoding again; it can be deleted at any
+time. A folder opened by typing its path is copied into `recordings/` first,
+its frames shrunk to the mites' surroundings, and calibrated there; opening it
+again opens that copy. Earlier versions kept a second copy of every labelled
+recording in `calibration_data/`; `scripts/convert_stored_recordings.py`, run
+once by `start.bat` and `start.sh`, brings it home and removes it.
 
 `config.yaml` holds the metric in use and, under `metric_params`, the
 parameters of each metric (`{topN_variability: {n: 10}}`); one left out uses the
@@ -396,14 +401,14 @@ to change that).
 
 | Folder | Contents |
 | --- | --- |
-| `recordings/<name>/` | The frames of every recording session: each live test run, and each folder dropped into the page. Its labels, *not a mite* marks, ground truth, poke test, `.settings.txt` and, for a live run, `run.json` are kept next to them. |
-| `results/<name>/` | The last analysis of that recording, replaced when it is analysed again (files below). `clips/` holds the frames the result pages play, and `kept/` the scores, so that analysing the same recordings again, with the same metric and the same scoring code, takes a moment instead of scoring every frame again; both can be deleted at any time. |
-| `calibration_data/<dataset>/` | Saved ground truth, one dataset per labelled recording (see *Saved ground truth*). |
-| `calibration_data/reports/<date time> <name>/` | One calibration session: its `calibration.xlsx`. Sessions that made no report are removed at the next start. |
+| `recordings/<name>/` | Every recording session: each live test run, and each folder dropped into the page or calibrated. Its frames (the mites' surroundings), labels, *not a mite* marks, ground truth, poke test, `.settings.txt` and, for a live run, `run.json`; `scores/` caches the scores calibration reports computed. |
+| `results/<name>/` | The last analysis of that recording, replaced when it is analysed again (files below). `clips/` holds the frames the result pages play, and `kept/` the scores, so that analysing the same recordings again, with the same metric and the same scoring code, takes a moment instead of scoring every frame again; both can be deleted at any time. `calibration/` holds its calibration session and report, `calibration.xlsx`. |
+| `results/pooled/<date time>/` | A calibration report pooled over saved ground truth alone: its `calibration.xlsx`. Those that made no report are removed at the next start. |
+| `results/scripts/` | What the scripts in `scripts/` write: tables, optuna studies. |
 
 Earlier versions kept live runs in `output/`, dropped folders in `uploads/`
 and every page session in `outputs/<random id>/`. When the app starts, it
-moves them: recordings to `recordings/` (any saved ground truth follows), and
+moves them: recordings to `recordings/`, and
 the old sessions to `results/earlier sessions/`. A folder whose new place is
 already taken stays where it was.
 

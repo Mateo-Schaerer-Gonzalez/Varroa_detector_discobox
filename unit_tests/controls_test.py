@@ -20,5 +20,5 @@ def test_a_damaged_controls_file_reads_as_none(tmp_path):
 def test_the_labelling_page_gets_the_controls_with_the_zones(tmp_path):
     session = reference.make_small_session(tmp_path / "small_session")
     pipeline.save_controls(session, [1])
-    opened = pipeline.open_session(session, tmp_path / "out", library_dir=tmp_path / "library")
+    opened = pipeline.open_session(session, tmp_path / "out")
     assert [zone["id"] for zone in opened["zones"] if zone["control"]] == [1]

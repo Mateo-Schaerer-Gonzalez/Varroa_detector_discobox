@@ -180,18 +180,16 @@ def live_session(tmp_path_factory):
     tmp_path = tmp_path_factory.mktemp("live")
     small = reference.make_small_session(tmp_path / "small")
     monkeypatch = pytest.MonkeyPatch()
-    library = tmp_path / "library"
-    library.mkdir()
     try:
         folder_camera.open_live(monkeypatch, "rois", tmp_path / "out", "rois", small,
-                                recordings_root=tmp_path / "recordings", library_dir=library)
+                                recordings_root=tmp_path / "recordings")
         pipeline.start_live("rois")
         run = pipeline._live["rois"]
         assert run.session.finished.wait(120)
         pipeline._live.pop("rois")
     finally:
         monkeypatch.undo()
-    results = pipeline.run_analysis(run.run_dir, tmp_path / "folder_out", library_dir=library)
+    results = pipeline.run_analysis(run.run_dir, tmp_path / "folder_out")
     return run.run_dir, tmp_path / "folder_out", results, small
 
 
@@ -219,16 +217,15 @@ def test_of_a_session_of_rois_only_the_mites_clips_play(live_session):
     assert recording["n_recordings"] == 3 and recording["frames"] == 6
 
 
-def test_the_library_copy_of_a_session_of_rois_links_its_videos_and_keeps_no_stale_parts(live_session, tmp_path):
+def test_a_session_of_rois_opened_by_its_path_is_linked_into_recordings_once(live_session, tmp_path):
     run_dir, _out, _results, _small = live_session
-    target = tmp_path / "copy"
-    stale = target / ROI_DIRNAME / PARTS_DIRNAME / "old" / "mite_000.mkv"
-    stale.parent.mkdir(parents=True)
-    stale.write_bytes(b"stitched since")
-    pipeline._copy_recordings(run_dir, target)
-    assert not (target / ROI_DIRNAME / PARTS_DIRNAME).exists()
-    assert (target / ROI_DIRNAME / "mite_000.mkv").samefile(run_dir / ROI_DIRNAME / "mite_000.mkv")
-    assert json.loads((target / ROI_DIRNAME / INDEX_NAME).read_text()) == RoiRecordings(run_dir).index
+    recordings = tmp_path / "elsewhere"
+    copy = pipeline.calibration_folder(run_dir, recordings)
+    assert copy.parent == recordings and copy.name == run_dir.name
+    assert (copy / ROI_DIRNAME / "mite_000.mkv").samefile(run_dir / ROI_DIRNAME / "mite_000.mkv")
+    assert json.loads((copy / ROI_DIRNAME / INDEX_NAME).read_text()) == RoiRecordings(run_dir).index
+    assert pipeline.calibration_folder(run_dir, recordings) == copy  # opened again: the same copy
+    assert pipeline.calibration_folder(copy, recordings) == copy  # one in recordings/ is its own
 
 
 def test_read_only_files_and_folders_are_removed_too(tmp_path):

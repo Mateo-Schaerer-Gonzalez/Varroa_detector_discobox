@@ -215,7 +215,8 @@
 
     <details class="path-option">
       <summary>Or type a folder path on this computer</summary>
-      <p class="hint">The ground truth is then saved as <code>ground_truth.json</code> right next to the recordings.</p>
+      <p class="hint">The folder is copied into <code>recordings/</code> first, its frames shrunk to the mites' surroundings,
+        and its ground truth is kept there; the folder itself is left as it is.</p>
       <div class="row">
         <input id="cal-data-dir" type="text" value="sample_data" spellcheck="false"
                placeholder="e.g. C:\recordings\calibration">
@@ -228,7 +229,7 @@
   <section class="block saved-datasets">
     <h2>Saved ground truth</h2>
     <p class="hint">
-      Every recording you label is kept here: its ground truth and a copy of its recordings, never its scores.
+      Every recording you label is listed here; its ground truth is kept with it in <code>recordings/</code>, never its scores.
       Go on labelling it later, or pool several into one report for more data; each report scores them again
       with the movement score you choose. Tick the datasets to pool.
     </p>
@@ -288,7 +289,7 @@
       <h2>Ground truth</h2>
       <p class="hint">
         The detector's own call is hidden until the report, so it cannot sway you.
-        Every label is saved as you set it, also to the saved ground truth you can pool later.
+        Every label is saved as you set it, next to the recordings, where reports can pool it later.
       </p>
       <div class="progress truth-progress">
         <div class="progress-bar"><div id="truth-progress-bar"></div></div>

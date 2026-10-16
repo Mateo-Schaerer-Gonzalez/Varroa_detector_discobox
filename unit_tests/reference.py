@@ -10,6 +10,7 @@ pixels of every image written, and what the command line prints.
 import hashlib
 import json
 import math
+import os
 import shutil
 import subprocess
 import sys
@@ -169,34 +170,37 @@ def outputs(out_dir):
     }
 
 
-def write_library(library_dir, data_dir, mite):
-    """A calibration library in which `mite` (an entry of run_analysis()'s
-    "mites") of the folder `data_dir` is marked not a mite."""
-    import pipeline
-
-    folder = Path(library_dir) / pipeline.dataset_id(data_dir)
-    folder.mkdir(parents=True, exist_ok=True)
-    dataset = {
-        "data_dir": str(Path(data_dir).resolve()),
-        "name": Path(data_dir).name,
-        "saved_at": "2026-01-01T00:00:00",
-        "times": [0.0],
-        "recordings": [],
-        "image": {},
-        "zones": [],
-        "mites": [{"id": mite["id"], "zone_id": mite["zone_id"], "x": mite["x"], "y": mite["y"], "r": 8}],
-        "truth": {mite["id"]: ["not_a_mite"]},
-    }
-    (folder / "dataset.json").write_text(json.dumps(dataset), encoding="utf-8")
-    return Path(library_dir)
+def linked_copy(source, target, recordings=None):
+    """A copy of a folder of recordings (its first `recordings` only, with a
+    number) whose frames are hard links: on disk once, and deleting them, as a
+    conversion does, leaves the originals."""
+    target = Path(target)
+    target.mkdir(parents=True, exist_ok=True)
+    for path in Path(source).iterdir():
+        if path.is_file() and path.suffix != ".bmp":
+            shutil.copy2(path, target / path.name)
+    for folder in sorted(d for d in Path(source).iterdir() if d.is_dir())[:recordings]:
+        (target / folder.name).mkdir()
+        for frame in folder.glob("*.bmp"):
+            os.link(frame, target / folder.name / frame.name)
+    return target
 
 
-def run_folder(data_dir, out_dir, library_dir, labels=None, **kwargs):
+def marked_copy(target, data_dir, mite):
+    """A linked_copy() of `data_dir` in which `mite` (an entry of run_analysis()'s
+    "mites") is marked not a mite in its ground truth, as the label page marks it."""
+    folder = linked_copy(data_dir, target)
+    (folder / "ground_truth.json").write_text(json.dumps([{"x": mite["x"], "y": mite["y"], "truth": "not_a_mite"}]),
+                                              encoding="utf-8")
+    return folder
+
+
+def run_folder(data_dir, out_dir, labels=None, **kwargs):
     """run_analysis() on a folder, and a snapshot of everything it produced."""
     import pipeline
 
     with capture_figures() as figures:
-        results = pipeline.run_analysis(data_dir, out_dir, labels, library_dir=library_dir, **kwargs)
+        results = pipeline.run_analysis(data_dir, out_dir, labels, **kwargs)
     return {"results": plain(results), "figures": figures, **outputs(out_dir)}
 
 

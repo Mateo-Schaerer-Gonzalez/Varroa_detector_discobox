@@ -1,8 +1,9 @@
 """TEMPORARY, with the page web/static/overlap.html: where the scores of the two
 labels overlap (classes/truth_overlap.py), and what the page asks of pipeline.
 
-The datasets are built from hand-written session files and scoring is stubbed
-out, as in calibration_library_test.py; only the clip reads real frames.
+The datasets are built from hand-written session files, standing in for what
+their recordings hold, and scoring is stubbed out, as in
+calibration_library_test.py; only the clip reads real frames.
 """
 
 import json
@@ -12,6 +13,7 @@ import numpy as np
 import pytest
 
 import pipeline
+from calibration_library_test import SESSIONS, described as _stand_in  # noqa: F401 (the fixture standing in for what the recordings hold)
 from classes.truth_overlap import ABOVE, BELOW, IN, TruthOverlap
 
 RECORDING = "2025-01-01-00-00-00_fps-30"
@@ -84,11 +86,11 @@ def test_the_histogram_counts_every_recording_once():
 
 # ---- what the page asks of pipeline ----
 
-def make_dataset(tmp_path, library, truth, n_mites=3, times=(0.0, 5.0, 10.0)):
-    """A saved dataset of `n_mites` mites in one zone, labelled `truth`; returns
-    (its recording folder, its id)."""
-    data_dir = tmp_path / "run"
-    data_dir.mkdir()
+def make_dataset(tmp_path, truth, n_mites=3, times=(0.0, 5.0, 10.0)):
+    """A recording of `n_mites` mites in one zone, in tmp_path/recordings,
+    labelled `truth`; returns (its folder, its dataset id)."""
+    data_dir = tmp_path / "recordings" / "run"
+    data_dir.mkdir(parents=True)
     out_dir = tmp_path / "out"
     out_dir.mkdir()
     stored = {
@@ -101,25 +103,26 @@ def make_dataset(tmp_path, library, truth, n_mites=3, times=(0.0, 5.0, 10.0)):
     }
     (out_dir / pipeline.CALIBRATION_SESSION_NAME).write_text(json.dumps(stored), encoding="utf-8")
     (out_dir / pipeline.PREVIEW_NAME).write_bytes(b"jpeg")
-    pipeline.save_ground_truth(out_dir, truth, library_dir=library)
+    SESSIONS[str(data_dir.resolve())] = out_dir / pipeline.CALIBRATION_SESSION_NAME
+    pipeline.save_ground_truth(out_dir, truth)
     return data_dir, pipeline.dataset_id(data_dir)
 
 
 @pytest.fixture
-def library(tmp_path, monkeypatch):
+def recordings(tmp_path, monkeypatch):
     monkeypatch.setattr(pipeline, "OVERLAP_DIR", tmp_path / "overlap")
-    return tmp_path / "library"
+    return tmp_path / "recordings"
 
 
 TRUTH = {"0": ["still", "still", "still"], "1": ["moving", "still", None], "2": ["moving", "moving", "moving"]}
 SCORES = {"0": [0.1, 1.5, 0.2], "1": [1.2, 0.3, 9.0], "2": [5.0, 0.4, 6.0]}
 
 
-def test_the_overlap_of_a_saved_dataset(tmp_path, library, monkeypatch):
-    _data_dir, dataset = make_dataset(tmp_path, library, TRUTH)
+def test_the_overlap_of_a_saved_dataset(tmp_path, recordings, monkeypatch):
+    _data_dir, dataset = make_dataset(tmp_path, TRUTH)
     monkeypatch.setattr(pipeline, "_score_mites", lambda *args, **kwargs: SCORES)
 
-    overlap = pipeline.truth_overlap([dataset], low=1.0, high=2.0, library_dir=library)
+    overlap = pipeline.truth_overlap([dataset], low=1.0, high=2.0, recordings_root=recordings)
     assert overlap["metric"] == pipeline.OVERLAP_METRIC
     assert [(d["id"], d["chosen"]) for d in overlap["datasets"]] == [(dataset, True)]
     points = {(p["mite_id"], p["recording"]): p for p in overlap["datapoints"]}
@@ -128,55 +131,52 @@ def test_the_overlap_of_a_saved_dataset(tmp_path, library, monkeypatch):
     assert points[("0", 1)]["r"] == 3.0 and points[("0", 1)]["dataset"] == dataset
     assert overlap["mites"][f"{dataset}/1"] == {"states": "ms-", "scores": SCORES["1"]}
     assert set(overlap["mites"]) == {f"{dataset}/{mite}" for mite in "012"}
-    assert set(pipeline.truth_overlap([dataset], low=1.0, high=2.0, beyond=False, library_dir=library)["mites"]) == {
+    assert set(pipeline.truth_overlap([dataset], low=1.0, high=2.0, beyond=False, recordings_root=recordings)["mites"]) == {
         f"{dataset}/0", f"{dataset}/1"}
     with pytest.raises(ValueError):
-        pipeline.truth_overlap([], library_dir=library)
+        pipeline.truth_overlap([], recordings_root=recordings)
 
 
-def test_a_label_changed_on_the_page_is_saved_at_once(tmp_path, library):
-    data_dir, dataset = make_dataset(tmp_path, library, TRUTH)
-    assert pipeline.set_overlap_label(dataset, "0", 1, "moving", library_dir=library) == {"movement": "moving", "states": "sms"}
+def test_a_label_changed_on_the_page_is_saved_at_once(tmp_path, recordings):
+    data_dir, dataset = make_dataset(tmp_path, TRUTH)
+    assert pipeline.set_overlap_label(dataset, "0", 1, "moving", recordings_root=recordings) == {"movement": "moving", "states": "sms"}
 
     beside = {entry["x"]: entry["truth"] for entry in pipeline.load_ground_truth(data_dir)}
     assert beside == {10.0: ["still", "moving", "still"], 30.0: TRUTH["1"], 50.0: TRUTH["2"]}
-    saved = json.loads((library / dataset / pipeline.DATASET_NAME).read_text(encoding="utf-8"))
-    assert saved["truth"] == {**TRUTH, "0": ["still", "moving", "still"]}
-    assert (library / dataset / pipeline.PREVIEW_NAME).read_bytes() == b"jpeg"
 
-    assert pipeline.set_overlap_label(dataset, "0", 1, None, library_dir=library)["states"] == "s-s"
-    assert pipeline.load_calibration_truth(tmp_path / "out", library)["0"] == ["still", None, "still"]
+    assert pipeline.set_overlap_label(dataset, "0", 1, None, recordings_root=recordings)["states"] == "s-s"
+    assert pipeline.load_calibration_truth(tmp_path / "out")["0"] == ["still", None, "still"]
 
 
-def test_a_label_the_page_may_not_set_changes_nothing(tmp_path, library):
-    data_dir, dataset = make_dataset(tmp_path, library, {"0": ["still", None, None], "1": ["not_a_mite"] * 3})
+def test_a_label_the_page_may_not_set_changes_nothing(tmp_path, recordings):
+    data_dir, dataset = make_dataset(tmp_path, {"0": ["still", None, None], "1": ["not_a_mite"] * 3})
     before = (data_dir / pipeline.GROUND_TRUTH_FILENAME).read_text(encoding="utf-8")
     for mite, recording, state in (("0", 0, "not_a_mite"),   # only moving, still or none
                                    ("7", 0, "still"),         # no such mite
                                    ("0", 3, "still"),         # no such recording
                                    ("1", 0, "still")):        # marked not a mite
         with pytest.raises(ValueError):
-            pipeline.set_overlap_label(dataset, mite, recording, state, library_dir=library)
+            pipeline.set_overlap_label(dataset, mite, recording, state, recordings_root=recordings)
     assert (data_dir / pipeline.GROUND_TRUTH_FILENAME).read_text(encoding="utf-8") == before
 
 
-def test_the_last_label_of_a_dataset_stays(tmp_path, library):
-    # saving a dataset without a label lets it go, with its copy of the recordings
-    _data_dir, dataset = make_dataset(tmp_path, library, {"0": ["still", None, None]})
+def test_the_last_label_of_a_dataset_stays(tmp_path, recordings):
+    # a recording without a label is no dataset any more
+    _data_dir, dataset = make_dataset(tmp_path, {"0": ["still", None, None]})
     with pytest.raises(ValueError):
-        pipeline.set_overlap_label(dataset, "0", 0, None, library_dir=library)
-    assert json.loads((library / dataset / pipeline.DATASET_NAME).read_text(encoding="utf-8"))["truth"] == {"0": ["still", None, None]}
+        pipeline.set_overlap_label(dataset, "0", 0, None, recordings_root=recordings)
+    assert pipeline._read_dataset(dataset, recordings)["truth"] == {"0": ["still", None, None]}
 
 
-def test_a_mites_clip_is_cut_around_it_and_made_once(tmp_path, library):
-    data_dir, dataset = make_dataset(tmp_path, library, TRUTH)
+def test_a_mites_clip_is_cut_around_it_and_made_once(tmp_path, recordings):
+    data_dir, dataset = make_dataset(tmp_path, TRUTH)
     (data_dir / RECORDING).mkdir()
     for index in range(4):
         frame = np.full((100, 100, 3), 200, dtype=np.uint8)
         frame[8:13, 28 + index:33 + index] = 20            # mite 1, moving to the right
         cv2.imwrite(str(data_dir / RECORDING / f"{index:03d}.bmp"), frame)
 
-    clip = pipeline.overlap_clip(dataset, "1", 0, library_dir=library)
+    clip = pipeline.overlap_clip(dataset, "1", 0, recordings_root=recordings)
     assert (clip["x"], clip["y"], clip["width"], clip["height"]) == (0, 0, 70, 50)   # 40 pixels around (30, 10), cut at the image's edge
     assert len(clip["frames"]) == 4 and clip["interval_ms"] == 33
     first = cv2.imread(str(pipeline.OVERLAP_DIR / clip["frames"][0]))
@@ -187,6 +187,6 @@ def test_a_mites_clip_is_cut_around_it_and_made_once(tmp_path, library):
 
     for path in (data_dir / RECORDING).iterdir():
         path.unlink()
-    assert pipeline.overlap_clip(dataset, "1", 0, library_dir=library) == clip
+    assert pipeline.overlap_clip(dataset, "1", 0, recordings_root=recordings) == clip
     with pytest.raises(ValueError):
-        pipeline.overlap_clip(dataset, "9", 0, library_dir=library)
+        pipeline.overlap_clip(dataset, "9", 0, recordings_root=recordings)

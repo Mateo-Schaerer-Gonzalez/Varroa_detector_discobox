@@ -1,7 +1,7 @@
 """What tells a live mite from a dead one, other than whether it moves within a
 recording: the measurements behind notebooks/alive_dead_*.ipynb.
 
-Every mite of the longest labelled run in calibration_data/ gets, per recording,
+Every mite of the longest labelled run in recordings/ gets, per recording,
 a set of numbers of three kinds (features()):
 
     silhouette   what the mite looks like in the mean image of the recording:
@@ -75,8 +75,8 @@ class Run:
 
 
 def load_run(cache=CACHE, jobs=None):
-    """The longest labelled run saved in calibration_data/."""
-    saved = {summary["id"]: pipeline._read_dataset(summary["id"], pipeline.CALIBRATION_LIBRARY)
+    """The longest labelled run saved in recordings/."""
+    saved = {summary["id"]: pipeline._read_dataset(summary["id"])
              for summary in pipeline.list_calibration_datasets()}
     dataset_id = max(saved, key=lambda key: len(saved[key]["times"]))
     Path(cache).mkdir(parents=True, exist_ok=True)

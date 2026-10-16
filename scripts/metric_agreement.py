@@ -1,7 +1,7 @@
 """Do the movement scores agree with each other? The measurements behind
 notebooks/metric_agreement.ipynb.
 
-Every mite of the longest labelled run in calibration_data/ gets, per recording,
+Every mite of the longest labelled run in recordings/ gets, per recording,
 the score of every metric of classes/analyzer.py, with config.yaml's parameters,
 and the leg movement of classes/leg_tracker.py (scores()). The notebook then
 asks whether they call the same recordings moving (calls(), kappa(), votes())
@@ -45,11 +45,11 @@ LEGS = "leg_tracker"  # not a metric of the app: the largest swing of a followed
 # ---- the scores ----
 
 def other_runs(run, cache=adf.CACHE, jobs=None):
-    """The other labelled runs saved in calibration_data/, the short ones, as
+    """The other labelled runs saved in recordings/, the short ones, as
     adf.load_run() gives the longest."""
     runs = []
     for summary in pipeline.list_calibration_datasets():
-        saved = pipeline._read_dataset(summary["id"], pipeline.CALIBRATION_LIBRARY)
+        saved = pipeline._read_dataset(summary["id"])
         if saved["name"] == run.name:
             continue
         dataset = load_dataset({"id": summary["id"]}, cache, get_default_config().mite.stabilize_plate, jobs or os.cpu_count())

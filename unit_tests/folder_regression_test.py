@@ -11,7 +11,6 @@ OpenCV versions the reference was made with: another version may draw or encode
 the same figure a few pixels differently.
 """
 
-from pathlib import Path
 
 import pytest
 
@@ -30,15 +29,15 @@ def untouched_sample_data():
 @pytest.fixture(scope="module")
 def plain_run(tmp_path_factory):
     tmp = tmp_path_factory.mktemp("plain")
-    (tmp / "library").mkdir()
-    return reference.run_folder(reference.SAMPLE_DATA, tmp / "out", tmp / "library")
+    return reference.run_folder(reference.SAMPLE_DATA, tmp / "out")
 
 
 @pytest.fixture(scope="module")
 def labelled_run(tmp_path_factory):
     tmp = tmp_path_factory.mktemp("labelled")
-    library = reference.write_library(tmp / "library", reference.SAMPLE_DATA, reference.load("folder_sample_data_labelled")["rejected"])
-    return reference.run_folder(reference.SAMPLE_DATA, tmp / "out", library, reference.LABELS)
+    marked = reference.marked_copy(tmp / "sample_data", reference.SAMPLE_DATA,
+                                   reference.load("folder_sample_data_labelled")["rejected"])
+    return reference.run_folder(marked, tmp / "out", reference.LABELS)
 
 
 @pytest.fixture(scope="module")

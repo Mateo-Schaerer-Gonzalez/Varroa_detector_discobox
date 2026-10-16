@@ -134,43 +134,33 @@ def test_more_recordings_come_unlabelled_and_the_changes_not_saved_stay():
 
 
 def test_the_pipeline_keeps_the_changes_until_saved(tmp_path):
-    library = tmp_path / "library"
     data_dir, out_dir = make_session(tmp_path, "a", 2)
-    view = pipeline.edit_truth(out_dir, "cycle", mite="0", recording=0, library_dir=library)
+    view = pipeline.edit_truth(out_dir, "cycle", mite="0", recording=0)
     assert view["states"] == {"0": ["moving", None]} and view["unsaved"] == 1 and view["changed"]
-    assert pipeline.load_calibration_truth(out_dir, library) == {}  # nothing saved yet
+    assert pipeline.load_calibration_truth(out_dir) == {}  # nothing saved yet
 
-    saved = pipeline.save_truth(out_dir, library)
+    saved = pipeline.save_truth(out_dir)
     assert saved["unsaved"] == 0 and saved["version"] > view["version"]
-    assert pipeline.load_calibration_truth(out_dir, library) == {"0": ["moving", None]}
-    assert pipeline.list_calibration_datasets(library)[0]["n_moving"] == 1
+    assert pipeline.load_calibration_truth(out_dir) == {"0": ["moving", None]}
+    assert pipeline.list_calibration_datasets(tmp_path / "recordings")[0]["n_moving"] == 1
 
 
-def test_saving_leaves_the_library_copy_of_the_recordings_for_the_background(tmp_path):
-    library = tmp_path / "library"
+def test_saving_clears_a_dataset_whose_last_label_is_taken_back(tmp_path):
     _data_dir, out_dir = make_session(tmp_path, "a", 2)
-    pipeline.edit_truth(out_dir, "set", mite="0", recording=0, state="moving", library_dir=library)
-    pipeline.save_truth(out_dir, library)
-    dataset = library / pipeline.list_calibration_datasets(library)[0]["id"]
-    copy = dataset / pipeline.RECORDINGS_DIRNAME / pipeline.GROUND_TRUTH_FILENAME
-    assert not copy.exists()  # the save did not wait for it
-    pipeline.finish_library_copies()
-    assert copy.is_file()
-
-    # Nothing labelled any more: the dataset goes, and no copy brings it back.
-    pipeline.edit_truth(out_dir, "set", mite="0", recording=0, state=None, library_dir=library)
-    pipeline.save_truth(out_dir, library)
-    pipeline.finish_library_copies()
-    assert not dataset.exists()
+    pipeline.edit_truth(out_dir, "set", mite="0", recording=0, state="moving")
+    pipeline.save_truth(out_dir)
+    assert [d["name"] for d in pipeline.list_calibration_datasets(tmp_path / "recordings")] == ["a"]
+    pipeline.edit_truth(out_dir, "set", mite="0", recording=0, state=None)
+    pipeline.save_truth(out_dir)
+    assert pipeline.list_calibration_datasets(tmp_path / "recordings") == []
 
 
 def test_the_view_follows_a_change_saved_elsewhere(tmp_path):
-    library = tmp_path / "library"
     _data_dir, out_dir = make_session(tmp_path, "a", 2)
-    pipeline.edit_truth(out_dir, "fill", zone=0, recording=1, kind="still", library_dir=library)
+    pipeline.edit_truth(out_dir, "fill", zone=0, recording=1, kind="still")
     # e.g. another window, or a mite marked "not a mite" before a run
-    pipeline.update_ground_truth(out_dir, {"0": {0: "moving"}}, library_dir=library)
-    view = pipeline.truth_view(out_dir, library)
+    pipeline.update_ground_truth(out_dir, {"0": {0: "moving"}})
+    view = pipeline.truth_view(out_dir)
     assert view["changed"]
     assert view["states"] == {"0": ["moving", "still"], "1": [None, "still"]}
     assert view["unsaved"] == 2

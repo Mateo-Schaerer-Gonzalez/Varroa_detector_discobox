@@ -133,7 +133,7 @@ def opened(tmp_path, monkeypatch):
     "plate 1", "plate 2", ... for the areas it is sent."""
     data_dir = reference.make_small_session(tmp_path / "small_session")
     out_dir = tmp_path / "out"
-    session = pipeline.open_session(data_dir, out_dir, library_dir=tmp_path / "library")
+    session = pipeline.open_session(data_dir, out_dir)
     asked = []
 
     class Reader:

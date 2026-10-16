@@ -173,9 +173,9 @@ class ReportPage {
 
   // --- the datasets pooled
 
-  // The datasets that can be pooled: those whose recordings can still be scored.
+  // The datasets that can be pooled: every recording with ground truth saved.
   poolable() {
-    return cal.datasets.filter((d) => d.recordings_available);
+    return cal.datasets;
   }
 
   // The report pools more than the dataset on the ground-truth page.
@@ -193,17 +193,16 @@ class ReportPage {
     <label class="pool-toggle">
       <input type="checkbox" id="pool-toggle" ${this.pooling() ? "checked" : ""} ${this.poolable().some((d) => d.id !== cal.datasetId) ? "" : "disabled"}>
       <span><b>Pool with saved ground truth from other recordings</b>
-        <span class="hint">Old recordings are scored again with the movement score below, from their saved copy, never from old scores.</span></span>
+        <span class="hint">Old recordings are scored again with the movement score below, from their recordings, never from old scores.</span></span>
     </label>` : "";
     const shown = !cal.datasetId || this.pooling();
     const rows = cal.datasets.map((d) => {
       const inReport = used.get(d.id);
       const open = d.id === cal.datasetId;
       return `<li><label class="dataset-option">
-      <input type="checkbox" class="dataset-check" value="${esc(d.id)}" ${cal.selected.includes(d.id) ? "checked" : ""}
-        ${d.recordings_available ? "" : "disabled"}>
+      <input type="checkbox" class="dataset-check" value="${esc(d.id)}" ${cal.selected.includes(d.id) ? "checked" : ""}>
       <span class="group-name" title="${esc(d.data_dir)}">${esc(d.name)}${open ? ' <span class="muted">(on the ground-truth page)</span>' : ""}</span>
-      <span class="hint">${d.recordings_available ? "" : "recordings moved and not copied, cannot be scored · "}${savedDate(d.saved_at)} ·
+      <span class="hint">${savedDate(d.saved_at)} ·
         ${d.n_recordings} recordings · ${d.n_mites} mites · ${labelsText(d)}${inReport ? ` · <b>${inReport.n_observations}</b> in this report` : ""}</span>
     </label></li>`;
     }).join("");

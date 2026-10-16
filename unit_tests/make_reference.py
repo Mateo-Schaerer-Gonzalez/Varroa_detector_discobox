@@ -24,15 +24,12 @@ import reference  # noqa: E402
 def main():
     with tempfile.TemporaryDirectory() as tmp:
         tmp = Path(tmp)
-        empty_library = tmp / "empty_library"
-        empty_library.mkdir()
-
-        plain = reference.run_folder(reference.SAMPLE_DATA, tmp / "plain", empty_library)
+        plain = reference.run_folder(reference.SAMPLE_DATA, tmp / "plain")
         reference.save("folder_sample_data", {"versions": reference.versions(), **plain})
 
         mite = next(m for m in plain["results"]["mites"] if m["id"] == reference.REJECTED_MITE)
-        library = reference.write_library(tmp / "library", reference.SAMPLE_DATA, mite)
-        labelled = reference.run_folder(reference.SAMPLE_DATA, tmp / "labelled", library, reference.LABELS)
+        marked = reference.marked_copy(tmp / "sample_data", reference.SAMPLE_DATA, mite)
+        labelled = reference.run_folder(marked, tmp / "labelled", reference.LABELS)
         reference.save("folder_sample_data_labelled", {"versions": reference.versions(), "rejected": mite, **labelled})
 
         small = reference.make_small_session(tmp / "small_session")

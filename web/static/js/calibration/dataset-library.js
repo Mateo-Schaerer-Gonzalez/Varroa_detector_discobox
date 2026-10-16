@@ -1,5 +1,6 @@
-// The saved ground truth, on calibration's first page: reopen a dataset, delete
-// one, or pool several into a report with no recording opened for labelling.
+// The recordings with ground truth saved, on calibration's first page: reopen
+// one, delete its ground truth, or pool several into a report with no recording
+// opened for labelling.
 
 class DatasetLibrary {
   static savedDate(iso) {
@@ -34,7 +35,7 @@ class DatasetLibrary {
     <tbody>${cal.datasets.map((d) => `
       <tr>
         <td><input type="checkbox" class="pool-check" value="${esc(d.id)}" aria-label="Pool ${esc(d.name)}"></td>
-        <td title="${esc(d.data_dir)}">${esc(d.name)}${d.recordings_available ? "" : ' <span class="muted">· recordings moved and not copied, no clips or new scores</span>'}</td>
+        <td title="${esc(d.data_dir)}">${esc(d.name)}</td>
         <td>${savedDate(d.saved_at)}</td>
         <td class="num">${d.n_recordings}</td>
         <td class="num">${d.n_mites}</td>
@@ -71,8 +72,8 @@ class DatasetLibrary {
 
   async delete(id) {
     const dataset = cal.datasets.find((d) => d.id === id);
-    const question = `Delete the saved ground truth of "${dataset.name}"?\n\n`
-      + "The ground_truth.json next to its recordings stays, so opening that folder again brings the labels back.";
+    const question = `Delete the ground truth of "${dataset.name}"?\n\n`
+      + "Its labels and poke test are deleted for good; its recordings stay.";
     if (!confirm(question)) return;
     const status = $("pool-status");
     try {

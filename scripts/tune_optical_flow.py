@@ -1,6 +1,6 @@
 """Search the parameters of the optical_flow movement score against the saved ground truth.
 
-Every (mite, recording) labelled moving or still in calibration_data/ is scored
+Every (mite, recording) labelled moving or still in recordings/ is scored
 with Analyzer.dense_optical_flow for each combination in the grid below, exactly
 as a calibration would score it. Combinations are ranked by AUC (threshold
 free); each also gets its best threshold (Youden's J) and the accuracy there.
@@ -20,7 +20,7 @@ when the metric's pad parameter is set.
 pixels) in every frame, the same for every mite, before the patches are cut: a
 still mite on a shaking plate should stay still, which --stabilize-plate 1 is for.
 
-The ranking is written to calibration_data/reports/optical_flow_tuning_<time>.csv.
+The ranking is written to results/scripts/optical_flow_tuning_<time>.csv.
 """
 import argparse
 import csv
@@ -105,8 +105,8 @@ def load_observations(pads, shake=0.0, seed=0, stabilize=None):
     rng = np.random.default_rng(seed)
     rois, moving, mites, recording_index = {pad: [] for pad in pads}, [], [], []
     for summary in pipeline.list_calibration_datasets():
-        dataset = pipeline._read_dataset(summary["id"], pipeline.CALIBRATION_LIBRARY)
-        recordings_dir = pipeline._recordings_dir(dataset["data_dir"], pipeline.CALIBRATION_LIBRARY)
+        dataset = pipeline._read_dataset(summary["id"])
+        recordings_dir = Path(dataset["data_dir"])
         if not recordings_dir.is_dir():
             print(f"  skipping {dataset['name']}: its recordings are gone")
             continue
@@ -197,7 +197,7 @@ def main():
     print("Loading labelled observations...")
     rois, moving, mites, _recordings = load_observations(sorted({*GRID["pad"], baseline_pad}), args.shake, args.seed, args.stabilize_plate)
     if not calibration.has_both_classes(moving):
-        sys.exit("Need both moving and still labels in calibration_data/ to tune anything.")
+        sys.exit("Need both moving and still labels in recordings/ to tune anything.")
     print(f"{len(moving)} observations ({moving.sum()} moving, {(~moving).sum()} still), {len(set(mites))} mites")
     for pad, cuts in rois.items():
         print(f"  pad {pad:>2}: ROIs about {int(np.median([r.shape[1] for r in cuts]))} px across")
@@ -245,7 +245,7 @@ def main():
     print(f"  metric: \"{METRIC}\"\n  metric_thresholds: {{..., {METRIC}: {best['threshold']:.4g}}}")
     print(f"  metric_params: {{..., {METRIC}: {params}}}")
 
-    out = pipeline.CALIBRATION_REPORTS / f"optical_flow_tuning_{datetime.now():%Y-%m-%d_%H-%M-%S}.csv"
+    out = pipeline.SCRIPTS_OUTPUT / f"optical_flow_tuning_{datetime.now():%Y-%m-%d_%H-%M-%S}.csv"
     out.parent.mkdir(parents=True, exist_ok=True)
     with open(out, "w", newline="", encoding="utf-8") as f:
         writer = csv.DictWriter(f, fieldnames=list(results[0]))

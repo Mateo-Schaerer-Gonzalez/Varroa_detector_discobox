@@ -169,17 +169,17 @@ MITES = [{"id": "0", "zone_id": 1, "x": 50.0, "y": 60.0}, {"id": "1", "zone_id":
 
 
 def test_a_mark_says_how_many_mites_each_zone_has_left(tmp_path):
-    marks = pipeline.mark_detection(tmp_path, MITES, "0", True, library_dir=tmp_path / "library")
+    marks = pipeline.mark_detection(tmp_path, MITES, "0", True)
     assert marks == {"mites": {"0": True, "1": False, "2": False}, "zones": {1: 1, 2: 1}}
-    marks = pipeline.mark_detection(tmp_path, MITES, "0", False, library_dir=tmp_path / "library")
+    marks = pipeline.mark_detection(tmp_path, MITES, "0", False)
     assert marks["zones"] == {1: 2, 2: 1}
 
 
 def test_taking_a_mark_back_puts_back_the_labels_it_replaced(tmp_path):
     entry = {"x": 50.0, "y": 60.0, "truth": ["moving", "still"]}
     (tmp_path / pipeline.GROUND_TRUTH_FILENAME).write_text(json.dumps([entry]), encoding="utf-8")
-    pipeline.mark_detection(tmp_path, MITES, "0", True, library_dir=tmp_path / "library")
-    pipeline.mark_detection(tmp_path, MITES, "0", False, library_dir=tmp_path / "library")
+    pipeline.mark_detection(tmp_path, MITES, "0", True)
+    pipeline.mark_detection(tmp_path, MITES, "0", False)
     assert json.loads((tmp_path / pipeline.GROUND_TRUTH_FILENAME).read_text(encoding="utf-8")) == [entry]
 
 

@@ -1,8 +1,6 @@
 """Marking a detection as not a mite on the labelling page, and taking it back."""
 
 import json
-import shutil
-from pathlib import Path
 
 import pipeline
 
@@ -73,24 +71,3 @@ def test_restoring_keeps_labels_given_since(tmp_path):
     (tmp_path / pipeline.GROUND_TRUTH_FILENAME).write_text(json.dumps([relabelled]), encoding="utf-8")
     pipeline.set_rejected(tmp_path, 50.0, 60.0, False, restore=replaced)
     assert saved(tmp_path) == [relabelled]
-
-
-def test_the_labelling_page_reads_marks_kept_only_in_the_library(tmp_path):
-    """A folder without its ground_truth.json, e.g. dropped again after its copy in
-    recordings/ was deleted, shows the detections its saved dataset marks "not a mite", as
-    the calibration window does."""
-    root = Path(pipeline.__file__).resolve().parent
-    data_dir = tmp_path / "plate"
-    recording = next(path for path in sorted((root / "sample_data").iterdir()) if path.is_dir())
-    (data_dir / recording.name).mkdir(parents=True)
-    shutil.copy(sorted(recording.glob("*.bmp"))[0], data_dir / recording.name)
-    coords, library = root / pipeline.DEFAULT_COORDS_FILE, tmp_path / "library"
-    [first, *_] = pipeline.open_session(data_dir, tmp_path / "out", coords, library_dir=library)["mites"]
-
-    dataset = library / pipeline.dataset_id(data_dir)
-    dataset.mkdir(parents=True)
-    (dataset / pipeline.DATASET_NAME).write_text(json.dumps({
-        "data_dir": str(data_dir), "times": [0.0], "mites": [{**first, "id": "0"}], "truth": {"0": ["not_a_mite"]},
-    }), encoding="utf-8")
-    mites = pipeline.open_session(data_dir, tmp_path / "out", coords, library_dir=library)["mites"]
-    assert next(mite for mite in mites if mite["id"] == first["id"])["rejected"]

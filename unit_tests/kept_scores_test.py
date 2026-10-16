@@ -153,19 +153,19 @@ def decoded(monkeypatch):
 @pytest.mark.slow
 def test_the_same_recordings_are_scored_once(tmp_path, decoded):
     session = reference.make_small_session(tmp_path / "small_session")
-    out, library = tmp_path / "out", tmp_path / "library"
+    out = tmp_path / "out"
     n_frames = reference.SMALL_RECORDINGS * reference.SMALL_FRAMES
-    first = pipeline.run_analysis(session, out, library_dir=library)
+    first = pipeline.run_analysis(session, out)
     assert len(decoded) == n_frames + 1  # the first frame once more, to find the mites before anything is scored
 
     del decoded[:]
-    again = pipeline.run_analysis(session, out, library_dir=library)
+    again = pipeline.run_analysis(session, out)
     assert len(decoded) == 1  # the first frame, for the mites: the scores are read back
     assert again == first
 
     # other labels, and a detection marked not a mite, change no score
     del decoded[:]
-    labelled = pipeline.run_analysis(session, out, {"0": "control"}, library_dir=library)
+    labelled = pipeline.run_analysis(session, out, {"0": "control"})
     assert len(decoded) == 1
     assert [mite["scores"] for mite in labelled["mites"]] == [mite["scores"] for mite in first["mites"]]
 
@@ -173,16 +173,16 @@ def test_the_same_recordings_are_scored_once(tmp_path, decoded):
 @pytest.mark.slow
 def test_other_frames_or_another_metric_are_scored_again(tmp_path, decoded, monkeypatch):
     session = reference.make_small_session(tmp_path / "small_session")
-    out, library = tmp_path / "out", tmp_path / "library"
+    out = tmp_path / "out"
     n_frames = reference.SMALL_RECORDINGS * reference.SMALL_FRAMES
-    first = pipeline.run_analysis(session, out, library_dir=library)
+    first = pipeline.run_analysis(session, out)
 
     # a frame written again, though as it was: it could have been another one
     frame = sorted(sorted(d for d in session.iterdir() if d.is_dir())[1].glob("*.bmp"))[2]
     stat = frame.stat()
     os.utime(frame, ns=(stat.st_atime_ns, stat.st_mtime_ns + 1_000_000_000))
     del decoded[:]
-    assert pipeline.run_analysis(session, out, library_dir=library) == first
+    assert pipeline.run_analysis(session, out) == first
     assert len(decoded) == n_frames + 1
 
     # another metric: its own scores, and those are kept from then on
@@ -190,22 +190,22 @@ def test_other_frames_or_another_metric_are_scored_again(tmp_path, decoded, monk
     monkeypatch.setattr(mite_config, "metric", "mean_diff")
     monkeypatch.setattr(mite_config, "motion_threshold", 1.0)
     del decoded[:]
-    other = pipeline.run_analysis(session, out, library_dir=library)
+    other = pipeline.run_analysis(session, out)
     assert len(decoded) == n_frames + 1
     assert [mite["scores"] for mite in other["mites"]] != [mite["scores"] for mite in first["mites"]]
     del decoded[:]
-    assert pipeline.run_analysis(session, out, library_dir=library) == other and len(decoded) == 1
+    assert pipeline.run_analysis(session, out) == other and len(decoded) == 1
 
     # another results folder knows nothing of these
     del decoded[:]
-    pipeline.run_analysis(session, tmp_path / "elsewhere", library_dir=library)
+    pipeline.run_analysis(session, tmp_path / "elsewhere")
     assert len(decoded) == n_frames + 1
 
 
 @pytest.mark.slow
 def test_a_calibration_decodes_one_frame_to_find_the_mites(tmp_path, decoded):
     session = reference.make_small_session(tmp_path / "small_session")
-    view = pipeline.open_calibration(session, tmp_path / "out", library_dir=tmp_path / "library")
+    view = pipeline.open_calibration(session, tmp_path / "out")
     assert len(decoded) == 1
     assert view["n_recordings"] == reference.SMALL_RECORDINGS and view["mites"]
 
@@ -213,9 +213,8 @@ def test_a_calibration_decodes_one_frame_to_find_the_mites(tmp_path, decoded):
 @pytest.mark.slow
 def test_a_pages_run_has_its_files_a_moment_later(tmp_path):
     session = reference.make_small_session(tmp_path / "small_session")
-    library = tmp_path / "library"
-    at_once = pipeline.run_analysis(session, tmp_path / "at_once", library_dir=library)
-    later = pipeline.run_analysis(session, tmp_path / "later", library_dir=library, files_later=True)
+    at_once = pipeline.run_analysis(session, tmp_path / "at_once")
+    later = pipeline.run_analysis(session, tmp_path / "later", files_later=True)
     assert later == at_once
     assert (tmp_path / "later" / later["preview"]).is_file()  # the pages draw on it at once
     workbook = pipeline.results_file(tmp_path / "later", later["excel"])  # waits for it

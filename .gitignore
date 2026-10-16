@@ -1,6 +1,7 @@
 __pycache__/
 ground_truth_30min/
 .pytest_cache/
+# where earlier versions kept the saved ground truth; moved into recordings/ and results/
 calibration_data/
 server.log
 server.pid

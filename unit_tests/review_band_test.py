@@ -169,12 +169,12 @@ def test_a_band_the_threshold_left_is_no_band():
 @pytest.mark.slow
 def test_the_results_ask_for_the_close_calls_until_they_are_answered(tmp_path, monkeypatch):
     session = reference.make_small_session(tmp_path / "small_session")
-    out, library = tmp_path / "out", tmp_path / "library"
+    out = tmp_path / "out"
     # the band as config.yaml has it, which the other tests' runs are kept from (conftest.py)
     monkeypatch.setattr(pipeline, "_review_band", lambda metric: ReviewBand.of(get_default_config().mite, metric))
     mite_config = get_default_config().mite
     monkeypatch.setattr(mite_config, "metric_review_bands", {})
-    results = pipeline.run_analysis(session, out, library_dir=library)
+    results = pipeline.run_analysis(session, out)
     assert "review" not in results
 
     # a band from just below the threshold up to above every score: every mite's last recordings are close
@@ -197,5 +197,5 @@ def test_the_results_ask_for_the_close_calls_until_they_are_answered(tmp_path, m
     left = answered["review"]["to_check"].get(mite["id"], [])
     assert left == ([] if mite["moving"][last] else list(range(last))[::-1])
 
-    again = pipeline.run_analysis(session, out, library_dir=library)  # another run keeps the answer
+    again = pipeline.run_analysis(session, out)  # another run keeps the answer
     assert again["review"]["to_check"].get(mite["id"], []) == left

@@ -8,7 +8,6 @@ Run it with start.bat, or:  python -m uvicorn web.server:app --port 8000
 """
 
 import os
-import shutil
 import subprocess
 import threading
 import time
@@ -89,7 +88,9 @@ async def lifespan(app):
 app = FastAPI(title="Varroa discobox", lifespan=lifespan)
 
 # A session's files go to its out_dir: results/<recording>/ for an analysis or a
-# live run, calibration_data/reports/<date time name>/ for a calibration.
+# live run, results/<recording>/calibration/ for a calibration of it. A
+# calibration's report goes to its report_dir: that same folder, or
+# results/pooled/<date time>/ for a report pooled over several recordings.
 sessions: dict[str, dict] = {}
 # Every change to a ground truth reads what is saved and writes it back; one at a
 # time, so two windows saving at once cannot undo each other's change.
@@ -516,24 +517,21 @@ def analysis_outlines(session_id: str, recording: int, zone_id: int):
         raise HTTPException(status_code=400, detail=str(error))
 
 
-def new_calibration_session(name, open_it, live_id=None):
-    """Run `open_it(out_dir)` in a fresh calibration session and remember it.
-    Its folder is named by when it began and by `name`, what it opened. A
-    session on a live run's recordings keeps the run's `live_id`, to grow with it."""
+def new_calibration_session(data_dir, open_it, live_id=None):
+    """Run `open_it(out_dir)` in a new calibration session of the recordings in
+    `data_dir` and remember it; it works in their results/<name>/calibration/.
+    A session on a live run's recordings keeps the run's `live_id`, to grow with it."""
     session_id = uuid.uuid4().hex[:8]
-    out_dir = pipeline.new_calibration_report_dir(name)
+    out_dir = pipeline.calibration_dir(data_dir)
     try:
         calibration = live_call(open_it, out_dir) if live_id else open_it(out_dir)
-    except HTTPException:
-        shutil.rmtree(out_dir, ignore_errors=True)
-        raise
     except (FileNotFoundError, ValueError) as error:
-        shutil.rmtree(out_dir, ignore_errors=True)
         raise HTTPException(status_code=400, detail=str(error))
 
     sessions[session_id] = {
         "data_dir": calibration["data_dir"],
         "out_dir": out_dir,
+        "report_dir": out_dir,
         "dataset_id": calibration["dataset_id"],
         "live_id": live_id,
     }
@@ -542,21 +540,29 @@ def new_calibration_session(name, open_it, live_id=None):
 
 @app.post("/api/calibration")
 def open_calibration(request: OpenRequest):
-    """Detect and score the mites of a calibration recording. Slow: decodes every frame."""
-    return new_calibration_session(Path(request.data_dir).name,
-                                   lambda out_dir: pipeline.open_calibration(request.data_dir, out_dir))
+    """Detect the mites of a calibration recording. A folder outside recordings/
+    is copied there first, its frames shrunk (pipeline.calibration_folder)."""
+    try:
+        data_dir = pipeline.calibration_folder(request.data_dir)
+    except (FileNotFoundError, ValueError) as error:
+        raise HTTPException(status_code=400, detail=str(error))
+    return new_calibration_session(data_dir, lambda out_dir: pipeline.open_calibration(data_dir, out_dir))
 
 
 @app.get("/api/calibration/datasets")
 def list_datasets():
-    """The ground truth saved so far, one dataset per calibration recording."""
+    """The recordings with ground truth saved, one dataset each."""
     return {"datasets": pipeline.list_calibration_datasets()}
 
 
 @app.post("/api/calibration/datasets/{dataset_id}/open")
 def open_dataset(dataset_id: str):
-    """Reopen a saved dataset to go on labelling it. Fast: nothing is decoded."""
-    return new_calibration_session(dataset_id, lambda out_dir: pipeline.open_saved_calibration(dataset_id, out_dir))
+    """Reopen a recording with ground truth to go on labelling it."""
+    try:
+        data_dir = pipeline.dataset_folder(dataset_id)
+    except (FileNotFoundError, ValueError) as error:
+        raise HTTPException(status_code=400, detail=str(error))
+    return new_calibration_session(data_dir, lambda out_dir: pipeline.open_saved_calibration(dataset_id, out_dir))
 
 
 @app.get("/api/calibration/datasets/{dataset_id}/preview")
@@ -586,21 +592,23 @@ def delete_dataset(dataset_id: str):
 def open_pooled():
     """A session for reports on saved datasets alone, with no recording opened."""
     session_id = uuid.uuid4().hex[:8]
-    out_dir = pipeline.new_calibration_report_dir("pooled")
-    sessions[session_id] = {"data_dir": None, "out_dir": out_dir, "dataset_id": None}
+    out_dir = pipeline.new_pooled_report_dir()
+    sessions[session_id] = {"data_dir": None, "out_dir": out_dir, "report_dir": out_dir, "dataset_id": None}
     return {"session_id": session_id}
 
 
 @app.post("/api/calibration/{session_id}/dataset/{dataset_id}")
 def switch_dataset(session_id: str, dataset_id: str):
     """Show another saved dataset in this session, e.g. the one a mite clicked in a
-    pooled report comes from. The session's report files stay where they are."""
+    pooled report comes from: the session works in that recording's calibration
+    folder from now on. Its report stays where it was made."""
     session = get_session(session_id)
     try:
-        calibration = pipeline.open_saved_calibration(dataset_id, session["out_dir"])
+        out_dir = pipeline.calibration_dir(pipeline.dataset_folder(dataset_id))
+        calibration = pipeline.open_saved_calibration(dataset_id, out_dir)
     except (FileNotFoundError, ValueError) as error:
         raise HTTPException(status_code=400, detail=str(error))
-    session.update(data_dir=calibration["data_dir"], dataset_id=calibration["dataset_id"])
+    session.update(data_dir=calibration["data_dir"], dataset_id=calibration["dataset_id"], out_dir=out_dir)
     return as_it_is({"session_id": session_id, **calibration})
 
 
@@ -672,8 +680,8 @@ def edit_ground_truth(session_id: str, request: TruthEdit):
 
 @app.post("/api/calibration/{session_id}/truth")
 def save_ground_truth(session_id: str):
-    """Save the changes made on the ground-truth page, next to the recordings and in
-    the library, so they survive a restart. Everything else keeps what is saved."""
+    """Save the changes made on the ground-truth page next to the recordings, so
+    they survive a restart. Everything else keeps what is saved."""
     session = get_session(session_id)
     try:
         with truth_lock:
@@ -710,7 +718,7 @@ def evaluate_calibration(session_id: str, request: EvaluateRequest):
     session = get_session(session_id)
     datasets = request.datasets if request.datasets is not None else [session["dataset_id"]]
     try:
-        return as_it_is(pipeline.evaluate_calibration(session["out_dir"], datasets, request.metric, request.params,
+        return as_it_is(pipeline.evaluate_calibration(session["report_dir"], datasets, request.metric, request.params,
                                                       stabilize=request.stabilize, benchmark=request.benchmark,
                                                       normalize_brightness=request.normalize_brightness,
                                                       normalize_floor=request.normalize_floor,
@@ -865,7 +873,7 @@ def calibrate_live(session_id: str):
     """A calibration session on the test run's recordings so far, to enter their
     ground truth and poke test while it goes on (pipeline.open_live_calibration)."""
     session = live_session(session_id)
-    return new_calibration_session(Path(session["data_dir"]).name,
+    return new_calibration_session(session["data_dir"],
                                    lambda out_dir: pipeline.open_live_calibration(session_id, out_dir),
                                    live_id=session_id)
 
@@ -912,10 +920,13 @@ def get_file(session_id: str, name: str):
     """Serve one output file (preview, figure, workbook or clip frame) from this session."""
     session = get_session(session_id)
 
-    # Only ever serve a file from this session's own output folder.
-    safe_join(session["out_dir"], name)
-    path = pipeline.results_file(session["out_dir"], name).resolve()
-    if not path.is_file() or session["out_dir"].resolve() not in path.parents:
+    # Only ever serve a file from this session's own output folder; a
+    # calibration report's workbook from the folder of the session that made it.
+    folder = session.get("report_dir") if name == pipeline.CALIBRATION_REPORT_NAME else None
+    folder = Path(folder or session["out_dir"])
+    safe_join(folder, name)
+    path = pipeline.results_file(folder, name).resolve()
+    if not path.is_file() or folder.resolve() not in path.parents:
         raise HTTPException(status_code=404, detail=f"No such file: {name}")
     return FileResponse(path)
 

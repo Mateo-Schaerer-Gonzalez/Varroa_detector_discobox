@@ -3,7 +3,7 @@ ground truth, by where it puts each mite's death: the metric, its parameters,
 the normalisations of the scores, the threshold, and a band around it to check
 by eye (classes/death_calibration.py).
 
-The mites of every dataset in calibration_data/ are split in two, dataset by
+The mites of every dataset in recordings/ are split in two, dataset by
 dataset: the train mites choose everything, the test mites only judge it.
 
     per trial    every mite is scored in every recording with the trial's
@@ -21,13 +21,13 @@ dataset: the train mites choose everything, the test mites only judge it.
 
 The patches are cut once (slow: every frame is decoded) and kept in --cache, so
 a second run starts at once. The studies are kept in
-calibration_data/reports/optuna_death_time.db: the same --study name carries on
+results/scripts/optuna_death_time.db: the same --study name carries on
 where it stopped (Ctrl+C is safe), with the same --seed and --test-share.
 
     python scripts/optuna_death_time.py                       # every metric
     python scripts/optuna_death_time.py --metrics topN_variability --trials 100
 
-The best of each is written to calibration_data/reports/optuna_death_time_<study>_<time>.csv.
+The best of each is written to results/scripts/optuna_death_time_<study>_<time>.csv.
 """
 import argparse
 import csv
@@ -60,7 +60,7 @@ from classes.score_normalizer import ScoreNormalizer
 from optuna_metrics import DEFAULT_TRIALS, SPACES, TRIALS, _top_n, start_params
 from tune_optical_flow import POLY_SIGMA
 
-STORAGE_FILE = pipeline.CALIBRATION_REPORTS / "optuna_death_time.db"
+STORAGE_FILE = pipeline.SCRIPTS_OUTPUT / "optuna_death_time.db"
 STORAGE = f"sqlite:///{STORAGE_FILE.as_posix()}"
 # The patches are kept at the largest padding; a smaller one is cut out of it.
 PADS = [0, 4, 8, 12, 16]
@@ -111,11 +111,8 @@ def load_dataset(summary, cache_dir, stabilize, jobs):
     (their ids), path (the patches, see _cut_recording(), as (mites, recordings,
     ...) in a .npy file), sizes (each mite's box, (height, width)), moving and
     labelled as (mites, recordings)}. None when its recordings are gone."""
-    dataset = pipeline._read_dataset(summary["id"], pipeline.CALIBRATION_LIBRARY)
-    recordings_dir = pipeline._recordings_dir(dataset["data_dir"], pipeline.CALIBRATION_LIBRARY)
-    if not recordings_dir.is_dir():
-        # a dataset saved on another computer: its id is not this one's for that folder
-        recordings_dir = pipeline._dataset_dir(summary["id"], pipeline.CALIBRATION_LIBRARY) / pipeline.RECORDINGS_DIRNAME
+    dataset = pipeline._read_dataset(summary["id"])
+    recordings_dir = Path(dataset["data_dir"])
     if not recordings_dir.is_dir():
         print(f"  skipping {dataset['name']}: its recordings are gone")
         return None
@@ -370,7 +367,7 @@ def main():
                 for summary in pipeline.list_calibration_datasets()]
     datasets = sorted((d for d in datasets if d), key=lambda d: d["name"])
     if not datasets:
-        sys.exit("No labelled dataset in calibration_data/ can be read.")
+        sys.exit("No labelled dataset in recordings/ can be read.")
     masks = split_mites(datasets, args.test_share, args.seed)
     for dataset, mask in zip(datasets, masks):
         moving = int(dataset["moving"].sum())
@@ -426,7 +423,7 @@ def main():
     for name, table in (("optuna_death_time", rows), ("optuna_death_time_bands", band_rows)):
         if not table:
             continue
-        out = pipeline.CALIBRATION_REPORTS / f"{name}_{stamp}.csv"
+        out = pipeline.SCRIPTS_OUTPUT / f"{name}_{stamp}.csv"
         fields = list(dict.fromkeys(key for row in table for key in row))
         with open(out, "w", newline="", encoding="utf-8") as f:
             writer = csv.DictWriter(f, fieldnames=fields)

@@ -25,12 +25,10 @@ def live_run(tmp_path, monkeypatch):
     """Run `data_dir` as a live run as fast as it goes; the run's parts once it
     has finished, and the figures it drew last."""
     def run_it(data_dir, name="run", **kwargs):
-        library = tmp_path / "library"
-        library.mkdir(exist_ok=True)
         live_id = f"test-{name}"
         with reference.capture_figures() as figures:
             folder_camera.open_live(monkeypatch, live_id, tmp_path / f"{name}_out", name, data_dir,
-                                    recordings_root=tmp_path / "recordings", library_dir=library, **kwargs)
+                                    recordings_root=tmp_path / "recordings", **kwargs)
             pipeline.start_live(live_id)
             run = pipeline._live[live_id]
             assert run.session.finished.wait(120), "the live run did not finish"
@@ -38,13 +36,13 @@ def live_run(tmp_path, monkeypatch):
         results = pipeline.live_results(live_id)["results"]
         pipeline._live.pop(live_id)  # keep its folder, which close_live() would remove if empty
         return {"run": run, "status": status, "results": reference.plain(results), "figures": figures,
-                "library": library, **reference.outputs(run.out_dir)}
+                **reference.outputs(run.out_dir)}
     return run_it
 
 
 def folder(tmp_path, run, **kwargs):
     """Folder mode on a live run's folder, as the command line or the page runs it."""
-    return reference.run_folder(run.run_dir, tmp_path / "folder_out", run.library_dir,
+    return reference.run_folder(run.run_dir, tmp_path / "folder_out",
                                 pipeline.load_labels(run.run_dir) or None, **kwargs)
 
 
@@ -99,16 +97,14 @@ def test_labels_and_not_a_mite_marks_apply_live_as_in_folder_mode(tmp_path, smal
 def test_without_saving_frames_the_results_are_the_same(tmp_path, small_session, live_run):
     live = live_run(small_session, save_frames=False)
     assert not any(path.suffix in (".bmp", ".mkv", ".png") for path in live["run"].run_dir.rglob("*"))
-    original = reference.run_folder(small_session, tmp_path / "original_out", live["library"],
+    original = reference.run_folder(small_session, tmp_path / "original_out",
                                     pipeline.load_labels(small_session))
     assert_same({**original["results"], "frames": "none"}, live["results"], "The live results")
 
 
 def test_a_run_stopped_midway_is_analysed_as_far_as_it_got(tmp_path, small_session, monkeypatch):
-    library = tmp_path / "library"
-    library.mkdir()
     folder_camera.open_live(monkeypatch, "stop", tmp_path / "out", "stopped", small_session, gap=30,
-                            recordings_root=tmp_path / "recordings", library_dir=library)
+                            recordings_root=tmp_path / "recordings")
     pipeline.start_live("stop")
     run = pipeline._live["stop"]
     deadline = time.monotonic() + 20
@@ -124,10 +120,8 @@ def test_a_run_stopped_midway_is_analysed_as_far_as_it_got(tmp_path, small_sessi
 
 
 def test_the_workbook_is_written_in_the_background_while_the_run_goes_on(tmp_path, small_session, monkeypatch):
-    library = tmp_path / "library"
-    library.mkdir()
     folder_camera.open_live(monkeypatch, "files", tmp_path / "out", "files", small_session, gap=30,
-                            recordings_root=tmp_path / "recordings", library_dir=library)
+                            recordings_root=tmp_path / "recordings")
     pipeline.start_live("files")
     run = pipeline._live["files"]
     try:
@@ -144,10 +138,8 @@ def test_the_workbook_is_written_in_the_background_while_the_run_goes_on(tmp_pat
 
 
 def test_results_are_published_after_each_recording(tmp_path, small_session, monkeypatch):
-    library = tmp_path / "library"
-    library.mkdir()
     folder_camera.open_live(monkeypatch, "steps", tmp_path / "out", "steps", small_session, gap=0.3,
-                            recordings_root=tmp_path / "recordings", library_dir=library)
+                            recordings_root=tmp_path / "recordings")
     assert pipeline.live_results("steps") == {"version": 0, "results": None}
     pipeline.start_live("steps")
     seen = set()
@@ -172,7 +164,7 @@ def test_labels_changed_during_a_run_show_at_once(tmp_path, small_session, live_
     finally:
         pipeline._live.pop(run.live_id)
     assert "renamed" in groups and "venom" not in groups
-    again = reference.run_folder(run.run_dir, tmp_path / "again", run.library_dir, pipeline.load_labels(run.run_dir))
+    again = reference.run_folder(run.run_dir, tmp_path / "again", pipeline.load_labels(run.run_dir))
     assert {g["group"] for g in again["results"]["summary"]["groups"]} == groups
 
 
@@ -198,8 +190,7 @@ def test_closing_a_run_that_recorded_nothing_leaves_no_folder(tmp_path, small_se
 # --- until the run starts, its name and whether it is saved can change
 
 def test_a_run_not_started_can_be_renamed_and_takes_its_folders_along(tmp_path, small_session, monkeypatch):
-    roots = {"recordings_root": tmp_path / "recordings", "results_root": tmp_path / "results",
-             "library_dir": tmp_path / "library"}
+    roots = {"recordings_root": tmp_path / "recordings", "results_root": tmp_path / "results"}
     (tmp_path / "recordings" / "taken").mkdir(parents=True)
     (tmp_path / "results" / "earlier").mkdir(parents=True)
     (tmp_path / "results" / "earlier" / "results.xlsx").write_bytes(b"of an earlier recording")

@@ -3,7 +3,7 @@ notebooks/outline_variability.ipynb.
 
 The outline_variability metric of classes/analyzer.py unrolls a mite around its
 centre and takes the variance of its pixels over the frames along its outline.
-Every mite of the longest labelled run in calibration_data/ gets that profile
+Every mite of the longest labelled run in recordings/ gets that profile
 for each recording (measure()): one variance for each of 64 directions. From it
 come how much of the variance lies on one side (one_sided(), the vector sum
 around the mite: the metric's score), how much the outline varies (amount()),

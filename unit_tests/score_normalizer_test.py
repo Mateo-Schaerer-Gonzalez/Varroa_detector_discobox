@@ -93,15 +93,15 @@ def test_a_calibrations_scores_go_through_the_same():
 @pytest.mark.slow
 def test_the_analysis_of_a_folder_normalises_as_config_yaml_says(tmp_path, monkeypatch):
     session = reference.make_small_session(tmp_path / "small_session")
-    out, library = tmp_path / "out", tmp_path / "library"
+    out = tmp_path / "out"
     mite_config = get_default_config().mite
     monkeypatch.setattr(mite_config, "normalize_floor", False)
     monkeypatch.setattr(mite_config, "normalize_brightness", False)
-    results = pipeline.run_analysis(session, out, library_dir=library)
+    results = pipeline.run_analysis(session, out)
     assert results["normalization"] == {"floor": False, "brightness": False}
 
     monkeypatch.setattr(mite_config, "normalize_floor", True)
-    normalised = pipeline.run_analysis(session, out, library_dir=library)
+    normalised = pipeline.run_analysis(session, out)
     assert normalised["normalization"] == {"floor": True, "brightness": False}
     assert [mite["scores"] for mite in normalised["mites"]] != [mite["scores"] for mite in results["mites"]]
     threshold = normalised["threshold"]
@@ -118,6 +118,6 @@ def test_the_analysis_of_a_folder_normalises_as_config_yaml_says(tmp_path, monke
     assert pipeline.correct_call(out, mite["id"], 1, "moving" if mite["moving"][1] else "still") == normalised
 
     monkeypatch.setattr(mite_config, "normalize_brightness", True)
-    both = pipeline.run_analysis(session, out, library_dir=library)
+    both = pipeline.run_analysis(session, out)
     assert both["normalization"] == {"floor": True, "brightness": True}
     assert [mite["scores"] for mite in both["mites"]] != [mite["scores"] for mite in normalised["mites"]]

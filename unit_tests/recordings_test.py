@@ -1,4 +1,4 @@
-"""Where the app keeps things: recordings/, results/ and the calibration reports;
+"""Where the app keeps things: recordings/, results/ and the calibration reports in it;
 the list of recordings the pages show; and moving the folders of earlier versions."""
 
 import json
@@ -13,8 +13,7 @@ import reference
 
 @pytest.fixture
 def roots(tmp_path):
-    return {"recordings_root": tmp_path / "recordings", "results_root": tmp_path / "results",
-            "library_dir": tmp_path / "library"}
+    return {"recordings_root": tmp_path / "recordings", "results_root": tmp_path / "results"}
 
 
 def test_a_folder_is_listed_with_its_settings_labels_marks_and_results(tmp_path, roots):
@@ -59,8 +58,6 @@ def test_a_results_file_is_only_ever_one_in_a_results_folder(tmp_path, name, fil
 
 def test_a_live_run_writes_run_json_and_its_results_go_to_results(tmp_path, roots, monkeypatch):
     small = reference.make_small_session(tmp_path / "small_session")
-    library = roots["library_dir"]
-    library.mkdir()
     status = folder_camera.open_live(monkeypatch, "record", None, "run 1", small, **roots)
     assert status["out_dir"] == str(roots["results_root"] / "run 1")
     pipeline.start_live("record")
@@ -87,51 +84,43 @@ def test_clips_are_kept_apart_and_a_folder_opened_again_gets_new_ones(tmp_path):
     small = reference.make_small_session(tmp_path / "small_session")
     out_dir = pipeline.results_dir(small, tmp_path / "results")
     assert out_dir == tmp_path / "results" / "small_session"
-    pipeline.open_session(small, out_dir, library_dir=tmp_path / "library")
+    pipeline.open_session(small, out_dir)
     clip = pipeline.analysis_clip(small, out_dir, 0, zone_id=0)
     assert all((out_dir / name).is_file() and name.startswith("clips/") for name in clip["frames"])
-    pipeline.open_session(small, out_dir, library_dir=tmp_path / "library")
+    pipeline.open_session(small, out_dir)
     assert not (out_dir / "clips").exists()
 
 
-def test_each_calibration_session_gets_a_folder_of_its_own(tmp_path):
-    first = pipeline.new_calibration_report_dir("sample/data", tmp_path)
-    second = pipeline.new_calibration_report_dir("sample/data", tmp_path)
-    assert first != second and first.is_dir() and second.is_dir()
-    assert first.name.endswith(" sample_data") and first.parent == tmp_path
+def test_a_calibration_works_in_its_recordings_results_and_a_pooled_report_in_a_folder_of_its_own(tmp_path):
+    assert pipeline.calibration_dir(tmp_path / "recordings" / "hive 3", tmp_path) == tmp_path / "hive 3" / "calibration"
+    assert (tmp_path / "hive 3" / "calibration").is_dir()
+    first = pipeline.new_pooled_report_dir(tmp_path)
+    second = pipeline.new_pooled_report_dir(tmp_path)
+    assert first != second and first.is_dir() and second.is_dir() and first.parent == tmp_path / "pooled"
 
 
 def test_the_folders_of_earlier_versions_move_to_todays(tmp_path):
     app = tmp_path / "app"
     live_run = reference.make_small_session(app / "output" / "test_run_1")
-    dropped = reference.make_small_session(app / "uploads" / "dropped")
+    reference.make_small_session(app / "uploads" / "dropped")
     (app / "outputs" / "3b70a75b").mkdir(parents=True)
     (app / "outputs" / "3b70a75b" / "results.xlsx").write_bytes(b"x")
     (app / "output" / "taken").mkdir()
     (app / "recordings" / "taken").mkdir(parents=True)  # never overwritten
-    library = app / "calibration_data"
-    old_id = pipeline.dataset_id(dropped)
-    (library / old_id).mkdir(parents=True)
-    (library / old_id / "dataset.json").write_text(json.dumps(
-        {"data_dir": str(dropped.resolve()), "name": "dropped", "times": [0.0], "mites": [], "truth": {}}))
-    reports = library / "reports"
-    (reports / "2026-09-01 10-00-00 no report").mkdir(parents=True)
-    (reports / "2026-09-01 11-00-00 a report").mkdir()
-    (reports / "2026-09-01 11-00-00 a report" / "calibration.xlsx").write_bytes(b"x")
+    pooled = app / "results" / "pooled"
+    (pooled / "2026-09-01 10-00-00").mkdir(parents=True)
+    (pooled / "2026-09-01 11-00-00").mkdir()
+    (pooled / "2026-09-01 11-00-00" / "calibration.xlsx").write_bytes(b"x")
 
-    done = pipeline.tidy_folders(app, app / "recordings", app / "results", library, reports)
+    done = pipeline.tidy_folders(app, app / "recordings", app / "results")
     assert (app / "recordings" / "test_run_1").is_dir() and (app / "recordings" / "dropped").is_dir()
     assert (app / "results" / "earlier sessions" / "3b70a75b" / "results.xlsx").is_file()
     assert (app / "output" / "taken").is_dir() and not (app / "uploads").exists() and not (app / "outputs").exists()
     assert any("left output/taken where it is" in line for line in done)
-    assert pipeline.list_recordings(app / "recordings", app / "results", library)
-    # the saved ground truth of the dropped folder follows it
-    new_id = pipeline.dataset_id(app / "recordings" / "dropped")
-    moved = json.loads((library / new_id / "dataset.json").read_text())
-    assert moved["data_dir"] == str((app / "recordings" / "dropped").resolve()) and not (library / old_id).exists()
-    # only calibration sessions that made a report are kept
-    assert [path.name for path in reports.iterdir()] == ["2026-09-01 11-00-00 a report"]
+    assert pipeline.list_recordings(app / "recordings", app / "results")
+    # only pooled reports that made a report are kept
+    assert [path.name for path in pooled.iterdir()] == ["2026-09-01 11-00-00"]
     # a second start has nothing more to move
     shutil.rmtree(app / "output")
-    assert pipeline.tidy_folders(app, app / "recordings", app / "results", library, reports) == []
+    assert pipeline.tidy_folders(app, app / "recordings", app / "results") == []
     assert not live_run.exists()
