@@ -250,6 +250,29 @@ def test_a_report_with_the_benchmark_compares_it_on_the_same_observations(tmp_pa
     assert last["circles"] is None and "benchmark_call" not in last["mites"][0]
 
 
+def test_cached_scores_and_calls_are_made_again_once_the_run_has_recorded_more(tmp_path, monkeypatch):
+    mites = [{"id": "0", "x": 10.0, "y": 10.0, "r": 3.0}]
+    dataset = {"name": "rec", "data_dir": str(tmp_path), "mites": mites, "recordings": [{"name": "r0", "fps": 30}]}
+    made = []
+
+    def per_recording(value):
+        return lambda dataset, *_args: made.append(len(dataset["recordings"])) or {"0": [value] * len(dataset["recordings"])}
+
+    monkeypatch.setattr(pipeline, "_benchmark_mites", per_recording(True))
+    monkeypatch.setattr(pipeline, "_score_mites", per_recording(1.0))
+    monkeypatch.setattr(pipeline, "_brightness_mites", per_recording(50.0))
+    fetch = [lambda: pipeline._dataset_benchmark("rec", dataset),
+             lambda: pipeline._dataset_scores("rec", dataset, "outline_variability", {}),
+             lambda: pipeline._dataset_brightness("rec", dataset, 16)]
+    assert [f() for f in fetch] == [{"0": [True]}, {"0": [1.0]}, {"0": [50.0]}]
+    assert [f() for f in fetch] == [{"0": [True]}, {"0": [1.0]}, {"0": [50.0]}] and made == [1, 1, 1]
+
+    # A live run labelled while it ran records on: the caches it left are too short for it now.
+    dataset["recordings"].append({"name": "r1", "fps": 30})
+    assert [f() for f in fetch] == [{"0": [True, True]}, {"0": [1.0, 1.0]}, {"0": [50.0, 50.0]}]
+    assert made == [1, 1, 1, 2, 2, 2]
+
+
 def test_the_last_recording_leaves_out_what_is_not_a_mite_and_keeps_the_unlabelled(tmp_path, recordings, scorer):
     data_dir, out_dir = make_session(tmp_path, "a", 3)
     scorer.scores = {"a": {"0": [9, 9], "1": [1, 1], "2": [9, 9]}}

@@ -1629,6 +1629,17 @@ def _scores_dir(dataset):
     return Path(dataset["data_dir"]) / SCORES_DIRNAME
 
 
+def _cached_per_recording(cache, field, dataset):
+    """What `cache` holds under `field` (mite id to one value per recording), or
+    None when there is no cache or it was written when the dataset had another
+    number of recordings: a run recorded on after it was scored."""
+    if not cache.is_file():
+        return None
+    by_mite = json.loads(cache.read_text(encoding="utf-8"))[field]
+    n_recordings = len(dataset["recordings"])
+    return by_mite if all(len(values) == n_recordings for values in by_mite.values()) else None
+
+
 # What _read_dataset() worked out, by folder and what it was worked out from.
 _described = {}
 _described_lock = threading.Lock()
@@ -2087,8 +2098,9 @@ def _dataset_brightness(key, dataset, pad, stabilize=False):
         [inspect.getsource(plate_stabilizer), pad, bool(stabilize),
          [[m["id"], m["x"], m["y"], m["r"]] for m in dataset["mites"]]]).encode("utf-8")).hexdigest()[:12]
     cache = _scores_dir(dataset) / f"brightness-{version}.json"
-    if cache.is_file():
-        return json.loads(cache.read_text(encoding="utf-8"))["brightness"]
+    cached = _cached_per_recording(cache, "brightness", dataset)
+    if cached is not None:
+        return cached
     brightness = _brightness_mites(dataset, Path(dataset["data_dir"]), pad, stabilize)
     cache.parent.mkdir(parents=True, exist_ok=True)
     cache.write_text(json.dumps({"brightness": brightness}), encoding="utf-8")
@@ -2117,8 +2129,9 @@ def _dataset_scores(key, dataset, metric, params, stabilize=False):
     deleting it just means decoding the recordings again."""
     version = _metric_version(metric, params, dataset["mites"], stabilize)
     cache = _scores_dir(dataset) / f"{version}.json"
-    if cache.is_file():
-        return json.loads(cache.read_text(encoding="utf-8"))["scores"]
+    cached = _cached_per_recording(cache, "scores", dataset)
+    if cached is not None:
+        return cached
     scores = _score_mites(dataset, metric, Path(dataset["data_dir"]), params, stabilize)
     cache.parent.mkdir(parents=True, exist_ok=True)
     cache.write_text(json.dumps({"metric": metric, "params": params, "scores": scores}), encoding="utf-8")
@@ -2153,8 +2166,9 @@ def _dataset_benchmark(key, dataset):
     version = hashlib.sha1(json.dumps(
         [source, [[m["id"], m["x"], m["y"], m["r"]] for m in dataset["mites"]]]).encode("utf-8")).hexdigest()[:12]
     cache = _scores_dir(dataset) / f"benchmark-{version}.json"
-    if cache.is_file():
-        return json.loads(cache.read_text(encoding="utf-8"))["calls"]
+    cached = _cached_per_recording(cache, "calls", dataset)
+    if cached is not None:
+        return cached
     calls = _benchmark_mites(dataset, Path(dataset["data_dir"]))
     cache.parent.mkdir(parents=True, exist_ok=True)
     cache.write_text(json.dumps({"benchmark": Benchmark.NAME, "calls": calls}), encoding="utf-8")
