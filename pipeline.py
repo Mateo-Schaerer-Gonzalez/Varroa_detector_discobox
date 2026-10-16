@@ -172,9 +172,9 @@ SCRIPTS_OUTPUT_DIRNAME = "scripts"
 SCRIPTS_OUTPUT = RESULTS_ROOT / SCRIPTS_OUTPUT_DIRNAME
 # The workbook of a calibration report, in the folder of the session that made it.
 CALIBRATION_REPORT_NAME = reporting.CALIBRATION_EXCEL_NAME
-# Pixels read around the mites when the plate is stabilized: the shift measure
-# looks 8 past each box, and the shake plus Lanczos reach a few more.
-STABILIZE_MARGIN = 16
+# Pixels read around the scored patches when the plate is stabilized: a mite's
+# shift (followed up to 12 px) and the Lanczos interpolation's reach.
+STABILIZE_MARGIN = plate_stabilizer.MARGIN
 DATASET_NAME = "dataset.json"
 SCORES_DIRNAME = "scores"
 RECORDINGS_DIRNAME = "recordings"
@@ -2026,13 +2026,13 @@ def _measure_mites(dataset, recordings_dir, measure, pad=0, stabilize=False):
              for mite_id, (x1, y1, x2, y2) in mite_boxes(dataset["mites"]).items()}
 
     def measured(frames):
-        shifts = PlateStabilizer().shifts(frames, list(local.values())) if stabilize else None
+        shifts = dict(zip(local, PlateStabilizer().shifts(frames, list(local.values())))) if stabilize else None
 
         def one(mite_id):
             x1, y1, x2, y2 = boxes[mite_id]
             if shifts is None:
                 return measure(frames[:, max(0, y1) - y0:y2 - y0, max(0, x1) - x0:x2 - x0])
-            return measure(PlateStabilizer.cut(frames, local[mite_id], pad, shifts))
+            return measure(PlateStabilizer.cut(frames, local[mite_id], pad, shifts[mite_id]))
 
         return dict(zip(boxes, side_by_side(one, boxes)))
 

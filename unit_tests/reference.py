@@ -231,9 +231,10 @@ def run_cli(args, replacements):
 
 
 def _path(name):
-    """A reference per OpenCV line: OpenCV 5 measures the plate's shift a few
-    hundredths of a pixel otherwise than 4, which moves the scores in their
-    last digits. name.json is OpenCV 4's, name.opencv5.json OpenCV 5's, both
+    """A reference per OpenCV line: OpenCV 5 computes the images a little
+    otherwise than 4, which moves the scores in their last digits (171 of
+    sample_data's 180 scores, by 0.18 at most, since the stabilizer follows
+    each mite's centre). name.json is OpenCV 4's, name.opencv5.json OpenCV 5's, both
     made by make_reference.py from the same code."""
     major = int(cv2.__version__.split(".")[0])
     return REFERENCE_DIR / (f"{name}.json" if major < 5 else f"{name}.opencv{major}.json")

@@ -135,7 +135,7 @@ def load_observations(pads, shake=0.0, seed=0, stabilize=None):
             frames = loader.load_recording_region(recording["name"], x0, y0, x_end, y_end)
             if shake:
                 frames = shaken(frames, shake, rng)
-            shifts = PlateStabilizer().shifts(frames, list(local.values())) if stabilize else None
+            shifts = dict(zip(local, PlateStabilizer().shifts(frames, list(local.values())))) if stabilize else None
             for mite_id, (x1, y1, x2, y2) in local.items():
                 state = labelled[mite_id][1][index]
                 if state not in (calibration.MOVING, calibration.STILL):
@@ -144,7 +144,7 @@ def load_observations(pads, shake=0.0, seed=0, stabilize=None):
                     if shifts is None:
                         cut = frames[:, max(0, y1 - pad):y2 + pad, max(0, x1 - pad):x2 + pad]
                     else:
-                        cut = PlateStabilizer.cut(frames, (x1, y1, x2, y2), pad, shifts)
+                        cut = PlateStabilizer.cut(frames, (x1, y1, x2, y2), pad, shifts[mite_id])
                     rois[pad].append(np.ascontiguousarray(cut))
                 moving.append(state == calibration.MOVING)
                 mites.append(f"{summary['id']}/{mite_id}")

@@ -93,15 +93,15 @@ DEATH_SPACES = {**SPACES, "optical_flow": _optical_flow}
 def _cut_recording(job):
     """One recording's patches, (mites, frames, side, side, channels) float32:
     each mite's box grown by MAX_PAD, in the top left corner of its square."""
-    recordings_dir, name, region, local, plate, side, stabilize = job
+    recordings_dir, name, region, local, side, stabilize = job
     frames = DataLoader(recordings_dir, grayscale=False).load_recording_region(name, *region)
-    shifts = PlateStabilizer().shifts(frames, plate) if stabilize else None
+    shifts = PlateStabilizer().shifts(frames, local) if stabilize else None
     out = np.zeros((len(local), len(frames), side, side, frames.shape[-1]), dtype=np.float32)
     for index, (x1, y1, x2, y2) in enumerate(local):
         if shifts is None:
             cut = frames[:, y1 - MAX_PAD:y2 + MAX_PAD, x1 - MAX_PAD:x2 + MAX_PAD]
         else:
-            cut = PlateStabilizer.cut(frames, (x1, y1, x2, y2), MAX_PAD, shifts)
+            cut = PlateStabilizer.cut(frames, (x1, y1, x2, y2), MAX_PAD, shifts[index])
         out[index, :, :cut.shape[1], :cut.shape[2]] = cut
     return out
 
@@ -125,7 +125,7 @@ def load_dataset(summary, cache_dir, stabilize, jobs):
     states = np.array([states[mite["id"]] for mite in mites], dtype=object)
 
     boxes = list(pipeline.mite_boxes(mites).values())
-    # The plate's shift is measured on every detection, as a calibration measures it.
+    # The region holds every detection, as a calibration reads it.
     every = list(pipeline.mite_boxes(dataset["mites"]).values())
     reach = MAX_PAD + (pipeline.STABILIZE_MARGIN if stabilize else 0)
     x0, y0 = min(b[0] for b in every) - reach, min(b[1] for b in every) - reach
@@ -134,7 +134,6 @@ def load_dataset(summary, cache_dir, stabilize, jobs):
     if x0 < 0 or y0 < 0 or x_end > image["width"] or y_end > image["height"]:
         raise ValueError(f"{dataset['name']}: a mite is closer than {reach} px to the image's edge.")
     local = [(x1 - x0, y1 - y0, x2 - x0, y2 - y0) for x1, y1, x2, y2 in boxes]
-    plate = [(x1 - x0, y1 - y0, x2 - x0, y2 - y0) for x1, y1, x2, y2 in every]
     sizes = np.array([(y2 - y1, x2 - x1) for x1, y1, x2, y2 in boxes])
     side = int(sizes.max()) + 2 * MAX_PAD
 
@@ -144,7 +143,7 @@ def load_dataset(summary, cache_dir, stabilize, jobs):
     path = Path(cache_dir) / f"{summary['id']}-{version}.npy"
     if not path.is_file():
         started = time.time()
-        work = [(recordings_dir, name, (x0, y0, x_end, y_end), local, plate, side, stabilize) for name in names]
+        work = [(recordings_dir, name, (x0, y0, x_end, y_end), local, side, stabilize) for name in names]
         patches = None
         part = path.with_suffix(".part.npy")
         with ProcessPoolExecutor(jobs) as pool:

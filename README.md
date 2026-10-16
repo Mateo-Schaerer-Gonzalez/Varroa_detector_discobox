@@ -192,10 +192,18 @@ from `config.default.yaml`; change the defaults for everyone there.
 
 **A shaking plate.** A shake of half a pixel, too small to see, makes every
 still mite look like it moves, with any metric. With `stabilize_plate: true`
-(the default) the plate's shift in each frame is measured on all the mites at
-once, the median of their shifts, so a few walking mites don't pull it, and
-each mite's patch is cut shifted back before it is scored
-(`classes/plate_stabilizer.py`). On a still plate it changes nothing, so a
+(the default) each mite's shift in each frame is measured, how far the centre
+of the darkness of its body moved from the first frame, and its patch is cut
+shifted back by it before it is scored (`classes/plate_stabilizer.py`). A glued
+mite moves with what it is glued to, so this also follows plates that shake
+apart. A moving mite's legs pull its centre by about a tenth of a pixel, which
+changes 8 of the 17 829 calls of the ground truth (all near the threshold);
+`notebooks/centre_stabilization.ipynb` compares it with the median of the
+mites' shifts (by registration) used before: the same calls on a plate that
+shakes as one piece, far fewer still mites called moving when the plates shake
+apart, and twenty times cheaper to measure. A shift of more than 12 px along
+an axis is not followed further (`STABILIZE_MARGIN` beyond the scored patch is
+all a saved live run keeps). On a still plate it changes nothing, so a
 threshold calibrated on still ground truth holds on a shaking plate. The
 results overview shows the shake: the median over the mites of how far each
 one's own patch moved within each recording, recording by recording, to spot a
@@ -205,7 +213,8 @@ drifted furthest from their zone across the recordings, each as its path. The
 it on or off with *Score again*; saving a threshold saves it with the metric.
 `python scripts/shake_robustness.py` shakes the saved ground truth by
 0.5 to 2 px and reports each metric's accuracy at its unshaken threshold, with
-and without stabilization.
+and without stabilization; `python scripts/centre_stabilization.py` compares
+ways of stabilizing (the table `notebooks/centre_stabilization.ipynb` reads).
 
 **Unusual activity.** A mite can come unglued (`classes/unusual_activity.py`).
 One that walks off, a *fly-off*, is found when its place is empty in 3

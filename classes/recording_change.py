@@ -6,8 +6,7 @@ recordings even when it is still in both.
 
 Two things change every mite's image between recordings without the mite
 doing anything, and are taken out first: the plate sits a fraction of a pixel
-elsewhere (measured on every mite, the median is the plate's, as
-classes/plate_stabilizer.py does within a recording), and the light is a
+elsewhere (measured on every mite, the median is the plate's), and the light is a
 little brighter or darker (the later image is scaled to the mean of the
 earlier one). What is left is the mean absolute difference of the two images,
 in grey levels.

@@ -31,8 +31,9 @@ last frame (MotionAnalysis). From those, UnusualActivity finds:
 - the plate's **shake** per recording (the median of the mites' shake) and
   the mites that drifted most from their zone across recordings.
 
-The patches are scored moved back by the plate's shift (PlateStabilizer); each
-mite's own shift is measured only to report its shake and stray.
+Each mite's patch is scored moved back by its own shift (PlateStabilizer, the
+shift of its centre); its stray is how far that strayed from the plate's, the
+median over the mites.
 """
 
 import numpy as np
