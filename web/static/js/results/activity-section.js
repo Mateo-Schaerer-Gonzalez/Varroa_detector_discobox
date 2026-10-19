@@ -59,7 +59,7 @@ class ActivitySection {
         Click a time to show that recording.${this.page.stillToCome()}`)}</div>
       <div class="block">${figure("activity-movers", first + 1, `The ${movers.length} mites that drifted furthest`,
         `Each mite's path across the recordings: where its image sits against its image in the first recording (px, py, in pixels), from light (first recording) to dark (last), starting on the mite's centre.
-        Behind the path, the mite's outline in the first recording, at its own scale (far larger than the path's), to read which way it drifted against its body.
+        Behind the path, the mite's outline in the first recording, at its own scale, to read which way it drifted against its body: the two scales differ, so read the path's length off its bar (bottom left) against the mite's size (bottom right), not against the outline.
         The mites are ranked by how far they sit from their zone's median path, what the plate under them did
         (the 95th percentile over the recordings, so one bad measurement does not rank a mite).
         After them come the fly-offs: each one's path until it flew off, then a dashed black line out of the square the way it walked off
@@ -158,8 +158,12 @@ class ActivitySection {
         exit.appendChild(tip);
         svg.appendChild(exit);
       }
-      const scale = PlateView.svgEl("text", { x: 4, y: size - 4, class: "mover-scale" });
-      scale.textContent = `${(2 * half).toFixed(2)} px across`;
+      // the path's scale as a bar, so it is not read at the outline's (drawMoverOutlines)
+      const bar = ActivitySection.barLength(0.4 * 2 * half);
+      const barEnd = 6 + (bar / (2 * half)) * size;
+      svg.appendChild(PlateView.svgEl("line", { x1: 6, y1: size - 14, x2: barEnd, y2: size - 14, class: "mover-bar" }));
+      const scale = PlateView.svgEl("text", { x: 6, y: size - 4, class: "mover-scale" });
+      scale.textContent = `path ${bar} px`;
       svg.appendChild(scale);
       svg.dataset.miteId = mover.id;
       svg.dataset.zone = mover.zone;
@@ -184,9 +188,14 @@ class ActivitySection {
         if (!outline || !outline.dots.length) return;
         const body = ActivitySection.outlineShape(outline, svg.viewBox.baseVal.width, "mover-body");
         const tip = PlateView.svgEl("title", {});
-        tip.textContent = `Mite ${svg.dataset.miteId}'s outline in the first recording, ${(2 * ActivitySection.reach(outline)).toFixed(0)} px across`;
+        const across = (2 * ActivitySection.reach(outline)).toFixed(0);
+        tip.textContent = `Mite ${svg.dataset.miteId}'s outline in the first recording, ${across} px across`;
         body.appendChild(tip);
         svg.querySelector(".mover-frame").after(body);
+        const width = svg.viewBox.baseVal.width;
+        const label = PlateView.svgEl("text", { x: width - 6, y: width - 4, class: "mover-scale mover-size" });
+        label.textContent = `mite ${across} px across`;
+        svg.appendChild(label);
       });
     }
   }
@@ -199,6 +208,13 @@ class ActivitySection {
     } catch {
       return null;
     }
+  }
+
+  // The longest of 1, 2 or 5 times a power of ten that is at most `most` pixels.
+  static barLength(most) {
+    const ten = 10 ** Math.floor(Math.log10(most));
+    const length = [5, 2, 1].map((k) => k * ten).find((value) => value <= most);
+    return Number(length.toPrecision(1));
   }
 
   // How far an outline reaches from its centre, in pixels of the recording.
