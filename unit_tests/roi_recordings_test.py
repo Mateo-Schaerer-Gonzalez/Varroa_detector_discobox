@@ -217,12 +217,14 @@ def test_of_a_session_of_rois_only_the_mites_clips_play(live_session):
     assert recording["n_recordings"] == 3 and recording["frames"] == 6
 
 
-def test_a_rotator_of_a_session_of_rois_plays_its_own_roi_as_saved(live_session):
+@pytest.mark.parametrize("kind", ["rotator", "fly_off"])
+def test_a_rotator_or_a_fly_off_of_a_session_of_rois_plays_its_own_roi_as_saved(live_session, kind):
     run_dir, out_dir, results, _small = live_session
     mite = results["mites"][0]
-    activity = {"fly_offs": [], "rotators": [{"id": mite["id"], "zone": mite["zone_id"], "x": mite["x"], "y": mite["y"],
-                                              "from": 1, "turn": 45}]}
-    clip = pipeline.activity_clip(run_dir, out_dir, activity, results["times"], "rotator", mite["id"])
+    event = {"id": mite["id"], "zone": mite["zone_id"], "x": mite["x"], "y": mite["y"], "from": 1, "turn": 45,
+             "to": 1, "walked_to": 1, "track": [[1, mite["x"] + 150, mite["y"] + 100]], "near": []}  # walked far off its ROI
+    activity = {"fly_offs": [event] if kind == "fly_off" else [], "rotators": [event] if kind == "rotator" else []}
+    clip = pipeline.activity_clip(run_dir, out_dir, activity, results["times"], kind, mite["id"])
     x1, y1, x2, y2 = RoiRecordings(run_dir).roi_at(mite["x"], mite["y"])
     assert (clip["x"], clip["y"]) == (x1, y1) and clip["recordings"] == [0, 2]
     assert clip["width"] % (x2 - x1) == 0 and clip["height"] * (x2 - x1) == clip["width"] * (y2 - y1)

@@ -1299,8 +1299,8 @@ def activity_clip(data_dir, out_dir, activity, times, kind, mite_id):
     the other, each frame marked with its recording's time (`times`, minutes):
     a fly-off from the recording before it left to the one after it stopped
     walking, round its whole track; a rotator ROTATOR_CLIP_SPAN recordings
-    either side of when it first turned past the limit, round the mite (of a
-    session saved as the mites' ROIs, the mite's own ROI, as saved). Like
+    either side of when it first turned past the limit, round the mite. Of a
+    session saved as the mites' ROIs, either is the mite's own ROI, as saved. Like
     analysis_clip(), written to `out_dir` once and reused after."""
     events = activity.get("fly_offs" if kind == "fly_off" else "rotators", []) if kind in ("fly_off", "rotator") else []
     event = next((e for e in events if e["id"] == str(mite_id)), None)
@@ -1315,8 +1315,9 @@ def activity_clip(data_dir, out_dir, activity, times, kind, mite_id):
         points = [(event["x"], event["y"])]
     last = min(last, first + ACTIVITY_CLIP_RECORDINGS - 1)
     loader = open_recordings(data_dir)
-    # Of a session saved as the mites' ROIs, a rotator's clip is its own video, all of it.
-    roi = loader.roi_at(event["x"], event["y"]) if kind == "rotator" and isinstance(loader, RoiRecordings) else None
+    # Of a session saved as the mites' ROIs, the clip is the mite's own video, all of it:
+    # a fly-off is seen leaving its place, its walk across the plate was not saved.
+    roi = loader.roi_at(event["x"], event["y"]) if isinstance(loader, RoiRecordings) else None
     if roi is not None:
         x1, y1, x2, y2 = roi
     else:

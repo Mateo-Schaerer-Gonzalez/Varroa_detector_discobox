@@ -230,8 +230,9 @@ counts it again. A mite whose body turns by more than 30° where it is, a
 *rotator*, stays in the analysis. The results overview lists them under
 *Unusual activity*: the tracks of the fly-offs on the plate, the mites they
 disturbed, the recordings set aside, and for each fly-off and rotator a clip of
-every recording it spans, played one after the other (a rotator's starts on its
-own, a fly-off's on request). What is measured for this
+every recording it spans, played one after the other, starting on its own. Of a
+run saved as the mites' ROIs, the clip is the mite's own saved surroundings: a
+fly-off is seen leaving its place, not its walk. What is measured for this
 is kept with the scores, so a run read back from them has it too.
 
 **Scores on one scale per mite.** A still mite does not score 0: camera noise
@@ -366,9 +367,9 @@ live run gave, the scores to the last digit. The live results go to
 `results/<run name>/`.
 
 Since only the mites' surroundings are saved, the pages of such a session play
-only a mite's own clip (its page, the ground truth, a rotator): the plate map
-and the zones show the first frame, and a fly-off's walk across the plate
-cannot be played. The mites are those found when the run started; the
+only a mite's own clip (its page, the ground truth, a rotator, a fly-off): the
+plate map and the zones show the first frame, and a fly-off is seen leaving its
+place, not its walk across the plate. The mites are those found when the run started; the
 detector's settings changed later find no others there. Untick *Save the
 recordings* for long runs; the results are the same, but there is then no clip
 to play and nothing to open again. Folders of BMPs opened by path, from the Discobox app or from runs before this, are read as before; folders dropped onto the page are shrunk (classes/roi_conversion.py).

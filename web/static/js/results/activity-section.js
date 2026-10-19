@@ -196,8 +196,7 @@ class ActivitySection {
     plate.appendChild(svg);
   }
 
-  // A card per fly-off and per rotator, each with its clip: a fly-off's played on
-  // request, a rotator's at once.
+  // A card per fly-off and per rotator, each with its clip, played at once.
   drawEvents() {
     const container = $("activity-events");
     const { fly_offs: flyOffs, rotators } = this.activity;
@@ -214,32 +213,25 @@ class ActivitySection {
       container.innerHTML = `<p class="caption">No mite flew off or turned in these recordings.</p>`;
       return;
     }
-    // Of a session saved as the mites' ROIs, a fly-off's walk across the plate was not saved.
-    const playable = (kind) => kind !== "fly_off" || !this.page.onlyMiteClips();
-    container.innerHTML = events.map(({ kind, event, title, text }, index) => `
+    // Of a session saved as the mites' ROIs, a clip is the mite's own surroundings.
+    const onlyMite = this.page.onlyMiteClips()
+      ? " Only the mites' surroundings are saved of these recordings: it is seen leaving its place, not its walk." : "";
+    container.innerHTML = events.map(({ kind, title, text }, index) => `
       <figure class="fig activity-card">
         <div class="fig-title">${esc(title)}</div>
-        <p class="activity-text">${text}</p>
+        <p class="activity-text">${text}${kind === "fly_off" ? onlyMite : ""}</p>
         <div class="activity-clip" data-index="${index}"><img alt="${esc(title)}" hidden></div>
-        <p class="hint clip-status">${kind === "rotator" ? `<span class="muted">Waiting for the clips before it…</span>`
-          : playable(kind) ? `<button type="button" class="secondary small" data-play="${index}">Play the recordings</button>
-          <span class="muted">from the recording before it left to the one after it stopped, one after the other</span>`
-          : `<span class="muted">Only the mites' surroundings are saved of these recordings, so its walk cannot be played.</span>`}</p>
+        <p class="hint clip-status"><span class="muted">Waiting for the clips before it…</span></p>
       </figure>`).join("");
-    const clip = (index) => [events[index], container.querySelector(`.activity-clip[data-index="${index}"]`)];
-    container.querySelectorAll("[data-play]").forEach((button) => button.addEventListener("click", () => {
-      this.play(...clip(Number(button.dataset.play)), button.closest(".clip-status"));
-    }));
-    this.playRotators(events, clip);
+    this.playAll(events, container);
   }
 
-  // The rotators' clips play on their own, cut one after the other so the
-  // server is not asked for all of them at once.
-  async playRotators(events, clip) {
-    for (const [index, { kind }] of events.entries()) {
-      if (kind !== "rotator") continue;
-      const [event, wrap] = clip(index);
-      if (!wrap.isConnected) return;  // the page is gone
+  // The clips play on their own, cut one after the other so the server is not
+  // asked for all of them at once.
+  async playAll(events, container) {
+    for (const [index, event] of events.entries()) {
+      const wrap = container.querySelector(`.activity-clip[data-index="${index}"]`);
+      if (!wrap || !wrap.isConnected) return;  // the page is gone
       await this.play(event, wrap, wrap.nextElementSibling);
     }
   }
