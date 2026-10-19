@@ -90,6 +90,19 @@ To analyse a folder, in *Analysis*:
    When config.yaml says so (see *Scores on one scale per mite* below), the
    scores of a folder are normalised over the run, and the pages' headings say
    by what.
+4. **Playback**: every mite's whole video, its recordings one after the other,
+   laid out by zone (a box per zone, a square per mite in it, the fly-offs at
+   the end of theirs), all on one timer at the top of the page: play or pause,
+   a slider over every frame of the run, a speed of 1× (real time) to 16×, and
+   the time, recording and frame shown. Each square is the 80 × 80 pixels
+   round the mite as recorded, its edge the mite's call in the recording
+   playing (green moving, orange still, grey gone or set aside); click it to
+   open the mite. The server cuts, per recording and zone, one picture with a
+   row per mite and a column per frame (`pipeline.playback_sheet`, kept in
+   `results/<name>/clips/`; a recording of more than 100 frames is thinned to
+   100), and the page fetches the recording playing and the two after it.
+   Of a run saved as the mites' ROIs, a square is the mite's own ROI. A live
+   run has it too when it saves its recordings.
 
 ### Moving or still
 
@@ -210,7 +223,9 @@ one's own patch moved within each recording, recording by recording, to spot a
 recording or a stretch of time in which the plate shook, and the 10 mites that
 drifted furthest from their zone across the recordings, each as its path over
 its outline in the first recording (at the outline's own scale, to read which
-way it drifted against its body). The
+way it drifted against its body), then every fly-off: its path until it flew
+off, and a dashed line out of its square the way it walked off (the first point
+of its track out of its place). The
 *Stabilize plate* checkbox next to the metric on the calibration report tries
 it on or off with *Score again*; saving a threshold saves it with the metric.
 `python scripts/shake_robustness.py` shakes the saved ground truth by
@@ -231,10 +246,11 @@ censored, it counts neither as moving nor as still; setting the call by hand
 counts it again. A mite whose body turns by more than 30° where it is, a
 *rotator*, stays in the analysis. The results overview lists them under
 *Unusual activity*: the tracks of the fly-offs on the plate, the mites they
-disturbed, the recordings set aside, and for each fly-off and rotator a clip of
-every recording it spans, played one after the other, starting on its own. Of a
-run saved as the mites' ROIs, the clip is the mite's own saved surroundings: a
-fly-off is seen leaving its place, not its walk. What is measured for this
+disturbed, the recordings set aside, and each rotator as a clock face: the long
+axis of its body in its first 3 recordings and in its last 3 (the median of
+each) through the middle, the turn between them shaded, over its outline in
+the first recording and, lighter, in the last. The *Playback* page plays every
+mite, the fly-offs too. What is measured for this
 is kept with the scores, so a run read back from them has it too.
 
 **Scores on one scale per mite.** A still mite does not score 0: camera noise
@@ -369,7 +385,7 @@ live run gave, the scores to the last digit. The live results go to
 `results/<run name>/`.
 
 Since only the mites' surroundings are saved, the pages of such a session play
-only a mite's own clip (its page, the ground truth, a rotator, a fly-off): the
+only a mite's own clip (its page, the ground truth, the playback): the
 plate map and the zones show the first frame, and a fly-off is seen leaving its
 place, not its walk across the plate. The mites are those found when the run started; the
 detector's settings changed later find no others there. Untick *Save the

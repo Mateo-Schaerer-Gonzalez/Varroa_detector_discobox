@@ -29,7 +29,8 @@ last frame (MotionAnalysis). From those, UnusualActivity finds:
 - a **rotator**: a mite whose body turned by more than TURN_LIMIT from its
   first recordings, in AWAY_COUNT recordings. It stays in the analysis.
 - the plate's **shake** per recording (the median of the mites' shake) and
-  the mites that drifted most from their zone across recordings.
+  the mites that drifted most from their zone across recordings, with the
+  fly-offs' paths until they flew off and the way they walked.
 
 Each mite's patch is scored moved back by its own shift (PlateStabilizer, the
 shift of its centre); its stray is how far that strayed from the plate's, the
@@ -285,7 +286,11 @@ class UnusualActivity:
     def _movers(self, kept):
         """The TOP_MOVERS mites that drifted furthest from their zone's median
         across recordings (95th percentile over the recordings, so one bad
-        registration does not rank a mite), with their displacement and their zone's."""
+        registration does not rank a mite), with their displacement and their zone's,
+        then every fly-off: its displacement until it flew off (after that its
+        image is gone and it says nothing), `flew_off` the recording it left its
+        place in and `walk` the way it walked ((dx, dy), one long; None where
+        its track has it nowhere else)."""
         dx, dy = self.values["dx"], self.values["dy"]
         zones = {}
         for m in kept:
@@ -300,12 +305,45 @@ class UnusualActivity:
                 continue
             ranked.append((float(np.nanpercentile(away, 95)), m))
         rounded = lambda values: [None if np.isnan(v) else round(float(v), 3) for v in values]
-        return [{"id": self.ids[m], "zone": self.mites[m]["zone"], "x": round(float(self.centres[m][0]), 1),
-                 "y": round(float(self.centres[m][1]), 1), "away": round(away, 3),
-                 "dx": rounded(dx[m]), "dy": rounded(dy[m]),
-                 "zone_dx": rounded(zone_drift[self.mites[m]["zone"]][0]),
-                 "zone_dy": rounded(zone_drift[self.mites[m]["zone"]][1])}
-                for away, m in sorted(ranked, reverse=True)[:TOP_MOVERS]]
+        nowhere = [None] * self.n
+
+        def row(m, away, until=None):
+            zone = zone_drift.get(self.mites[m]["zone"])
+            cut = lambda values: rounded(values[:until]) + [None] * (self.n - until) if until is not None else rounded(values)
+            return {"id": self.ids[m], "zone": self.mites[m]["zone"], "x": round(float(self.centres[m][0]), 1),
+                    "y": round(float(self.centres[m][1]), 1), "away": away,
+                    "dx": cut(dx[m]), "dy": cut(dy[m]),
+                    "zone_dx": rounded(zone[0]) if zone else nowhere,
+                    "zone_dy": rounded(zone[1]) if zone else nowhere}
+
+        movers = [row(m, round(away, 3)) for away, m in sorted(ranked, reverse=True)[:TOP_MOVERS]]
+        for m, start in sorted(self.flown.items(), key=lambda item: item[1]):
+            movers.append({**row(m, None, start), "flew_off": int(start), "walk": self._walk(m)})
+        return movers
+
+    def _walk(self, m):
+        """The way the fly-off `m` walked off: from its place to the first point
+        of its track out of it, as (dx, dy) one long; None if it was nowhere else."""
+        for _recording, x, y in self.tracks[m][1:]:
+            step = np.array([x, y]) - self.centres[m]
+            length = float(np.hypot(*step))
+            if length > PRESENT_RADIUS:
+                return [round(float(v) / length, 4) for v in step]
+        return None
+
+    def _rotation(self, m):
+        """The long axis of rotator `m`'s body in its first and its last
+        AWAY_COUNT recordings it was measured in (degrees, 0 to 180, median of
+        each), the turn from the one to the other the short way round (degrees,
+        clockwise on the picture positive), and the recordings it was first and
+        last measured in."""
+        angle = self.values["angle"][m]
+        seen = np.flatnonzero(~np.isnan(angle))
+        start = float(np.median(angle[seen[:AWAY_COUNT]]))
+        turn = (angle[seen[-AWAY_COUNT:]] - start + 90) % 180 - 90  # signed, round half a circle
+        turned = float(np.median(turn))
+        return {"angle_first": round(start % 180, 1), "angle_last": round((start + turned) % 180, 1), "turned": round(turned, 1),
+                "first_seen": int(seen[0]), "last_seen": int(seen[-1])}
 
     def describe(self):
         """The unusual activity for the result pages."""
@@ -332,7 +370,8 @@ class UnusualActivity:
         rotators = [{"id": self.ids[m], "zone": self.mites[m]["zone"], "x": round(float(self.centres[m][0]), 1),
                      "y": round(float(self.centres[m][1]), 1), "from": int(start),
                      "turn": round(float(np.nanmax(self.turns[m])), 1),
-                     "turns": [None if np.isnan(v) else round(float(v), 1) for v in self.turns[m]]}
+                     "turns": [None if np.isnan(v) else round(float(v), 1) for v in self.turns[m]],
+                     **self._rotation(m)}
                     for m, start in sorted(self.rotating.items(), key=lambda item: item[1])]
         disturbed = [{"mite": self.ids[m], "recording": int(r), "reason": self.disturbed[m, r],
                       "stray": None if np.isnan(self.values["stray"][m, r]) else round(float(self.values["stray"][m, r]), 3)}

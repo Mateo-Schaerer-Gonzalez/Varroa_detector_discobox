@@ -1,9 +1,9 @@
 // Navigation is hash-based so the browser's back/forward buttons work. Three modes
 // share the window, each with a tab in the header. Live from the Discobox camera
 // (LiveRun), the page the app opens on, with the label and result pages below:
-//   #/live/open  #/live/label  #/live/results  #/live/zone/<id>  #/live/mite/<id>
+//   #/live/open  #/live/label  #/live/results  #/live/zone/<id>  #/live/mite/<id>  #/live/playback
 // the analysis of a folder:
-//   #/open  #/label  #/results  #/zone/<id>  #/mite/<id>
+//   #/open  #/label  #/results  #/zone/<id>  #/mite/<id>  #/playback
 // and calibration (Calibration):
 //   #/cal/open  #/cal/truth/<zone id>/<recording>  #/cal/poke  #/cal/report
 // The recordings kept (RecordingsList) are listed on each mode's first page.
@@ -100,6 +100,11 @@ class Router {
     if (mode === "cal" && switched) groundTruth.reload();
   }
 
+  // The step marked in the header: the playback is a result page with a step of its own.
+  static stepShown(view, step) {
+    return view === "playback" && step === "results" ? "playback" : step;
+  }
+
   route() {
     // The app opens on the camera.
     if (!/^#\/./.test(location.hash)) { location.replace(this.home); return; }
@@ -116,7 +121,7 @@ class Router {
   }
 
   routeAnalysis(view) {
-    const wanted = { open: "open", label: "label", results: "results", zone: "results", mite: "results" }[view] || "open";
+    const wanted = { open: "open", label: "label", results: "results", zone: "results", mite: "results", playback: "results" }[view] || "open";
 
     // Fall back to the furthest stage that has data.
     let step = wanted;
@@ -125,7 +130,7 @@ class Router {
     if (step !== wanted) { location.replace("#/" + step); return; }
 
     this.showView(step);
-    Router.markSteps("steps-analysis", step, { open: true, label: ctx.session, results: ctx.results });
+    Router.markSteps("steps-analysis", Router.stepShown(view, step), { open: true, label: ctx.session, results: ctx.results, playback: ctx.results });
     Charts.hideTooltip();
 
     if (step === "open") recordings.refresh();

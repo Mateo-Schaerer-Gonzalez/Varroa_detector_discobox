@@ -484,19 +484,33 @@ def analysis_mite_clip(session_id: str, recording: int, mite: str):
         raise HTTPException(status_code=400, detail=str(error))
 
 
-@app.get("/api/session/{session_id}/activity-clip/{kind}/{mite}")
-def activity_clip(session_id: str, kind: str, mite: str):
-    """One clip of a fly-off or a rotator, the recordings it spans played one
-    after the other (pipeline.activity_clip). Cached on first request."""
+@app.get("/api/session/{session_id}/playback")
+def playback_timeline(session_id: str):
+    """What the playback page plays of each recording, one after the other."""
     session = get_session(session_id)
     if session.get("live") and not session.get("save_frames"):
-        raise HTTPException(status_code=400, detail="This test run does not save its recordings, so there is no clip to play.")
+        raise HTTPException(status_code=400, detail="This test run does not save its recordings, so there is nothing to play back.")
     results = session_results(session_id)
-    if results is None or "activity" not in results:
+    if results is None:
         raise HTTPException(status_code=400, detail="No results yet.")
     try:
-        return pipeline.activity_clip(session["data_dir"], session["out_dir"], results["activity"], results["times"],
-                                      kind, mite)
+        return pipeline.playback_timeline(session["data_dir"], results)
+    except (FileNotFoundError, ValueError) as error:
+        raise HTTPException(status_code=400, detail=str(error))
+
+
+@app.get("/api/session/{session_id}/playback/{recording}/{zone_id}")
+def playback_sheet(session_id: str, recording: int, zone_id: int):
+    """Every mite of one zone in every frame of one recording, for the playback
+    page (pipeline.playback_sheet). Cached on first request."""
+    session = get_session(session_id)
+    if session.get("live") and not session.get("save_frames"):
+        raise HTTPException(status_code=400, detail="This test run does not save its recordings, so there is nothing to play back.")
+    results = session_results(session_id)
+    if results is None:
+        raise HTTPException(status_code=400, detail="No results yet.")
+    try:
+        return pipeline.playback_sheet(session["data_dir"], session["out_dir"], recording, zone_id, results)
     except (FileNotFoundError, ValueError) as error:
         raise HTTPException(status_code=400, detail=str(error))
 
@@ -512,7 +526,7 @@ def analysis_outlines(session_id: str, recording: int, zone_id: int):
     if results is None:
         raise HTTPException(status_code=400, detail="No results yet.")
     try:
-        return pipeline.analysis_outlines(session["data_dir"], session["out_dir"], recording, zone_id, results["mites"])
+        return pipeline.analysis_outlines(session["data_dir"], session["out_dir"], recording, zone_id, results)
     except (FileNotFoundError, ValueError) as error:
         raise HTTPException(status_code=400, detail=str(error))
 

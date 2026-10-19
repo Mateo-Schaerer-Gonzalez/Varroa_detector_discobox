@@ -28,11 +28,13 @@
     <a href="#/live/open" data-step="open"><span class="step-num">1</span> Camera</a>
     <a href="#/live/label" data-step="label" class="disabled"><span class="step-num">2</span> Plate labels</a>
     <a href="#/live/results" data-step="results" class="disabled"><span class="step-num">3</span> Live results</a>
+    <a href="#/live/playback" data-step="playback" class="disabled"><span class="step-num">4</span> Playback</a>
   </nav>
   <nav id="steps-analysis" class="steps" aria-label="Analysis stages" hidden>
     <a href="#/open" data-step="open"><span class="step-num">1</span> Recordings</a>
     <a href="#/label" data-step="label" class="disabled"><span class="step-num">2</span> Plate labels</a>
     <a href="#/results" data-step="results" class="disabled"><span class="step-num">3</span> Results</a>
+    <a href="#/playback" data-step="playback" class="disabled"><span class="step-num">4</span> Playback</a>
   </nav>
   <nav id="steps-cal" class="steps" aria-label="Calibration stages" hidden>
     <a href="#/cal/open" data-step="open"><span class="step-num">1</span> Calibration data</a>
@@ -114,7 +116,7 @@
   <datalist id="known-labels"></datalist>
 </section>
 
-<!-- 3 · results: overview, one zone, one mite ------------------------------- -->
+<!-- 3 · results: overview, one zone, one mite; 4 · the playback ------------- -->
 <section id="view-results" class="view" hidden>
   <!-- Live only: how the test run is going. The result pages below are the same as for a folder. -->
   <div id="live-panel" class="live-panel" hidden></div>
@@ -389,6 +391,7 @@
 <script src="js/results/review-check.js"></script>
 <script src="js/results/mite-page.js"></script>
 <script src="js/results/activity-section.js"></script>
+<script src="js/results/playback-page.js"></script>
 <script src="js/live/live-run.js"></script>
 <script src="js/live/live-setup-page.js"></script>
 <script src="js/live/live-panel.js"></script>

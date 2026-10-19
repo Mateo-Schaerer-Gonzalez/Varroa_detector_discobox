@@ -1,5 +1,5 @@
 // The result pages, of the analysis of a folder and of a live run alike: the
-// overview, a zone or a mite, as the address bar says. They show `ctx`'s results,
+// overview, a zone, a mite or the playback, as the address bar says. They show `ctx`'s results,
 // in the recording `ctx.shown`.
 
 class ResultsView {
@@ -7,6 +7,7 @@ class ResultsView {
     this.overview = new OverviewPage();
     this.zone = new ZonePage();
     this.mite = new MitePage();
+    this.playback = new PlaybackPage();
     // The index of the first recording new since the page was last drawn, set by
     // the live run for the one drawing that shows it: its points are drawn in.
     this.enterFrom = null;
@@ -27,7 +28,9 @@ class ResultsView {
     const [view, id] = location.hash.replace(/^#\/(live\/)?/, "").split("/");
     player.stop();
     Charts.hideTooltip();
-    if (view === "zone") this.zone.show(Number(id));
+    if (view !== "playback") this.playback.stop();
+    if (view === "playback") this.playback.show();
+    else if (view === "zone") this.zone.show(Number(id));
     else if (view === "mite") this.mite.show(decodeURIComponent(id));
     else this.overview.show();
   }

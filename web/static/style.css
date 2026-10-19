@@ -867,7 +867,27 @@ td.num.error { color: var(--critical); font-weight: 600; }
 .track-label, .track-disturbed text, .track-rotator text { font: 600 22px var(--sans); fill: #ffffff; paint-order: stroke; stroke: var(--ink); stroke-width: 4px; }
 .track-disturbed circle { fill: none; stroke: var(--series-2); stroke-width: 3; }
 .track-rotator circle { fill: none; stroke: var(--series-7); stroke-width: 3; }
-.activity-events { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 16px; margin-bottom: 24px; }
-.activity-card { margin: 0; }
-.activity-text { font-size: 13px; margin: 4px 0 8px; }
-.activity-clip img { width: 100%; height: auto; display: block; image-rendering: pixelated; background: var(--wash); }
+.mover-exit { stroke: var(--ink); stroke-dasharray: 4 3; }
+.rotator-wedge { fill: var(--series-7); fill-opacity: 0.18; }
+.rotator-axis { stroke-width: 1.6; stroke-linecap: round; }
+.rotator-axis.first { stroke: var(--muted); }
+.rotator-axis.last { stroke: var(--series-7); }
+.rotator-pin { fill: var(--ink); }
+.rotator-last { fill: var(--series-7); fill-opacity: 0.12; stroke: var(--series-7); stroke-opacity: 0.55; stroke-width: 1; stroke-linejoin: round; }
+
+/* the playback (js/results/playback-page.js) */
+.playback-bar { position: sticky; top: 0; z-index: 5; display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px;
+  padding: 10px 0; margin-bottom: 4px; background: var(--paper); border-bottom: 1px solid var(--rule); }
+.playback-bar input[type="range"] { flex: 1 1 260px; min-width: 0; }
+.playback-speed { font-size: 13px; }
+.playback-time { font-size: 13px; font-variant-numeric: tabular-nums; min-width: 18em; }
+.playback-zones { display: grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); gap: 16px; margin: 12px 0 24px; }
+.playback-zone { border: 1px solid var(--rule); border-radius: 6px; padding: 10px; }
+.playback-zone-head { font-size: 13px; margin-bottom: 8px; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.playback-mites { display: grid; grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); gap: 8px; }
+.playback-card { display: block; color: var(--text); }
+.playback-card canvas { width: 100%; height: auto; display: block; image-rendering: pixelated; background: #000;
+  border: 3px solid var(--rule); border-radius: 3px; box-sizing: border-box; }
+.playback-card[data-state="moving"] canvas { border-color: var(--moving); }
+.playback-card[data-state="still"] canvas { border-color: var(--still); }
+.playback-card[href]:hover canvas { outline: 2px solid var(--ink); }

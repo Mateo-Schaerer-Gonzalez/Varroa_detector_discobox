@@ -9,6 +9,7 @@ import shutil
 import stat
 from datetime import datetime, timedelta
 
+import cv2
 import numpy as np
 import pytest
 
@@ -212,23 +213,59 @@ def test_of_a_session_of_rois_only_the_mites_clips_play(live_session):
     clip = pipeline.analysis_mite_clip(run_dir, out_dir, 1, mite["id"], results["mites"])
     assert len(clip["frames"]) == 6 and clip["width"] == clip["height"] == 2 * pipeline.MITE_CLIP_REACH
     assert all((out_dir / name).is_file() for name in clip["frames"])
-    assert pipeline.analysis_outlines(run_dir, out_dir, 0, mite["zone_id"], results["mites"])
+    assert pipeline.analysis_outlines(run_dir, out_dir, 0, mite["zone_id"], results)
     recording = pipeline.describe_recording(run_dir)
     assert recording["n_recordings"] == 3 and recording["frames"] == 6
 
 
-@pytest.mark.parametrize("kind", ["rotator", "fly_off"])
-def test_a_rotator_or_a_fly_off_of_a_session_of_rois_plays_its_own_roi_as_saved(live_session, kind):
-    run_dir, out_dir, results, _small = live_session
+def test_the_playback_shows_each_mite_of_a_zone_in_every_frame_as_saved(live_session):
+    run_dir, out_dir, results, small = live_session
+    timeline = pipeline.playback_timeline(run_dir, results)
+    assert [r["frames"] for r in timeline["recordings"]] == [6, 6, 6] and timeline["tile"] == 2 * pipeline.PLAYBACK_REACH
+    assert [m["id"] for m in timeline["mites"]] == [m["id"] for m in results["mites"]]
+    zone = results["mites"][0]["zone_id"]
+    sheet = pipeline.playback_sheet(run_dir, out_dir, 1, zone, results)
+    mites = [m for m in results["mites"] if m["zone_id"] == zone]
+    assert sheet["mites"] == [m["id"] for m in mites] and sheet["frames"] == 6
+    picture = cv2.imread(str(out_dir / sheet["sheet"]), cv2.IMREAD_GRAYSCALE)
+    side, reach = sheet["tile"], pipeline.PLAYBACK_REACH
+    assert picture.shape == (len(mites) * side, 6 * side)
+    loader = RoiRecordings(run_dir)
+    for row, mite in enumerate(mites):
+        x, y = round(mite["x"]), round(mite["y"])
+        x1, y1, x2, y2 = loader.roi_at(mite["x"], mite["y"])
+        x1, y1, x2, y2 = max(x1, x - reach), max(y1, y - reach), min(x2, x + reach), min(y2, y + reach)
+        saved = loader.load_recording_region(loader.recording_names[1], x1, y1, x2, y2)
+        for column in (0, 5):
+            tile = picture[row * side:(row + 1) * side, column * side:(column + 1) * side].astype(int)
+            shown = tile[y1 - (y - reach):y2 - (y - reach), x1 - (x - reach):x2 - (x - reach)]
+            assert np.abs(shown - saved[column]).mean() < 3      # as saved, but for the JPEG
+    assert pipeline.playback_sheet(run_dir, out_dir, 1, zone, results) == sheet
+    with pytest.raises(ValueError):
+        pipeline.playback_sheet(run_dir, out_dir, 1, 999, results)
+
+
+def test_the_playback_of_whole_frames_is_cut_round_each_mite(live_session, tmp_path):
+    _run_dir, _out, results, small = live_session
     mite = results["mites"][0]
-    event = {"id": mite["id"], "zone": mite["zone_id"], "x": mite["x"], "y": mite["y"], "from": 1, "turn": 45,
-             "to": 1, "walked_to": 1, "track": [[1, mite["x"] + 150, mite["y"] + 100]], "near": []}  # walked far off its ROI
-    activity = {"fly_offs": [event] if kind == "fly_off" else [], "rotators": [event] if kind == "rotator" else []}
-    clip = pipeline.activity_clip(run_dir, out_dir, activity, results["times"], kind, mite["id"])
-    x1, y1, x2, y2 = RoiRecordings(run_dir).roi_at(mite["x"], mite["y"])
-    assert (clip["x"], clip["y"]) == (x1, y1) and clip["recordings"] == [0, 2]
-    assert clip["width"] % (x2 - x1) == 0 and clip["height"] * (x2 - x1) == clip["width"] * (y2 - y1)
-    assert all((out_dir / name).is_file() for name in clip["frames"])
+    sheet = pipeline.playback_sheet(small, tmp_path, 0, mite["zone_id"], results)
+    picture = cv2.imread(str(tmp_path / sheet["sheet"]), cv2.IMREAD_GRAYSCALE)
+    x, y, reach, side = round(mite["x"]), round(mite["y"]), pipeline.PLAYBACK_REACH, sheet["tile"]
+    name = sorted(path.name for path in small.iterdir() if path.is_dir())[0]
+    first = cv2.imread(str(sorted((small / name).glob("*.bmp"))[0]), cv2.IMREAD_GRAYSCALE)
+    row = sheet["mites"].index(mite["id"])
+    tile = picture[row * side:(row + 1) * side, :side].astype(int)
+    assert np.abs(tile - first[y - reach:y + reach, x - reach:x + reach]).mean() < 3
+
+
+def test_the_playback_shows_the_fly_offs_too(live_session, tmp_path):
+    _run_dir, _out, results, small = live_session
+    mite = results["mites"][0]
+    flown = {**results, "mites": results["mites"][1:],
+             "activity": {"fly_offs": [{"id": mite["id"], "zone": mite["zone_id"], "x": mite["x"], "y": mite["y"], "from": 1}]}}
+    timeline = pipeline.playback_timeline(small, flown)
+    assert timeline["mites"][-1] == {"id": mite["id"], "zone_id": mite["zone_id"], "flew_off": 1}
+    assert mite["id"] in pipeline.playback_sheet(small, tmp_path, 0, mite["zone_id"], flown)["mites"]
 
 
 def test_a_session_of_rois_opened_by_its_path_is_linked_into_recordings_once(live_session, tmp_path):

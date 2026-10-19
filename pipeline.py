@@ -16,6 +16,8 @@ can never reach into the analysis internals.
     save_review_band(...)      the band around the threshold whose calls are checked by eye, into config.yaml
     review_again(...)          the results of a folder's last run again, with the band as it is now
     analysis_clip(...)         frames of one recording, of one zone or the whole plate
+    playback_timeline(...)     what the playback page plays of each recording, one after the other
+    playback_sheet(...)        every mite of one zone in every frame of one recording, for the playback page
     describe_movement(...)     each mite's, zone's and group's movement numbers, for the pages
     describe_survival(...)     the mites alive over time and the log-rank tests against the
                                negative controls, for results and a time to count a mite dead
@@ -1222,16 +1224,17 @@ def _recording_name(loader, recording):
     return recordings[recording]
 
 
-def analysis_outlines(data_dir, out_dir, recording, zone_id, mites):
+def analysis_outlines(data_dir, out_dir, recording, zone_id, results):
     """What the score sees of each mite of one zone in one recording of an
     analysis, for the result pages to draw over the mites: mite id to
-    OutlineView.describe(), None for a mite it finds no outline of. `mites` are
-    the results' ({id, zone_id, x, y}). Like analysis_clip(), worked out from
-    the frames once, kept in `out_dir` and reused after."""
+    OutlineView.describe(), None for a mite it finds no outline of; the
+    fly-offs' too (_with_fly_offs()). `results` as run_analysis() gives them.
+    Like analysis_clip(), worked out from the frames once, kept in `out_dir`
+    under a name that says where the mites are, and reused after."""
     loader = open_recordings(data_dir)
     source = _recording_name(loader, recording)
-    mites = [mite for mite in mites if mite["zone_id"] == zone_id]
-    manifest = Path(out_dir) / CLIPS_DIRNAME / f"outline_r{recording}_z{zone_id}.json"
+    mites = [mite for mite in _with_fly_offs(results) if mite["zone_id"] == zone_id]
+    manifest = Path(out_dir) / CLIPS_DIRNAME / f"outline_r{recording}_z{zone_id}_{_where_key(mites)}.json"
     if manifest.is_file():
         return json.loads(manifest.read_text(encoding="utf-8"))
     if not mites:
@@ -1285,84 +1288,96 @@ def analysis_mite_clip(data_dir, out_dir, recording, mite_id, mites):
     return _mite_clip(data_dir, {"name": name, "fps": loader.get_fps(name)}, mite, out_dir, f"mite_r{recording}")
 
 
-ACTIVITY_CLIP_FRAMES = 480     # frames in a clip of unusual activity at most; each recording is thinned to fit
-ACTIVITY_CLIP_RECORDINGS = 60   # recordings in one at most
-ACTIVITY_CLIP_REACH = 40        # pixels round the mite, or its track, in the clip
-ACTIVITY_CLIP_WIDTH = 720       # a wider clip is scaled down to this
-ACTIVITY_CLIP_MIN_WIDTH = 320   # a narrower one is scaled up, a whole number of times
-ROTATOR_CLIP_SPAN = 6           # recordings before and after a rotator first turned past the limit
+PLAYBACK_MAX_FRAMES = 100  # frames of one recording in its playback at most; a longer one is thinned to fit
+PLAYBACK_REACH = MITE_CLIP_REACH  # pixels from a mite's centre to the edge of its picture in the playback
 
 
-def activity_clip(data_dir, out_dir, activity, times, kind, mite_id):
-    """One clip of a fly-off or a rotator (results["activity"], see
-    classes/unusual_activity.py), every recording it spans played one after
-    the other, each frame marked with its recording's time (`times`, minutes):
-    a fly-off from the recording before it left to the one after it stopped
-    walking, round its whole track; a rotator ROTATOR_CLIP_SPAN recordings
-    either side of when it first turned past the limit, round the mite. Of a
-    session saved as the mites' ROIs, either is the mite's own ROI, as saved. Like
-    analysis_clip(), written to `out_dir` once and reused after."""
-    events = activity.get("fly_offs" if kind == "fly_off" else "rotators", []) if kind in ("fly_off", "rotator") else []
-    event = next((e for e in events if e["id"] == str(mite_id)), None)
-    if event is None:
-        raise ValueError(f"No {kind.replace('_', '-')} {mite_id} in these results.")
-    n = len(times)
-    if kind == "fly_off":
-        first, last = max(0, event["from"] - 1), min(n - 1, event.get("walked_to", event["to"]) + 1)
-        points = [(x, y) for r, x, y in event["track"] if first <= r <= last] + [(event["x"], event["y"])]
-    else:
-        first, last = max(0, event["from"] - ROTATOR_CLIP_SPAN), min(n - 1, event["from"] + ROTATOR_CLIP_SPAN)
-        points = [(event["x"], event["y"])]
-    last = min(last, first + ACTIVITY_CLIP_RECORDINGS - 1)
+def _playback_step(loader, name):
+    """Every how many frames of recording `name` the playback shows one."""
+    return max(1, int(np.ceil(loader.count_frames(name) / PLAYBACK_MAX_FRAMES)))
+
+
+def _with_fly_offs(results):
+    """The mites of `results` (as run_analysis() gives them), then the
+    fly-offs, which the analysis leaves out, in that order: [{id, zone_id, x,
+    y, flew_off}], `flew_off` the recording a fly-off left its place in, None
+    for the others. The playback shows them all, the drift squares the
+    fly-offs' outlines too."""
+    mites = [{"id": mite["id"], "zone_id": mite["zone_id"], "x": mite["x"], "y": mite["y"], "flew_off": None}
+             for mite in results["mites"]]
+    known = {mite["id"] for mite in mites}
+    mites += [{"id": fly_off["id"], "zone_id": fly_off["zone"], "x": fly_off["x"], "y": fly_off["y"], "flew_off": fly_off["from"]}
+              for fly_off in (results.get("activity") or {}).get("fly_offs", []) if fly_off["id"] not in known]
+    return mites
+
+
+def _where_key(mites):
+    """A short name for where `mites` ({id, x, y}) are, for the file names of
+    what is cut round them: mites detected anew elsewhere get new files."""
+    where = json.dumps([[mite["id"], round(mite["x"]), round(mite["y"])] for mite in mites])
+    return hashlib.sha1(where.encode("utf-8")).hexdigest()[:8]
+
+
+def playback_timeline(data_dir, results):
+    """What the playback page plays of the recordings of an analysis
+    (`results`, as run_analysis() gives them), one after the other: per
+    recording, how many frames it shows and the delay between them (ms) that
+    plays them in real time; the side of a mite's picture (px); and the mites,
+    by zone in their order (_with_fly_offs(), without where they are)."""
     loader = open_recordings(data_dir)
-    # Of a session saved as the mites' ROIs, the clip is the mite's own video, all of it:
-    # a fly-off is seen leaving its place, its walk across the plate was not saved.
-    roi = loader.roi_at(event["x"], event["y"]) if isinstance(loader, RoiRecordings) else None
-    if roi is not None:
-        x1, y1, x2, y2 = roi
-    else:
-        xs, ys = [p[0] for p in points], [p[1] for p in points]
-        x1, y1 = max(0, int(min(xs)) - ACTIVITY_CLIP_REACH), max(0, int(min(ys)) - ACTIVITY_CLIP_REACH)
-        x2, y2 = int(max(xs)) + ACTIVITY_CLIP_REACH, int(max(ys)) + ACTIVITY_CLIP_REACH
-    name = f"activity_{kind}_{re.sub(r'[^0-9A-Za-z]+', '-', str(mite_id))}_r{first}-{last}_x{x1}_y{y1}"
+    recordings = []
+    for name in loader.recording_names:
+        step = _playback_step(loader, name)
+        recordings.append({"frames": len(range(0, loader.count_frames(name), step)),
+                           "interval_ms": int(round(1000 * step / loader.get_fps(name)))})
+    mites = [{key: mite[key] for key in ("id", "zone_id", "flew_off")} for mite in _with_fly_offs(results)]
+    return {"recordings": recordings, "tile": 2 * PLAYBACK_REACH, "mites": mites}
+
+
+def playback_sheet(data_dir, out_dir, recording, zone_id, results):
+    """Every mite of one zone in every frame of one recording, for the playback
+    page: one picture with a row per mite (_with_fly_offs(), the fly-offs
+    too) and a column per frame (as playback_timeline() thins them), each
+    2 * PLAYBACK_REACH pixels square round the mite's centre, black where
+    nothing was saved (of a session saved as the mites' ROIs, beyond the
+    mite's own). `results` as run_analysis() gives them. Returns the picture's
+    file (relative to `out_dir`), the mites in its rows, the side of a square
+    and the frames. Written to out_dir/clips/ once, under a name that says
+    where the mites are, and reused after."""
+    mites = [mite for mite in _with_fly_offs(results) if mite["zone_id"] == zone_id]
+    if not mites:
+        raise ValueError(f"No mites in zone {zone_id}.")
+    loader = open_recordings(data_dir)
+    source = _recording_name(loader, recording)
+    name = f"playback_r{recording}_z{zone_id}_{_where_key(mites)}"
     clips_dir = Path(out_dir) / CLIPS_DIRNAME
     manifest = clips_dir / f"{name}.json"
     if manifest.is_file():
         return json.loads(manifest.read_text(encoding="utf-8"))
 
-    _check_saved(loader, x1, y1, x2, y2)
-    recordings = [_recording_name(loader, recording) for recording in range(first, last + 1)]
-    n_frames = sum(loader.count_frames(recording) for recording in recordings)
-    step = max(1, int(np.ceil(n_frames / ACTIVITY_CLIP_FRAMES)))
+    step, side = _playback_step(loader, source), 2 * PLAYBACK_REACH
+    n_frames = len(range(0, loader.count_frames(source), step))
+    sheet = np.zeros((len(mites) * side, n_frames * side), dtype=np.uint8)
+    for row, mite in enumerate(mites):
+        x, y = int(round(mite["x"])), int(round(mite["y"]))
+        x1, y1, x2, y2 = x - PLAYBACK_REACH, y - PLAYBACK_REACH, x + PLAYBACK_REACH, y + PLAYBACK_REACH
+        cut = [max(0, x1), max(0, y1), x2, y2]
+        if isinstance(loader, RoiRecordings):
+            roi = loader.roi_at(mite["x"], mite["y"])
+            if roi is None:
+                continue
+            cut = [max(cut[0], roi[0]), max(cut[1], roi[1]), min(cut[2], roi[2]), min(cut[3], roi[3])]
+        frames = loader.load_recording_region(source, *cut, step=step)
+        top, left = row * side + cut[1] - y1, cut[0] - x1
+        height, width = frames.shape[1:3]
+        for column, frame in enumerate(frames[:n_frames]):
+            sheet[top:top + height, column * side + left:column * side + left + width] = frame
     clips_dir.mkdir(parents=True, exist_ok=True)
-    names, width, height, fps = [], None, None, None
-    for recording, source in zip(range(first, last + 1), recordings):
-        fps = fps or loader.get_fps(source)
-        for frame in loader.load_recording_region(source, x1, y1, x2, y2, step=step):
-            height, width = frame.shape[:2]
-            scale = min(1.0, ACTIVITY_CLIP_WIDTH / width)
-            if scale < 1:
-                frame = cv2.resize(frame, (round(width * scale), round(height * scale)), interpolation=cv2.INTER_AREA)
-            elif width < ACTIVITY_CLIP_MIN_WIDTH:  # a mite's crop: pixels made larger, so the time fits beside it
-                grow = int(np.ceil(ACTIVITY_CLIP_MIN_WIDTH / width))
-                frame = cv2.resize(frame, (width * grow, height * grow), interpolation=cv2.INTER_NEAREST)
-            frame = np.ascontiguousarray(frame)
-            label = f"{times[recording]:.1f} min"
-            for colour, thickness in (((0, 0, 0), 3), ((255, 255, 255), 1)):
-                cv2.putText(frame, label, (6, frame.shape[0] - 8), cv2.FONT_HERSHEY_SIMPLEX, 0.5, colour, thickness, cv2.LINE_AA)
-            names.append(f"{CLIPS_DIRNAME}/{name}_{len(names):03d}.jpg")
-            _write_image(Path(out_dir) / names[-1], frame, [cv2.IMWRITE_JPEG_QUALITY, 85])
-    clip = {
-        "frames": names,
-        "x": x1,
-        "y": y1,
-        "width": int(width),
-        "height": int(height),
-        "interval_ms": int(round(1000 * step / (fps or 10))),
-        "recordings": [first, last],
-    }
-    manifest.write_text(json.dumps(clip), encoding="utf-8")
-    return clip
+    picture = f"{CLIPS_DIRNAME}/{name}.jpg"
+    _write_image(Path(out_dir) / picture, sheet, [cv2.IMWRITE_JPEG_QUALITY, 85])
+    described = {"sheet": picture, "mites": [mite["id"] for mite in mites], "tile": side, "frames": n_frames}
+    manifest.write_text(json.dumps(described), encoding="utf-8")
+    return described
 
 
 def save_ground_truth(out_dir, truth):

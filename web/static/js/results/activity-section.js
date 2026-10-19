@@ -3,12 +3,13 @@
 //
 // Plate shake: the median shake of the mites per recording, to spot a recording
 // or a stretch of time in which the plate shook, and the mites that drifted
-// furthest from their zone, each as its path (px, py) across the recordings.
+// furthest from their zone, each as its path (px, py) across the recordings,
+// with the fly-offs' paths until they flew off and the way they walked off.
 //
 // Unusual activity: the mites that flew off (came unglued and walked off; left
 // out of the analysis) with their tracks over the plate, the mites that turned
-// where they were (rotators), a clip of each, the recordings of the other mites
-// in which one walked by set aside, and the recordings set aside.
+// where they were (rotators), each as a clock face of its body's turn, and the
+// recordings of the other mites set aside because one walked by.
 
 class ActivitySection {
   // Time runs from light to dark in one hue, as in the notebooks.
@@ -16,7 +17,6 @@ class ActivitySection {
 
   constructor(page) {
     this.page = page;
-    this.players = [];
   }
 
   get results() {
@@ -61,8 +61,9 @@ class ActivitySection {
         `Each mite's path across the recordings: where its image sits against its image in the first recording (px, py, in pixels), from light (first recording) to dark (last), starting on the mite's centre.
         Behind the path, the mite's outline in the first recording, at its own scale (far larger than the path's), to read which way it drifted against its body.
         The mites are ranked by how far they sit from their zone's median path, what the plate under them did
-        (the 95th percentile over the recordings, so one bad measurement does not rank a mite). The fly-offs and the rotators are left out: once a mite has walked or turned,
-        it no longer looks like its first image, and its path says nothing; they are under Unusual activity.
+        (the 95th percentile over the recordings, so one bad measurement does not rank a mite).
+        After them come the fly-offs: each one's path until it flew off, then a dashed black line out of the square the way it walked off
+        (once a mite has walked, it no longer looks like its first image, and its path says nothing). The rotators are left out for the same reason; they are under Unusual activity.
         Select a mite to open it.`, "mover-grid")}</div>`;
 
     const nAside = disturbed.length;
@@ -76,7 +77,12 @@ class ActivitySection {
         `The first frame with the track of every mite that flew off: from where it was detected (its id, white dot) to where it was last followed,
         from light (when it left its place) to dark (when it stopped walking).
         Rings mark the mites it disturbed (their recordings are set aside) and, in purple, the rotators. Hover a track for its times.`, "plate activity-plate")}</div>` : ""}
-      <div id="activity-events" class="activity-events"></div>
+      ${rotators.length ? `<div class="block">${figure("activity-rotators", first + 2 + (flyOffs.length ? 1 : 0), "Rotators",
+        `Each mite whose body turned past ${turnLimit}° where it is, as a clock face: the grey line is the long axis of its body in its first recordings,
+        the purple one in its last, and the shaded wedge the turn between them. Its outline in the first recording is drawn behind,
+        its outline in the last one lighter, both at the first one's scale (far larger than in the picture). A rotator stays in the analysis.
+        Select a mite to open it.`, "mover-grid")}</div>`
+        : `<p class="caption">No mite turned past ${turnLimit}° in these recordings.</p>`}
       ${nAside ? section("Recordings set aside", `<div class="table-wrap"><table id="activity-aside"></table></div>
         <p class="caption">In these recordings the mite's call is set aside: censored, it counts neither as moving nor as still, as a mite marked gone in one recording.
         A mite walked by: a blob that is no mite in its place, and was elsewhere the recording before, came within reach of the patch the mite is scored on,
@@ -94,7 +100,7 @@ class ActivitySection {
     this.drawMovers();
     if (!this.activity.measured) return;
     if (this.activity.fly_offs.length) this.drawTracks();
-    this.drawEvents();
+    if (this.activity.rotators.length) this.drawRotators();
     this.drawAside();
   }
 
@@ -121,7 +127,9 @@ class ActivitySection {
       card.className = "mover-card";
       const known = this.results.mites.some((mite) => mite.id === mover.id);
       if (known) card.href = ctx.href(`mite/${encodeURIComponent(mover.id)}`);
-      card.innerHTML = `<div class="mover-head"><b>Mite ${esc(mover.id)}</b> <span class="muted">zone ${esc(mover.zone)} · ${mover.away.toFixed(2)} px</span></div>`;
+      const flown = mover.flew_off != null;
+      card.innerHTML = `<div class="mover-head"><b>Mite ${esc(mover.id)}</b> <span class="muted">zone ${esc(mover.zone)} · ${
+        flown ? `flew off at ${this.at(mover.flew_off)}` : `${mover.away.toFixed(2)} px`}</span></div>`;
       const points = mover.dx.map((x, i) => (x == null || mover.dy[i] == null ? null : [x, mover.dy[i], i]));
       const shown = points.filter(Boolean);
       // the path starts on the mite's centre, the middle of the square; 99% of it
@@ -140,6 +148,16 @@ class ActivitySection {
         svg.appendChild(PlateView.svgEl("line", { x1: sx(q[0]), y1: sy(q[1]), x2: sx(p[0]), y2: sy(p[1]),
           stroke: ActivitySection.timeColor(p[2] / Math.max(1, n - 1)), class: "mover-step" }));
       });
+      // a fly-off: from where it was last measured, out of the square the way it walked off
+      if (flown && mover.walk) {
+        const [lx, ly] = shown.length ? shown[shown.length - 1] : [ox, oy];
+        const exit = PlateView.svgEl("line", { x1: sx(lx), y1: sy(ly), x2: sx(lx) + mover.walk[0] * 2 * size, y2: sy(ly) + mover.walk[1] * 2 * size,
+          class: "mover-step mover-exit" });
+        const tip = PlateView.svgEl("title", {});
+        tip.textContent = `Mite ${mover.id} walked off this way at ${this.at(mover.flew_off)}`;
+        exit.appendChild(tip);
+        svg.appendChild(exit);
+      }
       const scale = PlateView.svgEl("text", { x: 4, y: size - 4, class: "mover-scale" });
       scale.textContent = `${(2 * half).toFixed(2)} px across`;
       svg.appendChild(scale);
@@ -158,28 +176,42 @@ class ActivitySection {
     const { sessionId } = ctx;
     const plots = [...grid.querySelectorAll(".mover-plot")];
     for (const zone of new Set(plots.map((svg) => svg.dataset.zone))) {
-      let outlines;
-      try {
-        outlines = await readJson(await fetch(`/api/session/${sessionId}/outline/0/${encodeURIComponent(zone)}`));
-      } catch {
-        continue;
-      }
+      const outlines = await this.outlines(0, zone);
       if (!grid.isConnected || ctx.sessionId !== sessionId) return;
+      if (!outlines) continue;
       plots.filter((svg) => svg.dataset.zone === zone).forEach((svg) => {
         const outline = outlines[svg.dataset.miteId];
         if (!outline || !outline.dots.length) return;
-        const size = svg.viewBox.baseVal.width;
-        const reach = Math.max(...outline.dots.map(([x, y]) => Math.hypot(x - outline.x, y - outline.y)));
-        const k = (0.4 * size) / Math.max(reach, 1e-6);
-        const points = outline.dots.map(([x, y]) =>
-          `${(size / 2 + (x - outline.x) * k).toFixed(1)},${(size / 2 + (y - outline.y) * k).toFixed(1)}`).join(" ");
-        const body = PlateView.svgEl("polygon", { points, class: "mover-body" });
+        const body = ActivitySection.outlineShape(outline, svg.viewBox.baseVal.width, "mover-body");
         const tip = PlateView.svgEl("title", {});
-        tip.textContent = `Mite ${svg.dataset.miteId}'s outline in the first recording, ${(2 * reach).toFixed(0)} px across`;
+        tip.textContent = `Mite ${svg.dataset.miteId}'s outline in the first recording, ${(2 * ActivitySection.reach(outline)).toFixed(0)} px across`;
         body.appendChild(tip);
         svg.querySelector(".mover-frame").after(body);
       });
     }
+  }
+
+  // The outlines of the mites of zone `zone` in `recording` (the server's, kept
+  // once worked out), or null where it has none (no frames kept).
+  async outlines(recording, zone) {
+    try {
+      return await readJson(await fetch(`/api/session/${ctx.sessionId}/outline/${recording}/${encodeURIComponent(zone)}`));
+    } catch {
+      return null;
+    }
+  }
+
+  // How far an outline reaches from its centre, in pixels of the recording.
+  static reach(outline) {
+    return Math.max(...outline.dots.map(([x, y]) => Math.hypot(x - outline.x, y - outline.y)), 1e-6);
+  }
+
+  // An outline as a polygon centred in a square of `size`, `k` units a pixel
+  // (by default, reaching 40% of the square).
+  static outlineShape(outline, size, cls, k = (0.4 * size) / ActivitySection.reach(outline)) {
+    const points = outline.dots.map(([x, y]) =>
+      `${(size / 2 + (x - outline.x) * k).toFixed(1)},${(size / 2 + (y - outline.y) * k).toFixed(1)}`).join(" ");
+    return PlateView.svgEl("polygon", { points, class: cls });
   }
 
   // The tracks over the first frame, in picture pixels: an SVG laid over the picture.
@@ -224,65 +256,74 @@ class ActivitySection {
     plate.appendChild(svg);
   }
 
-  // A card per fly-off and per rotator, each with its clip, played at once.
-  drawEvents() {
-    const container = $("activity-events");
-    const { fly_offs: flyOffs, rotators } = this.activity;
-    const events = [
-      ...flyOffs.map((event) => ({ kind: "fly_off", event, title: `Fly-off · mite ${event.id}`,
-        text: `Zone ${esc(event.zone)}. ${event.marked ? "Marked <i>not a mite</i> by hand; " : "Left out of the analysis; "}
-          left its place at ${this.at(event.from)} and walked until ${this.at(event.walked_to)}.
-          ${event.near.length ? `It walked by ${event.near.map((id) => this.miteLink(id)).join(", ")}: those recordings are set aside.` : "It disturbed no other mite."}` })),
-      ...rotators.map((event) => ({ kind: "rotator", event, title: `Rotator · mite ${event.id}`,
-        text: `Zone ${esc(event.zone)}. Its body turned past ${this.activity.turn_limit}° from ${this.at(event.from)}, ${event.turn}° at most.
-          It stays in the analysis: ${this.miteLink(event.id)}.` })),
-    ];
-    if (!events.length) {
-      container.innerHTML = `<p class="caption">No mite flew off or turned in these recordings.</p>`;
-      return;
-    }
-    // Of a session saved as the mites' ROIs, a clip is the mite's own surroundings.
-    const onlyMite = this.page.onlyMiteClips()
-      ? " Only the mites' surroundings are saved of these recordings: it is seen leaving its place, not its walk." : "";
-    container.innerHTML = events.map(({ kind, title, text }, index) => `
-      <figure class="fig activity-card">
-        <div class="fig-title">${esc(title)}</div>
-        <p class="activity-text">${text}${kind === "fly_off" ? onlyMite : ""}</p>
-        <div class="activity-clip" data-index="${index}"><img alt="${esc(title)}" hidden></div>
-        <p class="hint clip-status"><span class="muted">Waiting for the clips before it…</span></p>
-      </figure>`).join("");
-    this.playAll(events, container);
-  }
-
-  // The clips play on their own, cut one after the other so the server is not
-  // asked for all of them at once.
-  async playAll(events, container) {
-    for (const [index, event] of events.entries()) {
-      const wrap = container.querySelector(`.activity-clip[data-index="${index}"]`);
-      if (!wrap || !wrap.isConnected) return;  // the page is gone
-      await this.play(event, wrap, wrap.nextElementSibling);
-    }
-  }
-
-  async play({ kind, event }, wrap, status) {
-    const player = this.players[wrap.dataset.index] || (this.players[wrap.dataset.index] = new ClipPlayer());
-    const img = wrap.querySelector("img");
-    status.className = "hint clip-status";
-    status.innerHTML = `<span class="spinner"></span> Cutting the recordings…`;
-    try {
-      const clip = await player.load(`/api/session/${ctx.sessionId}/activity-clip/${kind}/${encodeURIComponent(event.id)}`, this.page.frameUrl());
-      if (!clip) return;
-      img.hidden = false;
-      const [first, last] = clip.recordings;
-      status.textContent = `${this.at(first)} to ${this.at(last)}: ${last - first + 1} recordings, ${clip.frames.length} frames, looped.`;
-      player.playing = true;
-      player.start(clip, (src) => {
-        if (!img.isConnected) player.stop();  // the page is gone
-        else img.src = src;
+  // A clock face per rotator: the long axis of its body in its first recordings
+  // and in its last through the middle, the turn between them shaded, over its
+  // outline in its first recording and, lighter, in its last.
+  drawRotators() {
+    const grid = $("activity-rotators");
+    grid.innerHTML = "";
+    const size = 150;
+    const middle = size / 2;
+    const hand = 0.47 * size;
+    const along = (degrees, length) => [middle + Math.cos((degrees * Math.PI) / 180) * length, middle + Math.sin((degrees * Math.PI) / 180) * length];
+    this.activity.rotators.forEach((rotator) => {
+      const card = document.createElement("a");
+      card.className = "mover-card";
+      if (this.results.mites.some((mite) => mite.id === rotator.id)) card.href = ctx.href(`mite/${encodeURIComponent(rotator.id)}`);
+      const { angle_first: first, turned: turn } = rotator;
+      card.innerHTML = `<div class="mover-head"><b>Mite ${esc(rotator.id)}</b> <span class="muted">zone ${esc(rotator.zone)} · ${Math.abs(turn).toFixed(0)}° ${
+        turn >= 0 ? "clockwise" : "anticlockwise"} from ${this.at(rotator.from)}</span></div>`;
+      const svg = PlateView.svgEl("svg", { viewBox: `0 0 ${size} ${size}`, class: "mover-plot", role: "img",
+        "aria-label": `Mite ${rotator.id}'s body turned ${Math.abs(turn).toFixed(0)} degrees` });
+      svg.appendChild(PlateView.svgEl("rect", { x: 0, y: 0, width: size, height: size, class: "mover-frame" }));
+      // the wedge on both sides of the middle: an axis has no head and tail
+      [0, 180].forEach((half) => {
+        const [x1, y1] = along(first + half, hand);
+        const [x2, y2] = along(first + turn + half, hand);
+        svg.appendChild(PlateView.svgEl("path", { class: "rotator-wedge",
+          d: `M${middle},${middle} L${x1.toFixed(1)},${y1.toFixed(1)} A${hand},${hand} 0 0 ${turn >= 0 ? 1 : 0} ${x2.toFixed(1)},${y2.toFixed(1)} Z` }));
       });
-    } catch (error) {
-      status.className = "hint clip-status error";
-      status.textContent = error.message;
+      [[first, "rotator-axis first", "first"], [first + turn, "rotator-axis last", "last"]].forEach(([degrees, cls, which]) => {
+        const [x1, y1] = along(degrees, hand);
+        const [x2, y2] = along(degrees + 180, hand);
+        const line = PlateView.svgEl("line", { x1, y1, x2, y2, class: cls });
+        const tip = PlateView.svgEl("title", {});
+        tip.textContent = `The long axis of its body in its ${which} recordings: ${(((degrees % 180) + 180) % 180).toFixed(0)}°`;
+        line.appendChild(tip);
+        svg.appendChild(line);
+      });
+      svg.appendChild(PlateView.svgEl("circle", { cx: middle, cy: middle, r: 2.2, class: "rotator-pin" }));
+      Object.assign(svg.dataset, { miteId: rotator.id, zone: rotator.zone });
+      card.appendChild(svg);
+      grid.appendChild(card);
+    });
+    this.drawRotatorOutlines(grid);
+  }
+
+  // Behind each clock face, the rotator's outline in the first recording it was
+  // measured in and, lighter, in the last, both at the first one's scale.
+  async drawRotatorOutlines(grid) {
+    const { sessionId } = ctx;
+    for (const rotator of this.activity.rotators) {
+      const first = await this.outlines(rotator.first_seen, rotator.zone);
+      const last = await this.outlines(rotator.last_seen, rotator.zone);
+      if (!grid.isConnected || ctx.sessionId !== sessionId) return;
+      const svg = [...grid.querySelectorAll(".mover-plot")].find((plot) => plot.dataset.miteId === rotator.id);
+      const [before, after] = [first?.[rotator.id], last?.[rotator.id]];
+      if (!svg || !before || !before.dots.length) continue;
+      const size = svg.viewBox.baseVal.width;
+      const k = (0.4 * size) / ActivitySection.reach(before);
+      const frame = svg.querySelector(".mover-frame");
+      const shapes = [[before, "mover-body", rotator.first_seen]];
+      if (after && after.dots.length) shapes.push([after, "rotator-last", rotator.last_seen]);
+      // the first drawn over the last, both under the clock's hands
+      shapes.forEach(([outline, cls, recording]) => {
+        const shape = ActivitySection.outlineShape(outline, size, cls, k);
+        const tip = PlateView.svgEl("title", {});
+        tip.textContent = `Mite ${rotator.id}'s outline at ${this.at(recording)}`;
+        shape.appendChild(tip);
+        frame.after(shape);
+      });
     }
   }
 
@@ -293,10 +334,5 @@ class ActivitySection {
       <thead><tr><th>Mite</th><th class="num">Recording</th></tr></thead>
       <tbody>${this.activity.disturbed.map((row) => `<tr>
         <td>${this.miteLink(row.mite)}</td><td class="num">${this.at(row.recording)}</td></tr>`).join("")}</tbody>`;
-  }
-
-  // Stop the clips when the page goes.
-  stop() {
-    this.players.forEach((player) => player && player.stop());
   }
 }

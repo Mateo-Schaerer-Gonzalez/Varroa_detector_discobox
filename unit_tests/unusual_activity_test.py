@@ -68,6 +68,15 @@ class TestFlyOffs:
         faded = mites(lambda mite_id, r: seen(contrast=1.0) if mite_id == "1.1" and 3 <= r < 3 + ABSENT_RUN - 1 else None)
         assert UnusualActivity(faded, short, TIMES).fly_off_ids == set()
 
+    def test_a_fly_off_drifts_until_it_flew_off_then_walks_out(self):
+        drifting = lambda mite_id, r: fly_off_activity(mite_id, r) or seen(dx=0.1 * r)
+        activity = UnusualActivity(mites(drifting), blobs(walker, {"1.1": 4}), TIMES, reach=26)
+        movers = activity.describe()["movers"]
+        flown = [m for m in movers if m.get("flew_off") is not None]
+        assert [m["id"] for m in flown] == ["1.1"] and movers[-1] is flown[0] and len(movers) == len(PLACES)
+        assert flown[0]["flew_off"] == 4 and flown[0]["dx"][:4] == [0.0, 0.1, 0.2, 0.3] and flown[0]["dx"][4:] == [None] * 8
+        assert flown[0]["walk"] == [round(40 / np.hypot(40, 12), 4), round(12 / np.hypot(40, 12), 4)]
+
     def test_without_blobs_nothing_flies_off(self):
         activity = UnusualActivity(mites(fly_off_activity), [], TIMES)
         assert activity.fly_off_ids == set() and not activity.describe()["measured"]
@@ -109,6 +118,14 @@ class TestRotators:
         rotators = activity.describe()["rotators"]
         assert [r["id"] for r in rotators] == ["1.3"] and rotators[0]["turn"] > TURN_LIMIT
         assert activity.fly_off_ids == set()
+        assert rotators[0]["angle_first"] == 45.0 and rotators[0]["angle_last"] == 115.0 and rotators[0]["turned"] == 70.0
+        assert (rotators[0]["first_seen"], rotators[0]["last_seen"]) == (0, len(TIMES) - 1)
+
+    def test_the_last_axis_is_taken_round_half_a_circle(self):
+        # from 170 degrees on to 10 degrees past 180: 20 degrees on, not 160 back
+        turning = mites(lambda mite_id, r: seen(angle=(170.0 + 40 * min(1, max(0, r - 3) / 3)) % 180) if mite_id == "1.3" else None)
+        rotators = UnusualActivity(turning, blobs(), TIMES).describe()["rotators"]
+        assert rotators[0]["angle_first"] == 170.0 and rotators[0]["angle_last"] == 30.0 and rotators[0]["turned"] == 40.0
 
     def test_the_turn_wraps_round_half_a_circle(self):
         # 175 degrees and 5 degrees are the same axis, 10 degrees apart

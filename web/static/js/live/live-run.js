@@ -58,7 +58,7 @@ class LiveRun {
   }
 
   get onResultsPage() {
-    return router.shownMode === "live" && /^#\/live\/(results|zone|mite)/.test(location.hash);
+    return router.shownMode === "live" && /^#\/live\/(results|zone|mite|playback)/.test(location.hash);
   }
 
   get onOpenPage() {
@@ -68,13 +68,13 @@ class LiveRun {
   // --- routing
 
   route(sub = "open") {
-    const wanted = { open: "open", label: "label", results: "results", zone: "results", mite: "results" }[sub] || "open";
+    const wanted = { open: "open", label: "label", results: "results", zone: "results", mite: "results", playback: "results" }[sub] || "open";
     let step = wanted;
     if (step === "results" && !this.started) step = ctx.session ? "label" : "open";
     if (step === "label" && !ctx.session) step = "open";
     if (step !== wanted) { location.replace(`#/live/${step}`); return; }
 
-    this.drawSteps(step);
+    this.drawSteps(Router.stepShown(sub, step));
     Charts.hideTooltip();
     $("live-panel").hidden = step !== "results";
     if (step === "open") { router.showView("live-open"); liveSetup.draw(); }
@@ -92,7 +92,7 @@ class LiveRun {
     // The Live tab says a run is being recorded, whichever mode is shown.
     $("live-link").classList.toggle("recording", this.running);
     $("live-link").title = this.running ? "A test run is being recorded" : "";
-    Router.markSteps("steps-live", step, { open: true, label: this.workspace.session, results: this.started });
+    Router.markSteps("steps-live", step, { open: true, label: this.workspace.session, results: this.started, playback: this.started });
   }
 
   // Before the first recording is analysed, the result pages have nothing to show.
