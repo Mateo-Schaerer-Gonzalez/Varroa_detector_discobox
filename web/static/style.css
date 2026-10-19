@@ -869,6 +869,8 @@ td.num.error { color: var(--critical); font-weight: 600; }
 .track-disturbed circle { fill: none; stroke: var(--series-2); stroke-width: 3; }
 .track-rotator circle { fill: none; stroke: var(--series-7); stroke-width: 3; }
 .mover-exit { stroke: var(--ink); stroke-dasharray: 4 3; }
+.rotator-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 16px; }
+.rotator-card { min-width: 0; }
 
 /* the playback (js/results/playback-page.js) */
 .playback-bar { position: sticky; top: 0; z-index: 5; display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px;

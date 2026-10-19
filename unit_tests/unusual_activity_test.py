@@ -120,17 +120,21 @@ class TestRotators:
         assert activity.fly_off_ids == set()
         assert rotators[0]["angle_first"] == 45.0 and rotators[0]["angle_last"] == 115.0 and rotators[0]["turned"] == 70.0
         assert (rotators[0]["first_seen"], rotators[0]["last_seen"]) == (0, len(TIMES) - 1)
+        turns = rotators[0]["turns"]
+        assert len(turns) == len(TIMES) and turns[0] == 0.0 and turns[-1] == 70.0
+        assert all(a <= b for a, b in zip(turns, turns[1:]))  # turning one way, step by step
 
     def test_the_last_axis_is_taken_round_half_a_circle(self):
         # from 170 degrees on to 10 degrees past 180: 20 degrees on, not 160 back
         turning = mites(lambda mite_id, r: seen(angle=(170.0 + 40 * min(1, max(0, r - 3) / 3)) % 180) if mite_id == "1.3" else None)
         rotators = UnusualActivity(turning, blobs(), TIMES).describe()["rotators"]
         assert rotators[0]["angle_first"] == 170.0 and rotators[0]["angle_last"] == 30.0 and rotators[0]["turned"] == 40.0
+        assert rotators[0]["turns"][-1] == 40.0
 
     def test_a_mite_turning_anticlockwise_turns_below_zero(self):
         turning = mites(lambda mite_id, r: seen(angle=100.0 - 50 * min(1, max(0, r - 3) / 3)) if mite_id == "1.3" else None)
         rotators = UnusualActivity(turning, blobs(), TIMES).describe()["rotators"]
-        assert rotators[0]["turned"] == -50.0
+        assert rotators[0]["turned"] == -50.0 and rotators[0]["turns"][-1] == -50.0
 
     def test_the_turn_wraps_round_half_a_circle(self):
         # 175 degrees and 5 degrees are the same axis, 10 degrees apart

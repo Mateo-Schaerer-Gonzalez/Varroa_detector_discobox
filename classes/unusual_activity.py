@@ -335,15 +335,18 @@ class UnusualActivity:
         """The long axis of rotator `m`'s body in its first and its last
         AWAY_COUNT recordings it was measured in (degrees, 0 to 180, median of
         each), the turn from the one to the other the short way round (degrees,
-        clockwise on the picture positive), and the recordings it was first and
-        last measured in."""
+        clockwise on the picture positive), the recordings it was first and
+        last measured in, and `turns`: per recording, the turn from its first
+        recordings the same way, smoothed as _turns() is (None where unknown)."""
         angle = self.values["angle"][m]
         seen = np.flatnonzero(~np.isnan(angle))
         start = float(np.median(angle[seen[:AWAY_COUNT]]))
-        turn = (angle[seen[-AWAY_COUNT:]] - start + 90) % 180 - 90  # signed, round half a circle
-        turned = float(np.median(turn))
+        signed = (angle - start + 90) % 180 - 90  # signed, round half a circle
+        turned = float(np.median(signed[seen[-AWAY_COUNT:]]))
+        smooth = pd.Series(signed).rolling(5, center=True, min_periods=1).median().to_numpy()
         return {"angle_first": round(start % 180, 1), "angle_last": round((start + turned) % 180, 1), "turned": round(turned, 1),
-                "first_seen": int(seen[0]), "last_seen": int(seen[-1])}
+                "first_seen": int(seen[0]), "last_seen": int(seen[-1]),
+                "turns": [None if np.isnan(v) else round(float(v), 1) for v in smooth]}
 
     def describe(self):
         """The unusual activity for the result pages."""

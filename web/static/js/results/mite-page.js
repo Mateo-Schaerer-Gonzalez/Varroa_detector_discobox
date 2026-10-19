@@ -25,12 +25,10 @@ class MitePage extends ResultsPage {
       nAside ? `set aside in ${nAside} more (disturbed)` : "",
     ].filter(Boolean).join(", ");
     const review = new ReviewCheck(this);
-    const activity = new ActivitySection(this);
     const body = this.body;
     body.innerHTML = `
     ${this.staleBanner()}
     ${review.miteNote(mite)}
-    ${activity.miteNote(mite)}
     <header class="page-head">
       <div>
         <h1>Mite ${this.miteId(mite)}</h1>
@@ -72,7 +70,6 @@ class MitePage extends ResultsPage {
         One gone from a recording on leaves the survival numbers at the recording before, alive as far as is known, unless it counted as dead by then.</p>`)}`;
     this.wire(body);
     review.wireMite(body, mite);
-    activity.wireMite(body);
     body.querySelectorAll("[data-correct]").forEach((select) => {
       // the row's click and Enter show the recording
       ["click", "keydown"].forEach((type) => select.addEventListener(type, (event) => event.stopPropagation()));
