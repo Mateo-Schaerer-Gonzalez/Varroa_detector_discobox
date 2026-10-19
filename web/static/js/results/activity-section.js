@@ -58,9 +58,9 @@ class ActivitySection {
         Each mite's patch is moved back by the plate's shift, the median of all the mites' own, before it is scored.
         Click a time to show that recording.${this.page.stillToCome()}`)}</div>
       <div class="block">${figure("activity-movers", first + 1, `The ${movers.length} mites that drifted furthest`,
-        `Each mite's path across the recordings: where its image sits against its image in the first recording (px, py, in pixels), from light (first recording) to dark (last).
-        The dashed grey path is the median of its zone, what the plate under it did; a glued mite follows it.
-        Behind the path, the mite's outline in the first recording, at its own scale (far larger than the path's), to read which way it drifted against its body. The mites are ranked by how far they sit from their zone's path
+        `Each mite's path across the recordings: where its image sits against its image in the first recording (px, py, in pixels), from light (first recording) to dark (last), starting on the mite's centre.
+        Behind the path, the mite's outline in the first recording, at its own scale (far larger than the path's), to read which way it drifted against its body.
+        The mites are ranked by how far they sit from their zone's median path, what the plate under them did
         (the 95th percentile over the recordings, so one bad measurement does not rank a mite). The fly-offs and the rotators are left out: once a mite has walked or turned,
         it no longer looks like its first image, and its path says nothing; they are under Unusual activity.
         Select a mite to open it.`, "mover-grid")}</div>`;
@@ -111,7 +111,7 @@ class ActivitySection {
     });
   }
 
-  // One small square per mite, its path coloured by time over its zone's, dashed.
+  // One small square per mite, its path coloured by time from its centre.
   drawMovers() {
     const grid = $("activity-movers");
     grid.innerHTML = "";
@@ -123,25 +123,18 @@ class ActivitySection {
       if (known) card.href = ctx.href(`mite/${encodeURIComponent(mover.id)}`);
       card.innerHTML = `<div class="mover-head"><b>Mite ${esc(mover.id)}</b> <span class="muted">zone ${esc(mover.zone)} · ${mover.away.toFixed(2)} px</span></div>`;
       const points = mover.dx.map((x, i) => (x == null || mover.dy[i] == null ? null : [x, mover.dy[i], i]));
-      const zone = mover.zone_dx.map((x, i) => (x == null || mover.zone_dy[i] == null ? null : [x, mover.zone_dy[i]]));
-      const seen = [...points, ...zone].filter(Boolean);
-      // 98% of the path on the square: one far-off registration does not shrink the rest
-      const range = (k) => {
-        const values = seen.map((p) => p[k]).sort((a, b) => a - b);
-        return [values[Math.floor(values.length * 0.01)], values[Math.ceil(values.length * 0.99) - 1]];
-      };
-      const [[x0, x1], [y0, y1]] = [range(0), range(1)];
-      const half = Math.max((x1 - x0) / 2, (y1 - y0) / 2, 0.25) * 1.15;
-      const [cx, cy] = [(x0 + x1) / 2, (y0 + y1) / 2];
+      const shown = points.filter(Boolean);
+      // the path starts on the mite's centre, the middle of the square; 99% of it
+      // on the square, so one far-off registration does not shrink the rest
+      const [ox, oy] = shown.length ? shown[0] : [0, 0];
+      const reach = shown.map((p) => Math.max(Math.abs(p[0] - ox), Math.abs(p[1] - oy))).sort((a, b) => a - b);
+      const half = Math.max(reach.length ? reach[Math.ceil(reach.length * 0.99) - 1] : 0, 0.25) * 1.15;
       const size = 150;
-      const sx = (x) => ((x - cx + half) / (2 * half)) * size;
-      const sy = (y) => ((y - cy + half) / (2 * half)) * size;
+      const sx = (x) => ((x - ox + half) / (2 * half)) * size;
+      const sy = (y) => ((y - oy + half) / (2 * half)) * size;
       const svg = PlateView.svgEl("svg", { viewBox: `0 0 ${size} ${size}`, class: "mover-plot", role: "img",
         "aria-label": `Path of mite ${mover.id} across the recordings` });
       svg.appendChild(PlateView.svgEl("rect", { x: 0, y: 0, width: size, height: size, class: "mover-frame" }));
-      const path = (list) => list.filter(Boolean).map((p, i) => `${i ? "L" : "M"}${sx(p[0]).toFixed(1)},${sy(p[1]).toFixed(1)}`).join("");
-      svg.appendChild(PlateView.svgEl("path", { d: path(zone), class: "mover-zone" }));
-      const shown = points.filter(Boolean);
       shown.slice(1).forEach((p, i) => {
         const q = shown[i];
         svg.appendChild(PlateView.svgEl("line", { x1: sx(q[0]), y1: sy(q[1]), x2: sx(p[0]), y2: sy(p[1]),

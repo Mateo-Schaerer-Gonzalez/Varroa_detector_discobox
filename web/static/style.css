@@ -856,7 +856,6 @@ td.num.error { color: var(--critical); font-weight: 600; }
 .mover-plot { width: 100%; height: auto; display: block; }
 .mover-frame { fill: var(--paper); stroke: var(--rule); }
 .mover-body { fill: var(--rule); fill-opacity: 0.35; stroke: var(--muted); stroke-width: 1; stroke-linejoin: round; }
-.mover-zone { fill: none; stroke: var(--series-other); stroke-width: 1; stroke-dasharray: 3 2; }
 .mover-step { stroke-width: 1.4; stroke-linecap: round; }
 .mover-scale { font-size: 9px; fill: var(--muted); }
 .activity-plate { position: relative; max-width: 1100px; }
