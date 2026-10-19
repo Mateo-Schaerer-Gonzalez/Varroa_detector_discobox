@@ -59,7 +59,8 @@ class ActivitySection {
         Click a time to show that recording.${this.page.stillToCome()}`)}</div>
       <div class="block">${figure("activity-movers", first + 1, `The ${movers.length} mites that drifted furthest`,
         `Each mite's path across the recordings: where its image sits against its image in the first recording (px, py, in pixels), from light (first recording) to dark (last).
-        The dashed grey path is the median of its zone, what the plate under it did; a glued mite follows it. The mites are ranked by how far they sit from their zone's path
+        The dashed grey path is the median of its zone, what the plate under it did; a glued mite follows it.
+        Behind the path, the mite's outline in the first recording, at its own scale (far larger than the path's), to read which way it drifted against its body. The mites are ranked by how far they sit from their zone's path
         (the 95th percentile over the recordings, so one bad measurement does not rank a mite). The fly-offs and the rotators are left out: once a mite has walked or turned,
         it no longer looks like its first image, and its path says nothing; they are under Unusual activity.
         Select a mite to open it.`, "mover-grid")}</div>`;
@@ -149,9 +150,43 @@ class ActivitySection {
       const scale = PlateView.svgEl("text", { x: 4, y: size - 4, class: "mover-scale" });
       scale.textContent = `${(2 * half).toFixed(2)} px across`;
       svg.appendChild(scale);
+      svg.dataset.miteId = mover.id;
+      svg.dataset.zone = mover.zone;
       card.appendChild(svg);
       grid.appendChild(card);
     });
+    this.drawMoverOutlines(grid);
+  }
+
+  // Behind each path, the mite's outline in the first recording (classes/outline_view.py),
+  // at its own scale and centred, to read which way the path runs against its body.
+  // Where the server has no outline (no frames kept), the path stays alone.
+  async drawMoverOutlines(grid) {
+    const { sessionId } = ctx;
+    const plots = [...grid.querySelectorAll(".mover-plot")];
+    for (const zone of new Set(plots.map((svg) => svg.dataset.zone))) {
+      let outlines;
+      try {
+        outlines = await readJson(await fetch(`/api/session/${sessionId}/outline/0/${encodeURIComponent(zone)}`));
+      } catch {
+        continue;
+      }
+      if (!grid.isConnected || ctx.sessionId !== sessionId) return;
+      plots.filter((svg) => svg.dataset.zone === zone).forEach((svg) => {
+        const outline = outlines[svg.dataset.miteId];
+        if (!outline || !outline.dots.length) return;
+        const size = svg.viewBox.baseVal.width;
+        const reach = Math.max(...outline.dots.map(([x, y]) => Math.hypot(x - outline.x, y - outline.y)));
+        const k = (0.4 * size) / Math.max(reach, 1e-6);
+        const points = outline.dots.map(([x, y]) =>
+          `${(size / 2 + (x - outline.x) * k).toFixed(1)},${(size / 2 + (y - outline.y) * k).toFixed(1)}`).join(" ");
+        const body = PlateView.svgEl("polygon", { points, class: "mover-body" });
+        const tip = PlateView.svgEl("title", {});
+        tip.textContent = `Mite ${svg.dataset.miteId}'s outline in the first recording, ${(2 * reach).toFixed(0)} px across`;
+        body.appendChild(tip);
+        svg.querySelector(".mover-frame").after(body);
+      });
+    }
   }
 
   // The tracks over the first frame, in picture pixels: an SVG laid over the picture.

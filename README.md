@@ -208,7 +208,9 @@ threshold calibrated on still ground truth holds on a shaking plate. The
 results overview shows the shake: the median over the mites of how far each
 one's own patch moved within each recording, recording by recording, to spot a
 recording or a stretch of time in which the plate shook, and the 10 mites that
-drifted furthest from their zone across the recordings, each as its path. The
+drifted furthest from their zone across the recordings, each as its path over
+its outline in the first recording (at the outline's own scale, to read which
+way it drifted against its body). The
 *Stabilize plate* checkbox next to the metric on the calibration report tries
 it on or off with *Score again*; saving a threshold saves it with the metric.
 `python scripts/shake_robustness.py` shakes the saved ground truth by
