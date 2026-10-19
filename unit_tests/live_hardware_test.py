@@ -225,6 +225,39 @@ def test_switching_sends_what_the_discobox_app_sends():
     assert lights.state()["vent"] == {"on": False, "level": 200}
 
 
+def test_leds_kept_on_are_told_again_until_released():
+    port = Port()
+    lights = Lights(connection=port)
+    lights.on["led1"] = True  # believed on, though the controller may have missed it: told all the same
+    lights.keep_on({"led1": 120, "led2": 200}, every=0.02)
+    told = packet("led1_on_off", 1) + packet("led1", 120) + packet("led2_on_off", 1) + packet("led2", 200)
+    assert port.sent == told
+    lights.set_level("led2", 90)  # a reminder is at the intensity set since
+    time.sleep(0.15)
+    assert port.sent.count(packet("led1_on_off", 1)) > 2 and packet("led2", 90) in port.sent
+    lights.switch_off("led2")  # one switched off is not kept on
+    time.sleep(0.06)
+    after = len(port.sent)
+    time.sleep(0.06)
+    assert packet("led2_on_off", 1) not in port.sent[after:] and packet("led1_on_off", 1) in port.sent[after:]
+    lights.all_off()  # nothing is sent once the run has the lights
+    sent = port.sent
+    time.sleep(0.1)
+    assert port.sent == sent and not any(lights.on.values())
+
+
+def test_the_first_command_waits_for_the_controller_to_start(monkeypatch):
+    port = Port()
+    lights = Lights(connection=port)
+    lights._ready_at = time.monotonic() + 0.2  # as on a port just opened
+    started = time.monotonic()
+    lights.switch("led1", True, 255)
+    assert time.monotonic() - started >= 0.18 and port.sent
+    started = time.monotonic()
+    lights.switch("led2", True, 255)
+    assert time.monotonic() - started < 0.1
+
+
 def test_without_a_controller_every_command_does_nothing():
     lights = NoLights()
     lights.switch("led2", True, 10)
@@ -580,6 +613,20 @@ def test_both_leds_are_on_from_connecting_until_the_run_starts(tmp_path, monkeyp
         lights.switch_off("led2")
         pipeline._light_for_labelling(pipeline._live["leds"])
         assert pipeline.live_status("leds")["lights"]["led2"] == {"on": True, "level": 200}
+        # Until the run starts both are kept on, told again even when believed on.
+        assert lights._kept == {"led1", "led2"} and lights._keeper is not None
+        port = lights.connection
+        port.sent = b""
+        pipeline._light_for_labelling(pipeline._live["leds"])
+        assert packet("led1_on_off", 1) + packet("led1", 60) in port.sent
+        # A start that fails leaves them on.
+        def refuse():
+            raise ValueError("cannot start")
+        monkeypatch.setattr(pipeline._live["leds"].session, "start", refuse)
+        with pytest.raises(ValueError, match="cannot start"):
+            pipeline.start_live("leds")
+        state = pipeline.live_status("leds")["lights"]
+        assert state["led1"]["on"] and state["led2"]["on"] and lights._keeper is not None
     finally:
         pipeline.close_live("leds")
     assert not any(lights.on.values())

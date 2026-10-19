@@ -11,6 +11,7 @@ does nothing -- as the Discobox app does when it finds no Arduino.
 
 import logging
 import threading
+import time
 
 _logger = logging.getLogger(__name__)
 
@@ -27,6 +28,11 @@ COMMANDS = {
 DEVICES = ("vent", "led1", "led2")
 DEVICE_NAMES = {"vent": "Fan", "led1": "LED 1", "led2": "LED 2"}
 BAUD_RATE = 9600
+# An Arduino restarts when its port is opened, and what it is sent before it is
+# up again is lost: the first command waits this long after the port opened.
+BOOT_SECONDS = 2.0
+# Seconds between two reminders to the devices kept on (Lights.keep_on()).
+KEEP_ON_EVERY = 5.0
 
 
 def packet(command, value):
@@ -76,12 +82,17 @@ class Lights:
         self.port = port
         self._lock = threading.Lock()
         self._reading = False
+        self._ready_at = 0.0
+        self._keep_lock = threading.Lock()
+        self._kept = set()
+        self._keeper = None  # the event that stops the reminders of keep_on()
         self.on = {device: False for device in DEVICES}
         self.level = {device: 0 for device in DEVICES}
         if connection is None:
             import serial
 
             connection = serial.Serial(port=port, baudrate=BAUD_RATE)
+            self._ready_at = time.monotonic() + BOOT_SECONDS
             # The Discobox app keeps reading what the Arduino sends, so its buffer never fills.
             self._reading = True
             threading.Thread(target=self._drain, args=(connection,), daemon=True).start()
@@ -100,6 +111,9 @@ class Lights:
 
     def _send(self, *packets):
         with self._lock:
+            wait = self._ready_at - time.monotonic()
+            if wait > 0:
+                time.sleep(wait)
             for data in packets:
                 self.connection.write(data)
             self.connection.flush()
@@ -121,10 +135,52 @@ class Lights:
         self.level[device] = level
 
     def switch_off(self, device):
+        with self._keep_lock:
+            self._kept.discard(device)
         self._send(packet(f"{device}_on_off", 0x00))
         self.on[device] = False
 
+    def keep_on(self, levels, every=KEEP_ON_EVERY):
+        """Switch on each device of `levels` (device -> intensity), even one this
+        believes on, and keep it on until it is switched off, release() or
+        all_off(): it is told again every `every` seconds at its intensity then,
+        so a command the controller missed, or a restart of the controller,
+        leaves it dark for a few seconds at most."""
+        with self._keep_lock:
+            for device, level in levels.items():
+                self.switch(device, True, level)
+            self._kept.update(levels)
+            if self._keeper is None:
+                self._keeper = threading.Event()
+                threading.Thread(target=self._keep_on, args=(self._keeper, every), name="lights-keep-on",
+                                 daemon=True).start()
+
+    def _keep_on(self, stop, every):
+        failing = False
+        while not stop.wait(every):
+            with self._keep_lock:
+                if stop.is_set():
+                    return
+                try:
+                    for device in self._kept:
+                        self.switch(device, True)
+                    failing = False
+                except Exception:
+                    if not failing:
+                        _logger.exception("Could not switch %s on again", ", ".join(sorted(self._kept)))
+                    failing = True
+
+    def release(self):
+        """Stop keeping devices on (keep_on()); they stay as they are. Once this
+        returns, no reminder is sent any more."""
+        with self._keep_lock:
+            if self._keeper is not None:
+                self._keeper.set()
+            self._keeper = None
+            self._kept = set()
+
     def all_off(self):
+        self.release()
         self._send(packet("all_off", 0x00))
         for device in DEVICES:
             self.on[device] = False

@@ -230,7 +230,8 @@ counts it again. A mite whose body turns by more than 30° where it is, a
 *rotator*, stays in the analysis. The results overview lists them under
 *Unusual activity*: the tracks of the fly-offs on the plate, the mites they
 disturbed, the recordings set aside, and for each fly-off and rotator a clip of
-every recording it spans, played one after the other. What is measured for this
+every recording it spans, played one after the other (a rotator's starts on its
+own, a fly-off's on request). What is measured for this
 is kept with the scores, so a run read back from them has it too.
 
 **Scores on one scale per mite.** A still mite does not score 0: camera noise
@@ -300,7 +301,11 @@ is analysed as soon as it is in, and the usual result pages fill in as the run g
 
 1. **Camera**: name the run and *Connect*: the camera and the Discobox's
    Arduino are found by themselves, and both LEDs come on so the plates can be
-   seen; they stay on until the run starts. The camera's image shows at once.
+   seen; they stay on until the run starts. The Arduino restarts when its port
+   opens, so the first command waits 2 s for it; until the run starts, both LEDs
+   are told again every 5 s, and once more before the mites are detected for
+   labelling, so a command it missed leaves them dark a few seconds at most. A
+   start that fails leaves them on. The camera's image shows at once.
    The run's name, whether its recordings are saved and every setting can
    still be changed after connecting, until the test run starts. The test run's settings are the
    Discobox app's (time between recordings, fan and LED durations and

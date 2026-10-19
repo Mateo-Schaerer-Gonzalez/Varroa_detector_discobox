@@ -168,8 +168,8 @@ class CameraSource(LiveSource):
 
     def open(self):
         """Start the camera and the live feed; nothing is recorded yet."""
+        self.camera.open()  # first: meanwhile the controller, whose port has just opened, starts up
         self.lights.all_off()
-        self.camera.open()
         self._router = threading.Thread(target=self._route, name="frame-router", daemon=True)
         self._router.start()
 

@@ -196,7 +196,8 @@ class ActivitySection {
     plate.appendChild(svg);
   }
 
-  // A card per fly-off and per rotator, each with its clip, played on request.
+  // A card per fly-off and per rotator, each with its clip: a fly-off's played on
+  // request, a rotator's at once.
   drawEvents() {
     const container = $("activity-events");
     const { fly_offs: flyOffs, rotators } = this.activity;
@@ -220,14 +221,27 @@ class ActivitySection {
         <div class="fig-title">${esc(title)}</div>
         <p class="activity-text">${text}</p>
         <div class="activity-clip" data-index="${index}"><img alt="${esc(title)}" hidden></div>
-        <p class="hint clip-status">${playable(kind) ? `<button type="button" class="secondary small" data-play="${index}">Play the recordings</button>
-          <span class="muted">${kind === "fly_off" ? "from the recording before it left to the one after it stopped" : "the recordings around its turn"}, one after the other</span>`
+        <p class="hint clip-status">${kind === "rotator" ? `<span class="muted">Waiting for the clips before it…</span>`
+          : playable(kind) ? `<button type="button" class="secondary small" data-play="${index}">Play the recordings</button>
+          <span class="muted">from the recording before it left to the one after it stopped, one after the other</span>`
           : `<span class="muted">Only the mites' surroundings are saved of these recordings, so its walk cannot be played.</span>`}</p>
       </figure>`).join("");
+    const clip = (index) => [events[index], container.querySelector(`.activity-clip[data-index="${index}"]`)];
     container.querySelectorAll("[data-play]").forEach((button) => button.addEventListener("click", () => {
-      const index = Number(button.dataset.play);
-      this.play(events[index], container.querySelector(`.activity-clip[data-index="${index}"]`), button.closest(".clip-status"));
+      this.play(...clip(Number(button.dataset.play)), button.closest(".clip-status"));
     }));
+    this.playRotators(events, clip);
+  }
+
+  // The rotators' clips play on their own, cut one after the other so the
+  // server is not asked for all of them at once.
+  async playRotators(events, clip) {
+    for (const [index, { kind }] of events.entries()) {
+      if (kind !== "rotator") continue;
+      const [event, wrap] = clip(index);
+      if (!wrap.isConnected) return;  // the page is gone
+      await this.play(event, wrap, wrap.nextElementSibling);
+    }
   }
 
   async play({ kind, event }, wrap, status) {

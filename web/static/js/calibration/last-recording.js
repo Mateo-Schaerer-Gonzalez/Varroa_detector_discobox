@@ -62,24 +62,26 @@ class LastRecording {
     legend("last-detector", calls(""));
 
     const svgs = [detector];
-    if (last.circles) {
+    // The benchmark's calls are kept without the frames; its circles are drawn
+    // from the frames, so a run saved as the mites' ROIs has calls but no circles.
+    if (r.benchmark && last.mites.every((mite) => mite.benchmark_call)) {
       const benchmark = plate("last-benchmark");
       last.mites.forEach((mite) => benchmark.appendChild(this.box(r, dataset, mite, mite.benchmark_call,
         `called ${mite.benchmark_call} by the benchmark · the detector calls it ${mite.call}`)));
-      last.circles.forEach(([cx, cy]) => benchmark.appendChild(
+      (last.circles || []).forEach(([cx, cy]) => benchmark.appendChild(
         PlateView.svgEl("circle", { cx, cy, r: last.circle_radius, class: "benchmark-circle" })));
-      $("last-benchmark-caption").innerHTML = `${where}: ${last.circles.length} circle${last.circles.length === 1 ? "" : "s"}, the benchmark's count of mites alive;
-        ${count("benchmark_call")} of ${last.mites.length} detected mites called moving.`;
+      const moving = `${count("benchmark_call")} of ${last.mites.length} detected mites called moving`;
+      $("last-benchmark-caption").innerHTML = last.circles
+        ? `${where}: ${last.circles.length} circle${last.circles.length === 1 ? "" : "s"}, the benchmark's count of mites alive; ${moving}.`
+        : `${where}: ${moving}, drawn on the first frame. The frames of this recording are gone, so the benchmark's circles cannot be drawn.`;
       legend("last-benchmark", [
-        { name: `the benchmark's circles (${last.circles.length})`, color: LastRecording.CIRCLE_COLOR, shape: "ring" },
+        ...(last.circles ? [{ name: `the benchmark's circles (${last.circles.length})`, color: LastRecording.CIRCLE_COLOR, shape: "ring" }] : []),
         ...calls(" by the benchmark"),
       ]);
       svgs.push(benchmark);
     } else {
       $("last-benchmark").innerHTML = "";
-      $("last-benchmark-caption").innerHTML = r.benchmark
-        ? "The frames of this recording are gone, so the benchmark has nothing to draw on."
-        : "The benchmark has not been run on these datasets.";
+      $("last-benchmark-caption").innerHTML = "The benchmark has not been run on these datasets.";
     }
 
     $("last-dataset")?.addEventListener("change", (event) => {

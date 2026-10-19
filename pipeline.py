@@ -2975,14 +2975,15 @@ def _get_live(live_id):
 
 
 def _leds_on(lights, settings):
-    """Switch on the LEDs that are off, at their set intensity. True if any was
-    off. A failure is only logged: the camera works without its light."""
+    """Switch both LEDs on, one that is off at its set intensity, and keep them
+    on until the run starts (Lights.keep_on()): they are told again even when
+    believed on, as the controller may have missed it. True if either was off.
+    A failure is only logged: the camera works without its light."""
     if not lights.connected:
         return False
     off = [device for device in LEDS if not lights.on[device]]
     try:
-        for device in off:
-            lights.switch(device, True, getattr(settings, device))
+        lights.keep_on({device: getattr(settings, device) if device in off else lights.level[device] for device in LEDS})
     except Exception:
         _logger.exception("Could not switch the LEDs on")
         return False
@@ -3149,19 +3150,21 @@ def start_live(live_id, labels=None):
         raise ValueError("This test run has already been started.")
     if labels is not None:
         save_labels(run.run_dir, labels)
-    run.lights.all_off()  # the LEDs, and the fan if it was switched on to check it: the test run's from here on
     (run.run_dir / SETTINGS_FILENAME).write_text(run.source.settings_text, encoding="utf-8")
     if run.save_frames:
         RoiVideo.check_codec(run.run_dir)
     run.session.recorder = Recorder(run.run_dir) if run.save_frames else None
     run.started_at = datetime.now().isoformat(timespec="seconds")
     _write_run_info(run)
+    run.lights.all_off()  # the LEDs, and the fan if it was switched on to check it: the test run's from here on
     try:
         run.session.start()
     except Exception:
         if run.session.recorder is not None:
             run.session.recorder.close()
             run.session.recorder = None
+        if run.session.state == "ready":  # not started: still setting up, so lit
+            _leds_on(run.lights, run.source.settings)
         raise
     return live_status(live_id)
 
