@@ -12,6 +12,7 @@ class ReportPage {
   constructor() {
     this.figures = new ReportFigures();
     this.lastRecording = new LastRecording();
+    this.wrongCalls = new WrongCalls();
   }
 
   static thr(value) {
@@ -128,10 +129,6 @@ class ReportPage {
         ${left ? `<p class="meta">${left}</p>` : ""}
       </div>
       <div class="row">
-        <div class="segmented" role="group" aria-label="Report">
-          <button type="button" data-mode="calibrate" class="small ${testing ? "secondary" : ""}">Calibration</button>
-          <button type="button" data-mode="test" class="small ${testing ? "" : "secondary"}">Test</button>
-        </div>
         ${cal.data ? '<a class="button secondary small" href="#/cal/truth">Edit ground truth</a>' : ""}
         ${cal.data && testing ? '<a class="button secondary small" href="#/cal/poke">Poke test</a>' : ""}
       </div>
@@ -150,14 +147,6 @@ class ReportPage {
       <li><a href="${cal.fileUrl(r.excel)}" download>${esc(r.excel)}</a>
         <span class="muted">every labelled mite-recording with its score and outcome, the fraction moving per recording, the ROC curve and the summary</span></li></ul>`)}`;
 
-    body.querySelectorAll(".segmented [data-mode]").forEach((button) => button.addEventListener("click", () => {
-      cal.setMode(button.dataset.mode);
-      this.draw();
-      // A report asked for on the calibration tab came without the benchmark.
-      if (cal.mode === "test" && !cal.report.benchmark) {
-        cal.reportAgain("benchmark-status", () => {}, "Running the benchmark… the first time a dataset meets it this takes about a minute.");
-      }
-    }));
     $("report-refresh")?.addEventListener("click", () => cal.evaluate());
     this.wireDatasetPicker();
     if (!testing) this.wireScorePicker(r);
@@ -285,7 +274,8 @@ class ReportPage {
       <div class="grid-2">
         ${figure("confusion", 1, "Confusion matrix at the threshold in use", CONFUSION_CAPTION)}
         ${figure("chart-survival", 2, "Survival rate: ground truth and the detector", survivalCaption(r, ReportPage.thresholdMarks(r)))}
-      </div>`;
+      </div>
+      ${this.wrongCalls.html()}`;
     }
     const same = Math.abs(r.suggested_threshold - r.threshold) < 0.005;
     const shown = cal.shownThreshold === "current" ? "current" : "best";
@@ -322,9 +312,11 @@ class ReportPage {
           and the suggestion has the smallest mean distance, in recordings, between that death by the detector and by the labels (<i>death error</i> below).
           Among the thresholds that do as well, it is the middle of the widest stretch. It can call fewer mite-recordings right than a lower threshold would:
           in a long run, one still recording called moving long after a death moves the death there. Every analysis started after saving uses the new value.
-          Check it with the <b>Test</b> report on a <em>different</em> recording: on this one it looks better than it will be.</p>
+          Check it with <b>Test the threshold</b> on a <em>different</em> recording: on this one it looks better than it will be.</p>
         ${this.comparisonTable(r)}`)}
     </div>
+
+    ${this.wrongCalls.html()}
 
     <div class="grid-2">
       ${figure("chart-death-error", 2, "Death-time error by threshold", DEATH_ERROR_CAPTION)}
@@ -391,15 +383,20 @@ class ReportPage {
     const { figures } = this;
     figures.drawSurvival($("chart-survival"), r.survival, r.times, marks);
     const matrix = (shown) => (shown === "current" ? figures.confusionTable(r.current, r.rates.current) : figures.confusionTable(r.best, r.rates.best));
+    // The wrong calls listed are those of the confusion matrix shown.
+    const wrong = (shown) => (shown === "current" ? this.wrongCalls.draw(r, r.current, false) : this.wrongCalls.draw(r, r.best, true));
     if (r.suggested_threshold == null) {
       $("confusion").innerHTML = matrix("current");
+      wrong("current");
       return;
     }
     $("confusion").innerHTML = matrix(cal.shownThreshold);
+    wrong(cal.shownThreshold);
     document.querySelectorAll("[data-shown]").forEach((button) => button.addEventListener("click", () => {
       cal.shownThreshold = button.dataset.shown;
       document.querySelectorAll("[data-shown]").forEach((b) => b.classList.toggle("secondary", b !== button));
       $("confusion").innerHTML = matrix(button.dataset.shown);
+      wrong(button.dataset.shown);
     }));
     figures.drawDeathError($("chart-death-error"), r, marks);
     figures.drawDeathSides($("chart-death-sides"), r, marks);
@@ -482,6 +479,8 @@ class ReportPage {
       ${figure("confusion", 1, "Confusion matrix at the threshold in use", CONFUSION_CAPTION)}
       ${figure("chart-survival", 2, "Survival rate: ground truth and the detector", survivalCaption(r, ReportPage.thresholdMarks(r).slice(0, 1)))}
     </div>
+
+    ${this.wrongCalls.html()}
 
     ${section("Against the benchmark", this.benchmarkTable(r))}
 
@@ -574,6 +573,7 @@ class ReportPage {
     const marks = ReportPage.thresholdMarks(r).slice(0, 1);
     const { figures } = this;
     $("confusion").innerHTML = figures.confusionTable(r.current, r.rates.current);
+    this.wrongCalls.draw(r, r.current, false);
     figures.drawSurvival($("chart-survival"), r.survival, r.times, marks);
     const drawMap = () => {
       if ($("map-dataset")) cal.mapDataset = $("map-dataset").value;
