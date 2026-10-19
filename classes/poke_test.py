@@ -148,25 +148,31 @@ class PokeTest:
 
 
 class PokeSurvival:
-    def __init__(self, poke, times, moving):
+    def __init__(self, poke, times, moving, others=None):
         """`poke`: a PokeTest; `times`: its recordings' times in minutes;
-        `moving`: mite id -> the detector's call in each recording."""
+        `moving`: mite id -> the detector's call in each recording; `others`:
+        {name: mite id -> a call in each recording} of other sources of calls,
+        e.g. the outline change between recordings (classes/outline_change.py)."""
         self.poke = poke
         self.times = list(times)
         self.moving = moving
+        self.others = others or {}
 
     def mites(self):
         """One row per mite poked at least once: {n_recordings (of its dataset),
         death (the detector's, in recordings: the one after its last movement, 0
         for a mite it never saw moving), alive_until, dead_from (what the pokes
-        say, see PokeTest.bounds())}."""
+        say, see PokeTest.bounds())}, and with `others`, "others": {name: the
+        death by those calls, as the detector's}."""
         rows = []
         for mite in self.poke.mites:
             if self.poke.pokes(mite["id"]):
                 alive_until, dead_from = self.poke.bounds(mite["id"])
                 rows.append({"n_recordings": len(self.times),
                              "death": SurvivalAnalysis.last_movement(self.moving[mite["id"]]) + 1,
-                             "alive_until": alive_until, "dead_from": dead_from})
+                             "alive_until": alive_until, "dead_from": dead_from,
+                             **({"others": {name: SurvivalAnalysis.last_movement(calls[mite["id"]]) + 1
+                                            for name, calls in self.others.items()}} if self.others else {})})
         return rows
 
     @staticmethod
@@ -186,6 +192,7 @@ class PokeSurvival:
                          last movement, one never seen moving at the first, and one
                          moving in its last recording is censored there. None past the
                          last recording, where the detector saw nothing
+            others       {name: the same by each other source of calls of the rows}
             n_left_out   the mites that answered a poke after not answering an earlier
                          one: the pokes cannot both be right, so they are in neither curve
 
@@ -203,9 +210,9 @@ class PokeSurvival:
                 return grid[mite["dead_from"]], True
             return grid[mite["alive_until"]], False
 
-        def by_detector(mite):
-            if mite["death"] < mite["n_recordings"]:
-                return grid[mite["death"]], True
+        def by_calls(mite, death):
+            if death < mite["n_recordings"]:
+                return grid[death], True
             return grid[mite["n_recordings"] - 1], False
 
         def curve(survivals, until):
@@ -217,6 +224,8 @@ class PokeSurvival:
             "times": grid,
             "final_poke": final_poke,
             "poke": curve([by_poke(mite) for mite in poked], len(grid)),
-            "detector": curve([by_detector(mite) for mite in poked], n),
+            "detector": curve([by_calls(mite, mite["death"]) for mite in poked], n),
+            "others": {name: curve([by_calls(mite, mite["others"][name]) for mite in poked], n)
+                       for name in (poked[0].get("others") or {} if poked else {})},
             "n_left_out": len(mites) - len(poked),
         }

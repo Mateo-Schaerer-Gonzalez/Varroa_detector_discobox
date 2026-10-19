@@ -72,16 +72,22 @@ class ReportPage {
   static leftOutText(curves, marks) {
     const parts = [`${curves.truth.n_left_out} never labelled moving`,
       ...marks.map((mark) => `${curves[mark.key].n_left_out} never called moving at the threshold ${mark.name}`),
-      ...(curves.benchmark ? [`${curves.benchmark.n_left_out} never called moving by the benchmark`] : [])];
+      ...(curves.benchmark ? [`${curves.benchmark.n_left_out} never called moving by the benchmark`] : []),
+      ...(curves.outline ? [`${curves.outline.n_left_out} never called moving by the outline change`] : [])];
     return `Left out: ${parts.join(", ")}.`;
   }
 
   static survivalCaption(r, marks) {
     return `The Kaplan–Meier survival rate of the labelled mites: by the ground truth (black, with its 95% confidence band) and as the detector's calls
-    ${r.survival.benchmark ? "and the benchmark's " : ""}would have it. A mite counts as alive up to the last recording in which it moved and as dead from the next labelled one on; a mite moving in its last
+    ${r.survival.benchmark ? "and the benchmark's " : ""}${r.survival.outline ? `and the outline change between recordings (Fig. ${ReportPage.betweenNumber(r)}) ` : ""}would have it. A mite counts as alive up to the last recording in which it moved and as dead from the next labelled one on; a mite moving in its last
     labelled recording is right-censored there. Only mites seen moving at least once are in the study, each curve by its own calls, as a mite never
     seen moving may have been dead from the start. ${ReportPage.leftOutText(r.survival, marks)} The closer the dashed curves follow the black one,
     the better the threshold gives the true survival. Hover for the numbers.${ReportPage.poolNote(r)}`;
+  }
+
+  // The number of the figure of the outline change between recordings, after the poke test's.
+  static betweenNumber(r) {
+    return r.roc ? 9 : 7;
   }
 
   // Pooled datasets need not cover every recording, e.g. recordings of different
@@ -512,7 +518,9 @@ class ReportPage {
     ${section("Per zone", `<div class="table-wrap"><table class="clickable" id="zone-errors"></table></div>
       <p class="caption">Counts are mite-recordings, at the threshold in use. Select a zone to review its labels.</p>`)}
 
-    ${section("Poke test", this.pokeReport(r, r.roc ? 8 : 6))}`;
+    ${section("Poke test", this.pokeReport(r, r.roc ? 8 : 6))}
+
+    ${r.between_recordings ? section("Between recordings", this.betweenReport(r)) : ""}`;
   }
 
   // The survival of the mites poked by hand, by the pokes and by the detector at
@@ -525,27 +533,45 @@ class ReportPage {
       return `<p class="hint">No poke test was entered for ${pooled(r) ? "these recordings" : "this recording"}.
         ${cal.data ? '<a href="#/cal/poke">Enter one</a>: which mites moved when you poked them, to compare their survival with that by the detector.' : ""}</p>`;
     }
-    return Markup.figure("chart-poke-survival", number, "Survival rate of the poked mites: the pokes and the detector",
+    const outline = poke.others?.outline;
+    return Markup.figure("chart-poke-survival", number, `Survival rate of the poked mites: the pokes and the detector${outline ? " and the outline change" : ""}`,
       `The Kaplan–Meier survival rate of the ${poke.poke.n_mites} poked mites by the pokes (black, with its 95% confidence band) and as the detector's calls
-      at the threshold in use would have it (dashed), on the same mites. By the pokes a mite dies at the first poke it did not answer, so in the recording after it;
+      at the threshold in use would have it (dashed)${outline ? `, and the outline change between recordings (Fig. ${ReportPage.betweenNumber(r)})` : ""}, on the same mites. By the pokes a mite dies at the first poke it did not answer, so in the recording after it;
       one that answered every poke is right-censored at its last one, where it still counts among the living. By the detector a mite dies at the recording after its last movement,
-      one never called moving at the first recording, and one moving in its last recording is right-censored there. A poke only says dead by then, so the black curve
+      one never called moving at the first recording, and one moving in its last recording is right-censored there${outline ? "; likewise by the outline change" : ""}. A poke only says dead by then, so the black curve
       falls at the pokes, not at the deaths: the dashed one may fall earlier and still agree, and should not be above it at a poke.
       ${poke.final_poke ? "The last point is the poke after the last recording, where the detector saw nothing, so its curve ends before it." : ""}
       ${poke.n_left_out ? `Left out: ${plural(poke.n_left_out, "mite")} that answered a poke after not answering an earlier one.` : ""} Hover for the numbers.`);
   }
 
-  // The detector at the threshold in use beside the Discobox's original software:
-  // how far each puts the mites' deaths from where the ground truth puts them, in
-  // recordings (the server's figures, calibration.death_errors).
+  // Every mite's outline change from one recording to the next, a change opening the
+  // box does not fake (the server's r.between_recordings, classes/outline_change.py).
+  betweenReport(r) {
+    const between = r.between_recordings;
+    const { thr } = ReportPage;
+    return Markup.figure("chart-between", ReportPage.betweenNumber(r), "Outline change between recordings, mite by mite",
+      `One row per mite seen moving by the ground truth (${between.mites.length}), in the order the ground truth has them die, the first at the top.
+      Each cell is how far the mite's outline changed from the recording before, in pixels (log scale): its shape alone, at the turn that fits best,
+      so a mite pushed or turned when the box is opened does not change; one that moves a leg does. A change above ${thr(between.limit)} px counts,
+      and a mite moved in a recording when the change into it and into the one before both count; it dies at the recording after its last movement, as by the detector.
+      Over them, on the right-hand axis, the Kaplan–Meier survival rate by the ground truth (black, with its 95% confidence band), which runs along the left edge of the quiet part,
+      and by the outline change (dashed)${r.poke ? `, and by the pokes (purple, on the poked mites only, Fig. ${r.roc ? 8 : 6})` : ""}.
+      What is coloured right of the black curve changed after the mite's last labelled movement. Hover a cell for its numbers, click it to see the mite in that recording.`);
+  }
+
+  // The detector at the threshold in use beside the Discobox's original software and
+  // the outline change between recordings: how far each puts the mites' deaths from
+  // where the ground truth puts them, in recordings (the server's figures, calibration.death_errors).
   benchmarkTable(r) {
     const { thr, scoreText } = ReportPage;
-    if (!r.benchmark) return `<p id="benchmark-status" class="hint">The benchmark has not been run on these datasets.</p>`;
+    if (!r.benchmark && !r.death_error.outline) return `<p id="benchmark-status" class="hint">The benchmark has not been run on these datasets.</p>`;
     const share = (n, of) => (of ? `${n} <span class="muted">(${(100 * n / of).toFixed(0)}%)</span>` : "–");
     const recordings = (value, signed = false) => (value == null ? "–" : `${signed && value > 0 ? "+" : ""}${value.toFixed(2)}`);
     const rows = [
       [`Detector <span class="muted">${esc(scoreText(r.metric, r.metric_params, r))}</span>`, thr(r.threshold), r.death_error.current],
-      [`Benchmark <span class="muted">${esc(r.benchmark.name)}, the Discobox's original software</span>`, r.benchmark.threshold, r.death_error.benchmark],
+      ...(r.benchmark ? [[`Benchmark <span class="muted">${esc(r.benchmark.name)}, the Discobox's original software</span>`, r.benchmark.threshold, r.death_error.benchmark]] : []),
+      ...(r.death_error.outline ? [[`Outline change <span class="muted">between recordings, Fig. ${ReportPage.betweenNumber(r)}</span>`,
+        `${thr(r.between_recordings.limit)} px`, r.death_error.outline]] : []),
     ];
     return `<div class="table-wrap"><table>
     <thead><tr><th>Called by</th><th class="num">Threshold</th>
@@ -563,9 +589,10 @@ class ReportPage {
     A mite dies at the recording after its last movement; <b>death time off by</b> is the mean absolute error of that recording against the ground truth's,
     counted in recordings: 1 is one recording off on average. A mite never called moving is dead from its first recording, one still moving in its last
     dies after it. <b>Mean error</b> is positive when the mites die later than by the ground truth, which a still mite called moving does, and negative when
-    earlier, which a missed last movement does. The benchmark denoises each recording's frames, takes the difference of every frame to the first and
+    earlier, which a missed last movement does.${r.benchmark ? ` The benchmark denoises each recording's frames, takes the difference of every frame to the first and
     calls a mite moving when a difference above ${r.benchmark.threshold} lies on it; that threshold is fixed in its code, where the detector's is
-    config.yaml's. Its survival curve is in Fig. 2 and in the groups' below.</p>`;
+    config.yaml's.` : ""}${r.death_error.outline ? ` The outline change calls a mite moving from one recording to the next, not within one (Fig. ${ReportPage.betweenNumber(r)}),
+    so it sees a mite that goes on changing after its last movement within a recording, and puts that death later.` : ""} Their survival curves are in Fig. 2 and in the groups' below.</p>`;
   }
 
   drawTestFigures(r) {
@@ -587,5 +614,6 @@ class ReportPage {
     figures.drawZoneErrors(r);
     this.lastRecording.draw(r);
     if (r.poke) figures.drawPokeSurvival($("chart-poke-survival"), r);
+    if (r.between_recordings) figures.drawBetween($("chart-between"), r);
   }
 }

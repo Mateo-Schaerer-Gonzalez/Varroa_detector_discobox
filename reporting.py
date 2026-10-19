@@ -291,7 +291,8 @@ def write_calibration_excel(result, out_dir):
     the death error by threshold and the band to check by eye; and, with a poke
     test, the survival of the poked mites by the pokes and by the detector.
     A calibration with the benchmark has it as a row of the summary, a column of
-    the observations and a survival curve."""
+    the observations and a survival curve; one with the outline change between
+    recordings too, and a column of the poke test's."""
     path = Path(out_dir) / CALIBRATION_EXCEL_NAME
 
     def death(source):
@@ -309,6 +310,10 @@ def write_calibration_excel(result, out_dir):
     if result.get("benchmark"):
         row = {**{key: value for key, value in result["benchmark"].items() if key != "name"}, **death("benchmark")}
         row["metric"] = f"benchmark ({result['benchmark']['name']})"
+        summary = pd.concat([summary, pd.DataFrame([row])], ignore_index=True)
+    if result.get("between_recordings"):
+        row = {"threshold": "outline change", **death("outline"),
+               "metric": f"outline change between recordings (limit {result['between_recordings']['limit']} px)"}
         summary = pd.concat([summary, pd.DataFrame([row])], ignore_index=True)
 
     observations = pd.DataFrame(result["observations"]).rename(columns={"movement": "your_label"})
@@ -339,7 +344,7 @@ def write_calibration_excel(result, out_dir):
                     "level": level,
                     "name": name,
                     "curve": {"truth": "labels", "current": "detector_in_use", "suggested": "detector_suggested",
-                              "benchmark": "benchmark"}[source],
+                              "benchmark": "benchmark", "outline": "outline_change"}[source],
                     "n_mites": curve["n_mites"],
                     "n_left_out_never_moving": curve["n_left_out"],
                     "time": result["times"],
@@ -380,6 +385,7 @@ def write_calibration_excel(result, out_dir):
         if result.get("poke"):
             poke = result["poke"]
             pd.DataFrame({"time": poke["times"], "survival_by_poke": poke["poke"]["alive"], "ci_low": poke["poke"]["low"],
-                          "ci_high": poke["poke"]["high"], "survival_by_detector": poke["detector"]["alive"]}).to_excel(
+                          "ci_high": poke["poke"]["high"], "survival_by_detector": poke["detector"]["alive"],
+                          **{f"survival_by_{name}": curve["alive"] for name, curve in poke.get("others", {}).items()}}).to_excel(
                 writer, sheet_name="poke_survival", index=False)
     return path.name

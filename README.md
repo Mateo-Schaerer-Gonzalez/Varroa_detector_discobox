@@ -150,7 +150,8 @@ that with the detector:
    confusion matrix at the threshold in use, the ROC curve with AUC, and where on
    the plate the errors are. Both show the fraction of mites moving per recording
    by the ground truth against the detector's; *Test* also shows it per group,
-   and a poke test where one was entered (see *Poke test* below). The report is
+   a poke test where one was entered (see *Poke test* below), and the outline
+   change between recordings (see *Outline change between recordings* below). The report is
    the one picked on the first page; to see the other, go back and pick it there.
    In *Calibration*, *Show the wrong calls* under *Wrong calls* lists every labelled
    mite-recording the detector called the other way (all, or only moving called
@@ -194,6 +195,28 @@ mites poked are in it. A poke only says dead by then, not when the mite died, so
 the detector's curve may fall earlier and still agree; it should not be above
 the pokes' at a poke. The recording needs at least one mite labelled moving or
 still, as every report does.
+
+**Outline change between recordings.** The *Test* report also compares each
+mite's outline from one recording to the next (`classes/outline_change.py`), a
+change that opening the box to poke the mites does not fake: the outline is read
+from the mean of a recording's frames as rays from the mite's centre, without its
+size or a shift of the whole mite, and two recordings are compared at the turn
+that fits best, so a mite pushed a few pixels or turned does not change, and one
+that moved a leg does. Its darkness is read against the plate in a ring around
+it, and only what lies near its body counts, so a neighbour at the edge of its
+patch is not part of it. A change above 0.064 px counts (what 99% of the long
+run's long-dead mites stay under), and a mite moved in a recording when the
+change into it and into the one before both count. Its calls join the others: a
+survival curve in Fig. 2 and in the groups', a row of the death-time table and a
+curve in the poke test's figure. A figure of its own shows every mite seen moving
+by the ground truth, in the order it has them die, coloured by the change from
+each recording to the next, with the survival by the ground truth, by the outline
+change and by the pokes over it; a cell opens that mite in that recording. It
+sees the mites go on changing between recordings after their last movement within
+one, for hours, so it puts the deaths later than the labels do.
+`notebooks/moved_mite_change.ipynb` shows how it was chosen. The changes are
+cached in the recording's `scores/` (`outline-*.json`); the first report decodes
+every frame.
 
 **Saved ground truth.** A recording's ground truth and poke test are kept with
 it, in `recordings/<name>/`, never its scores: there is no second copy. The
@@ -448,7 +471,7 @@ to change that).
 
 | Folder | Contents |
 | --- | --- |
-| `recordings/<name>/` | Every recording session: each live test run, and each folder dropped into the page or calibrated. Its frames (the mites' surroundings), labels, *not a mite* marks, ground truth, poke test, `.settings.txt` and, for a live run, `run.json`; `scores/` caches the scores calibration reports computed. |
+| `recordings/<name>/` | Every recording session: each live test run, and each folder dropped into the page or calibrated. Its frames (the mites' surroundings), labels, *not a mite* marks, ground truth, poke test, `.settings.txt` and, for a live run, `run.json`; `scores/` caches the scores (and outline changes) calibration reports computed. |
 | `results/<name>/` | The last analysis of that recording, replaced when it is analysed again (files below). `clips/` holds the frames the result pages play, and `kept/` the scores, so that analysing the same recordings again, with the same metric and the same scoring code, takes a moment instead of scoring every frame again; both can be deleted at any time. `calibration/` holds its calibration session and report, `calibration.xlsx`. |
 | `results/pooled/<date time>/` | A calibration report pooled over saved ground truth alone: its `calibration.xlsx`. Those that made no report are removed at the next start. |
 | `results/scripts/` | What the scripts in `scripts/` write: tables, optuna studies. |

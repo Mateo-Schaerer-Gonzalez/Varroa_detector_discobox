@@ -124,6 +124,8 @@ from classes.live.settings import RANGES as SETTING_RANGES, Settings
 from classes.live.sources import CameraSource
 from classes.mite import Mite
 from classes.motion_analysis import MotionAnalysis, detect_mites
+from classes import outline_change as outline_change_module
+from classes.outline_change import OutlineChange
 from classes.outline_view import OutlineView
 from classes.movement_stats import MovementReport
 from classes.recording_info import RecordingInfo
@@ -1601,14 +1603,17 @@ def edit_poke(out_dir, action, after, mite=None, zone=None, state=None):
     return poke.view()
 
 
-def _poked_mites(dataset, scores, threshold):
+def _poked_mites(dataset, scores, threshold, outline=None):
     """The poked mites of a dataset with the detector's death of each at
-    `threshold` (PokeSurvival.mites()); [] without a poke test."""
+    `threshold` (PokeSurvival.mites()) and, with `outline` (mite id to the
+    outline change's calls, see OutlineChange.calls()), the outline change's;
+    [] without a poke test."""
     poke = _poke_of(dataset)
     if not poke.rounds:
         return []
     moving = {mite["id"]: [score >= threshold for score in scores[mite["id"]]] for mite in poke.mites}
-    return PokeSurvival(poke, dataset["times"], moving).mites()
+    others = {} if outline is None else {"outline": {mite["id"]: outline[mite["id"]] for mite in poke.mites}}
+    return PokeSurvival(poke, dataset["times"], moving, others).mites()
 
 
 def _poke_survival(mites, times):
@@ -1616,7 +1621,7 @@ def _poke_survival(mites, times):
     the detector, for the test report (PokeSurvival.curves()); None without any."""
     curves = PokeSurvival.curves(mites, times)
     if curves:
-        for curve in (curves["poke"], curves["detector"]):
+        for curve in [curves["poke"], curves["detector"], *curves["others"].values()]:
             curve.update({key: _rounded(curve[key], 2) for key in ("alive", "low", "high")})
     return curves
 
@@ -2205,6 +2210,37 @@ def _dataset_benchmark(key, dataset):
     return calls
 
 
+def _outline_mites(dataset, recordings_dir, stabilize=False):
+    """How much each mite's outline changed from the recording before
+    (OutlineChange.changes()): mite id to one change per recording, in px, None
+    for the first. Slow: every frame is decoded, as scoring decodes them
+    (_measure_mites()), each mite cut with outline_change.PAD pixels around it."""
+    _check_recordings(dataset, recordings_dir, "their outlines cannot be compared")
+    outlines = {mite["id"]: [] for mite in dataset["mites"]}
+    for recording in _measure_mites(dataset, recordings_dir, OutlineChange.outline_of, outline_change_module.PAD,
+                                    stabilize):
+        for mite_id, outline in recording.items():
+            outlines[mite_id].append(outline)
+    return {mite_id: [None if change is None else round(change, 4) for change in OutlineChange.changes(found)]
+            for mite_id, found in outlines.items()}
+
+
+def _dataset_outline_changes(key, dataset, stabilize=False):
+    """_outline_mites() of the dataset, from the cache when this outline code,
+    with this plate stabilization, has measured exactly these mites before."""
+    source = inspect.getsource(outline_change_module) + inspect.getsource(plate_stabilizer)
+    version = hashlib.sha1(json.dumps(
+        [source, bool(stabilize), [[m["id"], m["x"], m["y"], m["r"]] for m in dataset["mites"]]]).encode("utf-8")).hexdigest()[:12]
+    cache = _scores_dir(dataset) / f"outline-{version}.json"
+    cached = _cached_per_recording(cache, "changes", dataset)
+    if cached is not None:
+        return cached
+    changes = _outline_mites(dataset, Path(dataset["data_dir"]), stabilize)
+    cache.parent.mkdir(parents=True, exist_ok=True)
+    cache.write_text(json.dumps({"changes": changes}), encoding="utf-8")
+    return changes
+
+
 def _benchmark_circles(recordings_dir, recording_name):
     """The circles the benchmark draws on one recording (Benchmark.circles()).
     Slow: every whole frame is decoded and denoised. None for a session saved
@@ -2271,11 +2307,13 @@ def _last_recording(dataset, scores, threshold, benchmark=None, circles=None):
     }
 
 
-def _observations(dataset, dataset_key, scores, benchmark=None):
+def _observations(dataset, dataset_key, scores, benchmark=None, outline=None):
     """One row per (mite, recording) of a dataset labelled moving or still, and
     the number of mites marked not a mite and of unlabelled mite-recordings.
     With `benchmark` (its calls, see _dataset_benchmark()), each row also says
-    what the benchmark called it."""
+    what the benchmark called it; with `outline` ({changes, calls}, each mite id
+    to one per recording, see _between_recordings()), the outline's change from
+    the recording before and what it calls it."""
     times = dataset["times"]
     n_recordings = len(times)
     groups = {zone["id"]: zone["label"] or UNLABELED for zone in dataset["zones"]}
@@ -2307,9 +2345,37 @@ def _observations(dataset, dataset_key, scores, benchmark=None):
                     "score": scores[mite["id"]][recording],
                     **({} if benchmark is None else {
                         "benchmark_call": calibration.MOVING if benchmark[mite["id"]][recording] else calibration.STILL}),
+                    **({} if outline is None else {
+                        "outline_change": outline["changes"][mite["id"]][recording],
+                        "outline_call": calibration.MOVING if outline["calls"][mite["id"]][recording] else calibration.STILL}),
                 }
             )
     return rows, n_rejected, n_unlabelled
+
+
+def _between_recordings(key, dataset, stabilize=False):
+    """The outline change of every mite of a dataset from the recording before
+    (_dataset_outline_changes()) and whether it says the mite moved
+    (OutlineChange.calls()): {changes, calls}, each mite id to one per recording."""
+    changes = _dataset_outline_changes(key, dataset, stabilize)
+    judge = OutlineChange()
+    return {"changes": changes, "calls": {mite_id: judge.calls(values) for mite_id, values in changes.items()}}
+
+
+def _outline_rows(dataset, key, outline):
+    """Every mite of a dataset not marked not a mite, for the figure of the
+    outline change (OutlineChange.raster()): where it is, its labels per
+    recording (True moving, False still, None unlabelled) and its changes."""
+    n_recordings = len(dataset["times"])
+    rows = []
+    for mite in dataset["mites"]:
+        states = calibration.per_recording(dataset["truth"].get(mite["id"]), n_recordings)
+        if calibration.is_rejected(states):
+            continue
+        rows.append({"dataset": key, "dataset_name": dataset["name"], "mite_id": mite["id"], "zone_id": mite["zone_id"],
+                     "moving": [None if state is None else state == calibration.MOVING for state in states],
+                     "changes": outline["changes"][mite["id"]], "calls": outline["calls"][mite["id"]]})
+    return rows
 
 
 def _pooled_times(datasets):
@@ -2433,7 +2499,7 @@ def _resolve_metric(metric, params):
 
 def evaluate_calibration(out_dir, datasets, metric=None, params=None, recordings_root=RECORDINGS_ROOT,
                          stabilize=None, benchmark=False, normalize_brightness=None, normalize_floor=None,
-                         checks_per_mite=None):
+                         checks_per_mite=None, between=False):
     """Score the saved mites with a metric and compare the scores with the
     movement the user saw, pooled over the saved datasets whose ids are in
     `datasets`.
@@ -2480,6 +2546,15 @@ def evaluate_calibration(out_dir, datasets, metric=None, params=None, recordings
     original software (classes/benchmark.py): its confusion counts, with
     precision, recall and F1 as for the detector, come as "benchmark", and its
     survival curve and its death errors join the others. Slow the first time a dataset meets it.
+
+    With `between`, each mite's outline is also compared from each recording to
+    the next (classes/outline_change.py): a change that opening the box to poke
+    the mites does not fake. Each observation then has its "outline_change" and
+    "outline_call", the outline's calls join the others' survival curves and
+    death errors (as "outline"), and the poked mites' ("others" of "poke"); and
+    "between_recordings" holds every mite's changes for the figure of them all
+    (OutlineChange.raster()). Slow the first time a dataset meets it, as every
+    frame is decoded.
     """
     ids = list(dict.fromkeys(datasets))
     if not ids:
@@ -2498,17 +2573,20 @@ def evaluate_calibration(out_dir, datasets, metric=None, params=None, recordings
     times = _pooled_times(loaded)
     n_recordings = len(times)
 
-    rows, n_rejected, n_unlabelled, summaries, poked = [], 0, 0, [], []
+    rows, n_rejected, n_unlabelled, summaries, poked, outline_rows = [], 0, 0, [], [], []
     for key, dataset in zip(ids, loaded):
         scores = _dataset_scores(key, dataset, metric, params, stabilize)
         scores = _normalised_scores(key, dataset, scores, normalizer, Analyzer.roi_padding(metric, params),
                                     stabilize)
         called = _dataset_benchmark(key, dataset) if benchmark else None
-        here, rejected, unlabelled = _observations(dataset, key, scores, called)
+        outline = _between_recordings(key, dataset, stabilize) if between else None
+        here, rejected, unlabelled = _observations(dataset, key, scores, called, outline)
         last = len(dataset["times"]) - 1
         circles = _dataset_circles(key, dataset, last) if benchmark and last < len(dataset["recordings"]) else None
         rows += here
-        poked += _poked_mites(dataset, scores, current)
+        poked += _poked_mites(dataset, scores, current, outline and outline["calls"])
+        if outline:
+            outline_rows += _outline_rows(dataset, key, outline)
         n_rejected += rejected
         n_unlabelled += unlabelled
         summaries.append(
@@ -2547,9 +2625,11 @@ def evaluate_calibration(out_dir, datasets, metric=None, params=None, recordings
         curves = calibration.moving_over_time(subset, n_recordings, thresholds)
         return {key: values if key == "n" else _rounded(values) for key, values in curves.items()}
 
+    # who else calls the observations: the benchmark, and the outline change between recordings
+    calls = {**({"benchmark": "benchmark_call"} if benchmark else {}), **({"outline": "outline_call"} if between else {})}
+
     def survival(subset):
-        curves = calibration.survival_curves(subset, times, thresholds,
-                                             {"benchmark": "benchmark_call"} if benchmark else None)
+        curves = calibration.survival_curves(subset, times, thresholds, calls)
         return {name: {key: _rounded(value, 2) if isinstance(value, list) else value for key, value in curve.items()}
                 for name, curve in curves.items()}
 
@@ -2599,8 +2679,7 @@ def evaluate_calibration(out_dir, datasets, metric=None, params=None, recordings
         # how far the detector, and the benchmark, put each mite's death from the labels', in recordings
         "death_error": {name: {key: value if value is None or isinstance(value, int) else round(value, 3)
                                for key, value in errors.items()}
-                        for name, errors in calibration.death_errors(
-                            rows, thresholds, {"benchmark": "benchmark_call"} if benchmark else None).items()},
+                        for name, errors in calibration.death_errors(rows, thresholds, calls).items()},
         # the death error by threshold, around the one in use and the suggested one: what the suggestion is chosen on
         "death_curve": death_calibration.death_curve(runs, [current, suggested]) if suggested is not None else None,
         # the band around the suggested threshold to check by eye, and what the checks buy
@@ -2620,6 +2699,8 @@ def evaluate_calibration(out_dir, datasets, metric=None, params=None, recordings
         "error_map": ErrorMap(rows).describe(),
         # the survival of the mites poked by hand, by the pokes and by the detector at the threshold in use; None without a poke test
         "poke": _poke_survival(poked, times),
+        # every mite's outline change from each recording to the next, by its death; None without `between`
+        "between_recordings": OutlineChange().raster(outline_rows) if between else None,
     }
     # each outcome as a fraction of its row, for the confusion matrices and the ROC curve
     result["rates"] = {key: None if result[key] is None else calibration.outcome_rates(result[key]) for key in ("current", "best")}

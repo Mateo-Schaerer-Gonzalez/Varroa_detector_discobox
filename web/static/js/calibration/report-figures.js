@@ -1,6 +1,7 @@
 // The calibration report's figures: the confusion matrix, the death error by
 // threshold, the survival rate over time (and per group), the scores against the
-// thresholds, the ROC curve, where on the plate the errors are, and the poke test. Every observation, from whichever dataset,
+// thresholds, the ROC curve, where on the plate the errors are, the poke test and the outline change between
+// recordings. Every observation, from whichever dataset,
 // opens its mite in its recording.
 
 class ReportFigures {
@@ -9,6 +10,9 @@ class ReportFigures {
 
   // The Discobox's original software, which the test report compares with (classes/benchmark.py).
   static BENCHMARK = "benchmark (Abilium)";
+
+  // The outline change between recordings (classes/outline_change.py).
+  static OUTLINE = "outline change";
 
   // Where a row comes from: the recording folder and, when known, the recording in it.
   static sourceText(row) {
@@ -56,6 +60,7 @@ class ReportFigures {
     return [
       ...marks.map((mark) => ({ key: mark.key, name: `detector, ${mark.name}`, value: ReportPage.thr(mark.value), color: mark.color })),
       ...(curves.benchmark ? [{ key: "benchmark", name: ReportFigures.BENCHMARK, value: "", color: token("--series-7") }] : []),
+      ...(curves.outline ? [{ key: "outline", name: ReportFigures.OUTLINE, value: "", color: token("--series-2") }] : []),
     ];
   }
 
@@ -344,10 +349,45 @@ class ReportFigures {
       noDirectLabels: true,
       series: [
         { name: `detector, in use ${thr(r.threshold)}`, values: curves.detector.alive, color: token("--series-1"), dashed: true, step: true, markers: false },
+        ...(curves.others?.outline ? [{ name: ReportFigures.OUTLINE, values: curves.others.outline.alive, color: token("--series-2"), dashed: true, step: true, markers: false }] : []),
         { name: "poke test", values: curves.poke.alive, band: { low: curves.poke.low, high: curves.poke.high },
           color: token("--ink"), width: 2.25, step: true, markers: false },
       ],
-      tooltipExtra: () => count("poke test", curves.poke) + count("detector", curves.detector),
+      tooltipExtra: () => count("poke test", curves.poke) + count("detector", curves.detector)
+        + (curves.others?.outline ? count(ReportFigures.OUTLINE, curves.others.outline) : ""),
+    });
+  }
+
+  // Every mite seen moving by the ground truth, in the order it has them die, coloured
+  // by its outline change from each recording to the next, with the survival over it
+  // (the server's r.between_recordings, classes/outline_change.py).
+  drawBetween(container, r) {
+    const { thr } = ReportPage;
+    const between = r.between_recordings;
+    const [low, high] = between.scale;
+    const when = (recording) => (recording < r.times.length ? minutes(r.times[recording]) : "after the last recording");
+    const rows = between.mites.map((mite) => ({
+      values: mite.changes,
+      tip: (index) => `<div class="tip-title">Mite ${esc(mite.mite_id)} · zone ${mite.zone_id} · ${minutes(r.times[index])}</div>
+        <div class="tip-note">${esc(mite.dataset_name)}</div>
+        <div>outline change ${mite.changes[index] == null ? "– (its first recording)" : `${thr(mite.changes[index])} px`}${mite.changes[index] > between.limit ? " · counts" : ""}</div>
+        <div class="tip-note">dead by the ground truth ${when(mite.death)}; by the outline change ${mite.outline_death == null ? "never seen moving" : when(mite.outline_death)}</div>
+        <div class="tip-hint">Click to see it in its recording</div>`,
+      onClick: (index) => cal.goToMite(mite.dataset, mite.zone_id, index, mite.mite_id),
+    }));
+    const overlays = [
+      { name: "ground truth", values: r.survival.truth.alive, band: { low: r.survival.truth.low, high: r.survival.truth.high }, color: token("--ink"), width: 2 },
+      ...(r.survival.outline ? [{ name: ReportFigures.OUTLINE, values: r.survival.outline.alive, color: token("--series-2"), dashed: true }] : []),
+      ...(r.poke ? [{ name: "poke test (poked mites)", values: r.poke.poke.alive, color: token("--series-7"), dashed: true, width: 1.5 }] : []),
+    ];
+    Charts.raster(container, {
+      x: r.times,
+      rows,
+      scale: { low, high, mark: between.limit, format: (v) => `${thr(v)}`, label: "px" },
+      overlays,
+      height: Math.max(320, Math.min(640, 8 * rows.length + 60)),
+      yLabel: "Mites, by their death (ground truth)",
+      overlayLabel: "Survival rate (%)",
     });
   }
 

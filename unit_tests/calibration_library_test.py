@@ -584,3 +584,56 @@ def test_a_report_without_a_poke_test_has_none(tmp_path, recordings, scorer):
     scorer.scores = {"a": {"0": [9, 0]}}
     pipeline.save_ground_truth(out_dir, {"0": ["moving", "still"]})
     assert pipeline.evaluate_calibration(tmp_path / "report", [pipeline.dataset_id(data_dir)], recordings_root=recordings)["poke"] is None
+
+
+@pytest.fixture
+def outliner(monkeypatch):
+    """Stub out decoding for the outline change: `outliner.changes[dataset name]`
+    is what measuring returns, `outliner.calls` counts how often it ran."""
+    class Outliner:
+        changes = {}
+        calls = []
+
+        def __call__(self, dataset, _recordings_dir, stabilize=False):
+            self.calls.append(dataset["name"])
+            return self.changes[dataset["name"]]
+
+    stub = Outliner()
+    monkeypatch.setattr(pipeline, "_outline_mites", stub)
+    return stub
+
+
+def test_the_test_report_compares_the_outline_between_recordings(tmp_path, recordings, scorer, outliner):
+    data_dir, out_dir = make_session(tmp_path, "a", 3, times=(0.0, 5.0, 10.0, 15.0))
+    scorer.scores = {"a": {"0": [9, 9, 0, 0], "1": [9, 0, 0, 0], "2": [0, 0, 0, 0]}}
+    big, small = 1.0, 0.01
+    # mite 0 changes into the third and fourth recordings, so moved in the fourth; mite 1 never
+    outliner.changes = {"a": {"0": [None, small, big, big], "1": [None, big, small, big], "2": [None] + [small] * 3}}
+    pipeline.save_ground_truth(out_dir, {"0": ["moving", "moving", "still", "still"],
+                                         "1": ["moving", "still", "still", "still"], "2": ["not_a_mite"] * 4})
+    pipeline.edit_poke(out_dir, "add", 1)
+    pipeline.edit_poke(out_dir, "fill", 1, state="moved")
+    key = pipeline.dataset_id(data_dir)
+
+    plain = pipeline.evaluate_calibration(tmp_path / "report", [key], recordings_root=recordings)
+    assert plain["between_recordings"] is None and "outline" not in plain["survival"] and not outliner.calls
+
+    result = pipeline.evaluate_calibration(tmp_path / "report", [key], recordings_root=recordings, between=True)
+    rows = {(row["mite_id"], row["recording"]): row for row in result["observations"]}
+    assert rows[("0", 3)]["outline_call"] == "moving" and rows[("0", 2)]["outline_call"] == "still"
+    assert rows[("0", 2)]["outline_change"] == big and rows[("0", 0)]["outline_change"] is None
+    # by the labels mite 1 dies first (at the second recording), mite 0 at the third; by the outline mite 0 lives to the end
+    figure = result["between_recordings"]
+    assert [(m["mite_id"], m["death"], m["outline_death"]) for m in figure["mites"]] == [("1", 1, None), ("0", 2, 4)]
+    assert result["survival"]["outline"]["n_mites"] == 1 and result["survival"]["outline"]["n_left_out"] == 1
+    assert result["death_error"]["outline"]["n_mites"] == 2
+    assert result["poke"]["others"]["outline"]["n_mites"] == 2
+    json.dumps(result, allow_nan=False)
+    sheets = pd.read_excel(pipeline.results_file(tmp_path / "report", result["excel"]), sheet_name=None)
+    assert "survival_by_outline" in sheets["poke_survival"] and "outline_change" in set(sheets["survival"]["curve"])
+    assert "outline_call" in sheets["observations"]
+
+    # the changes are kept with the scores
+    pipeline.evaluate_calibration(tmp_path / "report", [key], recordings_root=recordings, between=True)
+    assert outliner.calls == ["a"]
+    assert list((data_dir / pipeline.SCORES_DIRNAME).glob("outline-*.json"))

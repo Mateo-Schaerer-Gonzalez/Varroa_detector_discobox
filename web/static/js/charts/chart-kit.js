@@ -1,7 +1,7 @@
 // Small hand-written SVG charts, so the page needs no charting library and works
 // offline. This file holds what every chart is drawn with: SVG elements, round
 // axis ticks, line paths, point glyphs, the legend and the tooltip. The charts
-// themselves are LineChart, ScatterChart, RidgelineChart and SparkLine, and
+// themselves are LineChart, ScatterChart, RidgelineChart, RasterChart and SparkLine, and
 // Charts (charts.js) is what the pages call.
 //
 // A live run's charts are drawn again with every recording. Given `xDomain`, a

@@ -111,3 +111,16 @@ def test_the_pokes_are_saved_by_position_and_survive_renumbered_mites():
     fewer = PokeTest(again[:1], len(TIMES), saved)
     assert fewer.view()["rounds"][0]["states"] == {"a": "unmoved"}
     assert {"x": 10.0, "y": 10.0, "state": "moved"} in fewer.saved()["rounds"][0]["mites"]
+
+
+def test_other_calls_get_a_curve_of_their_own_on_the_same_mites():
+    poke = poked({1: {"0": "unmoved", "1": "moved"}})
+    moving = {"0": [True, False, False, False], "1": [True, True, False, False], "2": [True] * 4}
+    outline = {"0": [False, True, True, False], "1": [False, False, False, False], "2": [False] * 4}
+    rows = PokeSurvival(poke, TIMES, moving, {"outline": outline}).mites()
+    assert [row["others"] for row in rows] == [{"outline": 3}, {"outline": 0}]
+    curves = PokeSurvival.curves(rows, TIMES)
+    # mite 1 never seen moving by the outline is dead from the first recording, mite 0 from the fourth
+    assert curves["others"]["outline"]["alive"] == [50, 50, 50, 0]
+    assert curves["detector"]["alive"] == [100, 50, 0, 0]
+    assert PokeSurvival.curves(PokeSurvival(poke, TIMES, moving).mites(), TIMES)["others"] == {}

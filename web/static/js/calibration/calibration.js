@@ -271,6 +271,8 @@ class Calibration {
         normalize_brightness: this.metric?.normalizeBrightness ?? null, normalize_floor: this.metric?.normalizeFloor ?? null,
         // The test report compares with the benchmark, which is slow the first time.
         benchmark: this.mode === "test",
+        // and each mite's outline from one recording to the next, slow the first time too
+        between: this.mode === "test",
         checks_per_mite: this.checksAllowed,
       }),
       this.fetchDatasets().catch(() => this.datasets),
