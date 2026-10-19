@@ -223,9 +223,8 @@ results overview shows the shake: the median over the mites of how far each
 one's own patch moved within each recording, recording by recording, to spot a
 recording or a stretch of time in which the plate shook, and the 10 mites that
 drifted furthest from their zone across the recordings, each as its path over
-its outline in the first recording (at the outline's own scale, to read which
-way it drifted against its body; a bar gives the path's scale and a label the
-mite's size, since the outline is drawn far smaller than the path), then every fly-off: its path until it flew
+its outline in the first recording (both at the mite's scale, with a bar for
+it, to read how far and which way it drifted against its body), then every fly-off: its path until it flew
 off, and a dashed line out of its square the way it walked off (the first point
 of its track out of its place). The
 *Stabilize plate* checkbox next to the metric on the calibration report tries

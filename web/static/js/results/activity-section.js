@@ -59,7 +59,7 @@ class ActivitySection {
         Click a time to show that recording.${this.page.stillToCome()}`)}</div>
       <div class="block">${figure("activity-movers", first + 1, `The ${movers.length} mites that drifted furthest`,
         `Each mite's path across the recordings: where its image sits against its image in the first recording (px, py, in pixels), from light (first recording) to dark (last), starting on the mite's centre.
-        Behind the path, the mite's outline in the first recording, at its own scale, to read which way it drifted against its body: the two scales differ, so read the path's length off its bar (bottom left) against the mite's size (bottom right), not against the outline.
+        Behind the path, the mite's outline in the first recording, at the same scale (the bar, bottom left), to read how far and which way it drifted against its body.
         The mites are ranked by how far they sit from their zone's median path, what the plate under them did
         (the 95th percentile over the recordings, so one bad measurement does not rank a mite).
         After them come the fly-offs: each one's path until it flew off, then a dashed black line out of the square the way it walked off
@@ -121,7 +121,7 @@ class ActivitySection {
   drawMovers() {
     const grid = $("activity-movers");
     grid.innerHTML = "";
-    const n = this.results.times.length;
+    const plots = new Map();  // svg -> its mover
     this.activity.movers.forEach((mover) => {
       const card = document.createElement("a");
       card.className = "mover-card";
@@ -130,72 +130,77 @@ class ActivitySection {
       const flown = mover.flew_off != null;
       card.innerHTML = `<div class="mover-head"><b>Mite ${esc(mover.id)}</b> <span class="muted">zone ${esc(mover.zone)} · ${
         flown ? `flew off at ${this.at(mover.flew_off)}` : `${mover.away.toFixed(2)} px`}</span></div>`;
-      const points = mover.dx.map((x, i) => (x == null || mover.dy[i] == null ? null : [x, mover.dy[i], i]));
-      const shown = points.filter(Boolean);
-      // the path starts on the mite's centre, the middle of the square; 99% of it
-      // on the square, so one far-off registration does not shrink the rest
-      const [ox, oy] = shown.length ? shown[0] : [0, 0];
-      const reach = shown.map((p) => Math.max(Math.abs(p[0] - ox), Math.abs(p[1] - oy))).sort((a, b) => a - b);
-      const half = Math.max(reach.length ? reach[Math.ceil(reach.length * 0.99) - 1] : 0, 0.25) * 1.15;
-      const size = 150;
-      const sx = (x) => ((x - ox + half) / (2 * half)) * size;
-      const sy = (y) => ((y - oy + half) / (2 * half)) * size;
-      const svg = PlateView.svgEl("svg", { viewBox: `0 0 ${size} ${size}`, class: "mover-plot", role: "img",
+      const svg = PlateView.svgEl("svg", { viewBox: "0 0 150 150", class: "mover-plot", role: "img",
         "aria-label": `Path of mite ${mover.id} across the recordings` });
-      svg.appendChild(PlateView.svgEl("rect", { x: 0, y: 0, width: size, height: size, class: "mover-frame" }));
-      shown.slice(1).forEach((p, i) => {
-        const q = shown[i];
-        svg.appendChild(PlateView.svgEl("line", { x1: sx(q[0]), y1: sy(q[1]), x2: sx(p[0]), y2: sy(p[1]),
-          stroke: ActivitySection.timeColor(p[2] / Math.max(1, n - 1)), class: "mover-step" }));
-      });
-      // a fly-off: from where it was last measured, out of the square the way it walked off
-      if (flown && mover.walk) {
-        const [lx, ly] = shown.length ? shown[shown.length - 1] : [ox, oy];
-        const exit = PlateView.svgEl("line", { x1: sx(lx), y1: sy(ly), x2: sx(lx) + mover.walk[0] * 2 * size, y2: sy(ly) + mover.walk[1] * 2 * size,
-          class: "mover-step mover-exit" });
-        const tip = PlateView.svgEl("title", {});
-        tip.textContent = `Mite ${mover.id} walked off this way at ${this.at(mover.flew_off)}`;
-        exit.appendChild(tip);
-        svg.appendChild(exit);
-      }
-      // the path's scale as a bar, so it is not read at the outline's (drawMoverOutlines)
-      const bar = ActivitySection.barLength(0.4 * 2 * half);
-      const barEnd = 6 + (bar / (2 * half)) * size;
-      svg.appendChild(PlateView.svgEl("line", { x1: 6, y1: size - 14, x2: barEnd, y2: size - 14, class: "mover-bar" }));
-      const scale = PlateView.svgEl("text", { x: 6, y: size - 4, class: "mover-scale" });
-      scale.textContent = `path ${bar} px`;
-      svg.appendChild(scale);
       svg.dataset.miteId = mover.id;
       svg.dataset.zone = mover.zone;
+      this.drawMover(svg, mover, null);
+      plots.set(svg, mover);
       card.appendChild(svg);
       grid.appendChild(card);
     });
-    this.drawMoverOutlines(grid);
+    this.drawMoverOutlines(grid, plots);
   }
 
-  // Behind each path, the mite's outline in the first recording (classes/outline_view.py),
-  // at its own scale and centred, to read which way the path runs against its body.
-  // Where the server has no outline (no frames kept), the path stays alone.
-  async drawMoverOutlines(grid) {
+  // One mite's square: its path and, behind it, its outline in the first recording
+  // (classes/outline_view.py; null until the server sends it, or where it has none),
+  // both at the mite's scale (its outline reaching 40% of the square), so the path
+  // reads against the size of the mite; the path starts on the mite's centre, the
+  // middle of the square. Without an outline, the square holds 99% of the path, so
+  // one far-off registration does not shrink the rest.
+  drawMover(svg, mover, outline) {
+    svg.innerHTML = "";
+    const size = 150;
+    const n = this.results.times.length;
+    const shown = mover.dx.map((x, i) => (x == null || mover.dy[i] == null ? null : [x, mover.dy[i], i])).filter(Boolean);
+    const [ox, oy] = shown.length ? shown[0] : [0, 0];
+    const reach = shown.map((p) => Math.max(Math.abs(p[0] - ox), Math.abs(p[1] - oy))).sort((a, b) => a - b);
+    const path = Math.max(reach.length ? reach[Math.ceil(reach.length * 0.99) - 1] : 0, 0.25) * 1.15;
+    const half = outline ? ActivitySection.reach(outline) / 0.8 : path;
+    const k = size / (2 * half);  // units a pixel
+    const sx = (x) => size / 2 + (x - ox) * k;
+    const sy = (y) => size / 2 + (y - oy) * k;
+    svg.appendChild(PlateView.svgEl("rect", { x: 0, y: 0, width: size, height: size, class: "mover-frame" }));
+    if (outline) {
+      const body = ActivitySection.outlineShape(outline, size, "mover-body", k);
+      const tip = PlateView.svgEl("title", {});
+      tip.textContent = `Mite ${mover.id}'s outline in the first recording, ${(2 * ActivitySection.reach(outline)).toFixed(0)} px across`;
+      body.appendChild(tip);
+      svg.appendChild(body);
+    }
+    shown.slice(1).forEach((p, i) => {
+      const q = shown[i];
+      svg.appendChild(PlateView.svgEl("line", { x1: sx(q[0]), y1: sy(q[1]), x2: sx(p[0]), y2: sy(p[1]),
+        stroke: ActivitySection.timeColor(p[2] / Math.max(1, n - 1)), class: "mover-step" }));
+    });
+    // a fly-off: from where it was last measured, out of the square the way it walked off
+    if (mover.flew_off != null && mover.walk) {
+      const [lx, ly] = shown.length ? shown[shown.length - 1] : [ox, oy];
+      const exit = PlateView.svgEl("line", { x1: sx(lx), y1: sy(ly), x2: sx(lx) + mover.walk[0] * 2 * size, y2: sy(ly) + mover.walk[1] * 2 * size,
+        class: "mover-step mover-exit" });
+      const tip = PlateView.svgEl("title", {});
+      tip.textContent = `Mite ${mover.id} walked off this way at ${this.at(mover.flew_off)}`;
+      exit.appendChild(tip);
+      svg.appendChild(exit);
+    }
+    const bar = ActivitySection.barLength(0.4 * 2 * half);
+    svg.appendChild(PlateView.svgEl("line", { x1: 6, y1: size - 14, x2: 6 + bar * k, y2: size - 14, class: "mover-bar" }));
+    const scale = PlateView.svgEl("text", { x: 6, y: size - 4, class: "mover-scale" });
+    scale.textContent = `${bar} px`;
+    svg.appendChild(scale);
+  }
+
+  // Each square drawn again with its mite's outline, zone by zone as the server
+  // sends them. Where it has none (no frames kept), the path stays alone.
+  async drawMoverOutlines(grid, plots) {
     const { sessionId } = ctx;
-    const plots = [...grid.querySelectorAll(".mover-plot")];
-    for (const zone of new Set(plots.map((svg) => svg.dataset.zone))) {
+    for (const zone of new Set([...plots.values()].map((mover) => String(mover.zone)))) {
       const outlines = await this.outlines(0, zone);
       if (!grid.isConnected || ctx.sessionId !== sessionId) return;
       if (!outlines) continue;
-      plots.filter((svg) => svg.dataset.zone === zone).forEach((svg) => {
-        const outline = outlines[svg.dataset.miteId];
-        if (!outline || !outline.dots.length) return;
-        const body = ActivitySection.outlineShape(outline, svg.viewBox.baseVal.width, "mover-body");
-        const tip = PlateView.svgEl("title", {});
-        const across = (2 * ActivitySection.reach(outline)).toFixed(0);
-        tip.textContent = `Mite ${svg.dataset.miteId}'s outline in the first recording, ${across} px across`;
-        body.appendChild(tip);
-        svg.querySelector(".mover-frame").after(body);
-        const width = svg.viewBox.baseVal.width;
-        const label = PlateView.svgEl("text", { x: width - 6, y: width - 4, class: "mover-scale mover-size" });
-        label.textContent = `mite ${across} px across`;
-        svg.appendChild(label);
+      plots.forEach((mover, svg) => {
+        const outline = outlines[mover.id];
+        if (String(mover.zone) === zone && outline && outline.dots.length) this.drawMover(svg, mover, outline);
       });
     }
   }
