@@ -345,6 +345,17 @@ class RoiRecordings:
         found them on the whole frames (MotionAnalysis.blobs); None where not."""
         return {recording["name"]: recording.get("blobs") for recording in self.index["recordings"]}
 
+    def roi_at(self, x, y):
+        """The ROI (x1, y1, x2, y2) saved round the mite at (x, y): of the boxes that
+        hold it, the one whose centre is nearest; None when no box does."""
+        holding = [mite for mite in self.index["mites"]
+                   if mite["box"][0] <= x <= mite["box"][2] and mite["box"][1] <= y <= mite["box"][3]]
+        if not holding:
+            return None
+        nearest = min(holding, key=lambda mite: ((mite["box"][0] + mite["box"][2]) / 2 - x) ** 2
+                      + ((mite["box"][1] + mite["box"][3]) / 2 - y) ** 2)
+        return tuple(nearest["roi"])
+
     def covers(self, x1, y1, x2, y2):
         """Whether one ROI holds all of (x1, y1)-(x2, y2), inside the image."""
         width, height = self.index["image"]

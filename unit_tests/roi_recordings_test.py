@@ -217,6 +217,18 @@ def test_of_a_session_of_rois_only_the_mites_clips_play(live_session):
     assert recording["n_recordings"] == 3 and recording["frames"] == 6
 
 
+def test_a_rotator_of_a_session_of_rois_plays_its_own_roi_as_saved(live_session):
+    run_dir, out_dir, results, _small = live_session
+    mite = results["mites"][0]
+    activity = {"fly_offs": [], "rotators": [{"id": mite["id"], "zone": mite["zone_id"], "x": mite["x"], "y": mite["y"],
+                                              "from": 1, "turn": 45}]}
+    clip = pipeline.activity_clip(run_dir, out_dir, activity, results["times"], "rotator", mite["id"])
+    x1, y1, x2, y2 = RoiRecordings(run_dir).roi_at(mite["x"], mite["y"])
+    assert (clip["x"], clip["y"]) == (x1, y1) and clip["recordings"] == [0, 2]
+    assert clip["width"] % (x2 - x1) == 0 and clip["height"] * (x2 - x1) == clip["width"] * (y2 - y1)
+    assert all((out_dir / name).is_file() for name in clip["frames"])
+
+
 def test_a_session_of_rois_opened_by_its_path_is_linked_into_recordings_once(live_session, tmp_path):
     run_dir, _out, _results, _small = live_session
     recordings = tmp_path / "elsewhere"
