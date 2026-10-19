@@ -8,7 +8,7 @@
 //
 // Unusual activity: the mites that flew off (came unglued and walked off; left
 // out of the analysis) with their tracks over the plate, the mites that turned
-// where they were (rotators), each as how far its body turned over time, and the
+// where they were (rotators), each opening its page in the recording it turned in, and the
 // recordings of the other mites set aside because one walked by.
 
 class ActivitySection {
@@ -82,11 +82,13 @@ class ActivitySection {
         `The first frame with the track of every mite that flew off: from where it was detected (its id, white dot) to where it was last followed,
         from light (when it left its place) to dark (when it stopped walking).
         Rings mark the mites it disturbed (their recordings are set aside) and, in purple, the rotators. Hover a track for its times.`, "plate activity-plate")}</div>` : ""}
-      ${rotators.length ? `<div class="block">${figure("activity-rotators", first + 2 + (flyOffs.length ? 1 : 0), "Rotators",
-        `Each mite whose body turned past ${turnLimit}° where it is: how far the long axis of its body has turned from its first recordings, in each recording
-        (the median of five recordings round it, so one bad measurement does not show), clockwise on the picture up, anticlockwise down.
-        The shaded band is within ${turnLimit}°; a mite outside it in three recordings is a rotator. An axis has no head and tail, so a turn reads at most 90° either way.
-        A rotator stays in the analysis. Click a time to show that recording; select a mite to open it.`, "rotator-grid")}</div>`
+      ${rotators.length ? section("Rotators", `<p class="caption">The mites whose body turned past ${turnLimit}° where they are, in three recordings or more:
+        the long axis of the body against that in its first recordings. A rotator stays in the analysis.
+        Select one to see it in the recording it turned in.</p>
+        <div class="table-wrap"><table class="clickable" id="rotator-table">
+        <thead><tr><th>Mite</th><th>Zone</th><th class="num">Turned</th><th>Way</th><th class="num">Past ${turnLimit}° from</th>
+          <th>Detector's call there</th></tr></thead>
+        <tbody>${this.rotatorRows()}</tbody></table></div>`)
         : `<p class="caption">No mite turned past ${turnLimit}° in these recordings.</p>`}
       ${nAside ? section("Recordings set aside", `<div class="table-wrap"><table id="activity-aside"></table></div>
         <p class="caption">In these recordings the mite's call is set aside: censored, it counts neither as moving nor as still, as a mite marked gone in one recording.
@@ -105,7 +107,7 @@ class ActivitySection {
     this.drawMovers();
     if (!this.activity.measured) return;
     if (this.activity.fly_offs.length) this.drawTracks();
-    if (this.activity.rotators.length) this.drawRotators();
+    if (this.activity.rotators.length) this.wireRotators();
     this.drawAside();
   }
 
@@ -295,36 +297,61 @@ class ActivitySection {
     plate.appendChild(svg);
   }
 
-  // A small chart per rotator: how far its body has turned from its first
-  // recordings, recording by recording (the server's rotator.turns), the turn
-  // within the limit shaded.
-  drawRotators() {
-    const grid = $("activity-rotators");
-    grid.innerHTML = "";
-    const limit = this.activity.turn_limit;
-    this.activity.rotators.forEach((rotator) => {
-      const card = document.createElement("div");
-      card.className = "rotator-card";
-      const known = this.results.mites.some((mite) => mite.id === rotator.id);
-      const name = known ? `<a href="${ctx.href(`mite/${encodeURIComponent(rotator.id)}`)}">Mite ${esc(rotator.id)}</a>` : `Mite ${esc(rotator.id)}`;
-      const turn = rotator.turned;
-      card.innerHTML = `<div class="mover-head"><b>${name}</b> <span class="muted">zone ${esc(rotator.zone)} · ${Math.abs(turn).toFixed(0)}° ${
-        turn >= 0 ? "clockwise" : "anticlockwise"}, past ${limit}° from ${this.at(rotator.from)}</span></div><div class="rotator-chart"></div>`;
-      grid.appendChild(card);
-      const top = Math.max(...rotator.turns.filter((value) => value != null).map(Math.abs), limit);
-      const reach = Math.min(90, Math.ceil((top * 1.15) / 10) * 10);
-      this.page.timeChart(card.querySelector(".rotator-chart"), {
-        height: 200,
-        yLabel: "Turn (°)",
-        yMin: -reach,
-        yMax: reach,
-        yFormat: (v) => `${v.toFixed(0)}°`,
-        threshold: { value: 0, label: "0°" },
-        range: { low: -limit, high: limit },
-        series: [{ name: `mite ${rotator.id}`, values: rotator.turns, color: token("--series-7"), markers: false }],
-        noDirectLabels: true,
-      });
+  // --- rotators, listed as the close calls to check are (ReviewCheck): a row
+  // per rotator opens it in the recording it turned in, where its page says
+  // how it turned and steps through the recordings round the turn.
+
+  static way(rotator) {
+    return `${Math.abs(rotator.turned).toFixed(0)}° ${rotator.turned >= 0 ? "clockwise" : "anticlockwise"}`;
+  }
+
+  rotatorRows() {
+    return this.activity.rotators.map((rotator) => {
+      const mite = this.results.mites.find((m) => m.id === rotator.id);
+      if (!mite) return "";
+      return `<tr data-rotator="${esc(mite.id)}" tabindex="0" title="Open this mite in the recording it turned in">
+        <td>${this.page.miteId(mite)}</td>
+        <td>${esc(this.page.zoneName(ctx.zone(mite.zone_id)))}</td>
+        <td class="num">${Math.abs(rotator.turned).toFixed(0)}°</td>
+        <td>${rotator.turned >= 0 ? "clockwise" : "anticlockwise"}</td>
+        <td class="num">${this.at(rotator.from)}</td>
+        <td>${this.page.callBadge(mite, rotator.from)}</td></tr>`;
+    }).join("");
+  }
+
+  wireRotators() {
+    document.querySelectorAll("[data-rotator]").forEach((row) => {
+      const mite = this.results.mites.find((m) => m.id === row.dataset.rotator);
+      const rotator = this.rotator(mite);
+      const open = () => resultsView.openMite(mite, rotator.from);
+      row.addEventListener("click", open);
+      row.addEventListener("keydown", (event) => { if (event.key === "Enter") open(); });
     });
+  }
+
+  rotator(mite) {
+    return this.activity?.rotators?.find((rotator) => rotator.id === mite.id) || null;
+  }
+
+  // Above a rotator's page: how it turned, and the recordings round its turn to
+  // step through, the one it turned in marked.
+  miteNote(mite) {
+    const rotator = this.rotator(mite);
+    if (!rotator) return "";
+    const n = this.results.times.length;
+    const around = [rotator.from - 1, rotator.from, rotator.from + 1, rotator.last_seen]
+      .filter((recording, i, all) => recording >= 0 && recording < n && all.indexOf(recording) === i);
+    const name = (recording) => recording === rotator.from ? "turned" : recording < rotator.from ? "before" : recording === rotator.last_seen ? "last" : "after";
+    return `<div class="banner review-note"><span><b>Rotator:</b> its body turned ${ActivitySection.way(rotator)},
+        past ${this.activity.turn_limit}° from ${this.at(rotator.from)}. It stays in the analysis.</span>
+      <span class="review-times">${around.map((recording) =>
+        `<button type="button" class="small secondary${recording === ctx.shown ? " current" : ""}" data-rotator-recording="${recording}"
+          title="Show this recording">${this.at(recording)} <span class="muted">${name(recording)}</span></button>`).join("")}</span></div>`;
+  }
+
+  wireMite(body) {
+    body.querySelectorAll("[data-rotator-recording]").forEach((button) =>
+      button.addEventListener("click", () => resultsView.showRecording(Number(button.dataset.rotatorRecording))));
   }
 
   drawAside() {
