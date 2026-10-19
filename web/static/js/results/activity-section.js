@@ -8,7 +8,7 @@
 //
 // Unusual activity: the mites that flew off (came unglued and walked off; left
 // out of the analysis) with their tracks over the plate, the mites that turned
-// where they were (rotators), each as a clock face of its body's turn, and the
+// where they were (rotators), each as how far its body turned over time, and the
 // recordings of the other mites set aside because one walked by.
 
 class ActivitySection {
@@ -83,10 +83,10 @@ class ActivitySection {
         from light (when it left its place) to dark (when it stopped walking).
         Rings mark the mites it disturbed (their recordings are set aside) and, in purple, the rotators. Hover a track for its times.`, "plate activity-plate")}</div>` : ""}
       ${rotators.length ? `<div class="block">${figure("activity-rotators", first + 2 + (flyOffs.length ? 1 : 0), "Rotators",
-        `Each mite whose body turned past ${turnLimit}° where it is, as a clock face: the grey line is the long axis of its body in its first recordings,
-        the purple one in its last, and the shaded wedge the turn between them. Its outline in the first recording is drawn behind,
-        its outline in the last one lighter, both at the first one's scale (far larger than in the picture). A rotator stays in the analysis.
-        Select a mite to open it.`, "mover-grid")}</div>`
+        `Each mite whose body turned past ${turnLimit}° where it is: how far the long axis of its body has turned from its first recordings, in each recording
+        (the median of five recordings round it, so one bad measurement does not show), clockwise on the picture up, anticlockwise down.
+        The shaded band is within ${turnLimit}°; a mite outside it in three recordings is a rotator. An axis has no head and tail, so a turn reads at most 90° either way.
+        A rotator stays in the analysis. Click a time to show that recording; select a mite to open it.`, "rotator-grid")}</div>`
         : `<p class="caption">No mite turned past ${turnLimit}° in these recordings.</p>`}
       ${nAside ? section("Recordings set aside", `<div class="table-wrap"><table id="activity-aside"></table></div>
         <p class="caption">In these recordings the mite's call is set aside: censored, it counts neither as moving nor as still, as a mite marked gone in one recording.
@@ -295,75 +295,36 @@ class ActivitySection {
     plate.appendChild(svg);
   }
 
-  // A clock face per rotator: the long axis of its body in its first recordings
-  // and in its last through the middle, the turn between them shaded, over its
-  // outline in its first recording and, lighter, in its last.
+  // A small chart per rotator: how far its body has turned from its first
+  // recordings, recording by recording (the server's rotator.turns), the turn
+  // within the limit shaded.
   drawRotators() {
     const grid = $("activity-rotators");
     grid.innerHTML = "";
-    const size = 150;
-    const middle = size / 2;
-    const hand = 0.47 * size;
-    const along = (degrees, length) => [middle + Math.cos((degrees * Math.PI) / 180) * length, middle + Math.sin((degrees * Math.PI) / 180) * length];
+    const limit = this.activity.turn_limit;
     this.activity.rotators.forEach((rotator) => {
-      const card = document.createElement("a");
-      card.className = "mover-card";
-      if (this.results.mites.some((mite) => mite.id === rotator.id)) card.href = ctx.href(`mite/${encodeURIComponent(rotator.id)}`);
-      const { angle_first: first, turned: turn } = rotator;
-      card.innerHTML = `<div class="mover-head"><b>Mite ${esc(rotator.id)}</b> <span class="muted">zone ${esc(rotator.zone)} · ${Math.abs(turn).toFixed(0)}° ${
-        turn >= 0 ? "clockwise" : "anticlockwise"} from ${this.at(rotator.from)}</span></div>`;
-      const svg = PlateView.svgEl("svg", { viewBox: `0 0 ${size} ${size}`, class: "mover-plot", role: "img",
-        "aria-label": `Mite ${rotator.id}'s body turned ${Math.abs(turn).toFixed(0)} degrees` });
-      svg.appendChild(PlateView.svgEl("rect", { x: 0, y: 0, width: size, height: size, class: "mover-frame" }));
-      // the wedge on both sides of the middle: an axis has no head and tail
-      [0, 180].forEach((half) => {
-        const [x1, y1] = along(first + half, hand);
-        const [x2, y2] = along(first + turn + half, hand);
-        svg.appendChild(PlateView.svgEl("path", { class: "rotator-wedge",
-          d: `M${middle},${middle} L${x1.toFixed(1)},${y1.toFixed(1)} A${hand},${hand} 0 0 ${turn >= 0 ? 1 : 0} ${x2.toFixed(1)},${y2.toFixed(1)} Z` }));
-      });
-      [[first, "rotator-axis first", "first"], [first + turn, "rotator-axis last", "last"]].forEach(([degrees, cls, which]) => {
-        const [x1, y1] = along(degrees, hand);
-        const [x2, y2] = along(degrees + 180, hand);
-        const line = PlateView.svgEl("line", { x1, y1, x2, y2, class: cls });
-        const tip = PlateView.svgEl("title", {});
-        tip.textContent = `The long axis of its body in its ${which} recordings: ${(((degrees % 180) + 180) % 180).toFixed(0)}°`;
-        line.appendChild(tip);
-        svg.appendChild(line);
-      });
-      svg.appendChild(PlateView.svgEl("circle", { cx: middle, cy: middle, r: 2.2, class: "rotator-pin" }));
-      Object.assign(svg.dataset, { miteId: rotator.id, zone: rotator.zone });
-      card.appendChild(svg);
+      const card = document.createElement("div");
+      card.className = "rotator-card";
+      const known = this.results.mites.some((mite) => mite.id === rotator.id);
+      const name = known ? `<a href="${ctx.href(`mite/${encodeURIComponent(rotator.id)}`)}">Mite ${esc(rotator.id)}</a>` : `Mite ${esc(rotator.id)}`;
+      const turn = rotator.turned;
+      card.innerHTML = `<div class="mover-head"><b>${name}</b> <span class="muted">zone ${esc(rotator.zone)} · ${Math.abs(turn).toFixed(0)}° ${
+        turn >= 0 ? "clockwise" : "anticlockwise"}, past ${limit}° from ${this.at(rotator.from)}</span></div><div class="rotator-chart"></div>`;
       grid.appendChild(card);
-    });
-    this.drawRotatorOutlines(grid);
-  }
-
-  // Behind each clock face, the rotator's outline in the first recording it was
-  // measured in and, lighter, in the last, both at the first one's scale.
-  async drawRotatorOutlines(grid) {
-    const { sessionId } = ctx;
-    for (const rotator of this.activity.rotators) {
-      const first = await this.outlines(rotator.first_seen, rotator.zone);
-      const last = await this.outlines(rotator.last_seen, rotator.zone);
-      if (!grid.isConnected || ctx.sessionId !== sessionId) return;
-      const svg = [...grid.querySelectorAll(".mover-plot")].find((plot) => plot.dataset.miteId === rotator.id);
-      const [before, after] = [first?.[rotator.id], last?.[rotator.id]];
-      if (!svg || !before || !before.dots.length) continue;
-      const size = svg.viewBox.baseVal.width;
-      const k = (0.4 * size) / ActivitySection.reach(before);
-      const frame = svg.querySelector(".mover-frame");
-      const shapes = [[before, "mover-body", rotator.first_seen]];
-      if (after && after.dots.length) shapes.push([after, "rotator-last", rotator.last_seen]);
-      // the first drawn over the last, both under the clock's hands
-      shapes.forEach(([outline, cls, recording]) => {
-        const shape = ActivitySection.outlineShape(outline, size, cls, k);
-        const tip = PlateView.svgEl("title", {});
-        tip.textContent = `Mite ${rotator.id}'s outline at ${this.at(recording)}`;
-        shape.appendChild(tip);
-        frame.after(shape);
+      const top = Math.max(...rotator.turns.filter((value) => value != null).map(Math.abs), limit);
+      const reach = Math.min(90, Math.ceil((top * 1.15) / 10) * 10);
+      this.page.timeChart(card.querySelector(".rotator-chart"), {
+        height: 200,
+        yLabel: "Turn (°)",
+        yMin: -reach,
+        yMax: reach,
+        yFormat: (v) => `${v.toFixed(0)}°`,
+        threshold: { value: 0, label: "0°" },
+        range: { low: -limit, high: limit },
+        series: [{ name: `mite ${rotator.id}`, values: rotator.turns, color: token("--series-7"), markers: false }],
+        noDirectLabels: true,
       });
-    }
+    });
   }
 
   drawAside() {

@@ -248,10 +248,10 @@ censored, it counts neither as moving nor as still; setting the call by hand
 counts it again. A mite whose body turns by more than 30° where it is, a
 *rotator*, stays in the analysis. The results overview lists them under
 *Unusual activity*: the tracks of the fly-offs on the plate, the mites they
-disturbed, the recordings set aside, and each rotator as a clock face: the long
-axis of its body in its first 3 recordings and in its last 3 (the median of
-each) through the middle, the turn between them shaded, over its outline in
-the first recording and, lighter, in the last. The *Playback* page plays every
+disturbed, the recordings set aside, and each rotator as a chart of how far
+the long axis of its body has turned from its first 3 recordings, in each
+recording (the median of the 5 round it), clockwise up and anticlockwise down,
+with the band within 30° shaded. The *Playback* page plays every
 mite, the fly-offs too. What is measured for this
 is kept with the scores, so a run read back from them has it too.
 
