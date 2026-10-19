@@ -1289,7 +1289,14 @@ def analysis_mite_clip(data_dir, out_dir, recording, mite_id, mites):
 
 
 PLAYBACK_MAX_FRAMES = 100  # frames of one recording in its playback at most; a longer one is thinned to fit
-PLAYBACK_REACH = MITE_CLIP_REACH  # pixels from a mite's centre to the edge of its picture in the playback
+PLAYBACK_MARGIN = 4  # pixels round a mite's box (its detector radius round its centre) in its playback square
+
+
+def playback_reach():
+    """Pixels from a mite's centre to the edge of its square in the playback:
+    its box, the detector's radius round it, and PLAYBACK_MARGIN, so the mite
+    fills it."""
+    return int(get_default_config().mite.radius) + PLAYBACK_MARGIN
 
 
 def _playback_step(loader, name):
@@ -1331,14 +1338,14 @@ def playback_timeline(data_dir, results):
         recordings.append({"frames": len(range(0, loader.count_frames(name), step)),
                            "interval_ms": int(round(1000 * step / loader.get_fps(name)))})
     mites = [{key: mite[key] for key in ("id", "zone_id", "flew_off")} for mite in _with_fly_offs(results)]
-    return {"recordings": recordings, "tile": 2 * PLAYBACK_REACH, "mites": mites}
+    return {"recordings": recordings, "tile": 2 * playback_reach(), "mites": mites}
 
 
 def playback_sheet(data_dir, out_dir, recording, zone_id, results):
     """Every mite of one zone in every frame of one recording, for the playback
     page: one picture with a row per mite (_with_fly_offs(), the fly-offs
     too) and a column per frame (as playback_timeline() thins them), each
-    2 * PLAYBACK_REACH pixels square round the mite's centre, black where
+    2 * playback_reach() pixels square round the mite's centre, black where
     nothing was saved (of a session saved as the mites' ROIs, beyond the
     mite's own). `results` as run_analysis() gives them. Returns the picture's
     file (relative to `out_dir`), the mites in its rows, the side of a square
@@ -1349,18 +1356,19 @@ def playback_sheet(data_dir, out_dir, recording, zone_id, results):
         raise ValueError(f"No mites in zone {zone_id}.")
     loader = open_recordings(data_dir)
     source = _recording_name(loader, recording)
-    name = f"playback_r{recording}_z{zone_id}_{_where_key(mites)}"
+    reach = playback_reach()
+    name = f"playback_r{recording}_z{zone_id}_s{2 * reach}_{_where_key(mites)}"
     clips_dir = Path(out_dir) / CLIPS_DIRNAME
     manifest = clips_dir / f"{name}.json"
     if manifest.is_file():
         return json.loads(manifest.read_text(encoding="utf-8"))
 
-    step, side = _playback_step(loader, source), 2 * PLAYBACK_REACH
+    step, side = _playback_step(loader, source), 2 * reach
     n_frames = len(range(0, loader.count_frames(source), step))
     sheet = np.zeros((len(mites) * side, n_frames * side), dtype=np.uint8)
     for row, mite in enumerate(mites):
         x, y = int(round(mite["x"])), int(round(mite["y"]))
-        x1, y1, x2, y2 = x - PLAYBACK_REACH, y - PLAYBACK_REACH, x + PLAYBACK_REACH, y + PLAYBACK_REACH
+        x1, y1, x2, y2 = x - reach, y - reach, x + reach, y + reach
         cut = [max(0, x1), max(0, y1), x2, y2]
         if isinstance(loader, RoiRecordings):
             roi = loader.roi_at(mite["x"], mite["y"])

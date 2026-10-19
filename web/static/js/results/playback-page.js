@@ -50,7 +50,7 @@ class PlaybackPage extends ResultsPage {
     </div>
     <p class="hint clip-status" id="playback-status"></p>
     <div id="playback-grid" class="playback-zones"></div>
-    <p class="caption">Each square is a mite and what is round it, as recorded (not moved back by the plate's shake), every frame of each recording
+    <p class="caption">Each square is a mite's box and a few pixels round it, as recorded (not moved back by the plate's shake), every frame of each recording
       in real time at 1×; between two recordings the time the box waited is skipped. The time is at the top, with the frame and the recording.
       A square's edge is the mite's call in the recording playing: ${Markup.movingBadge(true)} or ${Markup.movingBadge(false)}, grey where it is gone or set aside.
       The fly-offs, left out of the analysis, are at the end of their zone. Select a mite to open it.</p>`;

@@ -221,14 +221,14 @@ def test_of_a_session_of_rois_only_the_mites_clips_play(live_session):
 def test_the_playback_shows_each_mite_of_a_zone_in_every_frame_as_saved(live_session):
     run_dir, out_dir, results, small = live_session
     timeline = pipeline.playback_timeline(run_dir, results)
-    assert [r["frames"] for r in timeline["recordings"]] == [6, 6, 6] and timeline["tile"] == 2 * pipeline.PLAYBACK_REACH
+    assert [r["frames"] for r in timeline["recordings"]] == [6, 6, 6] and timeline["tile"] == 2 * pipeline.playback_reach() < 40
     assert [m["id"] for m in timeline["mites"]] == [m["id"] for m in results["mites"]]
     zone = results["mites"][0]["zone_id"]
     sheet = pipeline.playback_sheet(run_dir, out_dir, 1, zone, results)
     mites = [m for m in results["mites"] if m["zone_id"] == zone]
     assert sheet["mites"] == [m["id"] for m in mites] and sheet["frames"] == 6
     picture = cv2.imread(str(out_dir / sheet["sheet"]), cv2.IMREAD_GRAYSCALE)
-    side, reach = sheet["tile"], pipeline.PLAYBACK_REACH
+    side, reach = sheet["tile"], pipeline.playback_reach()
     assert picture.shape == (len(mites) * side, 6 * side)
     loader = RoiRecordings(run_dir)
     for row, mite in enumerate(mites):
@@ -250,7 +250,7 @@ def test_the_playback_of_whole_frames_is_cut_round_each_mite(live_session, tmp_p
     mite = results["mites"][0]
     sheet = pipeline.playback_sheet(small, tmp_path, 0, mite["zone_id"], results)
     picture = cv2.imread(str(tmp_path / sheet["sheet"]), cv2.IMREAD_GRAYSCALE)
-    x, y, reach, side = round(mite["x"]), round(mite["y"]), pipeline.PLAYBACK_REACH, sheet["tile"]
+    x, y, reach, side = round(mite["x"]), round(mite["y"]), pipeline.playback_reach(), sheet["tile"]
     name = sorted(path.name for path in small.iterdir() if path.is_dir())[0]
     first = cv2.imread(str(sorted((small / name).glob("*.bmp"))[0]), cv2.IMREAD_GRAYSCALE)
     row = sheet["mites"].index(mite["id"])

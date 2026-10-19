@@ -94,8 +94,9 @@ To analyse a folder, in *Analysis*:
    laid out by zone (a box per zone, a square per mite in it, the fly-offs at
    the end of theirs), all on one timer at the top of the page: play or pause,
    a slider over every frame of the run, a speed of 1× (real time) to 16×, and
-   the time, recording and frame shown. Each square is the 80 × 80 pixels
-   round the mite as recorded, its edge the mite's call in the recording
+   the time, recording and frame shown. Each square is the mite's box (the
+   detector's `mite.radius` round its centre) and 4 pixels more, as recorded,
+   so the mite fills it, its edge the mite's call in the recording
    playing (green moving, orange still, grey gone or set aside); click it to
    open the mite. The server cuts, per recording and zone, one picture with a
    row per mite and a column per frame (`pipeline.playback_sheet`, kept in
