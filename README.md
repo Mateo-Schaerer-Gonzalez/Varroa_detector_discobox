@@ -152,11 +152,17 @@ that with the detector:
    by the ground truth against the detector's; *Test* also shows it per group,
    and a poke test where one was entered (see *Poke test* below). The report is
    the one picked on the first page; to see the other, go back and pick it there.
-   *Show the wrong calls* under *Wrong calls* lists every labelled
+   In *Calibration*, *Show the wrong calls* under *Wrong calls* lists every labelled
    mite-recording the detector called the other way (all, or only moving called
-   still or still called moving), at the threshold the confusion matrix shows;
-   clicking one opens that mite in its recording, to see why or correct the
-   label. Everything is
+   still or still called moving), at the threshold the confusion matrix shows,
+   to check by eye that the ground truth is right, as the close calls are on the
+   results page: clicking one, or *Check them one by one*, opens that mite in its
+   recording on the ground-truth page, which says what it is labelled and what
+   the detector called it and asks *Moving* or *Still* (or <kbd>M</kbd>,
+   <kbd>S</kbd>). The answer is its label, and the next wrong call not checked yet
+   comes up, in whichever dataset it is; a bar says how many are checked, and
+   after the last one the report comes back, to update with the labels
+   changed. Everything is
    also written to `calibration.xlsx`, in `results/<recording>/calibration/`
    (a report pooled over saved ground truth alone in `results/pooled/<date time>/`).
    Under *Data used*, switch on *Pool with

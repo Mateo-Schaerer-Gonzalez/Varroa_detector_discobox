@@ -4,7 +4,9 @@
 // moving, still, not a mite or not at all, and a label goes on to the next
 // recording; D marks the mite dead from the recording on screen on. ← → move
 // between recordings, ↑ ↓ between mites, P plays or pauses. What a label does,
-// and every count, is the server's (GroundTruth, classes/truth_draft.py).
+// and every count, is the server's (GroundTruth, classes/truth_draft.py). Opened
+// from the calibration report's wrong calls, a note above asks about the one
+// shown, and a label goes on to the next wrong call instead (WrongCalls).
 
 class TruthPage {
   // The statuses in the order the counts list them; null is unlabelled.
@@ -56,6 +58,7 @@ class TruthPage {
     $("truth-pager").innerHTML = Markup.pager(mites, index, (m) => cal.truthHref(m.id), (m) => `Mite ${m.id}`);
 
     this.playClip(mite, recording);
+    this.drawWrongCall();
     this.drawRecordingSlider();
     this.drawLabel();
     this.drawMap();
@@ -73,6 +76,27 @@ class TruthPage {
     $("play-btn").textContent = player.playing ? "Pause" : "Play";
   }
 
+  // The note asking about the wrong call shown, while checking the report's.
+  drawWrongCall() {
+    const holder = $("truth-check");
+    const { wrongCalls } = reportPage;
+    holder.innerHTML = wrongCalls.note(cal.miteId, cal.recording);
+    wrongCalls.wireNote(holder);
+  }
+
+  static clipUrl(miteId, recording) {
+    return `/api/calibration/${cal.id}/mite-clip/${recording}/${encodeURIComponent(miteId)}`;
+  }
+
+  static frameUrl(name) {
+    return `/api/session/${cal.id}/file/${name}`;
+  }
+
+  // Fetch ahead the clip of one mite in one recording of the dataset shown.
+  warm(miteId, recording) {
+    player.warm(TruthPage.clipUrl(miteId, recording), TruthPage.frameUrl);
+  }
+
   // A picture of the clip's cut of the recording, with the ring round the mite.
   picture(clip, mite, src) {
     const svg = PlateView.crop(clip.x, clip.y, clip.width, clip.height, src, clip);
@@ -87,8 +111,7 @@ class TruthPage {
   async playClip(mite, recording) {
     const holders = [$("truth-crop"), $("truth-variation")];
     const status = $("clip-status");
-    const frameUrl = (name) => `/api/session/${cal.id}/file/${name}`;
-    const clipUrl = (m, r) => `/api/calibration/${cal.id}/mite-clip/${r}/${encodeURIComponent(m.id)}`;
+    const { frameUrl } = TruthPage;
     const shown = () => cal.miteId === mite.id && cal.recording === recording && location.hash.startsWith("#/cal/truth");
     holders.forEach((holder) => holder.classList.add("loading"));
     status.className = "";
@@ -96,7 +119,7 @@ class TruthPage {
     let clip = null;
     try {
       // The frames never change, so they need no cache-buster.
-      clip = await player.load(clipUrl(mite, recording), frameUrl);
+      clip = await player.load(TruthPage.clipUrl(mite.id, recording), frameUrl);
     } catch (error) {
       if (!shown()) return;
       holders.forEach((holder) => { holder.classList.remove("loading"); holder.innerHTML = ""; });
@@ -112,8 +135,9 @@ class TruthPage {
     status.textContent = `${clip.frames.length} frames, played back in real time. The ring marks the mite, in the colour of its label.`;
     this.drawRings();
     player.start(clip, ClipPlayer.onSvg(moving, clip));
-    // the next recording, so that a label goes on to it at once
-    if (recording + 1 < cal.nRecordings) player.warm(clipUrl(mite, recording + 1), frameUrl);
+    // the next recording, or the next wrong call, so that a label goes on to it at once
+    if (reportPage.wrongCalls.rowAt(mite.id, recording)) reportPage.wrongCalls.warmNext(mite.id, recording);
+    else if (recording + 1 < cal.nRecordings) this.warm(mite.id, recording + 1);
   }
 
   state() {
@@ -200,6 +224,7 @@ class TruthPage {
   }
 
   refreshPanel() {
+    this.drawWrongCall();
     this.drawRecordingSlider();
     this.drawLabel();
     this.refreshMap();
@@ -217,11 +242,13 @@ class TruthPage {
   }
 
   // Label the mite in the recording on screen and go on: to its next recording, or
-  // after its last one, and after "not a mite", to the next mite with work left.
+  // after its last one, and after "not a mite", to the next mite with work left;
+  // on a wrong call being checked, to the next wrong call.
   async label(state) {
     const { miteId, recording } = cal;
     if (!await this.change({ action: "set", state })) return;
     if (cal.miteId !== miteId || cal.recording !== recording) return;  // moved on meanwhile
+    if (state && reportPage.wrongCalls.answered(miteId, recording)) return;
     this.refreshPanel();
     if (state === "not_a_mite" || (state && recording + 1 >= cal.nRecordings)) this.goToWork();
     else if (state) router.go(cal.truthHref(miteId, recording + 1));

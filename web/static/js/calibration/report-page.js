@@ -111,6 +111,7 @@ class ReportPage {
     const { section } = Markup;
     const testing = cal.mode === "test";
     const body = $("report-body");
+    this.wrongCalls.checking = false;  // back on the report: the ground-truth page asks about no wrong call
     const left = [
       r.n_not_a_mite ? `${r.n_not_a_mite} detection${r.n_not_a_mite > 1 ? "s" : ""} not a mite, left out` : "",
       r.n_unlabelled ? `${r.n_unlabelled} mite-recordings unlabelled, left out` : "",
@@ -480,8 +481,6 @@ class ReportPage {
       ${figure("chart-survival", 2, "Survival rate: ground truth and the detector", survivalCaption(r, ReportPage.thresholdMarks(r).slice(0, 1)))}
     </div>
 
-    ${this.wrongCalls.html()}
-
     ${section("Against the benchmark", this.benchmarkTable(r))}
 
     <div class="grid-2">
@@ -573,7 +572,6 @@ class ReportPage {
     const marks = ReportPage.thresholdMarks(r).slice(0, 1);
     const { figures } = this;
     $("confusion").innerHTML = figures.confusionTable(r.current, r.rates.current);
-    this.wrongCalls.draw(r, r.current, false);
     figures.drawSurvival($("chart-survival"), r.survival, r.times, marks);
     const drawMap = () => {
       if ($("map-dataset")) cal.mapDataset = $("map-dataset").value;
