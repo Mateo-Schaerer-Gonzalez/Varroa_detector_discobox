@@ -59,12 +59,17 @@ class ActivitySection {
         Click a time to show that recording.${this.page.stillToCome()}`)}</div>
       <div class="block">${figure("activity-movers", first + 1, `The ${movers.length} mites that drifted furthest`,
         `Each mite's path across the recordings: where its image sits against its image in the first recording (px, py, in pixels), from light (first recording) to dark (last), starting on the mite's centre.
-        Behind the path, the mite's outline in the first recording, at the same scale (the bar, bottom left), to read how far and which way it drifted against its body.
+        Behind the path, the mite's outline in the first recording, at the same scale (the bar, bottom left), to read how far and which way it drifted against its body;
+        <i>Path</i> zooms in until the path fills the square, the outline with it.
         The mites are ranked by how far they sit from their zone's median path, what the plate under them did
         (the 95th percentile over the recordings, so one bad measurement does not rank a mite).
         After them come the fly-offs: each one's path until it flew off, then a dashed black line out of the square the way it walked off
         (once a mite has walked, it no longer looks like its first image, and its path says nothing). The rotators are left out for the same reason; they are under Unusual activity.
-        Select a mite to open it.`, "mover-grid")}</div>`;
+        Select a mite to open it.`, "mover-grid", `<span class="muted">Scale</span>
+        <div class="segmented" role="group" aria-label="Scale of the paths">
+          <button type="button" data-zoom="mite" class="small">Mite</button>
+          <button type="button" data-zoom="path" class="small secondary">Path</button>
+        </div>`)}</div>`;
 
     const nAside = disturbed.length;
     const activity = `
@@ -117,11 +122,21 @@ class ActivitySection {
     });
   }
 
-  // One small square per mite, its path coloured by time from its centre.
+  // One small square per mite, its path coloured by time from its centre, at the
+  // mite's scale or, zoomed in, the path's.
   drawMovers() {
     const grid = $("activity-movers");
     grid.innerHTML = "";
     const plots = new Map();  // svg -> its mover
+    const outlines = new Map();  // svg -> its mite's outline, once the server sent it
+    const buttons = grid.closest("figure").querySelectorAll("[data-zoom]");
+    const show = () => buttons.forEach((button) => button.classList.toggle("secondary", (button.dataset.zoom === "path") !== Boolean(this.zoomed)));
+    show();
+    buttons.forEach((button) => (button.onclick = () => {
+      this.zoomed = button.dataset.zoom === "path";
+      show();
+      plots.forEach((mover, svg) => this.drawMover(svg, mover, outlines.get(svg) || null, this.zoomed));
+    }));
     this.activity.movers.forEach((mover) => {
       const card = document.createElement("a");
       card.className = "mover-card";
@@ -134,21 +149,24 @@ class ActivitySection {
         "aria-label": `Path of mite ${mover.id} across the recordings` });
       svg.dataset.miteId = mover.id;
       svg.dataset.zone = mover.zone;
-      this.drawMover(svg, mover, null);
+      this.drawMover(svg, mover, null, this.zoomed);
       plots.set(svg, mover);
       card.appendChild(svg);
       grid.appendChild(card);
     });
-    this.drawMoverOutlines(grid, plots);
+    this.drawMoverOutlines(grid, plots, (svg, outline) => {
+      outlines.set(svg, outline);
+      this.drawMover(svg, plots.get(svg), outline, this.zoomed);
+    });
   }
 
   // One mite's square: its path and, behind it, its outline in the first recording
   // (classes/outline_view.py; null until the server sends it, or where it has none),
   // both at the mite's scale (its outline reaching 40% of the square), so the path
   // reads against the size of the mite; the path starts on the mite's centre, the
-  // middle of the square. Without an outline, the square holds 99% of the path, so
-  // one far-off registration does not shrink the rest.
-  drawMover(svg, mover, outline) {
+  // middle of the square. `zoomed`, or without an outline, the square holds 99% of
+  // the path instead, so one far-off registration does not shrink the rest.
+  drawMover(svg, mover, outline, zoomed) {
     svg.innerHTML = "";
     const size = 150;
     const n = this.results.times.length;
@@ -156,7 +174,7 @@ class ActivitySection {
     const [ox, oy] = shown.length ? shown[0] : [0, 0];
     const reach = shown.map((p) => Math.max(Math.abs(p[0] - ox), Math.abs(p[1] - oy))).sort((a, b) => a - b);
     const path = Math.max(reach.length ? reach[Math.ceil(reach.length * 0.99) - 1] : 0, 0.25) * 1.15;
-    const half = outline ? ActivitySection.reach(outline) / 0.8 : path;
+    const half = outline && !zoomed ? ActivitySection.reach(outline) / 0.8 : path;
     const k = size / (2 * half);  // units a pixel
     const sx = (x) => size / 2 + (x - ox) * k;
     const sy = (y) => size / 2 + (y - oy) * k;
@@ -190,9 +208,9 @@ class ActivitySection {
     svg.appendChild(scale);
   }
 
-  // Each square drawn again with its mite's outline, zone by zone as the server
+  // Each mite's outline handed to `found(svg, outline)`, zone by zone as the server
   // sends them. Where it has none (no frames kept), the path stays alone.
-  async drawMoverOutlines(grid, plots) {
+  async drawMoverOutlines(grid, plots, found) {
     const { sessionId } = ctx;
     for (const zone of new Set([...plots.values()].map((mover) => String(mover.zone)))) {
       const outlines = await this.outlines(0, zone);
@@ -200,7 +218,7 @@ class ActivitySection {
       if (!outlines) continue;
       plots.forEach((mover, svg) => {
         const outline = outlines[mover.id];
-        if (String(mover.zone) === zone && outline && outline.dots.length) this.drawMover(svg, mover, outline);
+        if (String(mover.zone) === zone && outline && outline.dots.length) found(svg, outline);
       });
     }
   }

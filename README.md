@@ -224,7 +224,8 @@ one's own patch moved within each recording, recording by recording, to spot a
 recording or a stretch of time in which the plate shook, and the 10 mites that
 drifted furthest from their zone across the recordings, each as its path over
 its outline in the first recording (both at the mite's scale, with a bar for
-it, to read how far and which way it drifted against its body), then every fly-off: its path until it flew
+it, to read how far and which way it drifted against its body; *Scale: Path*
+zooms in until the path fills its square), then every fly-off: its path until it flew
 off, and a dashed line out of its square the way it walked off (the first point
 of its track out of its place). The
 *Stabilize plate* checkbox next to the metric on the calibration report tries
