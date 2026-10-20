@@ -13,8 +13,9 @@ can never reach into the analysis internals.
     save_label_reading(...)    whether the label page reads them: its box, saved in config.yaml
     run_analysis(...)          the full pipeline, writing Excel and figures to out_dir
     correct_call(...)          change one mite's call in one recording by hand, or mark it gone; the results follow
-    save_review_band(...)      the band around the threshold whose calls are checked by eye, into config.yaml
-    review_again(...)          the results of a folder's last run again, with the band as it is now
+    review_mites(...)          how many mites the result pages ask to check by eye, for some recordings
+    save_review_mites(...)     change that number for them, or go back to config.yaml's
+    review_again(...)          the results of a folder's last run again, with the calls to check as they are now
     analysis_clip(...)         frames of one recording, of one zone or the whole plate
     playback_timeline(...)     what the playback page plays of each recording, one after the other
     playback_sheet(...)        every mite of one zone in every frame of one recording, for the playback page
@@ -693,10 +694,15 @@ def _normalizer_in_use(mite):
     return ScoreNormalizer(floor=mite.normalize_floor, brightness=mite.normalize_brightness)
 
 
-def _review_band(metric):
-    """The band around the threshold of `metric` whose calls are checked by eye,
-    as config.yaml has it now (a ReviewBand); None without one."""
-    return ReviewBand.of(get_default_config().mite, metric)
+def _review(run, mite_data, changes, data_dir):
+    """The calls to check by eye (ReviewBand.describe()): those of the narrowest
+    band around the threshold, shaped as config.yaml's, that asks about the
+    mites to check for the recordings in `data_dir` (review_mites()); None when
+    it asks about none."""
+    mite = get_default_config().mite
+    band = ReviewBand.fitted(mite_data, run.analyzer.config.mite.motion_threshold, review_mites(data_dir),
+                             mite.review_band_for(mite.metric))
+    return band.describe(mite_data, changes) if band is not None else None
 
 
 def _change_call(zone_manager, corrections, mite_id, recording, state, detected=None, checked=False):
@@ -738,17 +744,43 @@ def correct_call(out_dir, mite_id, recording, state=None, checked=False):
     return results
 
 
-def save_review_band(low, high):
-    """Make `low` to `high`, on the scale of the metric in use, the band around
-    its threshold whose calls are checked by eye (classes/review_band.py), for
-    every analysis from now on; without both, there is no band any more.
-    Returns [low, high] as saved, or None."""
-    return app_config.save_review_band(low, high)
+REVIEW_MITES = "review_mites"  # the line of a run's .settings.txt with its own number of mites to check
+
+
+def review_mites(data_dir=None):
+    """How many mites the result pages ask to check by eye for the recordings in
+    `data_dir`: their own number, saved with them, or config.yaml's
+    (mite.review_mites) without one or without `data_dir`."""
+    default = max(0, int(get_default_config().mite.review_mites))
+    path = Path(data_dir) / SETTINGS_FILENAME if data_dir is not None else None
+    try:
+        own = DataLoader._parse_settings_file(path).get(REVIEW_MITES) if path and path.is_file() else None
+        return default if own is None else max(0, int(own))
+    except (OSError, TypeError, ValueError):
+        return default
+
+
+def save_review_mites(data_dir, mites):
+    """Make `mites` the number of mites to check by eye for the recordings in
+    `data_dir`: the review_mites line of their .settings.txt. With None the
+    line goes, and config.yaml's number holds again. Returns the number now."""
+    path = Path(data_dir) / SETTINGS_FILENAME
+    if mites is None:
+        DataLoader.remove_setting(path, REVIEW_MITES)
+        return review_mites(data_dir)
+    try:
+        value = int(mites)
+    except (TypeError, ValueError):
+        raise ValueError("The mites to check must be a whole number.")
+    if value != mites or value < 0:
+        raise ValueError("The mites to check must be a whole number, 0 or more.")
+    DataLoader.save_setting(path, REVIEW_MITES, value)
+    return value
 
 
 def review_again(out_dir):
     """The results of the last run written to `out_dir` again, with the calls to
-    check by eye as the band is now; None when that run is no longer kept."""
+    check by eye as they are now; None when that run is no longer kept."""
     with _runs_lock:
         kept = _runs.get(_draft_key(out_dir))
         if kept is None:
@@ -828,8 +860,9 @@ def _results(run, out_dir, labels, write_files=True, corrections=None, normalize
     ("corrections", "censored", "gone_from", see CallCorrections.apply()). With
     a `normalizer` (a ScoreNormalizer) the results say which normalisations the
     scores went through ("normalization"): config.yaml's for a folder, none for
-    a live run. With a band around the threshold in config.yaml, they hold the
-    calls to check by eye ("review", see ReviewBand.describe())."""
+    a live run. With mites to check by eye, they hold the calls to check
+    ("review", see _review()): by the number saved with the recordings, which
+    are where the corrections are kept."""
     burst_minutes = run.burst_minutes
     mite_data, changes = _mite_table(run, corrections, normalizer)
 
@@ -858,9 +891,9 @@ def _results(run, out_dir, labels, write_files=True, corrections=None, normalize
         results["activity"] = run.activity.describe()
     if normalizer is not None:
         results["normalization"] = normalizer.describe()
-    band = _review_band(run.analyzer.config.mite.metric)
-    if band is not None:
-        results["review"] = band.describe(mite_data, changes)
+    review = _review(run, mite_data, changes, corrections.path.parent if corrections is not None else None)
+    if review is not None:
+        results["review"] = review
     return results
 
 
@@ -2539,7 +2572,9 @@ def evaluate_calibration(out_dir, datasets, metric=None, params=None, recordings
     threshold around the two ("death_curve", see death_calibration.death_curve())
     and the band around it to check by eye, for `checks_per_mite` checks per
     mite at most (REVIEW_CHECKS unless given; "review_band", see
-    _suggested_band()); every observation with its outcome; and, where a poke
+    _suggested_band(); its shape is kept in config.yaml at once when the report
+    scores as the analyses do, see _keep_band_shape()); every observation with
+    its outcome; and, where a poke
     test was entered, the survival of the poked mites by the pokes and by the
     detector at the threshold in use ("poke", see _poke_survival()).
     Everything is also written to calibration.xlsx in `out_dir`, a moment later:
@@ -2706,12 +2741,31 @@ def evaluate_calibration(out_dir, datasets, metric=None, params=None, recordings
         # every mite's outline change from each recording to the next, by its death; None without `between`
         "between_recordings": OutlineChange().raster(outline_rows) if between else None,
     }
+    if result["threshold_fits"] and result["review_band"] is not None:
+        kept = _keep_band_shape(result["review_band"], suggested, current)
+        if kept is not None:
+            in_use["review_band"] = kept
     # each outcome as a fraction of its row, for the confusion matrices and the ROC curve
     result["rates"] = {key: None if result[key] is None else calibration.outcome_rates(result[key]) for key in ("current", "best")}
     Path(out_dir).mkdir(parents=True, exist_ok=True)
     result["excel"] = reporting.CALIBRATION_EXCEL_NAME
     _files_later.later(_draft_key(out_dir), lambda: reporting.write_calibration_excel(result, out_dir))
     return result
+
+
+def _keep_band_shape(band, suggested, threshold):
+    """Keep the shape of the band a calibration report suggests (around the
+    `suggested` threshold) in config.yaml, moved to hold the `threshold` in use:
+    the result pages widen or narrow it to the mites to check
+    (classes/review_band.py), so only how far it reaches below the threshold
+    against above counts. Nothing when the report suggests no band. Returns
+    [low, high] as saved, or None."""
+    if not band["high"] > band["low"]:
+        return None
+    try:
+        return app_config.save_review_band(threshold - (suggested - band["low"]), threshold + (band["high"] - suggested))
+    except ValueError:  # too narrow to tell apart from the threshold, once rounded
+        return None
 
 
 def save_threshold(value):

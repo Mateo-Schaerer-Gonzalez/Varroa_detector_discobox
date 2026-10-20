@@ -129,10 +129,9 @@ class CorrectRequest(BaseModel):
     checked: bool = False  # the answer to a close call: kept as checked by eye, also when it is the detector's
 
 
-class ReviewBandRequest(BaseModel):
-    # the band around the threshold whose calls are checked by eye; none without both
-    low: Optional[float] = None
-    high: Optional[float] = None
+class ReviewMitesRequest(BaseModel):
+    # how many mites to check by eye for these recordings; None for config.yaml's number
+    mites: Optional[float] = None
 
 
 class RejectRequest(BaseModel):
@@ -328,11 +327,13 @@ def survival_of(session_id, results):
 
 def for_pages(session_id, results):
     """`results` as the result pages take them: with the movement numbers, the time
-    a mite must be still to count as dead, the negative controls, and the survival
-    numbers these make."""
+    a mite must be still to count as dead, the mites to check by eye (the
+    recordings' own number and config.yaml's), the negative controls, and the
+    survival numbers these make."""
     data_dir = get_session(session_id)["data_dir"]
     return {**pipeline.describe_movement(results), "death_minutes": pipeline.death_minutes(data_dir),
             "death_range": pipeline.death_minutes_range(),
+            "review_mites": {"mites": pipeline.review_mites(data_dir), "default": pipeline.review_mites()},
             "controls": pipeline.load_controls(data_dir), "survival": survival_of(session_id, results)}
 
 
@@ -435,15 +436,15 @@ def correct_call(session_id: str, request: CorrectRequest):
     return as_it_is({"results": for_pages(session_id, results)})
 
 
-@app.post("/api/session/{session_id}/review-band")
-def save_review_band(session_id: str, request: ReviewBandRequest):
-    """The band around the threshold whose calls are checked by eye, saved in
-    config.yaml for every analysis (pipeline.save_review_band): the results come
-    back with the calls to check as the band makes them. A live run's come with
-    their version."""
+@app.post("/api/session/{session_id}/review-mites")
+def save_review_mites(session_id: str, request: ReviewMitesRequest):
+    """How many mites to check by eye, saved with the recordings
+    (pipeline.save_review_mites): the results come back with the calls to check
+    as the band fitted to that number makes them. A live run's come with their
+    version."""
     session = get_session(session_id)
     try:
-        pipeline.save_review_band(request.low, request.high)
+        pipeline.save_review_mites(session["data_dir"], request.mites)
     except ValueError as error:
         raise HTTPException(status_code=400, detail=str(error))
     if session.get("live"):
@@ -452,7 +453,7 @@ def save_review_band(session_id: str, request: ReviewBandRequest):
         return as_it_is({**answer, "results": for_pages(session_id, answer["results"])})
     results = pipeline.review_again(session["out_dir"]) if session.get("results") else None
     if results is None:
-        raise HTTPException(status_code=400, detail="The band is saved. Run the analysis again to see what to check.")
+        raise HTTPException(status_code=400, detail="The number is saved. Run the analysis again to see what to check.")
     session["results"] = results
     return as_it_is({"results": for_pages(session_id, results)})
 

@@ -108,10 +108,13 @@ class MiteConfig:
     # each mite's own floor moved to the common one.
     normalize_brightness: bool = False
     normalize_floor: bool = False
-    # metric name -> [low, high] on that metric's scale: the band around its
-    # threshold whose scores are checked by eye (see classes/review_band.py),
-    # e.g. {"topN_variability": [2.7, 3.9]}. A metric left out has none.
+    # metric name -> [low, high] on that metric's scale: the shape of the band
+    # around its threshold whose scores are checked by eye (see
+    # classes/review_band.py), e.g. {"topN_variability": [2.7, 3.9]}. A metric
+    # left out has a band as far below the threshold as above it.
     metric_review_bands: dict = field(default_factory=dict)
+    # How many mites the result pages ask to check by eye, unless a run has its own number.
+    review_mites: int = 20
 
     def __post_init__(self):
         self._fallback_threshold = self.motion_threshold

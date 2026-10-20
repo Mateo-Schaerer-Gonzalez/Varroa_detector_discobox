@@ -144,8 +144,11 @@ that with the detector:
    around it to check by eye (see *Close calls to check by eye* below): the one
    with the smallest death-time error among those asking for at most the
    *checks allowed per mite* (0.5 unless changed), the labels standing in for
-   the eye; a figure shows what the checks buy, and the band is saved with the
-   threshold when ticked. Its confusion matrix switches
+   the eye; a figure shows what the checks buy. The band's shape is saved to
+   `config.yaml` as soon as the report is made (moved to hold the threshold in
+   use, when the report scores as the analyses do), and the band itself is saved
+   with the threshold when ticked; the results page widens or narrows it to
+   the number of mites to check. Its confusion matrix switches
    between the suggested threshold and the one in use. *Test* shows the
    confusion matrix at the threshold in use, the ROC curve with AUC, and where on
    the plate the errors are. Both show the fraction of mites moving per recording
@@ -329,18 +332,24 @@ apart from the calibration's ground truth, which they do not change.
 **Close calls to check by eye.** A mite dies at the recording after its last
 movement, so one wrong call can move its death by hours: a still recording
 called moving long after it, or a weak last movement called still. The scores
-close to the threshold are the ones the detector gets wrong. With a band around
-the threshold (`mite.metric_review_bands` in `config.yaml`, saved with the
-threshold from the calibration report or set under *To check by eye* on the
-results page), a score in the band is a close call, and the
-results page lists, mite by mite, the ones its time of death depends on: those
-after its last clear movement, the latest first. Opening a mite shows the
+close to the threshold are the ones the detector gets wrong. Under *To check by
+eye* on the results page you say how many mites to check (`mite.review_mites`
+in `config.yaml`, 20 unless changed, or the run's own number set there and kept
+as `review_mites` in its `.settings.txt`; 0 for none). The app then fits the
+narrowest band around the threshold that asks about that many mites: a score in
+the band is a close call, and the results page lists, mite by mite, the ones its
+time of death depends on: those after its last clear movement, the latest first.
+The band keeps the shape of `mite.metric_review_bands` in `config.yaml` (how
+far it reaches below the threshold against above it), which the calibration
+report saves; without one it reaches as far either way. A mite counts against
+the number once it is asked about, answered or not, so answering does not bring
+in other mites. Opening a mite shows the
 recording and asks *Moving* or *Still*; the answer is kept in
 `corrections.json`, also when it is the detector's own call, and the next one
 comes up. Once a close call shows the mite moving, the earlier ones no longer
 matter and are asked for no more. The band changes no number by itself: a call
-stays what the threshold makes it until it is answered. A band the threshold is
-no longer in, as after a new threshold was saved, is not used.
+stays what the threshold makes it until it is answered. A saved shape the
+threshold is no longer in, as after a new threshold was saved, is not used.
 `scripts/optuna_death_time.py` chooses the threshold and the band by where they
 put each mite's death, on the saved ground truth split into train and test
 mites, and `notebooks/death_time_calibration.ipynb` shows what it found.

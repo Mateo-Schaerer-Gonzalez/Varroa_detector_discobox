@@ -76,6 +76,17 @@ class DataLoader:
         lines = [line for line in lines if line.split("=", 1)[0].strip() != name]
         path.write_text("".join(f"{line}\n" for line in [*lines, f"{name}={value}"]), encoding="utf-8")
 
+    @staticmethod
+    def remove_setting(path, name):
+        """Take the `name=` line out of the settings file `path`, if it has one."""
+        path = Path(path)
+        if not path.is_file():
+            return
+        lines = path.read_text(encoding="utf-8").splitlines()
+        kept = [line for line in lines if line.split("=", 1)[0].strip() != name]
+        if kept != lines:
+            path.write_text("".join(f"{line}\n" for line in kept), encoding="utf-8")
+
     @property
     def recording_dirs(self):
         dirs = [d for d in self.data_dir.iterdir() if d.is_dir() and self.TIMESTAMP_RE.match(d.name)]

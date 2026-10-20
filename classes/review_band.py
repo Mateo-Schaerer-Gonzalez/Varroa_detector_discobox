@@ -5,9 +5,14 @@ A mite dies at the recording after its last movement (classes/survival.py), so
 one wrong call can move its death by hours: a still recording called moving
 long after it, or a weak last movement called still. The scores close to the
 threshold are the ones the detector gets wrong. With a band around the
-threshold (config.yaml: mite.metric_review_bands), a score at or above the band
-is a clear movement, one below it clearly still, and one inside it is a close
-call.
+threshold, a score at or above the band is a clear movement, one below it
+clearly still, and one inside it is a close call.
+
+The band is not set by hand: the user says how many mites to check by eye, and
+the band is the narrowest around the threshold that asks about that many
+(fitted()). It keeps the shape of the band in config.yaml
+(mite.metric_review_bands, saved from the calibration report): as far below
+the threshold against above it as that one; without one, as far either way.
 
 Not every close call matters: only those after the mite's last settled movement
 can move its death. A movement is settled when its score is at or above the
@@ -27,11 +32,75 @@ class ReviewBand:
         self.low, self.high = float(low), float(high)
 
     @classmethod
-    def of(cls, mite_config, metric=None):
-        """The band config.yaml has for `metric` (by default the one in use), or
-        None without one."""
-        band = mite_config.review_band_for(metric or mite_config.metric)
-        return cls(*band) if band else None
+    def fitted(cls, mite_data, threshold, n_mites, shape=None):
+        """The narrowest band around `threshold` that asks about `n_mites` mites of
+        the mite score table (as describe() takes it), or as many as it can
+        without asking about more; None when it asks about none. Neither edge is
+        further from the threshold than the threshold itself: a score of 0 or of
+        twice the threshold is no close call. `shape` (low,
+        high), a band holding the threshold, says how far below the threshold the
+        band reaches against above it; without it, as far either way.
+
+        A mite is asked about while the band has close calls of it that its death
+        depends on, whatever was answered since, so answering a call does not
+        move the band (a correction of a clear call can)."""
+        threshold = float(threshold)
+        below, above = 0.5, 0.5
+        if shape is not None and shape[0] < shape[1]:
+            below, above = threshold - shape[0], shape[1] - threshold
+            below, above = below / (below + above), above / (below + above)
+        scores, moving, there = cls._table(mite_data)
+
+        def band(scale):
+            return threshold - scale * below, threshold + scale * above
+
+        def asked(scale):
+            low, high = band(scale)
+            n_recordings = scores.shape[1]
+            clear = moving & there & (scores >= high)
+            last = np.where(clear.any(axis=1), n_recordings - 1 - np.argmax(clear[:, ::-1], axis=1), -1)
+            close = there & (scores >= low) & (scores < high)
+            return int((close & (np.arange(n_recordings) > last[:, None])).any(axis=1).sum())
+
+        # the scale at which each score comes into the band; between two of them the band asks the same
+        present = scores[there]
+        with np.errstate(divide="ignore", invalid="ignore"):
+            enters = np.where(present < threshold, (threshold - present) / below, (present - threshold) / above)
+        # no further from the threshold than the threshold itself: from 0 up to twice it at most
+        widest = threshold / max(below, above)
+        enters = np.unique(enters[np.isfinite(enters) & (enters <= widest)])
+        if n_mites <= 0 or not len(enters):
+            return None
+        scales = enters * (1 + 1e-9) + 1e-12  # just past each: a score at the upper edge is not in the band
+
+        def first(at_least):  # the first scale asking about at least `at_least` mites; len(scales) with none
+            lo, hi = 0, len(scales)
+            while lo < hi:
+                mid = (lo + hi) // 2
+                if asked(scales[mid]) >= at_least:
+                    hi = mid
+                else:
+                    lo = mid + 1
+            return lo
+
+        enough = first(n_mites + 1) - 1  # the widest asking about no more than n_mites
+        if enough < 0 or not asked(scales[enough]):
+            return None
+        return cls(*band(scales[first(asked(scales[enough]))]))
+
+    @staticmethod
+    def _table(mite_data):
+        """The mite score table as (mites, recordings) arrays: the scores (NaN
+        where a mite has none), the calls, and whether the mite is there."""
+        mites, row = np.unique(mite_data["mite_ID"].astype(str).to_numpy(), return_inverse=True)
+        times, column = np.unique(mite_data["time"].to_numpy(), return_inverse=True)
+        scores = np.full((len(mites), len(times)), np.nan)
+        moving = np.zeros(scores.shape, dtype=bool)
+        there = np.zeros(scores.shape, dtype=bool)
+        scores[row, column] = mite_data["motion_score"].to_numpy(dtype=float)
+        moving[row, column] = mite_data["moving"].to_numpy(dtype=bool)
+        there[row, column] = ~mite_data["censored"].to_numpy(dtype=bool) if "censored" in mite_data else True
+        return scores, moving, there & ~np.isnan(scores)
 
     def to_check(self, scores, moving, checked=None, censored=None):
         """The recordings of one mite to check by eye, the latest first. Per

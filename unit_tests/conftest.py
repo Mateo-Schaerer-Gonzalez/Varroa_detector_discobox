@@ -20,11 +20,13 @@ import pipeline  # noqa: E402
 
 @pytest.fixture(autouse=True)
 def no_review_band(monkeypatch):
-    """Every run in a test is without a band to check by eye, whatever this
-    machine's config.yaml holds: the band adds the calls to check to the
-    results, which the references were made without. A test of the band gives
-    its own (see review_band_test.py)."""
-    monkeypatch.setattr(pipeline, "_review_band", lambda metric: None)
+    """Every run in a test is without calls to check by eye: they add to the
+    results, which the references were made without. Nor does a calibration
+    report keep its band's shape in the tests' config.yaml, which would change
+    what the next test reads. A test of these takes them back (see
+    review_band_test.py)."""
+    monkeypatch.setattr(pipeline, "_review", lambda *args: None)
+    monkeypatch.setattr(pipeline, "_keep_band_shape", lambda *args: None)
 
 
 @pytest.fixture(autouse=True)

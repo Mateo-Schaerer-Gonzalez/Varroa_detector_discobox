@@ -357,7 +357,7 @@ class ReportPage {
     const { thr, deathText } = ReportPage;
     const band = r.review_band;
     const inUse = r.in_use.review_band;
-    const now = inUse ? `In use: ${thr(inUse[0])} to ${thr(inUse[1])}.` : "No band is in use.";
+    const now = inUse ? `The shape in use: ${thr(inUse[0])} to ${thr(inUse[1])}.` : "No shape is in use: the result pages' band reaches as far below the threshold as above it.";
     if (!this.bandHolds(r)) {
       return `<p class="hint">No band does better than the threshold alone within ${+band.checks_allowed.toFixed(2)} checks by eye per mite (Fig. 4), so none is saved with it. ${now}</p>`;
     }
@@ -367,7 +367,10 @@ class ReportPage {
         <span>to</span>
         <input id="band-high" type="number" step="0.01" min="0" value="${thr(band.high)}" aria-label="Upper edge of the band">
       </div>
-      <p class="hint">Saved with the threshold when ticked: a score in this band is a close call, and the result pages ask to check by eye the ones a mite's time of death depends on.
+      <p class="hint">Saved with the threshold when ticked. The result pages widen or narrow the band to ask about as many mites as are to be checked there,
+        keeping how far it reaches below the threshold against above it; ${r.threshold_fits
+          ? "that shape was kept in config.yaml when this report was made, around the threshold in use."
+          : "this report scores otherwise than the analyses, so its shape is kept only when saved with the threshold."}
         With them checked, the deaths are off by ${band.mae.toFixed(2)} rec. instead of ${deathText(r, "suggested")}, for ${band.checks_per_mite.toFixed(2)} checks per mite (Fig. 4). ${now}</p>`;
   }
 

@@ -18,6 +18,9 @@ from classes.zones import MITE_SCORE_COLUMNS
 
 THRESHOLD = 3.5
 BAND = ReviewBand(2.5, 4.5)
+# as pipeline has them, before conftest.py keeps the other tests' runs and reports from them
+REVIEW = pipeline._review
+KEEP_BAND_SHAPE = pipeline._keep_band_shape
 
 
 def calls(scores):
@@ -158,9 +161,8 @@ def test_a_band_the_threshold_left_is_no_band():
                           metric_thresholds={"variability": 3.5}, metric_review_bands=bands)
 
     assert config({"variability": [2.5, 4.5]}).review_band_for("variability") == (2.5, 4.5)
-    assert ReviewBand.of(config({"variability": [2.5, 4.5]})).high == 4.5
     assert config({"variability": [4.0, 5.0]}).review_band_for("variability") is None  # a threshold saved since
-    assert config({}).review_band_for("variability") is None and ReviewBand.of(config({})) is None
+    assert config({}).review_band_for("variability") is None
     assert config({"variability": "wide"}).review_band_for("variability") is None
 
 
@@ -170,32 +172,94 @@ def test_a_band_the_threshold_left_is_no_band():
 def test_the_results_ask_for_the_close_calls_until_they_are_answered(tmp_path, monkeypatch):
     session = reference.make_small_session(tmp_path / "small_session")
     out = tmp_path / "out"
-    # the band as config.yaml has it, which the other tests' runs are kept from (conftest.py)
-    monkeypatch.setattr(pipeline, "_review_band", lambda metric: ReviewBand.of(get_default_config().mite, metric))
-    mite_config = get_default_config().mite
-    monkeypatch.setattr(mite_config, "metric_review_bands", {})
+    # the calls to check as the app makes them, which the other tests' runs are kept from (conftest.py)
+    monkeypatch.setattr(pipeline, "_review", REVIEW)
+    monkeypatch.setattr(get_default_config().mite, "metric_review_bands", {})
+    pipeline.save_review_mites(session, 0)
     results = pipeline.run_analysis(session, out)
     assert "review" not in results
 
-    # a band from just below the threshold up to above every score: every mite's last recordings are close
-    threshold = results["threshold"]
-    highest = max(score for mite in results["mites"] for score in mite["scores"])
-    lowest = min(score for mite in results["mites"] for score in mite["scores"])
-    monkeypatch.setattr(mite_config, "metric_review_bands", {mite_config.metric: [min(lowest, threshold), highest + 1]})
+    # more mites to check than there are: the band as wide as it goes, from 0 to twice the threshold
+    pipeline.save_review_mites(session, 1000)
     results = pipeline.review_again(out)
     review = results["review"]
-    n_recordings = results["n_recordings"]
-    assert review["n_mites"] == len(results["mites"])
-    mite = results["mites"][0]
-    assert review["to_check"][mite["id"]] == list(range(n_recordings))[::-1]
+    assert 0 < review["n_mites"] == review["n_asked"] <= len(results["mites"])
+    assert 0 <= review["low"] < results["threshold"] < review["high"] <= 2 * results["threshold"] + 1e-6
+    mite = next(m for m in results["mites"] if m["id"] in review["to_check"])
+    latest = review["to_check"][mite["id"]][0]
 
-    # the last recording is answered with the detector's own call: no correction, and asked no more
-    last = n_recordings - 1
-    answered = pipeline.correct_call(out, mite["id"], last, "moving" if mite["moving"][last] else "still", checked=True)
-    assert "corrections" not in answered and answered["checked"] == {mite["id"]: [last]}
+    # the latest close call is answered with the detector's own call: no correction, and asked no more
+    answered = pipeline.correct_call(out, mite["id"], latest, "moving" if mite["moving"][latest] else "still", checked=True)
+    assert "corrections" not in answered and answered["checked"] == {mite["id"]: [latest]}
     assert answered["mites"] == results["mites"]
     left = answered["review"]["to_check"].get(mite["id"], [])
-    assert left == ([] if mite["moving"][last] else list(range(last))[::-1])
+    assert latest not in left and (left == [] or not mite["moving"][latest])
+    assert (answered["review"]["low"], answered["review"]["high"]) == (review["low"], review["high"])  # the band stays
 
     again = pipeline.run_analysis(session, out)  # another run keeps the answer
     assert again["review"]["to_check"].get(mite["id"], []) == left
+
+
+# --- the band fitted to the mites to check
+
+def test_the_band_is_the_narrowest_asking_about_the_mites_to_check():
+    # each mite's last recording is its only close call, ever further from the threshold
+    data = mite_data({"0": [9.0, 3.4], "1": [9.0, 3.0], "2": [9.0, 2.0], "3": [9.0, 1.0]})
+    for n_mites, asked in ((1, {"0"}), (2, {"0", "1"}), (3, {"0", "1", "2"})):
+        band = ReviewBand.fitted(data, THRESHOLD, n_mites)
+        review = band.describe(data)
+        assert set(review["to_check"]) == asked and review["n_asked"] == n_mites
+        assert THRESHOLD - band.low == pytest.approx(band.high - THRESHOLD)  # as far either way without a shape
+    assert ReviewBand.fitted(data, THRESHOLD, 0) is None
+    # more mites than there are: every mite, and no wider than that takes
+    band = ReviewBand.fitted(data, THRESHOLD, 50)
+    assert band.describe(data)["n_asked"] == 4 and 2.5 <= THRESHOLD - band.low < 3.0
+    # but never further from the threshold than the threshold itself
+    far = mite_data({"0": [9.0, 3.4], "1": [9.0, 7.5]})
+    assert ReviewBand.fitted(far, THRESHOLD, 2).describe(far)["to_check"] == {"0": [1]}
+
+
+def test_the_band_keeps_the_shape_of_the_one_in_config():
+    # a band reaching only above the threshold leaves the still side to the detector
+    data = mite_data({"0": [3.4, 1.0], "1": [3.6, 1.0], "2": [9.0, 4.0]})
+    band = ReviewBand.fitted(data, THRESHOLD, 1, shape=(THRESHOLD, 5.0))
+    assert band.low == THRESHOLD and 3.6 < band.high < 4.0
+    assert band.describe(data)["to_check"] == {"1": [0]}  # not mite 0, as close below
+    band = ReviewBand.fitted(data, THRESHOLD, 2, shape=(THRESHOLD, 5.0))
+    assert band.describe(data)["to_check"] == {"1": [0], "2": [1]}
+    # and one three times as wide below as above keeps that
+    band = ReviewBand.fitted(data, THRESHOLD, 2, shape=(0.5, 4.5))
+    assert THRESHOLD - band.low == pytest.approx(3 * (band.high - THRESHOLD))
+
+
+def test_a_mite_answered_counts_against_the_mites_to_check():
+    data = mite_data({"0": [9.0, 3.4], "1": [9.0, 3.0]})
+    band = ReviewBand.fitted(data, THRESHOLD, 1)
+    review = band.describe(data, {"checked": {"0": [1]}})
+    assert review["to_check"] == {} and (review["n_asked"], review["n_done"]) == (1, 1)
+    assert set(band.describe(data)["to_check"]) == {"0"}  # mite 1 is not asked for in its place
+
+
+def test_a_run_has_its_own_number_of_mites_to_check(tmp_path):
+    default = get_default_config().mite.review_mites
+    assert pipeline.review_mites(tmp_path) == pipeline.review_mites() == default
+    (tmp_path / pipeline.SETTINGS_FILENAME).write_text("fps=10\n", encoding="utf-8")
+    assert pipeline.save_review_mites(tmp_path, 7) == 7 and pipeline.review_mites(tmp_path) == 7
+    for wrong in (-1, 2.5, "many"):
+        with pytest.raises(ValueError):
+            pipeline.save_review_mites(tmp_path, wrong)
+    assert pipeline.save_review_mites(tmp_path, None) == default
+    assert (tmp_path / pipeline.SETTINGS_FILENAME).read_text(encoding="utf-8") == "fps=10\n"
+
+
+def test_a_report_keeps_the_shape_of_its_band_around_the_threshold_in_use(tmp_path, monkeypatch):
+    path = tmp_path / "config.yaml"
+    path.write_text('mite:\n  radius: 8\n  metric: "variability"\n  metric_thresholds: {variability: 3.5}\n')
+    monkeypatch.setattr(app_config, "DEFAULT_CONFIG_PATH", path)
+    try:
+        assert KEEP_BAND_SHAPE({"low": 3.0, "high": 4.5}, 4.0, 3.5) == [2.5, 4.0]
+        assert yaml.safe_load(path.read_text())["mite"]["metric_review_bands"] == {"variability": [2.5, 4.0]}
+        assert KEEP_BAND_SHAPE({"low": 4.0, "high": 4.0}, 4.0, 3.5) is None  # no band suggested: the shape stays
+        assert yaml.safe_load(path.read_text())["mite"]["metric_review_bands"] == {"variability": [2.5, 4.0]}
+    finally:
+        app_config._forget_loaded_config()  # the next test reads the tests' config.yaml again
