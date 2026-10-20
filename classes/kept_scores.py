@@ -75,7 +75,10 @@ class KeptScores:
             return False
         for one, its_scores, its_brightness, its_activity in zip(mites, scores, brightness, activity):
             for score, bright, seen in zip(its_scores, its_brightness, its_activity):
-                one.record_motion(score, brightness=bright, activity=seen)
+                if score is None:  # not followed in that recording (a live run's mite added later, or counted dead)
+                    one.record_absence()
+                else:
+                    one.record_motion(score, brightness=bright, activity=seen)
         self.blobs = blobs
         return True
 

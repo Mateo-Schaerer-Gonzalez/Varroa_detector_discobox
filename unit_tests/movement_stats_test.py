@@ -81,9 +81,6 @@ def test_the_pipeline_adds_the_numbers_to_the_results():
 def test_the_plan_of_a_test_run():
     settings = Settings(run_minutes=25, death_minutes=12, recording_timeout=5, frame_count=30, fps=10,
                         vent_time=20, led1_time=5, led2_time=5)
-    # 37 min of recordings every 5 min: 9 recordings, the last at 40 min.
-    assert settings.plan() == {"recording_seconds": 3.0, "cycle_seconds": 21, "recordings": 9, "minutes": 40,
-                               "until_all_dead": False, "can_run_until_all_dead": True}
-    settings.death_reset = 1  # the mites alone decide: at least through the 12 min to count one dead
-    assert settings.plan()["recordings"] == 4 and settings.plan()["until_all_dead"] is True
+    # 37 min of recordings every 5 min: at most 9 recordings, the last at 40 min.
+    assert settings.plan() == {"recording_seconds": 3.0, "cycle_seconds": 21, "recordings": 9, "minutes": 40}
     assert pipeline.live_plan(settings.as_dict()) == settings.plan()

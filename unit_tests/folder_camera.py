@@ -14,6 +14,9 @@ from classes.live.sources import LiveSource
 from classes.zone_layout import ZoneLayout
 
 
+DEAD_AFTER = 10000  # minutes
+
+
 class FolderCamera(LiveSource):
     """What pipeline asks of CameraSource, fed from `data_dir`: its recordings
     one after the other, `gap` seconds apart, under their own names."""
@@ -114,7 +117,6 @@ class FolderCamera(LiveSource):
             "incomplete": 0,
             "recording": min(self.completed + bool(self.recording), recordings),
             "recordings": recordings,
-            "open_ended": False,
             "recording_name": self.recording.name if self.recording else None,
             "frame": 0,
             "frames": None,
@@ -131,6 +133,9 @@ def open_live(monkeypatch, live_id, out_dir, run_name, data_dir, gap=0.0, **kwar
     them), plate labels, "not a mite" marks and corrected calls, so it gives the
     folder's results."""
     data_dir = Path(data_dir)
+    # A live run needs a time to count a mite as dead; one longer than any run
+    # here follows every mite to the end, as folder mode scores them.
+    kwargs["settings"] = {"death_minutes": DEAD_AFTER, **(kwargs.get("settings") or {})}
     monkeypatch.setattr(pipeline.live_camera, "choose_camera", lambda camera_id: "FOLDER")
     monkeypatch.setattr(pipeline, "open_lights", lambda port: NoLights())
     monkeypatch.setattr(pipeline, "CameraSource", lambda _id, settings, lights: FolderCamera(data_dir, settings, lights, gap))

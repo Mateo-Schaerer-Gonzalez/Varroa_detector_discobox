@@ -19,6 +19,10 @@ gone from a recording on, and not dead by then, is right-censored at the
 recording before, known only to have lived that long. A recording in which it
 was gone in between says nothing: the mite did not move in it, as far as is known.
 
+A mite a live run added later (classes/follow_up.py) has None in the
+recordings before it, and its own clock: its follow-up starts at the recording
+it was added in (`Calls.start`), and the time it lived is counted from there.
+
 SurvivalAnalysis applies that rule; SurvivalReport describes it for the result
 pages: the survival rate over time per group and per zone, each mite's lifeline,
 and every group, its zones pooled, tested against the negative controls.
@@ -30,7 +34,7 @@ from dataclasses import asdict, dataclass
 import numpy as np
 from scipy import stats
 
-from classes.result_groups import ResultGroups
+from classes.result_groups import Calls, ResultGroups  # noqa: F401  (Calls: a mite's calls with its start)
 
 
 @dataclass(frozen=True)
@@ -68,6 +72,10 @@ def kaplan_meier(survivals, times, confidence=0.95):
         return [None if value != value else 100 * value for value in values.tolist()]  # NaN is not itself
 
     return {"alive": percent(estimate), "low": percent(low), "high": percent(high)}
+
+
+def start_of(moving):
+    return getattr(moving, "start", 0)
 
 
 class SurvivalAnalysis:
@@ -119,14 +127,14 @@ class SurvivalAnalysis:
         there, so one pass over its calls tells them all."""
         last = self.last_movement(moving)
         end = self.followed(moving)
-        if end > last and self.times[end] - self.times[max(last, 0)] < self.death_minutes:
+        if end > last and self.times[end] - self.times[max(last, start_of(moving))] < self.death_minutes:
             return end
         return last
 
     def is_alive(self, moving, recording):
         """Whether the mite counts as alive in recording `recording`; not after
         the end of its follow-up, where nothing is known of it."""
-        return recording <= self.alive_until(moving)
+        return start_of(moving) <= recording <= self.alive_until(moving)
 
     def alive_count(self, movings, recording):
         return sum(1 for moving in movings if self.is_alive(moving, recording))
@@ -135,7 +143,7 @@ class SurvivalAnalysis:
         """alive_count() in every recording, each mite's calls read once."""
         counts = [0] * len(self.times)
         for moving in movings:
-            for recording in range(self.alive_until(moving) + 1):
+            for recording in range(start_of(moving), self.alive_until(moving) + 1):
                 counts[recording] += 1
         return counts
 
@@ -146,7 +154,7 @@ class SurvivalAnalysis:
         from then on instead of counting it as dead."""
         if not movings:
             return [None] * len(self.times)
-        if any(self.followed(moving) < len(self.times) - 1 for moving in movings):
+        if any(self.followed(moving) < len(self.times) - 1 or start_of(moving) for moving in movings):
             return kaplan_meier([self.survival(moving) for moving in movings], self.times)["alive"]
         return [100 * count / len(movings) for count in self.alive_counts(movings)]
 
@@ -183,12 +191,20 @@ class SurvivalAnalysis:
         """(time, dead): when a mite died, at the first recording in which it no
         longer counts as alive. One alive at the end of its follow-up (the last
         recording, or the last before it was gone) is censored there: all that
-        is known is that it lived at least that long."""
+        is known is that it lived at least that long. A mite added later
+        counts its time from the recording it was added in, as if that were the first."""
         end = self.followed(moving)
         until = self.alive_until(moving)
+        zero = self.times[start_of(moving)] - self.times[0] if self.times else 0  # 0 but for a mite added later
         if until < end:
-            return self.times[until + 1], True
-        return self.times[max(end, 0)], False
+            return self.times[until + 1] - zero, True
+        return self.times[max(end, 0)] - zero, False
+
+    def counts_dead(self, moving):
+        """Whether a mite followed to the last recording counts as dead there:
+        once it does, it stays so whatever comes, unless a call is changed."""
+        end = self.followed(moving)
+        return end == len(moving) - 1 and self.alive_until(moving) < end
 
     def dead_count(self, movings):
         return sum(1 for moving in movings if self.survival(moving)[1])

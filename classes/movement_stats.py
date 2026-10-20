@@ -118,8 +118,9 @@ class MovementReport:
         }
 
     def seen_scores(self, mite):
-        """The mite's scores in the recordings in which it was there."""
-        return [score for score, gone in zip(mite["scores"], self.groups.censored(mite)) if not gone]
+        """The mite's scores in the recordings in which it was there and scored
+        (a live run scores no mite once it counts as dead, classes/follow_up.py)."""
+        return [score for score, gone in zip(mite["scores"], self.groups.censored(mite)) if not gone and score is not None]
 
     def zone_stats(self, zone):
         mites = self.groups.mites_in([zone["id"]])
@@ -155,7 +156,7 @@ class MovementReport:
         or None when none of its mites was seen moving."""
         mites = self.groups.mites_in([zone["id"] for zone in zones])
         moving = [(mite["id"], score) for mite in mites
-                  for score, value in zip(mite["scores"], mite["moving"]) if value]
+                  for score, value in zip(mite["scores"], mite["moving"]) if value and score is not None]
         box = None
         if moving:
             box = {"n": len(moving), "n_mites": len({mite_id for mite_id, _score in moving}),

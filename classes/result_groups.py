@@ -9,6 +9,16 @@ others have nothing to show.
 from classes.zones import UNLABELED
 
 
+class Calls(list):
+    """A mite's calls per recording (True, False, or None where it was gone),
+    with `start`, the recording its follow-up starts in. A plain list starts in
+    the first."""
+
+    def __init__(self, calls, start=0):
+        super().__init__(calls)
+        self.start = start
+
+
 def group_order(group):
     """Sort key: named groups alphabetically, whatever their case, "unlabeled" last."""
     return (group == UNLABELED, group.casefold(), group)
@@ -18,6 +28,7 @@ class ResultGroups:
     def __init__(self, results):
         self.zones = [zone for zone in results["zones"] if zone["n_mites"]]
         self._censored = results.get("censored", {})
+        self._started = results.get("started", {})  # mites a live run added later: the recording each was added in
         self._seen = {}  # mite id -> seen(), made once: the survival numbers ask for it many times
         self._mites = {}
         for mite in results["mites"]:
@@ -38,11 +49,13 @@ class ResultGroups:
         return [recording in gone for recording in range(len(mite["moving"]))]
 
     def seen(self, mite):
-        """The mite's movement per recording, None in those in which it was gone.
-        The same list every time: it is not to be changed."""
+        """The mite's movement per recording, None in those in which it was gone
+        (or before it was added), with the recording its follow-up starts in
+        (survival.Calls). The same list every time: it is not to be changed."""
         seen = self._seen.get(mite["id"])
         if seen is None:
-            seen = [None if gone else moving for moving, gone in zip(mite["moving"], self.censored(mite))]
+            seen = Calls([None if gone else moving for moving, gone in zip(mite["moving"], self.censored(mite))],
+                         self._started.get(mite["id"], 0))
             self._seen[mite["id"]] = seen
         return seen
 

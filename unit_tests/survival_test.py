@@ -8,6 +8,8 @@ import pytest
 from scipy import stats
 
 import pipeline
+from classes.live.progress import ZoneProgress
+from classes.result_groups import Calls
 from classes.survival import SurvivalAnalysis, SurvivalReport
 
 TIMES = [0, 10, 20]
@@ -220,10 +222,42 @@ def test_the_death_time_changes_the_numbers():
     assert pipeline.describe_survival(RESULTS, 25, [3]) == SurvivalReport(RESULTS, 25, [3]).describe()
 
 
-def test_the_live_page_counts_the_mites_alive_by_the_same_rule():
-    # Of the 6 mites, the one never seen moving is left out.
-    assert pipeline.mites_alive(RESULTS, 0) == {"alive": 2, "mites": 5}
-    assert pipeline.mites_alive(RESULTS, 25) == {"alive": 5, "mites": 5}
+def test_the_live_page_fills_each_zones_circle_by_its_mites_dead():
+    # Dead after 5 min still: FIRST_ONLY and FIRST_TWO are by the last recording, ALWAYS is not.
+    zones = {zone["id"]: zone for zone in ZoneProgress(RESULTS, 5).zones()}
+    assert set(zones) == {1, 2, 3, 4}  # zone 5 holds no mites
+    # Zone 1: NEVER is left out, FIRST_ONLY is dead.
+    assert (zones[1]["mites"], zones[1]["dead"], zones[1]["fraction"], zones[1]["done"]) == (1, 1, 1.0, True)
+    assert (zones[3]["mites"], zones[3]["dead"], zones[3]["done"]) == (2, 1, False)
+    assert not ZoneProgress(RESULTS, 5).all_done()
+    done = results_with({(1, "venom"): [NEVER, FIRST_ONLY], (2, ""): [NEVER]})
+    progress = ZoneProgress(done, 5)
+    # Zone 2 has no mite seen moving: it does not hold the run up.
+    assert [zone["counts"] for zone in progress.zones()] == [True, False] and progress.all_done()
+    # No zone that counts yet: the run goes on.
+    assert not ZoneProgress(results_with({(1, ""): [NEVER]}), 5).all_done()
+
+
+def test_the_mites_dead_are_no_longer_followed_never_moved_ones_too():
+    # Still for 20 min since its start or its last movement: dead after 15 min.
+    assert set(ZoneProgress(RESULTS, 15).dead_ids()) == {"0", "1"}  # NEVER and FIRST_ONLY of zone 1
+    assert ZoneProgress(RESULTS, 0).dead_ids() == []  # without a time to count one dead, none
+
+
+def test_a_mite_added_later_counts_its_life_from_when_it_was_added():
+    survival = SurvivalAnalysis([0, 10, 20, 30], 5)
+    added = Calls([None, True, False, False], start=1)
+    assert survival.survival(added) == (10, True)  # dead at 20 min, 10 min after it was added at 10
+    assert survival.alive_counts([added]) == [0, 1, 0, 0]  # not counted before it was there
+    never = Calls([None, None, False, False], start=2)
+    assert survival.alive_until(never) == -1 and survival.counts_dead(never)  # still 10 min since it came at 20 min
+    assert not SurvivalAnalysis([0, 10, 20, 30], 15).counts_dead(never)  # not yet 15
+    # Its curve is drawn on its own clock: dead 10 min after its start.
+    assert survival.alive_percent([added]) == [100.0, 0.0, 0.0, 0.0]
+    # Given the start in the results, the pages count it so.
+    results = results_with({(1, "venom"): [[False, True, False, False]]})
+    results["times"], results["censored"], results["started"] = [0, 10, 20, 30], {"0": [0]}, {"0": 1}
+    assert SurvivalReport(results, 5).describe()["mites"]["0"] == {"in_study": True, "time": 10, "dead": True, "lost": False}
 
 
 def test_a_mite_never_seen_moving_is_left_out():

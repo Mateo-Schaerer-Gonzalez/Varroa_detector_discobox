@@ -1,5 +1,5 @@
 """What the server works out for the pages, so the browser only draws it: the test
-report's error map and rates, the live progress bar, the list of recordings, the
+report's error map and rates, the live run's progress, the list of recordings, the
 files a dropped folder needs copied, and the "not a mite" marks of the label page."""
 
 import json
@@ -49,31 +49,17 @@ def test_outcome_rates_are_fractions_of_their_row():
                                      "still_called_moving": None, "still_called_still": None}
 
 
-# --- the live progress bar
+# --- the live run's progress
 
 def status(**overrides):
-    return {"timeline": {"elapsed": 30.0, "length": 120.0, "starts": [0.0, 60.0, 120.0]}, "open_ended": False,
-            "alive": None, "analysed": 1, "completed": 1, "recording_name": "r1", "state": "running", **overrides}
+    return {"timeline": {"elapsed": 30.0, "length": 120.0, "starts": [0.0, 60.0, 120.0]},
+            "analysed": 1, "completed": 1, "recording_name": "r1", "state": "running", **overrides}
 
 
-def test_the_bar_fills_as_the_run_goes_with_a_tick_per_recording():
-    progress = RunProgress(status()).describe()
-    assert progress["fraction"] == 0.25 and progress["left_seconds"] == 90.0 and not progress["alive_bar"]
-    assert progress["marks"] == [{"at": 0.0, "state": "analysed"}, {"at": 0.5, "state": "capturing"},
-                                 {"at": 1.0, "state": "planned"}]
-
-
-def test_a_run_until_every_mite_is_dead_shows_the_mites_alive():
-    progress = RunProgress(status(open_ended=True, alive={"alive": 3, "mites": 4})).describe()
-    assert progress["fraction"] == 0.75 and progress["alive_bar"] and progress["marks"] == []
-    assert RunProgress(status(open_ended=True)).describe()["fraction"] == 1  # before the first results
-
-
-def test_no_bar_before_the_run_starts():
-    assert RunProgress(status(timeline=None)).describe() == {"fraction": 0, "alive_bar": False, "marks": [], "left_seconds": 0,
-                                                             "next_seconds": None}
-    starting = RunProgress(status(timeline={"elapsed": 0.0, "length": 0.0, "starts": [0.0]})).describe()
-    assert starting["fraction"] == 0 and starting["marks"] == []
+def test_the_progress_is_the_zones_circles_and_the_countdown():
+    zones = [{"id": 1, "label": "venom", "mites": 2, "dead": 1, "gone": 0, "fraction": 0.5, "done": False, "counts": True}]
+    assert RunProgress(status(), zones).describe() == {"zones": zones, "next_seconds": 30.0}
+    assert RunProgress(status(timeline=None)).describe() == {"zones": [], "next_seconds": None}  # before the run starts
 
 
 def test_the_countdown_to_the_next_recording():

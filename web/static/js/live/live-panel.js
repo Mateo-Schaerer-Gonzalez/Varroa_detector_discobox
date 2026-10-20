@@ -1,11 +1,11 @@
 // The panel over the live result pages: the camera's newest frame, how capture
-// and the fan and LEDs are doing, the whole run as a progress bar, the buttons
-// to pause, stop or start a new run, and those to enter the ground truth and the
+// and the fan and LEDs are doing, a circle per zone filled by its mites dead
+// (the run stops once every zone is done), the buttons to pause, stop or start a
+// new run, to add mites (AddMites), and those to enter the ground truth and the
 // poke test of the recordings so far, on the calibration pages (Calibration.openLive).
 
 class LivePanel {
   static STATE_NAMES = { ready: "Connected", running: "Recording", paused: "Paused", stopping: "Stopping", finished: "Finished" };
-  static MARK_NAMES = { analysed: "analysed", captured: "being analysed", capturing: "being recorded", planned: "to come" };
 
   constructor() {
     $("live-panel").innerHTML = `
@@ -26,15 +26,14 @@ class LivePanel {
       <button id="live-new-btn" type="button" class="secondary small" hidden>New test run</button>
     </div>
     <div class="row">
+      <button id="live-add-btn" type="button" class="secondary small" title="Light the plates between two recordings and follow mites not found so far">Add mites</button>
       <button id="live-truth-btn" type="button" class="secondary small">Ground truth</button>
       <button id="live-poke-btn" type="button" class="secondary small">Poke test</button>
     </div>
   </div>
+  <div id="live-add" class="live-add" hidden></div>
   <div class="run-progress">
-    <div id="run-bar" class="run-bar" role="progressbar" aria-label="The test run" aria-valuemin="0" aria-valuemax="100">
-      <div id="run-bar-fill" class="run-bar-fill"></div>
-    </div>
-    <div id="run-marks" class="run-marks" aria-hidden="true"></div>
+    <div id="zone-circles" class="zone-circles"></div>
     <div class="run-progress-text"><span id="live-progress"></span><span id="run-left"></span></div>
   </div>`;
 
@@ -46,6 +45,8 @@ class LivePanel {
     $("live-new-btn").addEventListener("click", () => live.close());
     $("live-truth-btn").addEventListener("click", () => this.calibrate("truth"));
     $("live-poke-btn").addEventListener("click", () => this.calibrate("poke"));
+    this.adding = new AddMites($("live-add"));
+    $("live-add-btn").addEventListener("click", () => this.adding.find());
     this.opening = null;         // the page, "truth" or "poke", the recordings are being opened for
     this.calibrateError = null;  // why they could not be, last time
   }
@@ -129,6 +130,8 @@ class LivePanel {
     $("live-stop-btn").hidden = finished;
     $("live-stop-btn").disabled = s.state === "stopping";
     $("live-new-btn").hidden = !finished;
+    $("live-add-btn").hidden = finished;
+    $("live-add-btn").disabled = !["running", "paused"].includes(s.state) || !s.analysed || this.adding.busy;
     $("live-follow").checked = live.follow;
     this.drawCalibrate(s);
   }
@@ -143,53 +146,33 @@ class LivePanel {
       ? " · paused: it waits" : ` · at ${LiveRun.clock((Date.now() + next * 1000) / 1000)}`}`;
   }
 
-  // The whole test run as one bar: filled as far as the run has got, with a tick
-  // under it for each recording, dark once analysed. Polled twice a second, it
-  // moves on in small steps, with no animation between them. A run going on until
-  // every mite is dead has no set length: its bar shows the mites alive instead,
-  // in a colour of its own, and it has no ticks. The numbers are the server's
-  // (s.progress, classes/live/progress.py).
+  // A circle per zone with mites, filled by the share of its mites (those seen
+  // moving) that are dead; a zone none of whose mites moved yet does not count,
+  // and is drawn hollow. Once every zone that counts is full the run stops. The
+  // numbers are the server's (s.progress.zones, classes/live/progress.py).
   drawProgress(s) {
-    const line = s.timeline;
-    const { fraction, alive_bar: untilAllDead, marks, left_seconds: left } = s.progress;
-    const finished = s.state === "finished";
-    $("run-bar-fill").style.width = `${fraction * 100}%`;
-    $("run-bar").className = `run-bar ${s.state}${untilAllDead ? " alive-bar" : ""}`;
-    $("run-bar").setAttribute("aria-label", untilAllDead ? "Survival rate" : "The test run");
-    $("run-bar").setAttribute("aria-valuenow", String(Math.round(fraction * 100)));
+    const zones = s.progress.zones;
+    $("zone-circles").innerHTML = zones.map((zone) => {
+      const turn = zone.fraction * 360;
+      const name = zone.label ? `${zone.id} · ${zone.label}` : `Zone ${zone.id}`;
+      const title = !zone.counts ? `${name}: no mite seen moving yet, so it does not hold the run up`
+        : `${name}: ${zone.dead} of ${plural(zone.mites, "mite")} dead${zone.gone ? `, ${zone.gone} gone` : ""}${zone.done ? " · done" : ""}`;
+      return `<div class="zone-circle${zone.counts ? "" : " idle"}${zone.done ? " done" : ""}" title="${esc(title)}">
+        <span class="circle" style="--turn:${turn}deg" role="img" aria-label="${esc(title)}"></span>
+        <span class="zone-circle-name">${esc(String(zone.id))}</span>
+        <span class="zone-circle-count">${zone.counts ? `${zone.dead}/${zone.mites}` : "–"}</span>
+      </div>`;
+    }).join("") || `<span class="hint">The zones show once the first recording is analysed.</span>`;
 
-    this.drawMarks(marks);
-
-    // A run going on until every mite is dead may take more recordings than planned so far.
-    const more = untilAllDead && !finished;
-    const parts = [`Recording ${s.recording} of ${more ? "at least " : ""}${s.recordings}`];
-    if (untilAllDead) {
-      parts.unshift(s.alive ? `Survival rate: ${s.alive.alive} of ${s.alive.mites} mites alive` : "Survival rate: once the first recording is analysed");
-    }
+    const parts = [`Recording ${s.recording} of at most ${s.recordings}`];
     if (s.recording_name) parts.push(`capturing frame ${s.frame}${s.frames ? ` of ${s.frames}` : ""}`);
     parts.push(`${s.analysed} analysed`);
+    if (s.pending_mites) parts.push(`${plural(s.pending_mites, "mite")} to add with the next recording`);
     $("live-progress").textContent = parts.join(" · ");
 
-    const ends = new Date(Date.now() + left * 1000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
-    const share = `${Math.round(fraction * 100)}%${untilAllDead ? " alive" : ""}`;
-    $("run-left").textContent = !line ? ""
-      : finished ? (s.analysed < s.recordings ? `Stopped after ${s.analysed} of ${s.recordings} recordings` : `Finished in ${duration(line.length)}`)
-        : s.state === "paused" ? `${share} · paused: the rest of the run waits`
-          : untilAllDead ? `${share} · ends once no mite has moved for the time to count as dead, no sooner than ${ends}`
-            : `${share} · ${duration(left)} left · ends about ${ends}`;
-  }
-
-  // A tick per recording, where the server placed it, in the state it gave it.
-  drawMarks(marks) {
-    const holder = $("run-marks");
-    if (holder.children.length !== marks.length) {
-      holder.innerHTML = marks.map(() => `<i></i>`).join("");
-    }
-    marks.forEach(({ at, state }, i) => {
-      const mark = holder.children[i];
-      mark.style.left = `${at * 100}%`;
-      mark.className = state;
-      mark.title = `Recording ${i + 1}: ${LivePanel.MARK_NAMES[state]}`;
-    });
+    const counting = zones.filter((zone) => zone.counts);
+    const done = counting.filter((zone) => zone.done).length;
+    $("run-left").textContent = s.state === "finished" ? (s.stop_reason ? `Stopped: ${s.stop_reason}` : `Finished after ${s.analysed} recordings`)
+      : counting.length ? `${done} of ${plural(counting.length, "zone")} done · the run stops once all are` : "";
   }
 }

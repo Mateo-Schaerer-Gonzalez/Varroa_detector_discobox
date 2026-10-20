@@ -21,6 +21,13 @@ the run is over. Whatever stops it half way, the session reads the same: the
 index says how many recordings the mite videos hold (`stitched`), and the rest
 are read from their parts.
 
+A live run follows its mites (classes/motion_analysis.py), so its index says
+more: `follow` is true, each recording lists every mite's box in it (`boxes`,
+null where the mite was not followed: added later, or counted dead), and a mite
+added during the run says from which recording (`from`). A mite's ROI then moves
+with its box, the same size throughout (placed_rect()), and its video holds only
+the recordings it was followed in.
+
 A frame is given back as the whole image it was cut from with only the ROIs in
 it, black around them. Every step that scores a mite reads only its box grown by
 the metric's pad and by STABILIZE_MARGIN (the plate's shift and the stabilizer's
@@ -86,6 +93,30 @@ def roi_rect(box, width, height, margin=ROI_MARGIN):
             else:
                 rect[high] -= 1  # the whole image, of an odd size: one line less
     return rect
+
+
+def roi_size(box, width, height, margin=ROI_MARGIN):
+    """(w, h): the size of the ROI of a mite followed as it moves (placed_rect()):
+    its box grown by `margin`, and at least CENTRE_REACH round its centre,
+    wherever in the image it is, one more pixel to keep it so whichever way the
+    centre rounds, and even, as the video's encoder wants it."""
+    x1, y1, x2, y2 = (int(value) for value in box)
+    sizes = []
+    for low, high, size in ((x1, x2, width), (y1, y2, height)):
+        side = max(high - low + 2 * margin, 2 * CENTRE_REACH) + 1
+        sizes.append(min(side + side % 2, size - size % 2))
+    return tuple(sizes)
+
+
+def placed_rect(box, size, width, height):
+    """[x1, y1, x2, y2]: a ROI of `size` (roi_size()) round the box, moved
+    inside the image where it would reach out of it. It holds all of the box
+    grown by the margin, and CENTRE_REACH round its centre, that is in the image."""
+    x1, y1, x2, y2 = (int(value) for value in box)
+    w, h = size
+    left = min(max(0, (x1 + x2) // 2 - w // 2), width - w)
+    top = min(max(0, (y1 + y2) // 2 - h // 2), height - h)
+    return [left, top, left + w, top + h]
 
 
 def remove_tree(path, ignore_errors=False):
@@ -196,14 +227,16 @@ class RoiWriter:
         self._recording = None  # the recording being written, its writers, frames so far
         self._writers = []
         self._frames = 0
+        self._boxes = None  # where each mite is in the recording about to begin (place())
 
     @property
     def started(self):
         return self.index is not None
 
-    def start(self, first_image, boxes):
+    def start(self, first_image, boxes, follow=False):
         """Begin with the first frame, whole, and the boxes of the mites found on
-        it ((x1, y1, x2, y2), in the order they were found)."""
+        it ((x1, y1, x2, y2), in the order they were found). With `follow`,
+        each recording gives where every mite is in it (place())."""
         height, width = first_image.shape[:2]
         self.rois_dir.mkdir(parents=True, exist_ok=True)
         partial = self.data_dir / f"partial_{FIRST_FRAME_NAME}"
@@ -214,11 +247,42 @@ class RoiWriter:
             "version": VERSION,
             "image": [int(width), int(height)],
             "margin": ROI_MARGIN,
-            "mites": [{"box": [int(v) for v in box], "roi": roi_rect(box, width, height)} for box in boxes],
+            "mites": [],
             "recordings": [],
             "stitched": 0,
         }
+        if follow:
+            self.index["follow"] = True
+        self._boxes = None
+        self._add_mites(boxes)
         _write_json(self.rois_dir / INDEX_NAME, self.index)
+
+    def _add_mites(self, boxes, start=0):
+        width, height = self.index["image"]
+        for box in boxes:
+            mite = {"box": [int(v) for v in box]}
+            if self.index.get("follow"):
+                mite["roi"] = placed_rect(box, roi_size(box, width, height), width, height)
+            else:
+                mite["roi"] = roi_rect(box, width, height)
+            if start:
+                mite["from"] = start
+            self.index["mites"].append(mite)
+
+    def place(self, boxes):
+        """Where each mite is in the recording about to begin, of a run that
+        follows its mites: per mite, in the order of the index, its box, or None
+        where it is not followed. Boxes beyond the mites of the index are those
+        of mites added now, which they take as their own."""
+        known = len(self.index["mites"])
+        self._add_mites(boxes[known:], start=len(self.index["recordings"]))
+        self._boxes = [None if box is None else [int(v) for v in box] for box in boxes]
+
+    def _rects(self):
+        """The ROI of each mite in the recording being written, None where it is not saved."""
+        if self._boxes is None:
+            return [mite["roi"] for mite in self.index["mites"]]
+        return _placed_rects(self.index, self._boxes)
 
     def add(self, recording, image):
         """One more frame of `recording` (a frame_source.Recording); its ROIs are
@@ -228,11 +292,10 @@ class RoiWriter:
             folder = self._part_dir(recording.name, writing=True)
             shutil.rmtree(folder, ignore_errors=True)
             folder.mkdir(parents=True)
-            self._writers = [RoiVideo.writer(folder / _video_name(number), x2 - x1, y2 - y1, recording.fps)
-                             for number, (x1, y1, x2, y2) in enumerate(mite["roi"] for mite in self.index["mites"])]
+            self._writers = [(RoiVideo.writer(folder / _video_name(number), x2 - x1, y2 - y1, recording.fps), (x1, y1, x2, y2))
+                             for number, (x1, y1, x2, y2) in enumerate(self._rects()) if x2 is not None]
             self._recording, self._frames = recording, 0
-        for writer, mite in zip(self._writers, self.index["mites"]):
-            x1, y1, x2, y2 = mite["roi"]
+        for writer, (x1, y1, x2, y2) in self._writers:
             writer.write(np.ascontiguousarray(image[y1:y2, x1:x2]))
         self._frames += 1
 
@@ -241,13 +304,15 @@ class RoiWriter:
         lists it, with `blobs`, those on its first and last frame."""
         if self._recording != recording:
             return
-        for writer in self._writers:
+        for writer, _rect in self._writers:
             writer.release()
         folder = self._part_dir(recording.name)
         shutil.rmtree(folder, ignore_errors=True)
         _replace(self._part_dir(recording.name, writing=True), folder)
-        self.index["recordings"].append({"name": recording.name, "fps": recording.fps, "frames": self._frames,
-                                         "blobs": blobs})
+        entry = {"name": recording.name, "fps": recording.fps, "frames": self._frames, "blobs": blobs}
+        if self._boxes is not None:
+            entry["boxes"] = self._boxes
+        self.index["recordings"].append(entry)
         _write_json(self.rois_dir / INDEX_NAME, self.index)
         self._recording, self._writers, self._frames = None, [], 0
 
@@ -255,7 +320,7 @@ class RoiWriter:
         """Drop the recording being written, unfinished."""
         if self._recording is None:
             return
-        for writer in self._writers:
+        for writer, _rect in self._writers:
             writer.release()
         shutil.rmtree(self._part_dir(self._recording.name, writing=True), ignore_errors=True)
         self._recording, self._writers, self._frames = None, [], 0
@@ -266,6 +331,22 @@ class RoiWriter:
 
 def _video_name(number):
     return f"mite_{number:03d}.mkv"
+
+
+def _placed_rects(index, boxes):
+    """The ROI of each mite of `index` in a recording whose boxes are `boxes`
+    (one per mite, as many as there were then, None where it was not saved);
+    [None] * 4 for those not saved."""
+    width, height = index["image"]
+    rects = []
+    for number, mite in enumerate(index["mites"]):
+        box = boxes[number] if number < len(boxes) else None
+        if box is None:
+            rects.append([None] * 4)
+            continue
+        x1, y1, x2, y2 = mite["roi"]
+        rects.append(placed_rect(box, (x2 - x1, y2 - y1), width, height))
+    return rects
 
 
 class RoiRecordings:
@@ -314,9 +395,10 @@ class RoiRecordings:
         x1, y1, x2, y2 = max(0, x1), max(0, y1), min(width, x2), min(height, y2)
         n = len(range(0, self.count_frames(name), step))
         out = np.zeros((n, max(0, y2 - y1), max(0, x2 - x1)), dtype=np.uint8)
-        numbers = [number for number, mite in enumerate(self.index["mites"]) if _overlap(mite["roi"], (x1, y1, x2, y2))]
+        rects = self.rects_in(name)
+        numbers = [number for number, rect in enumerate(rects) if rect[0] is not None and _overlap(rect, (x1, y1, x2, y2))]
         for number, frames in zip(numbers, side_by_side(lambda number: self.read_mite(name, number)[::step], numbers)):
-            rx1, ry1, rx2, ry2 = self.index["mites"][number]["roi"]
+            rx1, ry1, rx2, ry2 = rects[number]
             ox1, oy1, ox2, oy2 = max(rx1, x1), max(ry1, y1), min(rx2, x2), min(ry2, y2)
             out[:, oy1 - y1:oy2 - y1, ox1 - x1:ox2 - x1] = frames[:, oy1 - ry1:oy2 - ry1, ox1 - rx1:ox2 - rx1]
         return out
@@ -333,8 +415,30 @@ class RoiRecordings:
 
     @property
     def boxes(self):
-        """The mites' boxes (x1, y1, x2, y2), in the order they were found."""
+        """The mites' boxes (x1, y1, x2, y2), in the order they were found (and
+        then added): where they were found."""
         return [tuple(mite["box"]) for mite in self.index["mites"]]
+
+    @property
+    def starts(self):
+        """The recording each mite was added in: 0 for those found on the first frame."""
+        return [mite.get("from", 0) for mite in self.index["mites"]]
+
+    def placements(self, name):
+        """Per mite, its box (x1, y1, x2, y2) in recording `name`, None where it
+        was not followed; None when the recording does not say (every mite was
+        where it was found)."""
+        boxes = self._recording(name).get("boxes")
+        if boxes is None:
+            return None
+        return [tuple(boxes[n]) if n < len(boxes) and boxes[n] is not None else None for n in range(len(self.index["mites"]))]
+
+    def rects_in(self, name):
+        """The ROI of each mite in recording `name`; [None] * 4 where it was not saved."""
+        boxes = self._recording(name).get("boxes")
+        if boxes is None:
+            return [mite["roi"] for mite in self.index["mites"]]
+        return _placed_rects(self.index, boxes)
 
     @property
     def rois(self):
@@ -378,16 +482,24 @@ class RoiRecordings:
         at = self._recordings[name]
         recording = self.index["recordings"][at]
         if at < self.index["stitched"]:
-            start = sum(r["frames"] for r in self.index["recordings"][:at])
+            start = sum(r["frames"] for r in self.index["recordings"][:at] if self._saved(r, number))
             return self.rois_dir / _video_name(number), start, recording["frames"]
         return self.rois_dir / PARTS_DIRNAME / name / _video_name(number), 0, recording["frames"]
+
+    @staticmethod
+    def _saved(recording, number):
+        """Whether mite `number`'s ROI was saved in `recording` (an index entry)."""
+        boxes = recording.get("boxes")
+        return boxes is None or (number < len(boxes) and boxes[number] is not None)
 
     def files(self):
         """What tells these frames from any others, without reading them (as
         FolderSource.frame_files() for whole frames): per recording, its name and
-        number of frames, and the mites' ROIs. Saved frames are never written
-        again, only moved into the mite videos, which changes none of them."""
-        return [["rois", self.rois]] + [[recording["name"], recording["frames"]] for recording in self.index["recordings"]]
+        number of frames (and where each mite was, if it says), and the mites'
+        ROIs. Saved frames are never written again, only moved into the mite
+        videos, which changes none of them."""
+        return [["rois", self.rois]] + [[recording["name"], recording["frames"]] + ([recording["boxes"]] if "boxes" in recording else [])
+                                        for recording in self.index["recordings"]]
 
     def stitch(self):
         """Patch every recording since the last stitch onto the end of each mite's
@@ -399,14 +511,17 @@ class RoiRecordings:
             work = self.rois_dir / "stitching"
             remove_tree(work)
             work.mkdir()
-            kept = sum(recording["frames"] for recording in recordings[:stitched])
 
             def one(number):
+                kept = sum(recording["frames"] for recording in recordings[:stitched] if self._saved(recording, number))
+                pieces = [(self.rois_dir / _video_name(number), 0, kept)] if kept else []
+                pieces += [self._where(recording["name"], number) for recording in recordings[stitched:]
+                           if self._saved(recording, number)]
+                if not pieces:  # a mite added as the run stopped: never saved
+                    return
                 x1, y1, x2, y2 = self.index["mites"][number]["roi"]
                 writer = RoiVideo.writer(work / _video_name(number), x2 - x1, y2 - y1, recordings[0]["fps"])
                 try:
-                    pieces = [(self.rois_dir / _video_name(number), 0, kept)] if kept else []
-                    pieces += [self._where(recording["name"], number) for recording in recordings[stitched:]]
                     for piece in pieces:  # a frame at a time: a long run's video does not fit in memory
                         for frame in RoiVideo.frames(*piece):
                             writer.write(frame)
@@ -417,7 +532,8 @@ class RoiRecordings:
             # The videos first: until the index says so, only their first
             # `stitched` recordings are read, which they hold as before.
             for number in range(len(self.index["mites"])):
-                _replace(work / _video_name(number), self.rois_dir / _video_name(number))
+                if (work / _video_name(number)).exists():
+                    _replace(work / _video_name(number), self.rois_dir / _video_name(number))
             remove_tree(work, ignore_errors=True)
             self.index["stitched"] = len(recordings)
             _write_json(self.rois_dir / INDEX_NAME, self.index)

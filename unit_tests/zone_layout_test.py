@@ -106,6 +106,7 @@ def test_a_live_run_takes_the_zones_of_its_settings_and_the_label_page_can_chang
     ZoneLayout(2).save(data_dir)
     pipeline.save_labels(data_dir, {"4": "venom"})
     settings_path = data_dir / pipeline.SETTINGS_FILENAME
+    pipeline.save_death_minutes(data_dir, folder_camera.DEAD_AFTER)  # the settings saved below are this file's
     status = folder_camera.open_live(monkeypatch, "zones-test", tmp_path / "out", "run", data_dir,
                                      recordings_root=tmp_path / "recordings")
     try:

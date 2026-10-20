@@ -54,6 +54,8 @@ can never reach into the analysis internals.
     live_status(...)           how capture and analysis are going
     live_results(...)          the results so far, as run_analysis() gives them
     live_correct_call(...)     correct_call() for a live run
+    live_find_mites(...)       light the plates and detect mites not followed yet, to add during a run
+    live_add_mites(...)        follow the mites chosen of those from the next recording on
     live_frame(...)            the newest frame as a JPEG, for the live feed
     pause_live / resume_live / stop_live / close_live
 
@@ -112,18 +114,19 @@ from classes.poke_test import PokeSurvival, PokeTest
 from classes.data_loader import DataLoader
 from classes.deferred_files import DeferredFiles
 from classes.error_map import ErrorMap
+from classes.follow_up import FollowUp
 from classes.frame_source import RoiSource, open_source
 from classes.kept_scores import KeptScores
 from classes.label_reader import LabelReader, LabelReadError
 from classes.live import camera as live_camera
 from classes.live.lights import DEVICES, open_lights, serial_ports
-from classes.live.progress import RunProgress
+from classes.live.progress import RunProgress, ZoneProgress
 from classes.live.recorder import Recorder
 from classes.live.session import LiveSession
 from classes.live.settings import RANGES as SETTING_RANGES, Settings
 from classes.live.sources import CameraSource
 from classes.mite import Mite
-from classes.motion_analysis import MotionAnalysis, detect_mites
+from classes.motion_analysis import DETECTION_LOCK, MotionAnalysis, detect_mites
 from classes import outline_change as outline_change_module
 from classes.outline_change import OutlineChange
 from classes.outline_view import OutlineView
@@ -133,7 +136,7 @@ from classes.roi_conversion import RoiConversion
 from classes.roi_recordings import ROI_DIRNAME, RoiRecordings, RoiVideo, is_roi_session, open_recordings, remove_tree
 from classes.review_band import ReviewBand
 from classes.score_normalizer import ScoreNormalizer
-from classes.survival import SurvivalAnalysis, SurvivalReport
+from classes.survival import SurvivalReport
 from classes.truth_draft import TruthDraft
 from classes.truth_overlap import TruthOverlap
 from classes.unusual_activity import UnusualActivity
@@ -510,7 +513,8 @@ def _detect_and_score(data_dir, coords_file, labels=None, reject=True, score=Tru
     source = open_source(data_dir, names)
     rois = isinstance(source, RoiSource)
     analysis = MotionAnalysis(_build_zone_manager(_coords_file(data_dir, coords_file)), score=False,
-                              boxes=source.boxes if rois else None, known_blobs=source.blobs() if rois else None)
+                              boxes=source.boxes if rois else None, known_blobs=source.blobs() if rois else None,
+                              starts=source.starts if rois else None, placements=source.placements if rois else None)
     if rois and score:
         mite = analysis.analyzer.config.mite
         source.loader.check_margin(Analyzer.roi_padding(mite.metric, mite.params_for(mite.metric))
@@ -528,8 +532,7 @@ def _detect_and_score(data_dir, coords_file, labels=None, reject=True, score=Tru
         if kept is not None and kept.give(key, analysis.mites, len(analysis.recording_times)):
             analysis.blobs = kept.blobs
         else:
-            analysis.score = True
-            analysis.recording_times = []
+            analysis.restart(score=True)
             analysis.run(source.events())
             if kept is not None:
                 kept.keep(key, analysis.mites, analysis.blobs)
@@ -799,6 +802,7 @@ def _mite_table(run, corrections=None, normalizer=None):
         mite_data, changes = corrections.apply(mite_data)
     if getattr(run, "activity", None) is not None:
         mite_data, changes = run.activity.censor(mite_data, changes)
+    mite_data, changes = FollowUp.of(m for zone in run.zone_manager.zones for m in zone.mites).censor(mite_data, changes)
     if normalizer is not None:
         mite_data = normalizer.apply(mite_data, run.analyzer.config.mite.motion_threshold)
     return mite_data, changes
@@ -2881,6 +2885,12 @@ LIVE_STATES = ("running", "paused", "stopping")
 LEDS = ("led1", "led2")
 # Seconds for the camera's automatic exposure to follow the LEDs coming on.
 LIGHTS_SETTLE = 1.5
+# Seconds to spare before the next recording's cycle starts, for lighting the
+# plates to find mites to add (live_find_mites()).
+FIND_MITES_SPARE = 15
+# Pixels round a mite already followed in which a blob found is that mite.
+FOUND_MITE_REACH = 4
+ADD_PREVIEW_NAME = "add_mites.jpg"
 
 _live = {}  # live id -> the run's parts
 _live_lock = threading.Lock()
@@ -3021,10 +3031,9 @@ def open_live(live_id, out_dir, run_name, camera_id=None, serial_port="auto", sa
             out_dir=out_dir, results_root=Path(results_root) if own_results else None, new_results=new_results,
             save_frames=bool(save_frames),
             coords_file=coords_file, layout=layout, feed=(None, None), feed_lock=threading.Lock(), started_at=None,
-            movement=(0, -1), preview_written=False, files_due=None,
+            preview_written=False, files_due=None, zones=[], stop_reason=None, finding=threading.Lock(),
         )
         run.analysis = analysis = MotionAnalysis(_live_zone_manager(run))
-        live_source.movement = lambda: run.movement
         run.session = LiveSession(live_source, analysis, publish=lambda session, write: _publish_live(run, write),
                                   on_finish=lambda session: _live_run_ended(run))
         _live[live_id] = run
@@ -3121,11 +3130,8 @@ def _publish_live(run, write_files):
     After each recording (`write_files`), run.json says how far the run got,
     and the files follow (_write_live_files_later())."""
     labels = load_labels(run.run_dir)
-    recordings = list(run.session.recordings)
     # A call corrected after the run's end writes the files again, and nothing else.
     going = write_files and run.session.state != "finished"
-    if going:  # even if no results can be described, these recordings are analysed
-        run.movement = (len(recordings), run.movement[1])
     _arrange(run.analysis, run.run_dir, labels, True)
     # The scores are normalised over a whole run, so not while it goes on.
     results = _results(_run_view(run.analysis, _live_frames(run)), run.out_dir, labels, False,
@@ -3135,10 +3141,24 @@ def _publish_live(run, write_files):
             _write_preview(run.analysis.first_frame, run.out_dir)
             run.preview_written = True
         _write_live_files_later(run)
+    progress = ZoneProgress(results, death_minutes(run.run_dir))
+    run.zones = progress.zones()
     if going:
-        run.movement = (len(recordings), _last_movement(results, recordings))
+        _follow_live(run, progress, len(results["times"]))
         _write_run_info(run)
     return results
+
+
+def _follow_live(run, progress, recordings):
+    """After a recording of a running live run: the mites that count as dead are
+    no longer followed from the next on, and once every zone is done the run
+    stops (classes/live/progress.py)."""
+    dead = set(progress.dead_ids())
+    run.analysis.stop([mite for mite in run.analysis.mites if mite.text in dead], recordings)
+    if progress.all_done(run.zones) and run.session.state in ("running", "paused") and run.stop_reason is None:
+        run.stop_reason = "Every mite of every zone is dead."
+        _logger.info("Stopping the test run %s: %s", run.run_dir.name, run.stop_reason)
+        run.session.stop()
 
 
 def _live_run_ended(run):
@@ -3168,19 +3188,6 @@ def _live_frames(run):
     return "rois" if run.save_frames else "none"
 
 
-def _last_movement(results, recordings):
-    """The last of `recordings` (names, in order) in which any mite moved, from
-    0; -1 if none did. A result's times are its recordings', in minutes from
-    the start of the first."""
-    moved = [time for index, time in enumerate(results["times"])
-             if any(mite["moving"][index] for mite in results["mites"])]
-    if not moved or not recordings:
-        return -1
-    first = DataLoader.parse_start_time(recordings[0])
-    starts = [(DataLoader.parse_start_time(name) - first).total_seconds() / 60 for name in recordings]
-    return max(index for index, start in enumerate(starts) if start <= moved[-1] + 1e-3)
-
-
 def _write_run_info(run, ended=False):
     """Write run.json next to the recordings: how the test run was made, and how
     far it got. Never fails the run: it is only a record."""
@@ -3199,6 +3206,7 @@ def _write_run_info(run, ended=False):
             "frames_dropped": status["dropped"],
             "frames_incomplete": status["incomplete"],
             "error": status["error"] or status["save_error"],
+            "stop_reason": run.stop_reason,
         }
         path = run.run_dir / RUN_INFO_NAME
         partial = path.with_name(path.name + ".part")
@@ -3259,6 +3267,8 @@ def start_live(live_id, labels=None):
     run = _get_live(live_id)
     if run.session.state != "ready":
         raise ValueError("This test run has already been started.")
+    run.source.settings.check_death_time()
+    run.analysis.follow = run.source.settings.follow_px or None
     if labels is not None:
         save_labels(run.run_dir, labels)
     (run.run_dir / SETTINGS_FILENAME).write_text(run.source.settings_text, encoding="utf-8")
@@ -3280,22 +3290,8 @@ def start_live(live_id, labels=None):
     return live_status(live_id)
 
 
-def mites_alive(results, death_minutes):
-    """{alive, mites}: of the results' mites in the study (seen moving at least
-    once), how many are alive in their last recording, by the rule of the
-    survival charts (classes/survival.py): a mite that moved in it, or has not
-    yet been still for `death_minutes` since its last movement."""
-    survival = SurvivalAnalysis(results["times"], death_minutes)
-    movings = SurvivalAnalysis.study([mite["moving"] for mite in results["mites"]])
-    return {"alive": survival.alive_count(movings, len(results["times"]) - 1), "mites": len(movings)}
-
-
 def live_status(live_id):
     run = _get_live(live_id)
-    results = run.session.results
-    alive = None
-    if results is not None:
-        alive = mites_alive(results, death_minutes(run.run_dir))
     status = {
         **run.session.status(),
         "live_id": live_id,
@@ -3304,10 +3300,11 @@ def live_status(live_id):
         "out_dir": str(run.out_dir),
         "save_frames": run.save_frames,
         "zones_per_plate": run.layout.zones_per_plate,
-        "alive": alive,  # the mites alive now, of those in the study; None before the first results
+        "stop_reason": run.stop_reason,  # why the run stopped by itself, if it did
+        "pending_mites": len(run.analysis._pending),  # mites to add when the next recording begins
     }
-    # the progress bar over the live result pages
-    return {**status, "progress": RunProgress(status).describe()}
+    # the zones' circles over the live result pages
+    return {**status, "progress": RunProgress(status, run.zones).describe()}
 
 
 def live_results(live_id):
@@ -3378,6 +3375,109 @@ def _write_live_files(run):
         mite_data, _changes = _mite_table(view, CallCorrections(run.run_dir), ScoreNormalizer())
         annotated = _annotated(view)
     _write_files(annotated, run.out_dir, mite_data)
+
+
+def live_find_mites(live_id):
+    """Light the plates during a run, between two recordings, and detect the
+    mites on the camera's frame that are not followed yet, to add some
+    (live_add_mites()). The run is held meanwhile: a recording due waits for
+    the LEDs to go off again. The frame is written to the results folder as
+    ADD_PREVIEW_NAME. Returns {image, width, height, mites: [{x1, y1, x2, y2,
+    x, y, zone_id}]}."""
+    run = _get_live(live_id)
+    if run.session.state not in ("running", "paused"):
+        raise ValueError("Mites can be added while the test run is going on.")
+    if not run.analysis.started:
+        raise ValueError("Mites can be added once the first recording has begun.")
+    if not run.finding.acquire(blocking=False):
+        raise ValueError("Mites are being looked for already.")
+    try:
+        status = run.source.status()
+        if status["recording_name"]:
+            raise ValueError("A recording is being captured: try again once it is over.")
+        next_seconds = RunProgress(status).next_seconds(status.get("timeline"))
+        lit = any(light["on"] for device, light in status["lights"].items() if device in DEVICES)             if status["lights"].get("connected") else False
+        if lit or (next_seconds is not None and next_seconds < run.source.settings.cycle_seconds + FIND_MITES_SPARE):
+            raise ValueError("The next recording is about to start: try again once it is over.")
+        held = run.source.state == "running"
+        if held:
+            run.session.pause()
+        try:
+            image = _lit_frame(run)
+        finally:
+            if held:
+                run.session.resume()
+        found = _new_mites(run, image)
+    finally:
+        run.finding.release()
+    _write_image(Path(run.out_dir) / ADD_PREVIEW_NAME, image, [cv2.IMWRITE_JPEG_QUALITY, 85])
+    return {"image": ADD_PREVIEW_NAME, **_image_size(image), "mites": found}
+
+
+def _lit_frame(run):
+    """A frame of the plates with both LEDs on, which are switched off again after."""
+    lights, settings = run.lights, run.source.settings
+    count, _image = run.source.latest.get()
+    try:
+        if lights.connected:
+            for device in LEDS:
+                lights.switch(device, True, getattr(settings, device))
+            time.sleep(LIGHTS_SETTLE)
+            count, _image = run.source.latest.get()
+        deadline = time.monotonic() + 5
+        while time.monotonic() < deadline:  # a frame taken with the LEDs on
+            newer, image = run.source.latest.get()
+            if newer > count and image is not None:
+                return image
+            time.sleep(0.05)
+        raise ValueError("No frame came from the camera.")
+    finally:
+        if lights.connected:
+            for device in LEDS:
+                lights.switch_off(device)
+
+
+def _new_mites(run, image):
+    """The mites the detector finds on `image` that are not followed already:
+    none within FOUND_MITE_REACH of where a mite was last placed, or is to be
+    added; only in a zone."""
+    analysis = run.analysis
+    with run.session.lock:
+        last = analysis.placed[-1] if analysis.placed else {}
+        known = [last.get(mite, tuple(mite)) for mite in analysis.mites] + list(analysis._pending)
+        zones = [zone for zone in analysis.zone_manager.zones if zone.id is not None]
+        masked = analysis.zone_manager.mask_image_to_valid_rois(image)
+    with DETECTION_LOCK:  # a Mite counts the ids on
+        detected = analysis.analyzer.detect(masked)
+    found = []
+    for mite in detected:
+        x, y = mite.home
+        if any(x1 - FOUND_MITE_REACH <= x <= x2 + FOUND_MITE_REACH and y1 - FOUND_MITE_REACH <= y <= y2 + FOUND_MITE_REACH
+               for x1, y1, x2, y2 in known):
+            continue
+        zone = next((zone for zone in zones if mite in zone), None)
+        if zone is not None:
+            found.append({"x1": mite.x1, "y1": mite.y1, "x2": mite.x2, "y2": mite.y2,
+                          "x": round(x, 1), "y": round(y, 1), "zone_id": zone.id})
+    return found
+
+
+def live_add_mites(live_id, boxes):
+    """Follow the mites of `boxes` ([x1, y1, x2, y2] each, as live_find_mites()
+    found them) from the next recording on, numbered after those of their zone."""
+    run = _get_live(live_id)
+    if run.session.state not in ("running", "paused"):
+        raise ValueError("Mites can be added while the test run is going on.")
+    if not run.analysis.started:
+        raise ValueError("Mites can be added once the first recording has begun.")
+    checked = []
+    for box in boxes:
+        if len(box) != 4:
+            raise ValueError("A mite is given as [x1, y1, x2, y2].")
+        checked.append(tuple(int(value) for value in box))
+    with run.session.lock:
+        run.analysis.add_mites(checked)
+    return live_status(live_id)
 
 
 def live_refresh(live_id):

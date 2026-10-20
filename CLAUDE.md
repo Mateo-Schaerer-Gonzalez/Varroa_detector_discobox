@@ -59,6 +59,11 @@ frames as it arrives, from a frame source it doesn't distinguish
 (`classes/frame_source.py`, `classes/live/sources.py`): `FolderSource` (BMP folders),
 `RoiSource` (a live run's saved per-mite FFV1 ROI videos, `classes/roi_recordings.py`) or
 `CameraSource`. Analysing a saved live run must give exactly the scores the live run gave.
+A live run also follows its mites (each recording's first frame moves each box to its blob,
+`Settings.follow_px`), takes mites added mid-run (`add_mites`) and stops following mites
+counted dead (`stop`); the ROI index records each recording's boxes so a replay follows them
+the same way. A `Mite`'s own box stays where it was found (its key); recordings it was not
+followed in hold None (`classes/follow_up.py` turns them into censored/still rows).
 `classes/live/` holds the camera (vmbpy, Vimba X), fan/LEDs over serial (pyserial), the
 schedule and the live session; those libraries are imported only for a live run.
 `classes/discobox/camera_utils.py` is copied unchanged from the Discobox app.

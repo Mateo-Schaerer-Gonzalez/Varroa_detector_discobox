@@ -30,7 +30,8 @@ def camera(small_session, monkeypatch):
         monkeypatch.setattr(pipeline, "open_lights", lambda port: folder_camera.NoLights())
         monkeypatch.setattr(pipeline, "CameraSource",
                             lambda _id, settings, lights: folder_camera.FolderCamera(small_session, settings, lights, gap))
-        return ["--live", "--settings", str(small_session / pipeline.SETTINGS_FILENAME)]
+        # dead after longer than the run: every mite is followed to the end, as folder mode scores it
+        return ["--live", "--settings", str(small_session / pipeline.SETTINGS_FILENAME), "--dead-after", "10000"]
     return connect
 
 

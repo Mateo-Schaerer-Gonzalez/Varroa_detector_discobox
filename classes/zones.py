@@ -290,8 +290,9 @@ class ZoneManager:
                         {
                             "mite_ID": mite_id,
                             "time": time,
-                            "motion_score": motion_score,
-                            "moving": moving,
+                            # NaN and not moving where the mite was not followed (classes/follow_up.py)
+                            "motion_score": np.nan if motion_score is None else motion_score,
+                            "moving": bool(moving),
                             "zone_id": zone.id,
                             "group": zone.group,
                             "zone_type": zone.type,

@@ -366,29 +366,59 @@ is analysed as soon as it is in, and the usual result pages fill in as the run g
    still be changed after connecting, until the test run starts. The test run's settings are the
    Discobox app's (time between recordings, fan and LED durations and
    intensities, frames per recording, frames per second), but the length of
-   the run is set as the *experiment duration* rather than a number of
-   recordings. *Dead when still for* is how long a mite must go without moving
-   to count as dead; it is added to the end of the run, so a mite still at the
-   end of the experiment can be told from a dead one, and the *Mites alive*
-   charts use it. With *Go on until every mite is dead*, the mites alone decide
-   how long the run lasts: the experiment duration is not asked for, that time
-   starts again whenever a mite moves, and the run ends only once no mite has
-   moved for that long. The run's bar then shows the share of mites still
-   alive, in its own colour, instead of the time. The settings are saved to `settings.txt` as you change them (an older
-   file with a number of recordings is read as the duration they span).
+   the run is set as the *experiment duration, at most*, rather than a number
+   of recordings. *Dead when still for* is how long a mite must go without
+   moving to count as dead; a run cannot start without it. It is added to the
+   end of the run, so a mite still at the end of the experiment can be told
+   from a dead one, and the *Mites alive* charts use it. The run ends sooner,
+   by itself, once every mite of every zone is dead (see *Live results*).
+   *Most a mite moves between recordings* (50 px by default, 0 for not at all)
+   is how far a mite is followed from one recording to the next (see
+   *Following the mites* below). The settings are saved to `settings.txt` as
+   you change them (an older file with a number of recordings is read as the
+   duration they span; one with *Go on until every mite is dead*, which this
+   replaced, is read without it).
    *On/Off* switches the fan to check it; the sliders set the intensity of
    the fan and of the LEDs.
 2. **Plate labels**: the same page as for a folder, on the camera's newest frame,
    with the LEDs on. *Zones per plate* (1 or 2) is chosen here. *Start test run*
    switches the LEDs off and starts recording; from then on the run switches them.
 3. **Live results**: the result pages of a folder, with a panel above them: a
-   bar for the whole run (how far it is, a tick per recording, the time left),
-   the frame rate, dropped frames, the fan and LEDs, and *Pause* / *Stop*. The
-   charts' time axis covers the whole run from the start, and each recording
-   fills in its part; once the run is over, the axis is what was recorded.
-   *Follow the latest recording* shows each new recording as it comes; choose
-   an older one and the page stays on it. Labels and *not a mite* marks can
-   still change; the results follow them.
+   circle per zone with mites, filled as its mites die (dead of those seen
+   moving, under it), the frame rate, dropped frames, the fan and LEDs, the
+   countdown to the next recording, and *Pause* / *Stop* / *Add mites*. A zone
+   none of whose mites has been seen moving yet is drawn hollow and does not
+   count; a zone is done once each of its mites seen moving is dead (or marked
+   gone). Once every zone that counts is done, the run stops by itself and the
+   panel says why. The charts' time axis covers the whole run from the start,
+   and each recording fills in its part; once the run is over, the axis is
+   what was recorded. *Follow the latest recording* shows each new recording
+   as it comes; choose an older one and the page stays on it. Labels and *not
+   a mite* marks can still change; the results follow them.
+
+**Following the mites.** At the start of each recording the detector looks at
+its first frame, and every mite moves to the blob nearest it in its own zone,
+at most *Most a mite moves between recordings* away (nearest pairs first); a
+mite with no such blob stays where it was, and one off by less than 2 px stays
+put (the detector's jitter). Within a recording its box stays put, as the score
+needs. A mite is still known (labels, ground truth, corrections, its place on
+the plate map, its clips) by where it was found: its clips are cut there, so
+one that walked off shows its old place.
+
+**Adding mites.** *Add mites* on the panel lights the plates between two
+recordings (it is refused while one is being captured or is about to start;
+the run waits meanwhile), detects the mites and shows those not followed yet on
+that frame, all ticked: click one to leave it out, then *Add*. They are
+followed from the next recording on, numbered after the mites of their zone
+(mite `13.7` after `13.6`). Before then they count as not there (censored, as
+a mite marked gone), and their survival is counted from the recording they
+were added in, as if it were their first.
+
+**Mites counted dead.** After each recording, every mite that counts as dead by
+the *Dead when still for* rule (a mite never seen moving too, once still that
+long from its start) is no longer followed: from the next recording on it is
+neither scored nor saved, and it shows as *dead, not followed*, still. A call
+corrected by hand later cannot bring back what was not saved.
 
 **Ground truth and poke test during a run.** *Ground truth* and *Poke test* on
 the live panel open the calibration's pages on the run's recordings so far,
@@ -407,8 +437,8 @@ Only what the analysis reads of the recordings is saved, to `recordings/<run nam
 | File | What |
 |---|---|
 | `first_frame.png` | The first frame of the first recording, whole: the mites are found and the zones labelled on it |
-| `rois/mite_000.mkv` ... | Per mite, its surroundings (its box and 32 px round it, at least 40 px round its centre) in every frame of every recording, one recording after the other: one lossless (FFV1) grey video |
-| `rois/index.json` | Where each mite's video was cut from, and per recording its name, frame rate, number of frames and the blobs found on its whole first and last frame (fly-offs, see below) |
+| `rois/mite_000.mkv` ... | Per mite, its surroundings (its box and 32 px round it, at least 40 px round its centre) in every frame of every recording it was followed in, one recording after the other: one lossless (FFV1) grey video, its region moving with the mite |
+| `rois/index.json` | Where each mite was found (and from which recording, for one added), and per recording its name, frame rate, number of frames, where each mite was in it (none once it counted as dead) and the blobs found on its whole first and last frame (fly-offs, see below) |
 
 While the run goes on, each recording is saved as its own short videos in
 `rois/parts/`; once it is over, they are stitched onto the end of each mite's
@@ -424,7 +454,7 @@ live run gave, the scores to the last digit. The live results go to
 Since only the mites' surroundings are saved, the pages of such a session play
 only a mite's own clip (its page, the ground truth, the playback): the
 plate map and the zones show the first frame, and a fly-off is seen leaving its
-place, not its walk across the plate. The mites are those found when the run started; the
+place, not its walk across the plate. The mites are those found when the run started and added during it; the
 detector's settings changed later find no others there. Untick *Save the
 recordings* for long runs; the results are the same, but there is then no clip
 to play and nothing to open again. Folders of BMPs opened by path, from the Discobox app or from runs before this, are read as before; folders dropped onto the page are shrunk (classes/roi_conversion.py).
@@ -461,6 +491,7 @@ python main.py --list-cameras
 python main.py --live                       # the only camera connected
 python main.py --live --camera-id DEV_000F31 --fps 30 --run-name hive3 --labels labels.json
 python main.py --live --no-save-frames      # long runs: analyse, save nothing
+python main.py --live --dead-after 240      # dead when still for 240 min, over settings.txt
 ```
 
 It prints a line per recording analysed; the recordings go to

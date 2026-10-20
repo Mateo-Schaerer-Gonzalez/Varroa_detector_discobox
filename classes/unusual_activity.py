@@ -35,7 +35,13 @@ last frame (MotionAnalysis). From those, UnusualActivity finds:
 Each mite's patch is scored moved back by its own shift (PlateStabilizer, the
 shift of its centre); its stray is how far that strayed from the plate's, the
 median over the mites.
+
+A live run follows its mites from recording to recording (classes/motion_analysis.py):
+a mite's place in a recording is then where it was followed to (`track`), and a
+mite added during the run (`start`) is not looked for before it was added.
 """
+
+import warnings
 
 import numpy as np
 import pandas as pd
@@ -55,7 +61,9 @@ TOP_MOVERS = 10
 
 class UnusualActivity:
     """`mites`: [{id, x, y, zone, activity: [per recording, as above, or None]}]
-    for every detection; `blobs`: per recording, [[x, y], ...]; `times`: the
+    for every detection, with, for a live run's, its `start` (the recording it
+    was added in) and `track` (per recording, its centre [x, y] there, or
+    None where it was not followed); `blobs`: per recording, [[x, y], ...]; `times`: the
     recordings' times (minutes); `left_out`: the ids already left out (marked
     not a mite), which are still followed if they walk; `reach`: px from a
     mite's centre to the edge of its scored patch."""
@@ -68,6 +76,8 @@ class UnusualActivity:
         self.left_out = {str(i) for i in left_out}
         self.reach = float(reach)
         self.centres = np.array([[m["x"], m["y"]] for m in self.mites], dtype=float).reshape(-1, 2)
+        self.starts = np.array([int(m.get("start") or 0) for m in self.mites], dtype=int)
+        self.places = self._places_followed()  # (mites, recordings, 2): where each mite was in each
         self.ids = [str(m["id"]) for m in self.mites]
         self.values = {key: self._series(key) for key in ("stray", "shake", "dx", "dy", "angle", "elongation", "contrast")}
         self.present = self._present()
@@ -85,12 +95,24 @@ class UnusualActivity:
             for mite in analysis.zone_mites(zone):
                 zone_of[id(mite)] = zone.id
         mites = [{"id": mite.text, "x": (mite.x1 + mite.x2) / 2, "y": (mite.y1 + mite.y2) / 2,
-                  "zone": zone_of.get(id(mite)), "activity": list(getattr(mite, "activity", []))}
+                  "zone": zone_of.get(id(mite)), "activity": list(getattr(mite, "activity", [])),
+                  "start": mite.start, "track": [None if box is None else [(box[0] + box[2]) / 2, (box[1] + box[3]) / 2]
+                                                 for box in analysis.boxes_of(mite)]}
                  for mite in analysis.mites]
         times = np.array(analysis.recording_times, dtype=float) / 60
         return cls(mites, getattr(analysis, "blobs", []), times, [m.text for m in left_out], reach)
 
     # --- the measurements as arrays
+
+    def _places_followed(self):
+        """Each mite's centre in each recording: where it was followed to, else where it was found."""
+        places = np.repeat(self.centres[:, None, :], self.n, axis=1)
+        for index, mite in enumerate(self.mites):
+            last = self.centres[index]
+            for recording, centre in enumerate((mite.get("track") or [])[:self.n]):
+                last = np.asarray(centre, dtype=float) if centre is not None else last
+                places[index, recording] = last
+        return places
 
     def _series(self, key):
         out = np.full((len(self.mites), self.n), np.nan)
@@ -107,15 +129,16 @@ class UnusualActivity:
         if not self.blobs:
             return present
         contrast = self.values["contrast"]
-        first = contrast[:, :1] if self.n else contrast
+        first = contrast[np.arange(len(self.mites)), np.minimum(self.starts, self.n - 1)][:, None] if self.n else contrast
         kept_look = ~(contrast < FADED * first)  # nan (not measured) counts as there
         for recording, blobs in enumerate(self.blobs):
             if not len(blobs):
                 present[:, recording] = False
                 continue
-            distance = np.hypot(*(self.centres[:, None, :] - blobs[None, :, :]).transpose(2, 0, 1))
+            distance = np.hypot(*(self.places[:, recording, None, :] - blobs[None, :, :]).transpose(2, 0, 1))
             present[:, recording] = distance.min(axis=1) <= PRESENT_RADIUS
-        return present | kept_look
+        before = np.arange(self.n)[None, :] < self.starts[:, None]  # not looked for before it was added
+        return present | kept_look | before
 
     # --- fly-offs
 
@@ -140,14 +163,14 @@ class UnusualActivity:
         stays = self._stays(recording)
         if not len(blobs) or not stays:
             return blobs
-        distance = np.hypot(*(blobs[:, None, :] - self.centres[stays][None, :, :]).transpose(2, 0, 1))
+        distance = np.hypot(*(blobs[:, None, :] - self.places[stays, recording][None, :, :]).transpose(2, 0, 1))
         return blobs[distance.min(axis=1) > PRESENT_RADIUS]
 
     def _tracks(self):
         """Each fly-off from its place, recording by recording, to the loose blob
         nearest where it was last, until it is not seen for TRACK_GAPS recordings.
         Fly-offs leaving together take the nearest blobs first."""
-        tracks = {m: [(max(0, start - 1), *self.centres[m])] for m, start in self.flown.items()}
+        tracks = {m: [(max(0, start - 1), *self.places[m, max(0, start - 1)])] for m, start in self.flown.items()}
         gaps = {m: 0 for m in self.flown}
         for recording in range(self.n):
             walking = [m for m, start in self.flown.items() if start <= recording and gaps[m] < TRACK_GAPS]
@@ -196,12 +219,12 @@ class UnusualActivity:
             walking = self._walking(recording)
             if not len(walking):
                 continue
-            distance = np.hypot(*(self.centres[:, None, :] - walking[None, :, :]).transpose(2, 0, 1)).min(axis=1)
+            distance = np.hypot(*(self.places[:, recording, None, :] - walking[None, :, :]).transpose(2, 0, 1)).min(axis=1)
             disturbed[distance <= self.reach, recording] = "passing"
         for m, start in self.flown.items():
             for recording, x, y, seen in self._places(m):
                 if recording >= start and not seen:
-                    distance = np.hypot(self.centres[:, 0] - x, self.centres[:, 1] - y)
+                    distance = np.hypot(self.places[:, recording, 0] - x, self.places[:, recording, 1] - y)
                     disturbed[distance <= self.reach, recording] = "passing"
         for m, start in self.flown.items():
             disturbed[m, :] = None
@@ -295,8 +318,10 @@ class UnusualActivity:
         zones = {}
         for m in kept:
             zones.setdefault(self.mites[m]["zone"], []).append(m)
-        zone_drift = {z: (np.nanmedian(dx[members], axis=0), np.nanmedian(dy[members], axis=0))
-                      for z, members in zones.items()}
+        with warnings.catch_warnings():  # a recording none of a zone's mites was measured in (a live run's dead ones): NaN
+            warnings.simplefilter("ignore", RuntimeWarning)
+            zone_drift = {z: (np.nanmedian(dx[members], axis=0), np.nanmedian(dy[members], axis=0))
+                          for z, members in zones.items()}
         ranked = []
         for m in kept:
             zx, zy = zone_drift[self.mites[m]["zone"]]

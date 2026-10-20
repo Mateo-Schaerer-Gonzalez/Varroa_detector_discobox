@@ -73,10 +73,15 @@ class LiveSession:
         for event in self.source.events():
             yield event
             # The analysis has taken the event in by now: the mites are found
-            # on the first frame, and each recording is scored at its end.
+            # on the first frame, placed on the first of each recording, and
+            # each recording is scored at its end.
             if self.recorder is not None and isinstance(event, Frame):
                 if not self.recorder.started:
-                    self.recorder.start(self.analysis.first_frame, [tuple(mite) for mite in self.analysis.mites])
+                    self.recorder.start(self.analysis.first_frame, [tuple(mite) for mite in self.analysis.mites
+                                                                    if mite.start == 0], follow=True)
+                if event.index == 0:
+                    placed = self.analysis.placed[-1]
+                    self.recorder.place([placed.get(mite) for mite in self.analysis.mites])
                 self.recorder.save(event)
             if isinstance(event, RecordingEnd):
                 # Its frames must be on disk before results pointing at them

@@ -5,7 +5,7 @@
 // comes from the server (Settings.plan in classes/live/settings.py).
 
 class LiveSetupPage {
-  static FIELDS = ["run_minutes", "death_minutes", "death_reset", "recording_timeout", "vent_time", "led1_time", "led2_time", "frame_count", "fps"];
+  static FIELDS = ["run_minutes", "death_minutes", "follow_px", "recording_timeout", "vent_time", "led1_time", "led2_time", "frame_count", "fps"];
   static DEVICES = [["vent", "Fan"], ["led1", "LED 1"], ["led2", "LED 2"]];
 
   constructor() {
@@ -63,12 +63,6 @@ class LiveSetupPage {
     const { settings, ranges } = live.options;
     $("live-settings").innerHTML = LiveSetupPage.FIELDS.map((name) => {
       const { label, unit, min, max } = ranges[name];
-      if (name === "death_reset") {
-        return `<label class="live-check" for="live-set-${name}">
-        <input id="live-set-${name}" data-setting="${name}" type="checkbox"${settings[name] ? " checked" : ""}>${esc(label)}
-        <span class="hint">Each time a mite moves, the time it takes to count as dead starts again, so the run ends only once no mite has moved for that long.</span>
-      </label>`;
-      }
       return `<label for="live-set-${name}">${esc(label)}${unit ? ` <span class="muted">(${unit})</span>` : ""}</label>
       <input id="live-set-${name}" data-setting="${name}" type="number" min="${min}" max="${max}" step="1"
         value="${settings[name]}" class="number-input" title="${min} to ${max}">`;
@@ -85,21 +79,16 @@ class LiveSetupPage {
 
   drawRecordingTime() {
     const { settings: s, plan } = live.options;
-    // Until every mite is dead, the mites alone decide how long the run lasts: no experiment duration.
-    const untilAllDead = plan.until_all_dead;
     const { recordings: count, minutes: length } = plan;
-    const whole = untilAllDead
-      ? `The run goes on until no mite has moved for ${duration(s.death_minutes * 60)}: at least ${duration(length * 60)} and ${count} recordings.`
-      : !s.death_minutes
-        ? `The whole run: ${duration(length * 60)}, ${count} recordings.`
-        : `The whole run: the experiment's ${duration(s.run_minutes * 60)} and ${duration(s.death_minutes * 60)} to tell a mite still at its end from a dead one, `
-          + `${duration(length * 60)}, ${count} recordings.`;
+    // The run ends once every mite is dead, which needs a time to count one as dead.
+    const whole = !s.death_minutes
+      ? `Set how long a mite must be still to count as dead: the run needs it to stop following dead mites, and ends once every mite is dead.`
+      : `The run ends once every mite of every zone is dead, at most after the experiment's ${duration(s.run_minutes * 60)} and `
+        + `${duration(s.death_minutes * 60)} to tell a mite still at its end from a dead one: ${duration(length * 60)}, ${count} recordings.`;
+    const follow = s.follow_px ? ` Each mite is followed up to ${s.follow_px} px from one recording to the next.` : " The mites are not followed: their boxes stay where they were found.";
     $("live-recording-time").textContent = `Each recording: ${+plan.recording_seconds.toFixed(2)} s of frames; with the fan and LEDs, ${+plan.cycle_seconds.toFixed(1)} s `
-      + `of every ${s.recording_timeout} min. ${whole}`;
-    $("live-set-run_minutes").hidden = untilAllDead;
-    document.querySelector('label[for="live-set-run_minutes"]').hidden = untilAllDead;
-    // Going on until every mite is dead needs a time to count one as dead.
-    $("live-set-death_reset").disabled = !plan.can_run_until_all_dead || live.started;
+      + `of every ${s.recording_timeout} min. ${whole}${follow}`;
+    $("live-recording-time").classList.toggle("error", !s.death_minutes);
   }
 
   // What can be changed now: the run's name, whether it is saved and its settings, all until the run starts.
@@ -110,9 +99,7 @@ class LiveSetupPage {
     $("live-connect-btn").hidden = connected;
     $("live-close-btn").hidden = !connected;
     $("live-close-btn").disabled = live.running;
-    document.querySelectorAll("[data-setting]").forEach((input) => {
-      input.disabled = !ready || (input.dataset.setting === "death_reset" && !(live.options && live.options.plan.can_run_until_all_dead));
-    });
+    document.querySelectorAll("[data-setting]").forEach((input) => { input.disabled = !ready; });
     const lights = live.status && live.status.lights;
     document.querySelectorAll("[data-light]").forEach((button) => {
       const state = lights && lights[button.dataset.light];

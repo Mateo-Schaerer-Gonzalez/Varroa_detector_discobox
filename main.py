@@ -9,7 +9,7 @@ Live, from the Discobox camera -- a test run with the settings of settings.txt
 (the ones the web page saves), analysed as each recording is captured:
 
     python main.py --list-cameras
-    python main.py --live [--camera-id ID] [--fps 30] [--run-name NAME] [--no-save-frames]
+    python main.py --live [--camera-id ID] [--fps 30] [--dead-after MIN] [--run-name NAME] [--no-save-frames]
 
 The results go to results/<folder name>/ unless another folder is given. The
 recordings of a live run are saved to recordings/<run name>/, a folder the first
@@ -43,6 +43,8 @@ def parse_args(argv):
     live.add_argument("--live", action="store_true", help="run a Discobox test run from the camera")
     live.add_argument("--camera-id", help="the camera to use (default: the only one connected)")
     live.add_argument("--fps", type=int, help="frames per second (default: settings.txt)")
+    live.add_argument("--dead-after", type=int, metavar="MIN",
+                      help="minutes a mite must be still to count as dead (default: settings.txt)")
     live.add_argument("--run-name", help="the test run's name (default test_run_<date>)")
     live.add_argument("--settings", default=str(pipeline.LIVE_SETTINGS_FILE), metavar="FILE",
                       help="the test-run settings, in the Discobox format (default settings.txt)")
@@ -83,12 +85,18 @@ def analyse_folder(args):
     print_summary(results, out_dir)
 
 
+def _settings_given(args):
+    """The test-run settings given on the command line, over settings.txt."""
+    given = {"fps": args.fps, "death_minutes": args.dead_after}
+    return {name: value for name, value in given.items() if value is not None} or None
+
+
 def run_live(args):
     run_name = args.run_name or pipeline.default_run_name(pipeline.RECORDINGS_ROOT)
     labels = json.loads(Path(args.labels).read_text(encoding="utf-8")) if args.labels else None
     status = pipeline.open_live(LIVE_ID, args.live_out_dir, run_name, camera_id=args.camera_id,
                                 serial_port=args.serial_port, save_frames=not args.no_save_frames,
-                                settings_path=args.settings, settings={"fps": args.fps} if args.fps else None,
+                                settings_path=args.settings, settings=_settings_given(args),
                                 recordings_root=pipeline.RECORDINGS_ROOT, results_root=pipeline.RESULTS_ROOT)
     out_dir = status["out_dir"]
     try:

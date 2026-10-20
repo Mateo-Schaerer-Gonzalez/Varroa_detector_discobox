@@ -3,19 +3,22 @@
 The fields, their defaults and their ranges are those of the Discobox app
 (src/settings.py and src/settings_view.py), but for the length of the run: the
 app asks for a number of recordings, this app for how long the experiment lasts.
-A test run is a recording every `recording_timeout` minutes for `run_minutes`,
-then `death_minutes` more, the time a mite must be still to count as dead, so a
-mite alive at the end of the experiment can still be told from a dead one. With
-`death_reset`, the length depends on the mites alone: `run_minutes` is set aside
-(but kept, for when `death_reset` is switched off again) and the run goes on
-until no mite has moved for `death_minutes`, so every mite is dead at its end. Each recording is a burst of `frame_count` frames
+A test run is a recording every `recording_timeout` minutes for at most
+`run_minutes`, then `death_minutes` more, the time a mite must be still to count
+as dead, so a mite alive at the end of the experiment can still be told from a
+dead one. It ends sooner once every mite of every zone is dead (pipeline.py,
+classes/live/progress.py); `death_minutes` must not be 0 for that. Between two
+recordings a mite is followed at most `follow_px` pixels (0: not at all; see
+classes/motion_analysis.py). Each recording is a burst of `frame_count` frames
 at `fps`, with the fan (`vent`) and the two LEDs switched on at their intensity
 (0-255) for their duration in seconds, ending with the burst. `zones_per_plate`
 is how many zones each plate is cut into for the analysis (classes/zone_layout.py).
 
 The file is `key=value` lines, the format DataLoader reads from a session's
 .settings.txt, so a live run's settings are written next to its recordings. It
-still holds the Discobox app's `recording_count`, the recordings planned.
+still holds the Discobox app's `recording_count`, the recordings planned at
+most. A file with `death_reset` (an earlier "go on until every mite is dead")
+is read without it: every run now ends once every mite is dead.
 """
 
 import math
@@ -25,9 +28,9 @@ from pathlib import Path
 # name: (label, unit, lowest, highest). The frame rate and frame count limits are
 # those of the Discobox camera (Mako G-319B).
 RANGES = {
-    "run_minutes": ("Experiment duration", "min", 0, 43200),
+    "run_minutes": ("Experiment duration, at most", "min", 0, 43200),
     "death_minutes": ("Dead when still for", "min", 0, 43200),
-    "death_reset": ("Go on until every mite is dead", "", 0, 1),
+    "follow_px": ("Most a mite moves between recordings", "px", 0, 500),
     "recording_timeout": ("Time between recordings", "min", 1, 1440),
     "vent_time": ("Fan duration", "s", 0, 3600),
     "led1_time": ("LED 1 duration", "s", 0, 3600),
@@ -45,7 +48,7 @@ RANGES = {
 class Settings:
     run_minutes: int = 10
     death_minutes: int = 0
-    death_reset: int = 0
+    follow_px: int = 50
     recording_timeout: int = 1
     vent_time: int = 10
     led1_time: int = 10
@@ -114,30 +117,10 @@ class Settings:
         return math.ceil(minutes / self.recording_timeout - 1e-9) + 1
 
     @property
-    def until_all_dead(self):
-        """The run goes on until every mite is dead: `death_reset`, with a time
-        to count a mite as dead."""
-        return bool(self.death_reset and self.death_minutes)
-
-    @property
-    def experiment_minutes(self):
-        """The set length of the experiment; none when the mites alone decide it."""
-        return 0 if self.until_all_dead else self.run_minutes
-
-    @property
     def recording_count(self):
-        """The recordings planned: through the experiment and the time a mite
-        must be still to count as dead. Until every mite is dead, the run can take more."""
-        return self.recordings_until(self.experiment_minutes + self.death_minutes)
-
-    def recordings_after_movement(self, last_moved):
-        """The recordings the run takes when the last movement of any mite was in
-        recording `last_moved` (from 0; -1 for none yet). Until every mite is
-        dead, that is through that movement and `death_minutes` more; otherwise
-        the recordings planned."""
-        if not self.until_all_dead or last_moved < 0:
-            return self.recording_count
-        return max(self.recording_count, self.recordings_until(last_moved * self.recording_timeout + self.death_minutes))
+        """The recordings planned at most: through the experiment and the time a
+        mite must be still to count as dead. The run ends sooner once every mite is dead."""
+        return self.recordings_until(self.run_minutes + self.death_minutes)
 
     @property
     def recording_seconds(self):
@@ -151,18 +134,22 @@ class Settings:
 
     def plan(self):
         """The run these settings make, for the live page: each recording's burst
-        and whole cycle in seconds, and the recordings planned and the minutes they
-        span (at least that many, when the run goes on until every mite is dead),
-        and whether it can go on until every mite is dead: that needs a time to
-        count a mite as dead."""
+        and whole cycle in seconds, and the recordings planned at most and the
+        minutes they span."""
         return {
             "recording_seconds": self.recording_seconds,
             "cycle_seconds": self.cycle_seconds,
             "recordings": self.recording_count,
             "minutes": (self.recording_count - 1) * self.recording_timeout,
-            "until_all_dead": self.until_all_dead,
-            "can_run_until_all_dead": bool(self.death_minutes),
         }
+
+    def check_death_time(self):
+        """A run stops following a mite once it counts as dead, and ends once
+        all do: that needs a time to count one as dead."""
+        if not self.death_minutes:
+            label = RANGES["death_minutes"][0]
+            raise ValueError(f"Set '{label}': a mite still for that long counts as dead, is no longer followed, "
+                             "and the run ends once every mite is dead.")
 
     def check_cycle(self):
         """A recording must be over before the next one is due."""

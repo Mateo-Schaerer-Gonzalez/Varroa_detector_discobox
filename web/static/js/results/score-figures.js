@@ -66,7 +66,7 @@ class ScoreFigures {
       categories.push({ value: this.rowY(index), label: `${group} (${mites.length})` });
       // not where the mite was marked gone: its score there is of an empty spot
       mites.forEach((mite) => mite.scores.forEach((_value, recording) => {
-        if (!mite.censored[recording]) points.push(this.scorePoint(mite, recording, this.rowY(index), group, zones));
+        if (!mite.censored[recording] && mite.scores[recording] != null) points.push(this.scorePoint(mite, recording, this.rowY(index), group, zones));
       }));
     });
     const container = $("chart-group-scores");

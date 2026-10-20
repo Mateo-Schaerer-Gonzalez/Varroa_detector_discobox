@@ -798,6 +798,10 @@ class LightRequest(BaseModel):
     level: Optional[int] = None
 
 
+class AddMitesRequest(BaseModel):
+    boxes: list[list[float]]  # [x1, y1, x2, y2] each, as find-mites gave them
+
+
 def live_call(call, *args, **kwargs):
     try:
         return call(*args, **kwargs)
@@ -883,6 +887,21 @@ def live_preview(session_id: str):
 def start_live(session_id: str, request: LabelsRequest):
     live_session(session_id)
     return live_call(pipeline.start_live, session_id, request.labels)
+
+
+@app.post("/api/live/{session_id}/find-mites")
+def find_live_mites(session_id: str):
+    """Light the plates between two recordings and detect the mites not followed
+    yet; the frame is the session's file ADD_PREVIEW_NAME."""
+    live_session(session_id)
+    return live_call(pipeline.live_find_mites, session_id)
+
+
+@app.post("/api/live/{session_id}/add-mites")
+def add_live_mites(session_id: str, request: AddMitesRequest):
+    """Follow the mites chosen of those found from the next recording on."""
+    live_session(session_id)
+    return live_call(pipeline.live_add_mites, session_id, request.boxes)
 
 
 @app.post("/api/live/{session_id}/calibration")

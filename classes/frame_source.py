@@ -179,7 +179,8 @@ class RoiSource:
     mites, but for the first, which was saved whole. The scores, read only
     from the ROIs, are those of the whole frames.
 
-    The mites are those found when the frames were saved (`boxes`), and the
+    The mites are those found when the frames were saved (`boxes`), with those
+    a live run added and where it followed them (`starts`, `placements()`), and the
     blobs on each recording's first and last frame those found then on the
     whole frames (`blobs()`): there is nothing to find them on again.
     """
@@ -194,6 +195,15 @@ class RoiSource:
     @property
     def boxes(self):
         return self.loader.boxes
+
+    @property
+    def starts(self):
+        """The recording each mite was added in (RoiRecordings.starts)."""
+        return self.loader.starts
+
+    def placements(self, name):
+        """Where each mite was in recording `name` (RoiRecordings.placements())."""
+        return self.loader.placements(name)
 
     def blobs(self):
         return self.loader.blobs()

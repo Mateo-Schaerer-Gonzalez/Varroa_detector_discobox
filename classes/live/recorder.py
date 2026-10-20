@@ -6,7 +6,9 @@ are saved, never the live feed in between. The run folder is then a session like
 any other: folder mode reads it back and gets the live run's results exactly.
 
 The mites are those the analysis finds on the first frame, so the analysis tells
-the recorder about them (start()) before the first frame is saved, and the blobs
+the recorder about them (start()) before the first frame is saved, and where it
+follows each of them in each recording (place(): their boxes, those added, and
+None for those no longer followed) before its first frame, and the blobs
 it finds on each recording's whole first and last frame (end_recording()),
 which are not saved.
 
@@ -42,11 +44,16 @@ class Recorder:
     def run_dir(self):
         return self.writer.data_dir
 
-    def start(self, first_image, boxes):
+    def start(self, first_image, boxes, follow=False):
         """The first frame, whole, and the boxes (x1, y1, x2, y2) of the mites
-        found on it, whose ROIs are saved from here on."""
-        self._queue.put(("start", first_image, [tuple(box) for box in boxes]))
+        found on it, whose ROIs are saved from here on. With `follow`, each
+        recording is placed (place()) before its first frame."""
+        self._queue.put(("start", first_image, [tuple(box) for box in boxes], follow))
         self.started = True
+
+    def place(self, boxes):
+        """Where each mite is in the recording about to begin (RoiWriter.place())."""
+        self._queue.put(("place", [None if box is None else tuple(box) for box in boxes]))
 
     def save(self, frame):
         with self._condition:
@@ -96,7 +103,9 @@ class Recorder:
             self.writer.add(item.recording, item.image)
             self.written += 1
         elif item[0] == "start":
-            self.writer.start(item[1], item[2])
+            self.writer.start(item[1], item[2], item[3])
+        elif item[0] == "place":
+            self.writer.place(item[1])
         elif item[0] == "end":
             self.writer.end(item[1], item[2])
 

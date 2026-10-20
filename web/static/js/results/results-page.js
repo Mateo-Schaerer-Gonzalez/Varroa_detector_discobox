@@ -54,6 +54,15 @@ class ResultsPage {
   // detector's; "gone" where the user marked the mite gone, "set aside" where
   // something disturbed it (see the unusual activity on the overview).
   callBadge(mite, recording) {
+    // A live run follows a mite only from when it was added, and until it counts as dead (classes/follow_up.py).
+    const started = this.results.started?.[mite.id];
+    if (started != null && recording < started) {
+      return `<span class="status gone" title="Added during the run, at ${minutes(this.results.times[started])}: not followed before"><span aria-hidden="true">–</span> not added yet</span>`;
+    }
+    const stopped = this.results.stopped?.[mite.id];
+    if (stopped != null && recording >= stopped) {
+      return `<span class="status still" title="Counted as dead: no longer scored nor saved from ${minutes(this.results.times[stopped])} on"><span aria-hidden="true">–</span> dead, not followed</span>`;
+    }
     if (this.setAside(mite, recording)) {
       return `<span class="status gone" title="Another mite walked by: censored, it counts neither as moving nor as still. Set the call by hand to count it."><span aria-hidden="true">–</span> set aside</span>`;
     }

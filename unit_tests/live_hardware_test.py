@@ -275,8 +275,11 @@ def test_settings_read_the_discobox_file_format(tmp_path):
     assert (settings.run_minutes, settings.recording_count, settings.recording_timeout, settings.fps) == (25, 6, 5, 30)
     settings.save(tmp_path / "again.txt")
     saved = (tmp_path / "again.txt").read_text()
-    assert saved.startswith("recording_count=6\nrun_minutes=25\ndeath_minutes=0\ndeath_reset=0\n")
+    assert saved.startswith("recording_count=6\nrun_minutes=25\ndeath_minutes=0\nfollow_px=50\n")
     assert Settings.from_file(tmp_path / "again.txt") == settings
+    # An earlier "go on until every mite is dead" is read without it: every run ends so now.
+    (tmp_path / "older.txt").write_text("run_minutes=10\ndeath_minutes=5\ndeath_reset=1\n")
+    assert Settings.from_file(tmp_path / "older.txt") == Settings(run_minutes=10, death_minutes=5)
 
 
 def test_the_run_lasts_the_experiment_and_the_time_to_count_a_mite_dead():
@@ -284,16 +287,13 @@ def test_the_run_lasts_the_experiment_and_the_time_to_count_a_mite_dead():
     assert settings.recording_count == 6  # at 0, 5, ... 25 min
     assert Settings(run_minutes=24, recording_timeout=5).recording_count == 6  # the last one reaches past it
     settings = Settings(run_minutes=25, death_minutes=12, recording_timeout=5)
-    assert settings.recording_count == 9  # through 37 min: the last at 40
-    # Without death_reset a movement changes nothing. With it, the mites alone
-    # decide: the experiment's duration is set aside, and the time to count a
-    # mite dead runs from the last movement.
-    assert settings.recordings_after_movement(7) == 9
-    settings.death_reset = 1
-    assert settings.until_all_dead and settings.recording_count == 4  # through 12 min: the last at 15
-    assert [settings.recordings_after_movement(last) for last in (-1, 3, 5, 7)] == [4, 7, 9, 11]
-    settings.death_minutes = 0  # no time to count a mite dead: the box does nothing
-    assert not settings.until_all_dead and settings.recording_count == 6
+    assert settings.recording_count == 9  # at most: through 37 min, the last at 40
+
+
+def test_a_run_needs_a_time_to_count_a_mite_dead():
+    with pytest.raises(ValueError, match="Dead when still for"):
+        Settings(death_minutes=0).check_death_time()
+    Settings(death_minutes=1).check_death_time()
 
 
 def test_settings_keep_to_the_discobox_ranges():
@@ -422,37 +422,6 @@ def test_the_timeline_follows_the_run_and_a_pause_pushes_the_rest_back():
     line = run.timeline()
     assert line["starts"] == pytest.approx([100, 160, 220], abs=0.01)
     assert line["elapsed"] == pytest.approx(line["length"], abs=0.01)
-
-
-def test_a_run_until_every_mite_is_dead_goes_on_while_one_moves():
-    # 2 min still to count as dead: at least 3 recordings a minute apart (the
-    # experiment's 30 min are set aside). A mite moves in each of the first five,
-    # so the run goes on through 2 min after the fifth (at 4 min): 7 recordings.
-    settings = Settings(run_minutes=30, death_minutes=2, death_reset=1, recording_timeout=1, vent_time=0,
-                        led1_time=0, led2_time=0, frame_count=10, fps=10)
-    bursts_seen = []
-    run, _lights, bursts = run_schedule(
-        settings, movement=lambda: (len(bursts_seen), min(len(bursts_seen), 5) - 1))
-    bursts_seen_hook = run.start_burst
-
-    def start_burst(name):
-        done = bursts_seen_hook(name)
-        bursts_seen.append(name)  # analysed at once
-        return done
-
-    run.start_burst = start_burst
-    assert run.planned_count() == 3
-    run.run()
-    assert len(bursts) == 7 and run.planned_count() == 7
-    assert [when for when, _name in bursts] == pytest.approx([60 * i for i in range(7)], abs=0.01)
-
-
-def test_a_run_until_every_mite_is_dead_waits_for_the_analysis_at_most_one_interval():
-    settings = Settings(run_minutes=1, death_minutes=1, death_reset=1, recording_timeout=1, vent_time=0,
-                        led1_time=0, led2_time=0, frame_count=10, fps=10)
-    run, _lights, bursts = run_schedule(settings, movement=lambda: (0, -1))  # never analysed
-    run.run()
-    assert len(bursts) == 2  # as planned, after waiting a minute for the analysis
 
 
 def test_stopping_ends_the_run_without_another_burst():
@@ -623,6 +592,9 @@ def test_both_leds_are_on_from_connecting_until_the_run_starts(tmp_path, monkeyp
         def refuse():
             raise ValueError("cannot start")
         monkeypatch.setattr(pipeline._live["leds"].session, "start", refuse)
+        with pytest.raises(ValueError, match="Dead when still for"):  # a time to count a mite dead first
+            pipeline.start_live("leds")
+        pipeline.save_live_settings({"death_minutes": 30}, "leds", settings_path=settings_path)
         with pytest.raises(ValueError, match="cannot start"):
             pipeline.start_live("leds")
         state = pipeline.live_status("leds")["lights"]
@@ -630,15 +602,6 @@ def test_both_leds_are_on_from_connecting_until_the_run_starts(tmp_path, monkeyp
     finally:
         pipeline.close_live("leds")
     assert not any(lights.on.values())
-
-
-def test_the_last_movement_is_found_by_recording():
-    recordings = ["2026-09-23-10-00-00_fps-30", "2026-09-23-10-05-00_fps-30", "2026-09-23-10-10-00_fps-30"]
-    # A mite moves in the first recording and in the second.
-    results = {"times": [0, 5, 10],
-               "mites": [{"moving": [False] * 3}, {"moving": [True, True, False]}]}
-    assert pipeline._last_movement(results, recordings) == 1
-    assert pipeline._last_movement({**results, "mites": results["mites"][:1]}, recordings) == -1
 
 
 def test_the_results_take_the_death_time_saved_with_the_recordings(tmp_path):
@@ -662,14 +625,3 @@ def test_the_death_time_can_be_set_for_a_folder_keeping_its_other_settings(tmp_p
     assert (bare / pipeline.SETTINGS_FILENAME).read_text() == "death_minutes=60\n"
 
 
-def test_the_mites_alive_are_counted_as_the_charts_count_them():
-    results = {"times": [0, 5, 10, 15, 20], "mites": [
-        {"moving": [True, False, True, False, False]},   # still 10 min since 10 min
-        {"moving": [False, False, False, True, False]},  # still 5 min since 15 min
-        {"moving": [False] * 5},                         # never moved: still 20 min
-        {"moving": [False, False, False, False, True]},  # moving now
-    ]}
-    # The mite that never moved is left out.
-    assert pipeline.mites_alive(results, 10) == {"alive": 2, "mites": 3}
-    assert pipeline.mites_alive(results, 30) == {"alive": 3, "mites": 3}
-    assert pipeline.mites_alive(results, 0) == {"alive": 1, "mites": 3}
