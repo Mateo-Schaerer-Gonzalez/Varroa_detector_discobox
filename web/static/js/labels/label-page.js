@@ -1,12 +1,14 @@
 // The label page, of the analysis and of a live run: the plates over the first
 // frame, each named by clicking it (ZoneEditor), every detection a ring that can
 // be clicked away as "not a mite", and the groups listed beside. Its button runs
-// the analysis of a folder, or starts a live test run.
+// the analysis of a folder, or starts a live test run. During a run it also shows
+// the mites found to add (AddMites), and its button adds those kept.
 
 class LabelPage {
   constructor() {
     this.editor = new ZoneEditor(this);
     $("run-btn").addEventListener("click", () => (ctx.mode === "live" ? live.startRun() : analysis.run()));
+    $("label-cancel-btn").addEventListener("click", () => livePanel.adding.cancel());
     $("zones-per-plate").addEventListener("change", (event) => (ctx.mode === "live" ? live : analysis).setZonesPerPlate(Number(event.target.value)));
   }
 
@@ -14,6 +16,11 @@ class LabelPage {
     const { session } = ctx;
     const withMites = ctx.labelZones().length;
     $("run-status").className = "hint";
+    if (session.adding) {
+      $("run-status").textContent = `${plural(session.mites.length, "mite")} found that ${session.mites.length === 1 ? "is" : "are"} not followed yet; `
+        + "those kept are followed from the next recording on.";
+      return;
+    }
     $("run-status").textContent = ctx.mode === "live"
       ? `Mites detected in ${withMites} of ${session.zones.length} zones on ${session.n_recordings ? "the first recording" : "the camera's newest frame"}.`
       : `${session.n_recordings} recordings loaded · mites detected in ${withMites} of ${session.zones.length} zones.`;
@@ -122,13 +129,18 @@ class LabelPage {
     return marker;
   }
 
+  // A mite found to add is only left out of those added, not marked in the ground truth.
   toggleMite(mite, refocus = false) {
     this.editor.close();
-    sessionLabels.toggleMite(mite, () => {
+    const changed = () => {
       this.draw();
       this.showLoadedStatus();
       if (refocus) document.querySelector(`.label-mite[data-mite-id="${mite.id}"]`)?.focus();
-    });
+    };
+    if (ctx.session.adding) {
+      livePanel.adding.toggle(mite);
+      changed();
+    } else sessionLabels.toggleMite(mite, changed);
   }
 
   // The label page's button runs the analysis of a folder, or starts a live test run.

@@ -2942,10 +2942,11 @@ LIGHTS_SETTLE = 1.5
 # The same when lighting the plates to find mites to add (_lit_frame()): between
 # recordings the camera has been in the dark, its exposure at its longest, and it
 # takes longer to come down than LIGHTS_SETTLE.
-FIND_MITES_SETTLE = 4
+FIND_MITES_SETTLE = 10
 # Seconds to spare before the next recording's cycle starts, for lighting the
-# plates to find mites to add (live_find_mites()).
-FIND_MITES_SPARE = 15
+# plates to find mites to add (live_find_mites()): FIND_MITES_SETTLE and the
+# wait for a frame after it.
+FIND_MITES_SPARE = 20
 # Pixels round a mite already followed in which a blob found is that mite.
 FOUND_MITE_REACH = 4
 ADD_PREVIEW_NAME = "add_mites.jpg"
@@ -3437,8 +3438,11 @@ def live_find_mites(live_id):
     mites on the camera's frame that are not followed yet, to add some
     (live_add_mites()). The run is held meanwhile: a recording due waits for
     the LEDs to go off again. The frame is written to the results folder as
-    ADD_PREVIEW_NAME. Returns {image, width, height, mites: [{x1, y1, x2, y2,
-    x, y, zone_id}]}."""
+    ADD_PREVIEW_NAME. Returns what the label page shows, as live_preview() does:
+    {preview, image, zones, mites}, the zones with their labels and the number
+    of mites `followed` in each (those to add with the next recording
+    included), and the mites found [{id, zone_id, x, y, r, x1, y1, x2, y2,
+    rejected}], each numbered after the mites of its zone."""
     run = _get_live(live_id)
     if run.session.state not in ("running", "paused"):
         raise ValueError("Mites can be added while the test run is going on.")
@@ -3463,10 +3467,37 @@ def live_find_mites(live_id):
             if held:
                 run.session.resume()
         found = _new_mites(run, image)
+        zones = _add_zones(run, found)
     finally:
         run.finding.release()
     _write_image(Path(run.out_dir) / ADD_PREVIEW_NAME, image, [cv2.IMWRITE_JPEG_QUALITY, 85])
-    return {"image": ADD_PREVIEW_NAME, **_image_size(image), "mites": found}
+    return {"preview": ADD_PREVIEW_NAME, "image": _image_size(image), "zones": zones, "mites": found}
+
+
+def _add_zones(run, found):
+    """The zones as the label page shows them while mites are added: their labels,
+    whether they are a negative control, the mites `followed` in each (or to be
+    added with the next recording), and `n_mites`, those and the ones `found`.
+    Each mite found gets the id it would have, numbered after its zone's."""
+    analysis = run.analysis
+    with run.session.lock:
+        zones = _describe_zones(analysis.zone_manager, load_labels(run.run_dir))
+        followed = {zone.id: len(zone.mites) for zone in analysis.zone_manager.zones if zone.id is not None}
+        for x1, y1, x2, y2 in analysis._pending:
+            zone = next((zone for zone in analysis.zone_manager.zones if zone.id is not None
+                         and zone.x1 <= (x1 + x2) / 2 <= zone.x2 and zone.y1 <= (y1 + y2) / 2 <= zone.y2), None)
+            if zone is not None:
+                followed[zone.id] += 1
+    controls = set(load_controls(run.run_dir))
+    numbered = dict(followed)
+    for mite in found:
+        numbered[mite["zone_id"]] += 1
+        mite["id"] = f"{mite['zone_id']}.{numbered[mite['zone_id']]}"
+    for zone in zones:
+        zone["control"] = zone["id"] in controls
+        zone["followed"] = followed.get(zone["id"], 0)
+        zone["n_mites"] = numbered.get(zone["id"], 0)
+    return zones
 
 
 def _lit_frame(run):
@@ -3513,7 +3544,8 @@ def _new_mites(run, image):
         zone = next((zone for zone in zones if mite in zone), None)
         if zone is not None:
             found.append({"x1": mite.x1, "y1": mite.y1, "x2": mite.x2, "y2": mite.y2,
-                          "x": round(x, 1), "y": round(y, 1), "zone_id": zone.id})
+                          "x": round(x, 1), "y": round(y, 1), "r": round(float((mite.x2 - mite.x1) / 2), 1),
+                          "zone_id": zone.id, "rejected": False})
     return found
 
 

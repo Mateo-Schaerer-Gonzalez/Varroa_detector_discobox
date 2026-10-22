@@ -265,12 +265,23 @@ class LiveRun {
     }
   }
 
+  // While mites are added (AddMites), the button adds those kept.
   drawRunButton() {
+    const { adding } = livePanel;
+    $("label-cancel-btn").hidden = !adding.active;
+    if (adding.active) {
+      const count = adding.chosen.length;
+      $("run-btn").textContent = `Add ${plural(count, "mite")}`;
+      $("run-btn").disabled = !count || adding.busy;
+      $("label-cancel-btn").disabled = adding.busy;
+      return;
+    }
     $("run-btn").textContent = this.started ? "Show the live results" : "Start test run";
     $("run-btn").disabled = !this.id;
   }
 
   async startRun() {
+    if (livePanel.adding.active) { livePanel.adding.add(); return; }
     if (this.started) { router.go("#/live/results"); return; }
     const status = $("run-status");
     $("run-btn").disabled = true;

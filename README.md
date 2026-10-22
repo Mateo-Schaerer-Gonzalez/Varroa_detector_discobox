@@ -420,8 +420,10 @@ one that walked off shows its old place.
 
 **Adding mites.** *Add mites* on the panel lights the plates between two
 recordings (it is refused while one is being captured or is about to start;
-the run waits meanwhile), detects the mites and shows those not followed yet on
-that frame, all ticked: click one to leave it out, then *Add*. They are
+the run waits meanwhile; the camera is given 10 s to follow the LEDs), detects
+the mites and shows those not followed yet on the label page, over that frame,
+as before the run: a ring each, all kept; click one to leave it out, and name a
+plate a new mite is on. Then *Add N mites* (or *Cancel*). They are
 followed from the next recording on, numbered after the mites of their zone
 (mite `13.7` after `13.6`). Before then they count as not there (censored, as
 a mite marked gone), and their survival is counted from the recording they

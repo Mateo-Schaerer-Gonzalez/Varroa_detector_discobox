@@ -816,9 +816,6 @@ td.num.error { color: var(--critical); font-weight: 600; }
 
 /* Adding mites during a run: the lit plates, the mites found on them. */
 .live-add { grid-column: 1 / -1; display: grid; gap: 8px; }
-.add-mites-image { width: 100%; max-height: 70vh; background: #000; }
-.add-mite { fill: none; stroke: var(--muted); stroke-width: 3; stroke-dasharray: 6 4; cursor: pointer; pointer-events: all; }
-.add-mite.chosen { stroke: var(--moving); stroke-dasharray: none; }
 
 @media (max-width: 900px) {
   .live-panel { grid-template-columns: minmax(0, 1fr); }

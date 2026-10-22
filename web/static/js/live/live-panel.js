@@ -131,7 +131,7 @@ class LivePanel {
     $("live-stop-btn").disabled = s.state === "stopping";
     $("live-new-btn").hidden = !finished;
     $("live-add-btn").hidden = finished;
-    $("live-add-btn").disabled = !["running", "paused"].includes(s.state) || !s.analysed || this.adding.busy;
+    $("live-add-btn").disabled = !["running", "paused"].includes(s.state) || !s.analysed || this.adding.busy || this.adding.active;
     $("live-follow").checked = live.follow;
     this.drawCalibrate(s);
   }
