@@ -557,7 +557,7 @@ Each analysis writes to `results/<recording>/`:
 
 ## Layout
 
-Dependencies point one way: `web/` → `pipeline.py` → `classes/`.
+Dependencies point one way: `web/` → `pipeline/` → `classes/`.
 
 ```
 classes/      detection, zones, motion scoring, plotting; the analysis core
@@ -565,7 +565,8 @@ classes/      detection, zones, motion scoring, plotting; the analysis core
               (frame_source.py)
 classes/live/ the camera, fan and LEDs, test run and live session
 classes/discobox/  camera_utils.py from the Discobox app, unchanged
-pipeline.py   the only module the interface may call
+pipeline/     the only package the interface may call: one small module per job
+              (its __init__.py lists them), calibration/ and live/ for those pages
 reporting.py  score table -> Excel + figures
 main.py       command-line entry point
 web/          FastAPI server + static page (no framework, no build step)
@@ -581,7 +582,8 @@ or the camera (`CameraSource`), without knowing which. vmbpy and pyserial are on
 lists, strings and numbers with the web layer -- never a `Zone`, `Mite`,
 `DataFrame` or image array. `unit_tests/test_layering.py` fails if the web layer
 imports cv2/pandas/matplotlib/numpy/classes, if the analysis imports anything
-web-related, or if the page references a remote URL.
+web-related, if the modules of `pipeline/` import each other in a circle, or if
+the page references a remote URL.
 
 ## Zone coordinates
 

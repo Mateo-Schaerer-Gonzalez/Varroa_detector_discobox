@@ -11,7 +11,7 @@ Threads, and what each may do:
                      capture needs
 
 Results are published with `publish(session, write_files)`, given by the caller
-(pipeline.py, which builds them exactly as for a folder), under `lock`, the lock
+(pipeline/live/live_capture.py, which builds them exactly as for a folder), under `lock`, the lock
 the analysis holds while it changes the core's state. After each recording the
 files (workbook, figures) are written too. Once the run is over,
 `on_finish(session)`, if given, is called before `finished` is set.

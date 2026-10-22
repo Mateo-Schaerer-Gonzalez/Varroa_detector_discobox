@@ -2,7 +2,7 @@
 and the fan and LEDs around each of them.
 
 The run takes the recordings its settings plan (Settings.recording_count), at
-most: it is stopped sooner once every mite is dead (pipeline.py).
+most: it is stopped sooner once every mite is dead (pipeline/live/live_capture.py).
 
 The timing is the Discobox app's (test_run() in discobox.py). In each cycle the
 fan and each LED are switched on so that they run for their set duration and all

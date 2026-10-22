@@ -20,6 +20,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import numpy as np
 
 import pipeline
+from pipeline.calibration import dataset_library, movement_score
 from classes import calibration
 from classes.analyzer import Analyzer
 from classes.app_config import METRIC
@@ -55,11 +56,11 @@ def score_recording(job):
 
 
 def main():
-    params = pipeline._resolve_metric(METRIC, None)[1]
+    params = movement_score.resolve_metric(METRIC, None)[1]
     result = {"ways": {way: {"fps": fps, "seconds": seconds} for way, (fps, seconds) in WAYS.items()}, "sessions": {}}
     for name in SESSIONS:
         data_dir = pipeline.RECORDINGS_ROOT / name
-        data = pipeline._read_dataset(name)
+        data = dataset_library.read_dataset(name)
         index = open_recordings(data_dir).index
         assert {recording["fps"] for recording in index["recordings"]} == {RECORDED_FPS}
         order = index_order(data, index)

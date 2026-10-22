@@ -32,6 +32,7 @@ import alive_dead_features as adf
 import script_data
 import leg_tracks
 import pipeline
+from pipeline.calibration import dataset_library
 from classes import death_calibration
 from classes.analyzer import Analyzer
 from classes.app_config import TEMPLATE_CONFIG_PATH, get_default_config
@@ -49,7 +50,7 @@ def other_runs(run, cache=adf.CACHE, jobs=None):
     adf.load_run() gives the longest."""
     runs = []
     for summary in pipeline.list_calibration_datasets():
-        saved = pipeline._read_dataset(summary["id"])
+        saved = dataset_library.read_dataset(summary["id"])
         if saved["name"] == run.name:
             continue
         dataset = load_dataset({"id": summary["id"]}, cache, get_default_config().mite.stabilize_plate, jobs or os.cpu_count())

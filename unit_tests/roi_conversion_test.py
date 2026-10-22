@@ -11,6 +11,7 @@ import numpy as np
 import pytest
 
 import pipeline
+from pipeline.calibration import dataset_library, score_cache
 import reference
 from classes.data_loader import DataLoader
 from classes.roi_recordings import FIRST_FRAME_NAME, RoiRecordings, is_roi_session
@@ -58,8 +59,8 @@ def test_ground_truth_and_a_poke_test_stay_as_they_were(tmp_path):
     pipeline.save_ground_truth(out, {mites[0]["id"]: ["moving", "still", "still"], mites[1]["id"]: ["not_a_mite"] * 3})
     pipeline.edit_poke(out, "add", 0)
     pipeline.edit_poke(out, "set", 0, mite=mites[0]["id"], state="unmoved")
-    dataset = pipeline._read_dataset(pipeline.dataset_id(folder), folder.parent)
-    scores = pipeline._score_mites(dataset, "outline_variability", folder, stabilize=True)
+    dataset = dataset_library.read_dataset(pipeline.dataset_id(folder), folder.parent)
+    scores = score_cache._score_mites(dataset, "outline_variability", folder, stabilize=True)
     truth, poke = pipeline.load_calibration_truth(out), pipeline.poke_view(out)
     before = reference.run_folder(folder, tmp_path / "before")
     assert mites[1]["id"] not in {mite["id"] for mite in before["results"]["mites"]}
@@ -74,9 +75,9 @@ def test_ground_truth_and_a_poke_test_stay_as_they_were(tmp_path):
     after = reference.run_folder(folder, tmp_path / "after")
     assert not reference.differences({**before["results"], "frames": "rois"}, after["results"])
     # the dataset is the same mites, labels and scores
-    shrunk = pipeline._read_dataset(pipeline.dataset_id(folder), folder.parent)
+    shrunk = dataset_library.read_dataset(pipeline.dataset_id(folder), folder.parent)
     assert {k: shrunk[k] for k in ("mites", "truth", "times")} == {k: dataset[k] for k in ("mites", "truth", "times")}
-    assert pipeline._score_mites(shrunk, "outline_variability", folder, stabilize=True) == scores
+    assert score_cache._score_mites(shrunk, "outline_variability", folder, stabilize=True) == scores
 
 
 def test_recordings_added_later_join_the_shrunk_ones_and_a_cut_short_conversion_carries_on(tmp_path):

@@ -43,6 +43,8 @@ import numpy as np
 import pandas as pd
 
 import pipeline
+from pipeline import ground_truth
+from pipeline.calibration import dataset_library
 from classes import calibration
 from classes.analyzer import Analyzer
 from classes.app_config import METRIC, get_default_config
@@ -105,7 +107,7 @@ _datasets = {}
 def _dataset(name):
     """(dataset, ROI reader, mites as (id, zone, ROI number, box in the ROI), labels by mite id)."""
     if name not in _datasets:
-        dataset = pipeline._read_dataset(name)
+        dataset = dataset_library.read_dataset(name)
         loader = RoiRecordings(dataset["data_dir"])
         saved = np.array(loader.boxes, dtype=float)
         mites = []
@@ -120,7 +122,7 @@ def _dataset(name):
                 raise ValueError(f"{name}: mite {mite_id}'s ROI does not hold its box and {margin} px round it")
             zone = next(m["zone_id"] for m in dataset["mites"] if m["id"] == mite_id)
             mites.append((mite_id, zone, number, (box[0] - rx1, box[1] - ry1, box[2] - rx1, box[3] - ry1)))
-        labels = {mite["id"]: states for mite, states in pipeline._mite_states(dataset) if mite["id"] in dataset["truth"]}
+        labels = {mite["id"]: states for mite, states in ground_truth.mite_states(dataset) if mite["id"] in dataset["truth"]}
         _datasets[name] = dataset, loader, mites, labels
     return _datasets[name]
 
@@ -198,7 +200,7 @@ def main():
     names = args.datasets or [d["id"] for d in pipeline.list_calibration_datasets()]
     jobs = []
     for name in names:
-        n = len(pipeline._read_dataset(name)["recordings"])
+        n = len(dataset_library.read_dataset(name)["recordings"])
         jobs += [(name, list(range(start, min(n, start + 2))), args.seed) for start in range(0, n, 2)]
     print(f"{len(names)} datasets, {len(jobs)} jobs on {args.jobs} processes")
     started = time.perf_counter()

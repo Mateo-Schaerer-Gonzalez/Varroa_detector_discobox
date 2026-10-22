@@ -7,6 +7,7 @@ import threading
 from pathlib import Path
 
 import pipeline
+from pipeline.live import live_setup
 from classes.call_corrections import CallCorrections
 from classes.frame_source import Frame, FolderSource, RecordingEnd
 from classes.live.lights import NoLights
@@ -133,9 +134,9 @@ def open_live(monkeypatch, live_id, out_dir, run_name, data_dir, gap=0.0, **kwar
     # A live run needs a time to count a mite as dead; one longer than any run
     # here follows every mite to the end, as folder mode scores them.
     kwargs["settings"] = {"death_minutes": DEAD_AFTER, **(kwargs.get("settings") or {})}
-    monkeypatch.setattr(pipeline.live_camera, "choose_camera", lambda camera_id: "FOLDER")
-    monkeypatch.setattr(pipeline, "open_lights", lambda port: NoLights())
-    monkeypatch.setattr(pipeline, "CameraSource", lambda _id, settings, lights: FolderCamera(data_dir, settings, lights, gap))
+    monkeypatch.setattr(live_setup.live_camera, "choose_camera", lambda camera_id: "FOLDER")
+    monkeypatch.setattr(live_setup, "open_lights", lambda port: NoLights())
+    monkeypatch.setattr(live_setup, "CameraSource", lambda _id, settings, lights: FolderCamera(data_dir, settings, lights, gap))
     status = pipeline.open_live(live_id, out_dir, run_name, settings_path=data_dir / pipeline.SETTINGS_FILENAME, **kwargs)
     for name in (*ZoneLayout.filenames(pipeline.LABELS_FILENAME), *ZoneLayout.filenames(pipeline.CONTROLS_FILENAME),
                  pipeline.GROUND_TRUTH_FILENAME, CallCorrections.FILENAME):

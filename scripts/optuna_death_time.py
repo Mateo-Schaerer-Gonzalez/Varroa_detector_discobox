@@ -50,6 +50,7 @@ import optuna
 import pandas as pd
 
 import pipeline
+from pipeline.calibration import dataset_library
 import script_data
 from classes import death_calibration, plate_stabilizer
 from classes.analyzer import Analyzer
@@ -112,7 +113,7 @@ def load_dataset(summary, cache_dir, stabilize, jobs):
     (their ids), path (the patches, see _cut_recording(), as (mites, recordings,
     ...) in a .npy file), sizes (each mite's box, (height, width)), moving and
     labelled as (mites, recordings)}. None when its recordings are gone."""
-    dataset = pipeline._read_dataset(summary["id"])
+    dataset = dataset_library.read_dataset(summary["id"])
     recordings_dir = Path(dataset["data_dir"])
     if not recordings_dir.is_dir():
         print(f"  skipping {dataset['name']}: its recordings are gone")

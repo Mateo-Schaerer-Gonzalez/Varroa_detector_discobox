@@ -11,6 +11,8 @@ import pytest
 
 import folder_camera
 import pipeline
+from pipeline import plate_zones
+from pipeline.live import live_runs
 import reference
 from classes.analyzer import Analyzer
 from classes.follow_up import FollowUp
@@ -45,7 +47,7 @@ def stream(n_recordings, frames=3):
 def analysis(blobs, follow=50):
     """`blobs`: per recording from the second on, those found on its first frame."""
     # The blobs of the first and last frames, for the fly-offs, are none: only following asks the detector.
-    return MotionAnalysis(pipeline._build_zone_manager(pipeline.DEFAULT_COORDS_FILE), Blobs(blobs), follow=follow,
+    return MotionAnalysis(plate_zones.build_zone_manager(pipeline.DEFAULT_COORDS_FILE), Blobs(blobs), follow=follow,
                           boxes=[(300, 300, 310, 310), (400, 300, 410, 310)], known_blobs={})
 
 
@@ -136,7 +138,7 @@ def test_mites_added_and_stopped_live_score_the_same_from_the_saved_run(tmp_path
     status = folder_camera.open_live(monkeypatch, "follow", tmp_path / "out", "follow", session, gap=3,
                                      recordings_root=tmp_path / "recordings", settings={"death_minutes": 5})
     pipeline.start_live("follow")
-    run = pipeline._live["follow"]
+    run = live_runs.open_runs["follow"]
     try:
         deadline = time.monotonic() + 60
         while pipeline.live_status("follow")["analysed"] < 1 and time.monotonic() < deadline:
@@ -145,7 +147,7 @@ def test_mites_added_and_stopped_live_score_the_same_from_the_saved_run(tmp_path
         pipeline.live_add_mites("follow", [[x - 5, y - 5, x + 5, y + 5]])
         assert run.session.finished.wait(120)
     finally:
-        pipeline._live.pop("follow")
+        live_runs.open_runs.pop("follow")
     live = reference.plain(run.session.results)
     assert live["started"] and live["stopped"]  # a mite added, and mites counted dead and no longer followed
     # the pages' numbers skip the recordings without a score

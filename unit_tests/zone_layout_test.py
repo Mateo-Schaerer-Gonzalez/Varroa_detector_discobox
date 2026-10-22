@@ -8,11 +8,13 @@ import pytest
 
 import folder_camera
 import pipeline
+from pipeline import plate_zones
+from pipeline.live import live_runs
 from classes.live.settings import Settings
 from classes.upload_plan import UploadPlan
 from classes.zone_layout import ZoneLayout
 
-ROOT = Path(pipeline.__file__).resolve().parent
+ROOT = Path(pipeline.__file__).resolve().parent.parent
 
 
 def one_frame_folder(tmp_path):
@@ -53,7 +55,7 @@ def test_a_choice_saved_that_is_not_one_reads_as_one_zone_per_plate(tmp_path):
 
 
 def test_each_coordinates_file_halves_or_keeps_the_plates():
-    one, two = (pipeline._build_zone_manager(ZoneLayout(zones).coords_file) for zones in (1, 2))
+    one, two = (plate_zones.build_zone_manager(ZoneLayout(zones).coords_file) for zones in (1, 2))
     assert len(two.labelled_zones) == 2 * len(one.labelled_zones)
     # every half has its own half of the printed-label area
     assert all(two.text_zone_for(zone) is not None for zone in two.labelled_zones)
@@ -95,7 +97,7 @@ def test_a_run_uses_the_zones_saved_with_its_recordings(tmp_path):
     data_dir = one_frame_folder(tmp_path)
     ZoneLayout(2).save(data_dir)
     results = pipeline.run_analysis(data_dir, tmp_path / "out")
-    assert len(results["zones"]) == len(pipeline._build_zone_manager(ZoneLayout(2).coords_file).labelled_zones)
+    assert len(results["zones"]) == len(plate_zones.build_zone_manager(ZoneLayout(2).coords_file).labelled_zones)
     zone = next(zone for zone in results["zones"] if zone["n_mites"])
     clip = pipeline.analysis_clip(data_dir, tmp_path / "out", 0, zone["id"])
     assert clip["height"] <= zone["y2"] - zone["y1"] + 2 * pipeline.CLIP_MARGIN
@@ -115,7 +117,7 @@ def test_a_live_run_takes_the_zones_of_its_settings_and_the_label_page_can_chang
         assert pipeline.zones_per_plate(run_dir) == 2 and pipeline.load_labels(run_dir) == {"4": "venom"}
         preview = pipeline.live_preview("zones-test")
         assert (preview["zones_per_plate"], preview["zone_layouts"]) == (2, [1, 2])
-        halves = len(pipeline._build_zone_manager(ZoneLayout(2).coords_file).labelled_zones)
+        halves = len(plate_zones.build_zone_manager(ZoneLayout(2).coords_file).labelled_zones)
         assert len(preview["zones"]) == halves
 
         # the label page's choice, until the run starts: saved as the test run's setting
@@ -127,7 +129,7 @@ def test_a_live_run_takes_the_zones_of_its_settings_and_the_label_page_can_chang
             pipeline.save_live_settings({"zones_per_plate": 3}, "zones-test", settings_path=settings_path)
 
         pipeline.start_live("zones-test")
-        assert pipeline._live["zones-test"].session.finished.wait(60)
+        assert live_runs.open_runs["zones-test"].session.finished.wait(60)
         assert pipeline.zones_per_plate(run_dir) == 1
         with pytest.raises(ValueError, match="cannot change"):
             pipeline.save_live_settings({"zones_per_plate": 2}, "zones-test", settings_path=settings_path)

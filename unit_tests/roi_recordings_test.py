@@ -15,6 +15,7 @@ import pytest
 
 import folder_camera
 import pipeline
+from pipeline.live import live_runs
 import reference
 from classes.frame_source import Frame, Recording, RoiSource, open_source
 from classes.live.recorder import Recorder
@@ -209,9 +210,9 @@ def live_session(tmp_path_factory):
         folder_camera.open_live(monkeypatch, "rois", tmp_path / "out", "rois", small,
                                 recordings_root=tmp_path / "recordings")
         pipeline.start_live("rois")
-        run = pipeline._live["rois"]
+        run = live_runs.open_runs["rois"]
         assert run.session.finished.wait(120)
-        pipeline._live.pop("rois")
+        live_runs.open_runs.pop("rois")
     finally:
         monkeypatch.undo()
     results = pipeline.run_analysis(run.run_dir, tmp_path / "folder_out")

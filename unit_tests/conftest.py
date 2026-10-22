@@ -16,6 +16,8 @@ os.environ["DISCOBOX_CONFIG"] = str(Path(_config_dir) / "config.yaml")
 shutil.copyfile(Path(__file__).resolve().parent.parent / "config.default.yaml", os.environ["DISCOBOX_CONFIG"])
 
 import pipeline  # noqa: E402
+from pipeline import output_files, run_results  # noqa: E402
+from pipeline.calibration import calibration_report  # noqa: E402
 
 
 @pytest.fixture(autouse=True)
@@ -25,8 +27,8 @@ def no_review_band(monkeypatch):
     report keep its band's shape in the tests' config.yaml, which would change
     what the next test reads. A test of these takes them back (see
     review_band_test.py)."""
-    monkeypatch.setattr(pipeline, "_review", lambda *args: None)
-    monkeypatch.setattr(pipeline, "_keep_band_shape", lambda *args: None)
+    monkeypatch.setattr(run_results, "review_calls", lambda *args: None)
+    monkeypatch.setattr(calibration_report, "_keep_band_shape", lambda *args: None)
 
 
 @pytest.fixture(autouse=True)
@@ -34,4 +36,4 @@ def no_files_left_to_write():
     """The files a test left to be written a moment later (after a correction,
     a calibration report) are not written during the tests after it."""
     yield
-    pipeline._files_later.forget()
+    output_files.files_later.forget()

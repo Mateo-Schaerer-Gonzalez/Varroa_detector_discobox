@@ -6,8 +6,9 @@ app asks for a number of recordings, this app for how long the experiment lasts.
 A test run is a recording every `recording_timeout` minutes for at most
 `run_minutes`, then `death_minutes` more, the time a mite must be still to count
 as dead, so a mite alive at the end of the experiment can still be told from a
-dead one. It ends sooner once every mite of every zone is dead (pipeline.py,
-classes/live/progress.py); `death_minutes` must not be 0 for that. Between two
+dead one. It ends sooner once every mite of every zone is dead
+(pipeline/live/live_capture.py, classes/live/progress.py); `death_minutes` must
+not be 0 for that. Between two
 recordings a mite is followed at most `follow_px` pixels (0: not at all; see
 classes/motion_analysis.py). Each recording is a burst of FRAME_COUNT frames
 at FPS, with the fan (`vent`) and the two LEDs switched on at their intensity

@@ -45,6 +45,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import numpy as np
 
 import pipeline
+from pipeline.calibration import dataset_library, movement_score, poke_test, score_cache
 from classes import calibration
 from classes.analyzer import Analyzer
 from classes.app_config import METRIC
@@ -61,7 +62,7 @@ OUT = Path(__file__).resolve().parent.parent / "results" / "scripts" / "poke_run
 def dataset(name):
     """A dataset as the calibration report reads it. Both sit one folder deeper
     than recordings/<name>/, as they were copied from the Discobox laptop."""
-    return pipeline._read_dataset(name, pipeline.RECORDINGS_ROOT / name)
+    return dataset_library.read_dataset(name, pipeline.RECORDINGS_ROOT / name)
 
 
 def index_order(data, index):
@@ -158,8 +159,8 @@ def measure(name, params):
     n = len(data["times"])
     ids = [mite["id"] for mite in data["mites"]]
     states = [calibration.per_recording(data["truth"].get(mite_id), n) for mite_id in ids]
-    poke = pipeline._poke_of(data)
-    benchmark = pipeline._dataset_benchmark(name, data)
+    poke = poke_test._poke_of(data)
+    benchmark = score_cache.dataset_benchmark(name, data)
     centres = lambda boxes: np.array([[(x1 + x2) / 2, (y1 + y2) / 2] for x1, y1, x2, y2 in boxes])
     return {
         "name": name,
@@ -168,7 +169,7 @@ def measure(name, params):
         "xy": [[mite["x"], mite["y"]] for mite in data["mites"]],
         "times": data["times"],
         "states": [[state or "" for state in row] for row in states],
-        "app_scores": [pipeline._dataset_scores(name, data, METRIC, params, True)[mite_id] for mite_id in ids],
+        "app_scores": [score_cache.dataset_scores(name, data, METRIC, params, True)[mite_id] for mite_id in ids],
         "benchmark": [benchmark[mite_id] for mite_id in ids],
         "scores": {kind: by_mite(lambda r, kind=kind: r["scores"][kind]) for kind in per_recording[0]["scores"]},
         "outline": {kind: [OutlineChange.changes([np.array(o) for o in outlines])
@@ -190,7 +191,7 @@ def measure(name, params):
 
 
 def main():
-    _metric, params = pipeline._resolve_metric(METRIC, None)
+    _metric, params = movement_score.resolve_metric(METRIC, None)
     OUT.mkdir(parents=True, exist_ok=True)
     for name in DATASETS:
         result = measure(name, params)

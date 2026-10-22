@@ -6,7 +6,7 @@ The mites of a zone that count are those in the study (seen moving at least
 once, classes/survival.py). A zone is done once each of them is dead, or no
 longer known of (marked gone from a recording on); a zone with none in the study
 yet does not count. The run is over once every zone that counts is done, and at
-least one does: the live run then stops (pipeline.py). Every mite counting as
+least one does: the live run then stops (pipeline/live/live_capture.py). Every mite counting as
 dead, in the study or not (one never seen moving is dead once still for the
 death time from its start), is no longer followed from the next recording on.
 """

@@ -43,12 +43,26 @@ skip.
 
 ## Architecture
 
-**One-way layering, enforced by `unit_tests/test_layering.py`:** `web/` → `pipeline.py` →
+**One-way layering, enforced by `unit_tests/test_layering.py`:** `web/` → `pipeline/` →
 `classes/`. `web/server.py` (FastAPI) may import only `pipeline` from the project, never
 cv2/numpy/pandas/matplotlib/`classes`; `pipeline`/`classes` never import web libraries; the
 static page may not reference any remote URL (the app works offline). Everything crossing
 `pipeline`'s boundary is plain dicts/lists/strings/numbers, never a `Zone`, `Mite`,
-`DataFrame` or image array. `pipeline.py`'s module docstring lists its public functions.
+`DataFrame` or image array.
+
+**The `pipeline/` package** (split from one 3,900-line `pipeline.py` on 2026-10-22, the
+user's choice: "easily understandable, quickly find what is implemented where, avoid super
+massive files"). `pipeline/__init__.py` re-exports the API the server, `main.py` and the
+tests call, and its docstring lists every module with one line on what it holds; each
+module's docstring says more. Inside the package a module uses another as `module.name`
+(`from pipeline import paths` then `paths.PREVIEW_NAME`), never `from pipeline.x import f`:
+every call shows where it is defined, and a test patches the defining module
+(`monkeypatch.setattr(score_cache, "score_mites", ...)`) for every caller at once. A
+helper used by another module has no leading underscore; one used only in its own module
+keeps it. Imports inside the package point one way with no circle (enforced by
+`test_layering.py`); `paths.py` is at the bottom. Keep modules small (about 300 lines at
+most) and add a module rather than grow one. Module state (the last runs, the truth drafts,
+the open live runs) sits at the top of its module, each in one module only.
 
 **Logic in Python, drawing in JS.** Any number a page shows (survival, tests, summaries)
 is computed in a class under `classes/` and served through a `pipeline` function; the JS
@@ -76,7 +90,7 @@ The user's choices for live runs (2026-10-20), not to be undone:
   with none or under 2 px. **Clips follow the mite** (the user's choice of 2026-10-22,
   replacing "clips stay at the first position", which showed the ring off the mite and black
   where its moved ROI no longer reached): a mite's clip, variation picture, outline and
-  playback square are cut round where it was in that recording (`pipeline._where_in()`,
+  playback square are cut round where it was in that recording (`pipeline.clips.where_in()`,
   `RoiRecordings.centre_in()`/`roi_in()`), and the clip says where (`"mite": {x, y}`) so the
   pages put the ring there. Everything else (ids, labels, plate map) stays at the first position.
 - **Added mites** (live panel button: LEDs on between recordings, run held, detect, untick,
@@ -128,12 +142,12 @@ parallel already. The frame-rate and memory limits are measured by
 
 **Reads stay inside the saved ROI.** A saved live run keeps only `roi_recordings.ROI_MARGIN`
 (32) px round each mite's box: the metric's pad (16) plus `plate_stabilizer.MARGIN` (16, the
-source of `pipeline.STABILIZE_MARGIN`). A shift is followed at most `MARGIN` minus the
+source of `pipeline.scoring.STABILIZE_MARGIN`). A shift is followed at most `MARGIN` minus the
 Lanczos reach (12 px) so a cut never reads further, and `RoiRecordings.check_margin` refuses a
 pad that would. Anything new that reads round a mite must stay within that, or a saved run
 stops scoring like the live one.
 
-**Caches keyed on source code.** Calibration score caches (`pipeline._metric_version`) hash
+**Caches keyed on source code.** Calibration score caches (`pipeline/calibration/score_cache.py`, `_metric_version`) hash
 the source of `Analyzer` and `plate_stabilizer`; kept analysis scores
 (`results/<name>/kept/`, `classes/kept_scores.py` `_SCORING`) hash the scoring modules. Any
 edit to those files, even a comment, makes every dataset score again from its frames. Tell
@@ -166,7 +180,7 @@ shrunk to ROIs.
 There is one store, the user's choice of 2026-10-16 ("everything stored in recordings, get
 rid of the calibration folder"); never reintroduce a second one. A dataset is a folder in
 `recordings/` with moving or still labels in its `ground_truth.json`; its id is the folder
-name, and everything a report needs is worked out from the folder (`pipeline._read_dataset`).
+name, and everything a report needs is worked out from the folder (`pipeline.calibration.dataset_library.read_dataset`).
 Calibration sessions and reports go to `results/<run>/calibration/`, pooled reports to
 `results/pooled/<date time>/`, script outputs to `results/scripts/`, old reports to
 `results/earlier calibration reports/`. A folder opened by typed path is copied into
@@ -198,16 +212,18 @@ only from `ZoneManager.zone_of()`.
 `classes/settings_file.py` (`.settings.txt`), `classes/positions.py` (matching saved
 entries to mites within 10 px), `survival.own_time`/`since_start`/`death_after` (a mite's
 own clock and the death rule), `Mite.home` (a mite's centre), `ZoneManager.mites`. In
-`pipeline.py`: `_kept_clip` (anything cut from frames into `clips/`), `_cached_by_mite` and
-the `_*_name` functions (a dataset's `scores/`), `_mite_states` (a dataset's mites not
-marked "not a mite"), `_mite_view`, `_find`/`_check_recording`/`_recordings_dir` (the
-refusals). In `web/server.py`: `refused()`/`answer()` turn refusals into HTTP errors. In the
+`pipeline/`: `clips.kept_clip` (anything cut from frames into `clips/`),
+`score_cache._cached_by_mite` and the `_*_name` functions (a dataset's `scores/`),
+`ground_truth.mite_states` (a dataset's mites not marked "not a mite"),
+`plate_zones.mite_view`, `plate_zones.zones_of` (a folder's ZoneManager), `paths` (every
+folder and file name), `refusals` (`find`/`check_recording`/`recordings_dir`/`whole_number`). In `web/server.py`: `refused()`/`answer()` turn refusals into HTTP errors. In the
 page: `Hint` (status lines), `ChartKit.show`, `Charts.PERCENT_AXIS`,
 `ResultsPage.clockOf()`, `PlateView.clipPicture()`. Scripts: `scripts/script_data.py`.
 
 **Scripts and notebooks.** `scripts/` holds benchmarks and searches; they write to
 `results/scripts/`. A notebook in `notebooks/` reads what its script wrote (the slow part), so
-it reruns in seconds. They import `pipeline`/`classes` and may use their private helpers.
+it reruns in seconds. They import `pipeline`/`classes` and may use a module's helpers (`from pipeline.calibration
+import dataset_library`).
 
 The temporary label-overlap check page was deleted on 2026-10-22 at the user's request.
 
@@ -278,8 +294,8 @@ desktop icon points at it.
   page, snapshot every view's HTML before and after through the DOM and diff; only the
   looping clip's frame, ports and timestamps differ between runs.
 - **Live mode without a camera**: start the server from a scratchpad launcher that patches
-  `pipeline.CameraSource`, `pipeline.open_lights`, `pipeline.live_camera.choose_camera` and
-  `list_cameras` with `unit_tests/folder_camera.py` (`FolderCamera`, fed from a small copy of
+  `pipeline.live.live_setup`'s `CameraSource`, `open_lights`, `live_camera.choose_camera` and
+  `live_camera.list_cameras` with `unit_tests/folder_camera.py` (`FolderCamera`, fed from a small copy of
   sample_data). Back up `settings.txt` first: the live page saves every setting into it.
   Close a finished run through `/api/live/<id>/close` before screenshots of the landing page.
 - **CPU** (measured 2026-10-14 with a streaming stand-in camera): server idle 0.3%, camera

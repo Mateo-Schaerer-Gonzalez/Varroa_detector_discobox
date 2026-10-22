@@ -8,6 +8,7 @@ import pytest
 import folder_camera
 import main
 import pipeline
+from pipeline.live import live_runs, live_setup
 import reference
 
 
@@ -26,9 +27,9 @@ def recordings_root(tmp_path, monkeypatch):
 def camera(small_session, monkeypatch):
     """The command line's camera: the recordings of small_session, `gap` seconds apart."""
     def connect(gap=0.0):
-        monkeypatch.setattr(pipeline.live_camera, "choose_camera", lambda camera_id: "FOLDER")
-        monkeypatch.setattr(pipeline, "open_lights", lambda port: folder_camera.NoLights())
-        monkeypatch.setattr(pipeline, "CameraSource",
+        monkeypatch.setattr(live_setup.live_camera, "choose_camera", lambda camera_id: "FOLDER")
+        monkeypatch.setattr(live_setup, "open_lights", lambda port: folder_camera.NoLights())
+        monkeypatch.setattr(live_setup, "CameraSource",
                             lambda _id, settings, lights: folder_camera.FolderCamera(small_session, settings, lights, gap))
         # dead after longer than the run: every mite is followed to the end, as folder mode scores it
         return ["--live", "--settings", str(small_session / pipeline.SETTINGS_FILENAME), "--dead-after", "10000"]
@@ -58,7 +59,7 @@ def test_ctrl_c_stops_a_live_run_cleanly(tmp_path, recordings_root, camera, monk
     printed = capsys.readouterr().out
     assert "Stopping" in printed and "30 mites across 1 recordings" in printed
     assert (out / "results.xlsx").is_file()
-    assert main.LIVE_ID not in pipeline._live  # the source is closed and forgotten
+    assert main.LIVE_ID not in live_runs.open_runs  # the source is closed and forgotten
 
 
 def test_a_live_run_takes_no_folder(capsys):
@@ -69,9 +70,9 @@ def test_a_live_run_takes_no_folder(capsys):
 
 def test_without_vimba_x_listing_cameras_says_why(monkeypatch, capsys):
     def no_vimba():
-        raise pipeline.live_camera.CameraError("Vimba X could not start")
+        raise live_setup.live_camera.CameraError("Vimba X could not start")
 
-    monkeypatch.setattr(pipeline.live_camera, "print_cameras", no_vimba)
+    monkeypatch.setattr(live_setup.live_camera, "print_cameras", no_vimba)
     assert main.main(["--list-cameras"]) == 1
     assert "Vimba X could not start" in capsys.readouterr().err
 

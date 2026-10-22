@@ -16,6 +16,7 @@ import pandas as pd
 import pytest
 
 import pipeline
+from pipeline.calibration import score_cache, session_file
 from classes.app_config import get_default_config
 
 
@@ -54,7 +55,7 @@ def recordings(tmp_path):
 def described(monkeypatch):
     """What the recordings of a folder made by make_session() hold: its session
     file, as it is now, with a blank first frame."""
-    describe = pipeline._describe_calibration
+    describe = session_file.describe_calibration
 
     def stand_in(data_dir, coords_file=None, names=None):
         session = SESSIONS.get(str(Path(data_dir).resolve()))
@@ -63,7 +64,7 @@ def described(monkeypatch):
         stored = json.loads(session.read_text(encoding="utf-8"))
         return {**stored, "data_dir": str(Path(data_dir).resolve())}, np.zeros((100, 100), np.uint8)
 
-    monkeypatch.setattr(pipeline, "_describe_calibration", stand_in)
+    monkeypatch.setattr(session_file, "describe_calibration", stand_in)
 
 
 @pytest.fixture
@@ -82,7 +83,7 @@ def scorer(monkeypatch):
             return self.scores[dataset["name"]]
 
     stub = Scorer()
-    monkeypatch.setattr(pipeline, "_score_mites", stub)
+    monkeypatch.setattr(score_cache, "_score_mites", stub)
     return stub
 
 
@@ -158,7 +159,7 @@ def test_scores_are_cached_per_version_of_the_metric(tmp_path, recordings, score
     assert len(scorer.calls) == 1
 
     # Editing the scoring code is a new version of the metric: scored again.
-    monkeypatch.setattr(pipeline.inspect, "getsource", lambda _obj: "tuned")
+    monkeypatch.setattr(score_cache.inspect, "getsource", lambda _obj: "tuned")
     pipeline.evaluate_calibration(tmp_path / "report", ids, recordings_root=recordings)
     assert len(scorer.calls) == 2
 
@@ -185,7 +186,7 @@ def test_scoring_reads_each_mite_box_from_the_frames(tmp_path):
         "recordings": [{"name": RECORDING, "fps": 30}],
         "mites": [{"id": "0", "x": 10.0, "y": 10.0, "r": 3.0}, {"id": "1", "x": 40.0, "y": 10.0, "r": 3.0}],
     }
-    scores = pipeline._score_mites(dataset, "mean_diff", data_dir)
+    scores = score_cache._score_mites(dataset, "mean_diff", data_dir)
     assert scores["0"] == [0.0]
     assert scores["1"] == [50.0]
 
@@ -199,7 +200,7 @@ def test_the_benchmark_reads_each_mite_box_from_the_frames(tmp_path):
         "recordings": [{"name": RECORDING, "fps": 30}],
         "mites": [{"id": "0", "x": 10.0, "y": 10.0, "r": 3.0}, {"id": "1", "x": 40.0, "y": 10.0, "r": 3.0}],
     }
-    assert pipeline._benchmark_mites(dataset, data_dir) == {"0": [False], "1": [True]}
+    assert score_cache._benchmark_mites(dataset, data_dir) == {"0": [False], "1": [True]}
 
 
 def test_a_report_with_the_benchmark_compares_it_on_the_same_observations(tmp_path, recordings, scorer, monkeypatch):
@@ -212,9 +213,9 @@ def test_a_report_with_the_benchmark_compares_it_on_the_same_observations(tmp_pa
         runs.append(dataset["name"])
         return {"0": [True, True, True], "1": [True, False, False]}
 
-    monkeypatch.setattr(pipeline, "_benchmark_mites", benchmark)
+    monkeypatch.setattr(score_cache, "_benchmark_mites", benchmark)
     drawn = []
-    monkeypatch.setattr(pipeline, "_benchmark_circles", lambda _recordings_dir, name: drawn.append(name) or [[10, 10]])
+    monkeypatch.setattr(score_cache, "_benchmark_circles", lambda _recordings_dir, name: drawn.append(name) or [[10, 10]])
     ids = [pipeline.dataset_id(data_dir)]
 
     result = pipeline.evaluate_calibration(tmp_path / "report", ids, recordings_root=recordings, benchmark=True)
@@ -258,12 +259,12 @@ def test_cached_scores_and_calls_are_made_again_once_the_run_has_recorded_more(t
     def per_recording(value):
         return lambda dataset, *_args: made.append(len(dataset["recordings"])) or {"0": [value] * len(dataset["recordings"])}
 
-    monkeypatch.setattr(pipeline, "_benchmark_mites", per_recording(True))
-    monkeypatch.setattr(pipeline, "_score_mites", per_recording(1.0))
-    monkeypatch.setattr(pipeline, "_brightness_mites", per_recording(50.0))
-    fetch = [lambda: pipeline._dataset_benchmark("rec", dataset),
-             lambda: pipeline._dataset_scores("rec", dataset, "outline_variability", {}),
-             lambda: pipeline._dataset_brightness("rec", dataset, 16)]
+    monkeypatch.setattr(score_cache, "_benchmark_mites", per_recording(True))
+    monkeypatch.setattr(score_cache, "_score_mites", per_recording(1.0))
+    monkeypatch.setattr(score_cache, "_brightness_mites", per_recording(50.0))
+    fetch = [lambda: score_cache.dataset_benchmark("rec", dataset),
+             lambda: score_cache.dataset_scores("rec", dataset, "outline_variability", {}),
+             lambda: score_cache._dataset_brightness("rec", dataset, 16)]
     assert [f() for f in fetch] == [{"0": [True]}, {"0": [1.0]}, {"0": [50.0]}]
     assert [f() for f in fetch] == [{"0": [True]}, {"0": [1.0]}, {"0": [50.0]}] and made == [1, 1, 1]
 
@@ -387,7 +388,7 @@ def test_the_normalisations_can_be_tried_without_editing_the_config(tmp_path, re
     assert [scores(floor)[("1", r)] for r in range(3)] == pytest.approx([2.3, 2.5, 2.3])
     assert [scores(floor)[("0", r)] for r in range(3)] == pytest.approx([2.3, 2.3, 5.3])
 
-    monkeypatch.setattr(pipeline, "_brightness_mites", lambda dataset, _dir, pad=0, stabilize=False:
+    monkeypatch.setattr(score_cache, "_brightness_mites", lambda dataset, _dir, pad=0, stabilize=False:
                         {"0": [100.0] * 3, "1": [130.0] * 3, "2": [50.0] * 3})
     bright = pipeline.evaluate_calibration(tmp_path / "report", ids, recordings_root=recordings, normalize_brightness=True)
     assert bright["normalize_brightness"] and not bright["normalize_floor"]
@@ -599,7 +600,7 @@ def outliner(monkeypatch):
             return self.changes[dataset["name"]]
 
     stub = Outliner()
-    monkeypatch.setattr(pipeline, "_outline_mites", stub)
+    monkeypatch.setattr(score_cache, "_outline_mites", stub)
     return stub
 
 

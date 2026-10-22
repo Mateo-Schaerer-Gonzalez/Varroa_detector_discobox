@@ -11,6 +11,7 @@ import pytest
 import yaml
 
 import pipeline
+from pipeline import plate_labels
 import reference
 from classes import app_config, label_reader
 from classes.app_config import LabelReaderConfig
@@ -144,7 +145,7 @@ def opened(tmp_path, monkeypatch):
             asked.append((list(areas), list(known)))
             return [f"plate {number}" for number, _area in enumerate(areas, start=1)]
 
-    monkeypatch.setattr(pipeline, "LabelReader", Reader)
+    monkeypatch.setattr(plate_labels, "LabelReader", Reader)
     return data_dir, out_dir, session, asked
 
 

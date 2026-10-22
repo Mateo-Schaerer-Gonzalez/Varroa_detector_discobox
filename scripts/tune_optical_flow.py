@@ -39,6 +39,8 @@ import cv2
 import numpy as np
 
 import pipeline
+from pipeline import ground_truth
+from pipeline.calibration import dataset_library, score_cache
 from classes import calibration
 from classes.analyzer import Analyzer
 from classes.app_config import get_default_config
@@ -105,16 +107,16 @@ def load_observations(pads, shake=0.0, seed=0, stabilize=None):
     rng = np.random.default_rng(seed)
     rois, moving, mites, recording_index = {pad: [] for pad in pads}, [], [], []
     for summary in pipeline.list_calibration_datasets():
-        dataset = pipeline._read_dataset(summary["id"])
+        dataset = dataset_library.read_dataset(summary["id"])
         recordings_dir = Path(dataset["data_dir"])
         if not recordings_dir.is_dir():
             print(f"  skipping {dataset['name']}: its recordings are gone")
             continue
-        labelled = {mite["id"]: (mite, states) for mite, states in pipeline._mite_states(dataset)}
+        labelled = {mite["id"]: (mite, states) for mite, states in ground_truth.mite_states(dataset)}
         if not labelled:
             continue
 
-        # The same boxes as pipeline._score_mites() cuts, at the largest padding,
+        # The same boxes as score_cache._score_mites() cuts, at the largest padding,
         # with room around them for the shake and the stabilizer.
         margin = pipeline.STABILIZE_MARGIN if (shake or stabilize) else 0
         boxes = pipeline.mite_boxes([m for m, _states in labelled.values()], max(pads))

@@ -161,7 +161,7 @@ def measure(data_dir, fps, frame_count, recordings=2, back_to_back=False):
     """
     import psutil
 
-    import pipeline
+    from pipeline import plate_zones
     from classes.live.lights import NoLights
     from classes.live.recorder import Recorder
     from classes.live.session import LiveSession
@@ -175,7 +175,7 @@ def measure(data_dir, fps, frame_count, recordings=2, back_to_back=False):
     source = CameraSource("stand-in", settings, NoLights(), camera=object())
     source.camera = StreamingCamera(images, fps, source.frames)
     source.run = lambda: setattr(source, "state", "running")  # no test run: the bursts are started here
-    analysis = MotionAnalysis(pipeline._build_zone_manager(pipeline._coords_file(data_dir)))
+    analysis = MotionAnalysis(plate_zones.zones_of(data_dir))
     scored = []
     add_recording = analysis.add_recording
 

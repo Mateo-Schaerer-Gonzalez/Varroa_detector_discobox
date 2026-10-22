@@ -1,13 +1,14 @@
 """Where the app keeps things: recordings/, results/ and the calibration reports in it;
-the list of recordings the pages show; and moving the folders of earlier versions."""
+the list of recordings the pages show; and clearing pooled report folders that made none."""
 
 import json
-import shutil
 
 import pytest
 
 import folder_camera
+from classes.data_loader import DataLoader
 import pipeline
+from pipeline.live import live_runs
 import reference
 
 
@@ -31,8 +32,8 @@ def test_a_folder_is_listed_with_its_settings_labels_marks_and_results(tmp_path,
     [listed] = pipeline.list_recordings(**roots)
     first, last = sorted(d.name for d in folder.iterdir() if d.is_dir())[::2]
     assert listed["name"] == "hive 3" and listed["path"] == str(folder.resolve())
-    assert listed["started"] == pipeline.DataLoader.parse_start_time(first).isoformat()
-    assert listed["ended"] >= pipeline.DataLoader.parse_start_time(last).isoformat()  # to the second
+    assert listed["started"] == DataLoader.parse_start_time(first).isoformat()
+    assert listed["ended"] >= DataLoader.parse_start_time(last).isoformat()  # to the second
     assert (listed["n_recordings"], listed["frames"], listed["fps"]) == (3, reference.SMALL_FRAMES, 30)
     assert listed["settings"] == {"recording_count": 6, "recording_timeout": 5, "vent_time": 20, "led1_time": 20,
                                   "led2_time": 20, "frame_count": 30, "fps": 30, "vent": 255, "led1": 255, "led2": 255}
@@ -62,7 +63,7 @@ def test_a_live_run_writes_run_json_and_its_results_go_to_results(tmp_path, root
     assert status["out_dir"] == str(roots["results_root"] / "run 1")
     pipeline.start_live("record")
     listed = pipeline.list_recordings(**roots)
-    assert pipeline._live["record"].session.finished.wait(60)
+    assert live_runs.open_runs["record"].session.finished.wait(60)
     pipeline.close_live("record")
     assert not listed or listed[0]["recording_now"] or listed[0]["run"]["ended_at"]  # listed while it went on
 

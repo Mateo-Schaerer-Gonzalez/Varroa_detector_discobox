@@ -1,6 +1,6 @@
 """Guards the boundary between the user interface and the analysis code.
 
-Dependencies must point one way:  web/ -> pipeline.py -> classes/
+Dependencies must point one way:  web/ -> pipeline/ -> classes/
 
 These tests read the imports rather than the behaviour, so they fail the moment
 someone reaches across the boundary -- which is the point.
@@ -42,13 +42,13 @@ def test_web_layer_does_no_analysis():
         offenders = imported_roots(path) & ANALYSIS_MODULES
         assert not offenders, (
             f"{path.name} imports {sorted(offenders)}. The web layer must go through "
-            f"pipeline.py instead of touching the analysis directly."
+            f"pipeline instead of touching the analysis directly."
         )
 
 
 @pytest.mark.parametrize(
     "path",
-    [ROOT / "pipeline.py", ROOT / "reporting.py", ROOT / "main.py", *(ROOT / "classes").rglob("*.py")],
+    [*(ROOT / "pipeline").rglob("*.py"), ROOT / "reporting.py", ROOT / "main.py", *(ROOT / "classes").rglob("*.py")],
     ids=lambda p: p.relative_to(ROOT).as_posix(),
 )
 def test_analysis_knows_nothing_about_http(path):
@@ -66,6 +66,46 @@ def test_pipeline_is_the_only_entry_point():
 
     assert callable(pipeline.open_session)
     assert callable(pipeline.run_analysis)
+
+
+def pipeline_imports():
+    """Module of pipeline/ (dotted) -> the modules of pipeline/ it imports."""
+    graph = {}
+    for path in (ROOT / "pipeline").rglob("*.py"):
+        module = ".".join(path.relative_to(ROOT).with_suffix("").parts).removesuffix(".__init__")
+        graph[module] = set()
+        for node in ast.walk(ast.parse(path.read_text(encoding="utf-8"))):
+            if isinstance(node, ast.ImportFrom) and node.module and node.module.startswith("pipeline"):
+                for alias in node.names:
+                    name = f"{node.module}.{alias.name}"
+                    graph[module].add(name if (ROOT / Path(*name.split("."))).with_suffix(".py").is_file() else node.module)
+            elif isinstance(node, ast.Import):
+                graph[module].update(a.name for a in node.names if a.name.startswith("pipeline"))
+    return graph
+
+
+def test_pipeline_modules_import_each_other_one_way():
+    """Inside pipeline/ the imports point one way too, from the pages' functions
+    down to paths.py, with no circle. Only pipeline/__init__.py, which
+    re-exports the API, imports the modules from above."""
+    graph = {module: imports for module, imports in pipeline_imports().items() if module != "pipeline"}
+    done, path = set(), []
+
+    def visit(module):
+        if module in path:
+            cycle = path[path.index(module):] + [module]
+            raise AssertionError(f"pipeline modules import each other in a circle: {' -> '.join(cycle)}")
+        if module in done:
+            return
+        path.append(module)
+        for other in graph[module] & set(graph):
+            visit(other)
+        path.pop()
+        done.add(module)
+
+    for module in graph:
+        visit(module)
+    assert not any("pipeline" in imports for imports in graph.values()), "a module imports pipeline/__init__.py"
 
 
 def test_no_remote_resources_in_the_page():

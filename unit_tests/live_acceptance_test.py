@@ -16,6 +16,7 @@ import pytest
 
 import folder_camera
 import pipeline
+from pipeline.live import live_runs
 import reference
 import reporting
 
@@ -30,11 +31,11 @@ def live_run(tmp_path, monkeypatch):
             folder_camera.open_live(monkeypatch, live_id, tmp_path / f"{name}_out", name, data_dir,
                                     recordings_root=tmp_path / "recordings", **kwargs)
             pipeline.start_live(live_id)
-            run = pipeline._live[live_id]
+            run = live_runs.open_runs[live_id]
             assert run.session.finished.wait(120), "the live run did not finish"
         status = pipeline.live_status(live_id)
         results = pipeline.live_results(live_id)["results"]
-        pipeline._live.pop(live_id)  # keep its folder, which close_live() would remove if empty
+        live_runs.open_runs.pop(live_id)  # keep its folder, which close_live() would remove if empty
         return {"run": run, "status": status, "results": reference.plain(results), "figures": figures,
                 **reference.outputs(run.out_dir)}
     return run_it
@@ -106,13 +107,13 @@ def test_a_run_stopped_midway_is_analysed_as_far_as_it_got(tmp_path, small_sessi
     folder_camera.open_live(monkeypatch, "stop", tmp_path / "out", "stopped", small_session, gap=30,
                             recordings_root=tmp_path / "recordings")
     pipeline.start_live("stop")
-    run = pipeline._live["stop"]
+    run = live_runs.open_runs["stop"]
     deadline = time.monotonic() + 20
     while pipeline.live_status("stop")["completed"] < 1 and time.monotonic() < deadline:
         time.sleep(0.02)
     pipeline.stop_live("stop", wait=True, timeout=60)  # between the first recording and the second
     status = pipeline.live_status("stop")
-    pipeline._live.pop("stop")
+    live_runs.open_runs.pop("stop")
     assert status["state"] == "finished" and status["analysed"] == 1
     live = reference.plain(run.session.results)
     again = folder(tmp_path, run)
@@ -123,7 +124,7 @@ def test_the_workbook_is_written_in_the_background_while_the_run_goes_on(tmp_pat
     folder_camera.open_live(monkeypatch, "files", tmp_path / "out", "files", small_session, gap=30,
                             recordings_root=tmp_path / "recordings")
     pipeline.start_live("files")
-    run = pipeline._live["files"]
+    run = live_runs.open_runs["files"]
     try:
         deadline = time.monotonic() + 20
         while pipeline.live_results("files")["results"] is None and time.monotonic() < deadline:
@@ -134,7 +135,7 @@ def test_the_workbook_is_written_in_the_background_while_the_run_goes_on(tmp_pat
         assert pipeline.results_file(run.out_dir, workbook.name).is_file()  # a download does not wait for that
     finally:
         pipeline.stop_live("files", wait=True, timeout=60)
-        pipeline._live.pop("files")
+        live_runs.open_runs.pop("files")
 
 
 def test_results_are_published_after_each_recording(tmp_path, small_session, monkeypatch):
@@ -143,7 +144,7 @@ def test_results_are_published_after_each_recording(tmp_path, small_session, mon
     assert pipeline.live_results("steps") == {"version": 0, "results": None}
     pipeline.start_live("steps")
     seen = set()
-    run = pipeline._live["steps"]
+    run = live_runs.open_runs["steps"]
     while not run.session.finished.is_set():
         results = pipeline.live_results("steps")["results"]
         if results:
@@ -156,13 +157,13 @@ def test_results_are_published_after_each_recording(tmp_path, small_session, mon
 def test_labels_changed_during_a_run_show_at_once(tmp_path, small_session, live_run):
     live = live_run(small_session)
     run = live["run"]
-    pipeline._live[run.live_id] = run
+    live_runs.open_runs[run.live_id] = run
     try:
         pipeline.save_labels(run.run_dir, {"4": "renamed"})
         pipeline.live_refresh(run.live_id)
         groups = {g["group"] for g in pipeline.live_results(run.live_id)["results"]["summary"]["groups"]}
     finally:
-        pipeline._live.pop(run.live_id)
+        live_runs.open_runs.pop(run.live_id)
     assert "renamed" in groups and "venom" not in groups
     again = reference.run_folder(run.run_dir, tmp_path / "again", pipeline.load_labels(run.run_dir))
     assert {g["group"] for g in again["results"]["summary"]["groups"]} == groups
@@ -221,7 +222,7 @@ def test_a_run_not_started_can_be_renamed_and_takes_its_folders_along(tmp_path, 
         assert (tmp_path / "results" / "hive 4" / pipeline.PREVIEW_NAME).is_file()
 
         pipeline.start_live("rename")
-        assert pipeline._live["rename"].session.finished.wait(60)
+        assert live_runs.open_runs["rename"].session.finished.wait(60)
         with pytest.raises(ValueError, match="has started"):
             pipeline.set_live_options("rename", run_name="too late")
         assert pipeline.live_status("rename")["saved_frames"] == 3 * reference.SMALL_FRAMES

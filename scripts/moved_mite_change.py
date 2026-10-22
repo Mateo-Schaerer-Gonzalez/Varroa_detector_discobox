@@ -30,7 +30,7 @@ A mite's move takes the plate's texture around it with it, which a real move
 does not; the two comparisons of images keep mostly to the mite for that reason.
 
 The patches are cut once from the recordings (the ROI videos of a live run or
-whole frames, pipeline._measure_mites()) into the system's temporary folder;
+whole frames, score_cache._measure_mites()) into the system's temporary folder;
 the measures are kept in results/scripts/, so only the first run is slow.
 
     python scripts/moved_mite_change.py     # cuts, moves, measures, prints the table
@@ -53,6 +53,7 @@ from scipy.optimize import linear_sum_assignment
 from scipy.stats import rankdata
 
 import pipeline
+from pipeline.calibration import score_cache
 import script_data
 from classes import leg_tracker, outline_change as outline_module, plate_stabilizer, recording_change
 from classes.app_config import get_default_config
@@ -96,7 +97,7 @@ def load_run(cache=CACHE):
         Path(cache).mkdir(parents=True, exist_ok=True)
         part, patches, shapes = path.with_suffix(".part.npy"), None, None
         # a stabilized cut comes with a channel axis of one
-        cuts = pipeline._measure_mites(dataset, Path(dataset["data_dir"]),
+        cuts = score_cache._measure_mites(dataset, Path(dataset["data_dir"]),
                                        lambda roi: np.asarray(roi, dtype=np.float32).reshape(roi.shape[:3]), PAD, stabilize)
         for at, recording in enumerate(cuts):
             if patches is None:

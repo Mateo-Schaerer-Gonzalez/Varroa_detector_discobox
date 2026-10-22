@@ -15,12 +15,14 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import numpy as np  # noqa: E402
 
 import pipeline  # noqa: E402
+from pipeline import ground_truth  # noqa: E402
+from pipeline.calibration import dataset_library  # noqa: E402
 from classes import calibration  # noqa: E402
 
 
 def longest_dataset():
-    """The saved dataset (pipeline._read_dataset()) with the most recordings."""
-    saved = {summary["id"]: pipeline._read_dataset(summary["id"]) for summary in pipeline.list_calibration_datasets()}
+    """The saved dataset (dataset_library.read_dataset()) with the most recordings."""
+    saved = {summary["id"]: dataset_library.read_dataset(summary["id"]) for summary in pipeline.list_calibration_datasets()}
     return saved[max(saved, key=lambda key: len(saved[key]["times"]))]
 
 
@@ -28,7 +30,7 @@ def labels_of(dataset):
     """(mites, moving, labelled) of a dataset, the mites marked not a mite left
     out: the mites, and as (mites, recordings) whether each is labelled moving,
     and whether it is labelled at all (moving or still)."""
-    kept = pipeline._mite_states(dataset)
+    kept = ground_truth.mite_states(dataset)
     states = np.array([states for _mite, states in kept], dtype=object)
     moving = states == calibration.MOVING
     return [mite for mite, _states in kept], moving, moving | (states == calibration.STILL)

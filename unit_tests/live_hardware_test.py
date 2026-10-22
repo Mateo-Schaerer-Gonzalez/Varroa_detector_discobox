@@ -12,6 +12,7 @@ import numpy as np
 import pytest
 
 import pipeline
+from pipeline.live import live_runs, live_setup
 from classes.frame_source import Frame, RecordingEnd
 from classes.live import camera as live_camera
 from classes.live.camera import FrameHandler, choose_camera, configure
@@ -575,10 +576,10 @@ def test_both_leds_are_on_from_connecting_until_the_run_starts(tmp_path, monkeyp
     settings_path = tmp_path / "settings.txt"
     Settings(led1=120, led2=200).save(settings_path)
     lights = Lights(connection=Port())
-    monkeypatch.setattr(pipeline.live_camera, "choose_camera", lambda camera_id: "DEV_1")
-    monkeypatch.setattr(pipeline, "open_lights", lambda port: lights)
-    monkeypatch.setattr(pipeline, "CameraSource", lambda _id, settings, lights: camera_source(settings, lights=lights))
-    monkeypatch.setattr(pipeline, "LIGHTS_SETTLE", 0)
+    monkeypatch.setattr(live_setup.live_camera, "choose_camera", lambda camera_id: "DEV_1")
+    monkeypatch.setattr(live_setup, "open_lights", lambda port: lights)
+    monkeypatch.setattr(live_setup, "CameraSource", lambda _id, settings, lights: camera_source(settings, lights=lights))
+    monkeypatch.setattr(live_runs, "LIGHTS_SETTLE", 0)
     pipeline.open_live("leds", tmp_path / "out", "leds", settings_path=settings_path, recordings_root=tmp_path / "recordings")
     try:
         state = pipeline.live_status("leds")["lights"]
@@ -593,18 +594,18 @@ def test_both_leds_are_on_from_connecting_until_the_run_starts(tmp_path, monkeyp
         assert state["led1"]["on"] and state["led2"] == {"on": True, "level": 200}
         # Were one off all the same, labelling switches it back on.
         lights.switch_off("led2")
-        pipeline._light_for_labelling(pipeline._live["leds"])
+        live_runs.light_for_labelling(live_runs.open_runs["leds"])
         assert pipeline.live_status("leds")["lights"]["led2"] == {"on": True, "level": 200}
         # Until the run starts both are kept on, told again even when believed on.
         assert lights._kept == {"led1", "led2"} and lights._keeper is not None
         port = lights.connection
         port.sent = b""
-        pipeline._light_for_labelling(pipeline._live["leds"])
+        live_runs.light_for_labelling(live_runs.open_runs["leds"])
         assert packet("led1_on_off", 1) + packet("led1", 60) in port.sent
         # A start that fails leaves them on.
         def refuse():
             raise ValueError("cannot start")
-        monkeypatch.setattr(pipeline._live["leds"].session, "start", refuse)
+        monkeypatch.setattr(live_runs.open_runs["leds"].session, "start", refuse)
         with pytest.raises(ValueError, match="Dead when still for"):  # a time to count a mite dead first
             pipeline.start_live("leds")
         pipeline.save_live_settings({"death_minutes": 30}, "leds", settings_path=settings_path)

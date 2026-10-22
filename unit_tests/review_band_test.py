@@ -8,6 +8,8 @@ import pytest
 import yaml
 
 import pipeline
+from pipeline import run_results
+from pipeline.calibration import calibration_report
 import reference
 from classes import app_config
 from classes.app_config import MiteConfig, get_default_config
@@ -19,8 +21,8 @@ from classes.zones import MITE_SCORE_COLUMNS
 THRESHOLD = 3.5
 BAND = ReviewBand(2.5, 4.5)
 # as pipeline has them, before conftest.py keeps the other tests' runs and reports from them
-REVIEW = pipeline._review
-KEEP_BAND_SHAPE = pipeline._keep_band_shape
+REVIEW = run_results.review_calls
+KEEP_BAND_SHAPE = calibration_report._keep_band_shape
 
 
 def calls(scores):
@@ -173,7 +175,7 @@ def test_the_results_ask_for_the_close_calls_until_they_are_answered(tmp_path, m
     session = reference.make_small_session(tmp_path / "small_session")
     out = tmp_path / "out"
     # the calls to check as the app makes them, which the other tests' runs are kept from (conftest.py)
-    monkeypatch.setattr(pipeline, "_review", REVIEW)
+    monkeypatch.setattr(run_results, "review_calls", REVIEW)
     monkeypatch.setattr(get_default_config().mite, "metric_review_bands", {})
     pipeline.save_review_mites(session, 0)
     results = pipeline.run_analysis(session, out)

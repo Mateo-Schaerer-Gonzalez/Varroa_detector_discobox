@@ -48,6 +48,7 @@ import cv2
 import numpy as np
 
 import pipeline
+from pipeline.calibration import dataset_library, movement_score, poke_test
 from classes import calibration
 from classes.analyzer import Analyzer
 from classes.benchmark import Benchmark
@@ -138,7 +139,7 @@ def measure_recording(job):
 
 def measure(name, params):
     data_dir = folder(name)
-    data = pipeline._read_dataset(name, data_dir.parent)
+    data = dataset_library.read_dataset(name, data_dir.parent)
     loader = open_recordings(data_dir)
     index = loader.index
     order = index_order(data, index)
@@ -154,7 +155,7 @@ def measure(name, params):
     if name == TEST:
         for (mite_id, at), moved in EYE.items():
             states[ids.index(mite_id)][at] = calibration.MOVING if moved else calibration.STILL
-    poke = pipeline._poke_of(data) if name == TEST else None
+    poke = poke_test._poke_of(data) if name == TEST else None
     return {
         "name": name, "ids": ids, "times": data["times"],
         "states": [[state or "" for state in row] for row in states],
@@ -166,7 +167,7 @@ def measure(name, params):
 
 
 def main():
-    params = {metric: pipeline._resolve_metric(metric, None)[1] for metric in METRICS}
+    params = {metric: movement_score.resolve_metric(metric, None)[1] for metric in METRICS}
     OUT.mkdir(parents=True, exist_ok=True)
     for name in SESSIONS:
         result = measure(name, params)

@@ -150,7 +150,7 @@ def main(argv=None):
             pipeline.print_cameras()
             return 0
         return run_live(args)
-    except (pipeline.live_camera.CameraError, FileNotFoundError, ValueError) as error:
+    except (pipeline.CameraError, FileNotFoundError, ValueError) as error:
         print(f"Error: {error}", file=sys.stderr)
         return 1
 
