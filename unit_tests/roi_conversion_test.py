@@ -120,22 +120,6 @@ def test_without_mites_the_frames_stay_whole(tmp_path):
     assert not is_roi_session(folder) and len(list(folder.rglob("*.bmp"))) == 3
 
 
-def test_every_stored_folder_is_shrunk_once(tmp_path):
-    small = reference.make_small_session(tmp_path / "small")
-    recordings, results = tmp_path / "recordings", tmp_path / "results"
-    kept = linked_copy(small, recordings / "kept")
-    (recordings / "empty").mkdir()
-    (results / "pooled" / "2026-10-15 12-00-00" / pipeline.CLIPS_DIRNAME).mkdir(parents=True)
-    (results / "kept" / pipeline.CALIBRATION_DIRNAME / pipeline.CLIPS_DIRNAME).mkdir(parents=True)
-    reports = []
-    done = pipeline.convert_stored_recordings(recordings, results, reports.append)
-    assert done == {str(kept): 3} and is_roi_session(kept)
-    assert len(reports) == 2 and reports[1] == "  3 recordings shrunk"
-    # clips cut from whole frames, gone with them
-    assert not list(results.glob("pooled/*/clips")) and not (results / "kept" / "calibration" / "clips").exists()
-    assert pipeline.convert_stored_recordings(recordings, results) == {}  # nothing left
-
-
 def test_dropping_a_shrunk_folder_again_sends_none_of_its_frames(tmp_path):
     small = reference.make_small_session(tmp_path / "small")
     linked_copy(small, tmp_path / "uploads" / "small")

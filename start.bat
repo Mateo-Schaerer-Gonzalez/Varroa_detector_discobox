@@ -10,9 +10,6 @@ if errorlevel 1 (
     call conda env update -n discobox_env -f discobox_env.yaml
     call conda activate discobox_env
 )
-rem Once: the recordings stored as whole frames shrink to the mites' surroundings.
-rem Quick once done; delete with the script.
-python scripts\convert_stored_recordings.py
 start "" http://127.0.0.1:8000
 rem The server stops by itself once the last browser tab is closed.
 set DISCOBOX_AUTO_STOP=1

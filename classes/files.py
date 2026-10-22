@@ -7,7 +7,7 @@ one. On Windows the rename is refused for a moment while a reader has the file
 open; replace() tries again.
 
 OneDrive marks folders read-only, which stops even an emptied folder from being
-removed; remove_tree() and remove_if_empty() clear that first.
+removed; remove_tree() clears that first.
 """
 
 import json
@@ -102,20 +102,3 @@ def remove_tree(path, ignore_errors=False):
 
     if Path(path).exists():
         shutil.rmtree(path, onexc=again)
-
-
-def remove_if_empty(folder):
-    """Remove a folder that has been emptied, its read-only flag cleared first on
-    Windows; nothing when it is not there or not empty."""
-    try:
-        Path(folder).rmdir()
-    except PermissionError:
-        if os.name != "nt":
-            return
-        try:
-            os.chmod(folder, stat.S_IWRITE)
-            Path(folder).rmdir()
-        except OSError:
-            pass
-    except OSError:  # not there, or not empty
-        pass

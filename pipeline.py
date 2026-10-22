@@ -66,7 +66,7 @@ can never reach into the analysis internals.
     calibration_folder(...)    the folder in recordings/ a calibration works on (one elsewhere is copied in)
     calibration_dir(...)       where a calibration session of a recording works: results/<name>/calibration/
     new_pooled_report_dir()    a folder for a report pooled over several recordings
-    tidy_folders()             move what earlier versions wrote into today's folders
+    remove_empty_pooled_reports()   the folders of pooled reports that made none, when the app starts
 
 Where things go:
 
@@ -88,7 +88,6 @@ import logging
 import os
 import re
 import shutil
-import tempfile
 import threading
 import time
 from datetime import date, datetime, timedelta
@@ -115,7 +114,7 @@ from classes.data_loader import DataLoader
 from classes.deferred_files import DeferredFiles
 from classes.error_map import ErrorMap
 from classes import positions, settings_file
-from classes.files import (read_json, remove_if_empty, remove_tree, try_json, write_image, write_image_whole, write_jpeg,
+from classes.files import (read_json, remove_tree, try_json, write_image, write_image_whole, write_jpeg,
                            write_json)
 from classes.follow_up import FollowUp
 from classes.frame_source import RoiSource, open_source
@@ -141,7 +140,6 @@ from classes.review_band import ReviewBand
 from classes.score_normalizer import ScoreNormalizer
 from classes.survival import SurvivalReport
 from classes.truth_draft import TruthDraft
-from classes.truth_overlap import TruthOverlap
 from classes.unusual_activity import UnusualActivity
 from classes.upload_plan import UploadPlan
 from classes.workers import one_ahead, side_by_side
@@ -187,7 +185,6 @@ CALIBRATION_REPORT_NAME = reporting.CALIBRATION_EXCEL_NAME
 # Pixels read around the scored patches when the plate is stabilized: a mite's
 # shift (followed up to 12 px) and the Lanczos interpolation's reach.
 STABILIZE_MARGIN = plate_stabilizer.MARGIN
-DATASET_NAME = "dataset.json"
 SCORES_DIRNAME = "scores"
 RECORDINGS_DIRNAME = "recordings"
 
@@ -1936,158 +1933,6 @@ def calibration_folder(data_dir, recordings_root=RECORDINGS_ROOT):
     return target
 
 
-# --- one-off: the calibration library of earlier versions ------------------------------
-#
-# Earlier versions kept a second home for calibration work, calibration_data/: per
-# dataset a copy of its recordings, dataset.json (its mites and ground truth by mite
-# id) and scores/, and in reports/ the calibration sessions' folders and the
-# scripts' outputs. dissolve_calibration_library() brings all of it home: run by
-# scripts/convert_stored_recordings.py before the server starts, and deleted with it.
-
-OLD_LIBRARY = APP_DIR / "calibration_data"
-EARLIER_REPORTS = "earlier calibration reports"
-
-
-def _merged_truth(kept, extra):
-    """Ground truth `kept` (by position) with the entries of `extra` that are not
-    within positions.TOLERANCE of one of its own added."""
-    merged = list(kept)
-    for entry in extra:
-        if positions.away_from_all(entry, merged):
-            merged.append(entry)
-    return merged
-
-
-def _rekeyed_scores(scores_dir, old_mites, new_mites):
-    """Rename the cached scores in `scores_dir` of mites saved under the ids of
-    an earlier version (`old_mites`, {id, x, y, r}) to those of the same mites
-    now (`new_mites`, in their order), so the scores of this very code are
-    read back, not worked out again. The mites are matched by position; files
-    of older code, or with mites that do not all match, are left as they are.
-    Returns how many files were renamed."""
-    new_at = {(round(m["x"], 1), round(m["y"], 1), round(m["r"], 1)): m["id"] for m in new_mites}
-    ids = {m["id"]: new_at.get((round(m["x"], 1), round(m["y"], 1), round(m["r"], 1))) for m in old_mites}
-    if not old_mites or None in ids.values() or len(set(ids.values())) != len(ids) or len(ids) != len(new_mites) \
-            or all(old == new for old, new in ids.items()):
-        return 0
-
-    renamed = 0
-    for path in sorted(Path(scores_dir).glob("*.json")):
-        cached = try_json(path)
-        if not isinstance(cached, dict):
-            continue
-        by_mite, new_name = None, None
-        if "scores" in cached and "metric" in cached:
-            for stabilize in (False, True):
-                if path.name == f"{_metric_version(cached['metric'], cached.get('params'), old_mites, stabilize)}.json":
-                    by_mite = "scores"
-                    new_name = f"{_metric_version(cached['metric'], cached.get('params'), new_mites, stabilize)}.json"
-        elif "calls" in cached and path.name == _benchmark_name(old_mites):
-            by_mite, new_name = "calls", _benchmark_name(new_mites)
-        elif "brightness" in cached:
-            for pad, stabilize in itertools.product(range(65), (False, True)):
-                if path.name == _brightness_name(old_mites, pad, stabilize):
-                    by_mite, new_name = "brightness", _brightness_name(new_mites, pad, stabilize)
-        if by_mite is None or not set(cached[by_mite]) <= set(ids):
-            continue
-        target = path.with_name(new_name)
-        if not target.exists():
-            write_json(target, {**cached, by_mite: {ids[key]: value for key, value in cached[by_mite].items()}})
-            renamed += 1
-    return renamed
-
-
-def dissolve_calibration_library(library_dir=OLD_LIBRARY, recordings_root=RECORDINGS_ROOT,
-                                 results_root=RESULTS_ROOT, report=None):
-    """Bring what an earlier version kept in `library_dir` home, and remove it.
-
-    Each saved dataset goes to its recording folder in `recordings_root`: the
-    folder it was saved from when that is there (one elsewhere is copied in, as
-    calibration_folder() copies it), else the library's copy of it, moved there.
-    Its ground truth is merged into the folder's (the folder's entries win; the
-    copy's and dataset.json's others are added), a poke test the folder lacks is
-    taken from the copy (one that differs is kept beside it as
-    poke_test.from_library.json), and its cached scores move into the folder's
-    scores/. The reports' folders that hold a report go to `results_root`/earlier
-    calibration reports/, the scripts' outputs to `results_root`/scripts/.
-    Nothing is overwritten; run again, it carries on where it stopped.
-    `report(text)` hears of each thing done."""
-    report = report or (lambda text: None)
-    library_dir = Path(library_dir)
-    if not library_dir.is_dir():
-        return
-    for path in sorted(library_dir.glob(f"*/{DATASET_NAME}")):
-        folder = path.parent
-        saved = try_json(path)
-        if not isinstance(saved, dict):
-            continue
-        original = Path(str(saved.get("data_dir", "")))
-        copy = folder / RECORDINGS_DIRNAME
-        if original.is_dir():
-            run = calibration_folder(original, recordings_root)
-        elif copy.is_dir():
-            run = Path(recordings_root) / _free_name(_folder_name(PurePosixPath(str(original).replace("\\", "/")))
-                                                     if str(original) else folder.name, recordings_root)
-            run.parent.mkdir(parents=True, exist_ok=True)
-            copy.rename(run)
-            report(f"moved the library's copy of {saved.get('name', folder.name)} to {run}")
-        else:
-            report(f"left {folder}: neither its recordings nor a copy of them are there")
-            continue
-
-        truth = load_ground_truth(run)
-        extra = load_ground_truth(copy) if copy.is_dir() else []
-        positions = {mite["id"]: mite for mite in saved.get("mites", [])}
-        extra += [{"x": positions[mite_id]["x"], "y": positions[mite_id]["y"], "truth": states}
-                  for mite_id, states in (saved.get("truth") or {}).items() if mite_id in positions]
-        merged = _merged_truth(truth, extra)
-        if len(merged) > len(truth):
-            _write_truth(run, merged)
-            report(f"{run.name}: {len(merged) - len(truth)} ground truth entries added from the library")
-        poke = copy / POKE_FILENAME if copy.is_dir() else None
-        if poke is not None and poke.is_file():
-            if not (run / POKE_FILENAME).is_file():
-                shutil.copy2(poke, run / POKE_FILENAME)
-            elif poke.read_bytes() != (run / POKE_FILENAME).read_bytes():
-                shutil.copy2(poke, run / "poke_test.from_library.json")
-                report(f"{run.name}: the library's poke test differs; kept beside it as poke_test.from_library.json")
-        for cached in sorted((folder / SCORES_DIRNAME).glob("*")):
-            target = run / SCORES_DIRNAME / cached.name
-            if cached.is_file() and not target.exists():
-                target.parent.mkdir(parents=True, exist_ok=True)
-                shutil.move(str(cached), target)
-        try:  # cached under the ids of an earlier version: the same mites' ids now
-            renamed = _rekeyed_scores(run / SCORES_DIRNAME, saved.get("mites", []),
-                                      _read_dataset(run.name, recordings_root)["mites"])
-        except (OSError, ValueError) as error:
-            renamed = 0
-            report(f"{run.name}: its cached scores keep their names ({error})")
-        if renamed:
-            report(f"{run.name}: {renamed} cached scores renamed to today's ids of its mites")
-        remove_tree(folder)
-        report(f"{run.name}: brought home from {folder}")
-
-    reports = library_dir / "reports"
-    for item in sorted(reports.iterdir()) if reports.is_dir() else []:
-        if item.is_dir() and any(item.glob("*.xlsx")):
-            target = Path(results_root) / EARLIER_REPORTS / item.name
-        elif item.is_file():
-            target = Path(results_root) / SCRIPTS_OUTPUT_DIRNAME / item.name
-        else:
-            remove_tree(item, ignore_errors=True)  # a session that made no report
-            continue
-        if target.exists():
-            report(f"left {item}: {target} already exists")
-            continue
-        target.parent.mkdir(parents=True, exist_ok=True)
-        shutil.move(str(item), target)
-    for folder in (reports, library_dir):
-        if folder.is_dir() and not any(folder.iterdir()):
-            remove_tree(folder, ignore_errors=True)
-    if not library_dir.exists():
-        report(f"removed {library_dir}")
-
-
 # --- evaluation -------------------------------------------------------------------------
 
 
@@ -2809,119 +2654,6 @@ def save_movement_score(metric, params, threshold, stabilize=None, normalize_bri
     return app_config.save_movement_score(metric, params, threshold, stabilize_plate=stabilize,
                                           normalize_brightness=normalize_brightness, normalize_floor=normalize_floor,
                                           review_band=review_band)
-
-
-# --- TEMPORARY: checking the ground truth where the labels overlap ---------------------
-#
-# The page web/static/overlap.html lists the mite-recordings whose score lies where
-# those labelled moving and those labelled still overlap (classes/truth_overlap.py),
-# plays each one cut close around its mite, and lets its label be changed. A change
-# is saved at once, where save_truth() saves. To take the page out again, delete
-# this block with the two imports only it uses (tempfile and TruthOverlap), its
-# routes in web/server.py, classes/truth_overlap.py, web/static/overlap.html,
-# web/static/js/overlap/ and unit_tests/truth_overlap_test.py.
-
-OVERLAP_METRIC = "outline_variability"
-# The clips the page plays: a cache, made again when missing.
-OVERLAP_DIR = Path(tempfile.gettempdir()) / "varroa_truth_overlap"
-_OVERLAP_LETTERS = {calibration.MOVING: "m", calibration.STILL: "s"}
-
-
-def _overlap_states(states, n_recordings):
-    """A mite's statuses as one letter per recording: m, s, or - for neither."""
-    return "".join(_OVERLAP_LETTERS.get(state, "-") for state in calibration.per_recording(states, n_recordings))
-
-
-def truth_overlap(datasets=None, low=None, high=None, beyond=True, metric=OVERLAP_METRIC,
-                  recordings_root=RECORDINGS_ROOT):
-    """The mite-recordings to check by eye: those whose score lies where the
-    scores labelled moving and those labelled still overlap, pooled over the
-    saved datasets whose ids are in `datasets` (all of them by default).
-
-    They are scored with `metric` and config.yaml's parameters for it, plate
-    stabilization and normalisations, as a calibration report scores them
-    (slow the first time a dataset meets them, see evaluate_calibration()).
-    The overlap is the band of scores TruthOverlap suggests unless `low` and
-    `high` give another; with `beyond`, the recordings beyond it on the wrong
-    side are listed too.
-
-    Returns TruthOverlap.describe(), each datapoint with its mite's radius "r",
-    and with it the metric and its parameters, every saved dataset with whether
-    it is among the chosen, and for each mite with a datapoint
-    ("<dataset id>/<mite id>") its statuses (_overlap_states()) and scores in
-    every recording."""
-    saved = list_calibration_datasets(recordings_root)
-    ids = [summary["id"] for summary in saved] if datasets is None else list(dict.fromkeys(datasets))
-    if not ids:
-        raise ValueError("Choose at least one dataset.")
-    metric, params = _resolve_metric(metric, None)
-    in_use = _in_use(get_default_config().mite)
-    stabilize = in_use["stabilize_plate"]
-    normalizer = ScoreNormalizer(floor=in_use["normalize_floor"], brightness=in_use["normalize_brightness"])
-
-    rows, loaded = [], {}
-    for key in ids:
-        dataset = _read_dataset(key, recordings_root)
-        scores = _dataset_scores(key, dataset, metric, params, stabilize)
-        scores = _normalised_scores(key, dataset, scores, normalizer, Analyzer.roi_padding(metric, params),
-                                    stabilize)
-        rows += _observations(dataset, key, scores)[0]
-        loaded[key] = (dataset, scores, {mite["id"]: mite["r"] for mite in dataset["mites"]})
-    if not rows:
-        raise ValueError("Mark at least one mite moving or still first.")
-
-    overlap = TruthOverlap(rows).describe(low, high, beyond)
-    mites = {}
-    for point in overlap["datapoints"]:
-        dataset, scores, radius = loaded[point["dataset"]]
-        point["r"] = radius[point["mite_id"]]
-        mites.setdefault(f"{point['dataset']}/{point['mite_id']}", {
-            "states": _overlap_states(dataset["truth"].get(point["mite_id"]), len(dataset["times"])),
-            "scores": scores[point["mite_id"]],
-        })
-    return {
-        "metric": metric,
-        "metric_params": params,
-        "datasets": [{**{key: summary[key] for key in ("id", "name", "n_recordings", "n_moving", "n_still")},
-                      "chosen": summary["id"] in ids} for summary in saved],
-        **overlap,
-        "mites": mites,
-    }
-
-
-def overlap_clip(dataset, mite_id, recording, recordings_root=RECORDINGS_ROOT):
-    """Frames of one mite during one recording of a saved dataset, cut close
-    around it (see _mite_clip()), kept in OVERLAP_DIR."""
-    saved = _read_dataset(dataset, recordings_root)
-    mite = _find(saved["mites"], mite_id, saved["name"])
-    _check_recording(recording, len(saved["recordings"]), saved["name"])
-    recordings_dir = _recordings_dir(saved, "there is no clip to play")
-    return _mite_clip(recordings_dir, saved["recordings"][recording], mite, OVERLAP_DIR, f"{dataset}_r{recording}")
-
-
-def set_overlap_label(dataset, mite_id, recording, state, recordings_root=RECORDINGS_ROOT):
-    """Give one mite of a saved dataset the label `state` in one recording
-    ("moving", "still", or None for unlabelled) and save it at once, next to the
-    recordings, on top of what is saved now
-    (update_ground_truth() does the same for a calibration session). Returns
-    the label and the mite's statuses as saved (_overlap_states())."""
-    if state not in (calibration.MOVING, calibration.STILL, None):
-        raise ValueError(f"A label here is moving, still or none, not {state!r}.")
-    saved = _read_dataset(dataset, recordings_root)
-    stored = {key: saved[key] for key in ("data_dir", "times", "recordings", "image", "zones", "mites")}
-    n_recordings = len(stored["times"])
-    mite_id = str(mite_id)
-    _find(stored["mites"], mite_id, saved["name"])
-    _check_recording(recording, n_recordings, saved["name"])
-
-    truth = _saved_truth(stored)
-    if calibration.is_rejected(truth.get(mite_id)):
-        raise ValueError(f"Mite {mite_id} is marked not a mite; take that back on the ground-truth page first.")
-    truth[mite_id] = calibration.apply_changes(truth.get(mite_id), {recording: state}, n_recordings)
-    if not any(any(states) for states in truth.values()):
-        raise ValueError(f"That is the last label of {saved['name']}; delete its ground truth on the calibration page instead.")
-    labelled = _write_ground_truth(stored, truth)
-    return {"movement": state, "states": _overlap_states(labelled.get(mite_id), n_recordings)}
 
 
 # --- live runs ----------------------------------------------------------------------
@@ -3743,34 +3475,6 @@ def convert_folder(folder, results_root=RESULTS_ROOT):
     return converted
 
 
-def convert_stored_recordings(recordings_root=RECORDINGS_ROOT, results_root=RESULTS_ROOT, report=None):
-    """Shrink every recording folder in `recordings_root` to the mites'
-    surroundings. Only for scripts/convert_stored_recordings.py, run before the
-    server starts: nothing may read a folder while it changes. `report(text)`
-    hears of each folder. Returns {folder: recordings converted, or the error}."""
-    report = report or (lambda text: None)
-    todo = [folder for folder in sorted(Path(recordings_root).iterdir()) if folder.is_dir()] \
-        if Path(recordings_root).is_dir() else []
-    done = {}
-    for folder in todo:
-        if not DataLoader(folder).recording_names:
-            continue  # no whole frames left
-        frames = sum(path.stat().st_size for path in folder.rglob("*.bmp"))
-        report(f"Shrinking {folder} ({frames / 1e9:.1f} GB of frames)...")
-        try:
-            done[str(folder)] = convert_folder(folder, results_root)
-        except Exception as error:  # the next folder all the same; this one stays as it was, or carries on next time
-            _logger.exception("Could not shrink %s", folder)
-            done[str(folder)] = f"{type(error).__name__}: {error}"
-        report(f"  {done[str(folder)]}" if isinstance(done[str(folder)], str) else
-               f"  {done[str(folder)]} recordings shrunk" if done[str(folder)] else "  left whole: no mites found")
-    if any(isinstance(result, int) and result for result in done.values()):
-        # the pooled reports' clips, cut from frames that are gone: remade from the ROIs when asked for
-        for clips in Path(results_root).glob(f"{POOLED_DIRNAME}/*/{CLIPS_DIRNAME}"):
-            remove_tree(clips, ignore_errors=True)
-    return done
-
-
 def describe_recording(data_dir, results_root=RESULTS_ROOT):
     """One recording folder as the list of recordings shows it (None when it holds
     no recording): when it was recorded, how -- the Discobox settings of its
@@ -3838,60 +3542,10 @@ def recording_results_file(name, filename, results_root=RESULTS_ROOT):
     return str(path)
 
 
-# --- the folders of earlier versions ------------------------------------------------
-#
-# Earlier versions saved live runs to output/, copied dropped folders to uploads/,
-# and gave every page session a folder named by a random id in outputs/.
-# tidy_folders() moves all of it into today's folders, once, when the app starts.
-
-OLD_RECORDING_FOLDERS = ("output", "uploads")
-OLD_RESULTS_FOLDER = "outputs"
-EARLIER_SESSIONS = "earlier sessions"  # results/earlier sessions/: outputs/, as it was
-
-
-def _shown(path, app_dir):
-    try:
-        return Path(path).relative_to(app_dir).as_posix()
-    except ValueError:
-        return str(path)
-
-
-def _subfolders(folder):
-    return sorted(path for path in Path(folder).iterdir() if path.is_dir()) if Path(folder).is_dir() else []
-
-
-def _move(folder, target, app_dir, done):
-    """Rename `folder` to `target` unless `target` is taken; True if moved."""
-    if target.exists():
-        done.append(f"left {_shown(folder, app_dir)} where it is: {_shown(target, app_dir)} already exists")
-        return False
-    try:
-        target.parent.mkdir(parents=True, exist_ok=True)
-        folder.rename(target)
-    except OSError as error:
-        done.append(f"could not move {_shown(folder, app_dir)}: {error}")
-        return False
-    done.append(f"moved {_shown(folder, app_dir)} to {_shown(target, app_dir)}")
-    return True
-
-
-def tidy_folders(app_dir=APP_DIR, recordings_root=RECORDINGS_ROOT, results_root=RESULTS_ROOT):
-    """Move what earlier versions wrote into today's folders -- recordings from
-    output/ and uploads/ to recordings/, outputs/ to results/earlier sessions/ --
-    and remove the folders of pooled calibration reports that made no report.
-    Nothing is overwritten: a folder whose new place is taken stays where it
-    is. Returns a line for each thing done."""
-    app_dir = Path(app_dir)
-    done = []
-    for old in OLD_RECORDING_FOLDERS:
-        for folder in _subfolders(app_dir / old):
-            _move(folder, Path(recordings_root) / folder.name, app_dir, done)
-    for folder in _subfolders(app_dir / OLD_RESULTS_FOLDER):
-        _move(folder, Path(results_root) / EARLIER_SESSIONS / folder.name, app_dir, done)
-    for old in (*OLD_RECORDING_FOLDERS, OLD_RESULTS_FOLDER):
-        remove_if_empty(app_dir / old)
-    # A pooled report's folder is only of use for its report.
-    for folder in _subfolders(Path(results_root) / POOLED_DIRNAME):
-        if not any(folder.glob("*.xlsx")):
+def remove_empty_pooled_reports(results_root=RESULTS_ROOT):
+    """Remove the folders of pooled calibration reports that made no report: a
+    pooled report's folder is only of use for its report. Run when the app starts."""
+    pooled = Path(results_root) / POOLED_DIRNAME
+    for folder in sorted(pooled.iterdir()) if pooled.is_dir() else []:
+        if folder.is_dir() and not any(folder.glob("*.xlsx")):
             remove_tree(folder, ignore_errors=True)
-    return done

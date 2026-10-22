@@ -99,28 +99,11 @@ def test_a_calibration_works_in_its_recordings_results_and_a_pooled_report_in_a_
     assert first != second and first.is_dir() and second.is_dir() and first.parent == tmp_path / "pooled"
 
 
-def test_the_folders_of_earlier_versions_move_to_todays(tmp_path):
-    app = tmp_path / "app"
-    live_run = reference.make_small_session(app / "output" / "test_run_1")
-    reference.make_small_session(app / "uploads" / "dropped")
-    (app / "outputs" / "3b70a75b").mkdir(parents=True)
-    (app / "outputs" / "3b70a75b" / "results.xlsx").write_bytes(b"x")
-    (app / "output" / "taken").mkdir()
-    (app / "recordings" / "taken").mkdir(parents=True)  # never overwritten
-    pooled = app / "results" / "pooled"
+def test_pooled_report_folders_without_a_report_are_removed(tmp_path):
+    pooled = tmp_path / "results" / "pooled"
     (pooled / "2026-09-01 10-00-00").mkdir(parents=True)
     (pooled / "2026-09-01 11-00-00").mkdir()
     (pooled / "2026-09-01 11-00-00" / "calibration.xlsx").write_bytes(b"x")
-
-    done = pipeline.tidy_folders(app, app / "recordings", app / "results")
-    assert (app / "recordings" / "test_run_1").is_dir() and (app / "recordings" / "dropped").is_dir()
-    assert (app / "results" / "earlier sessions" / "3b70a75b" / "results.xlsx").is_file()
-    assert (app / "output" / "taken").is_dir() and not (app / "uploads").exists() and not (app / "outputs").exists()
-    assert any("left output/taken where it is" in line for line in done)
-    assert pipeline.list_recordings(app / "recordings", app / "results")
-    # only pooled reports that made a report are kept
+    pipeline.remove_empty_pooled_reports(tmp_path / "results")
     assert [path.name for path in pooled.iterdir()] == ["2026-09-01 11-00-00"]
-    # a second start has nothing more to move
-    shutil.rmtree(app / "output")
-    assert pipeline.tidy_folders(app, app / "recordings", app / "results") == []
-    assert not live_run.exists()
+    pipeline.remove_empty_pooled_reports(tmp_path / "nothing here")  # no results folder yet

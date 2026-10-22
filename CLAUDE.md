@@ -55,7 +55,7 @@ is computed in a class under `classes/` and served through a `pipeline` function
 only draws (the user's choice: "make all classes python", logic in Python rather than a
 Python UI framework). Math only for drawing (chart scales, jitter, kernel density) may stay
 in JS. The front end in `web/static/` has no framework and no build step: small files under
-`web/static/js/<area>/`, one class each, loaded in order by `index.html` (and `overlap.html`),
+`web/static/js/<area>/`, one class each, loaded in order by `index.html`,
 wired up in `js/main.js`.
 
 **One analysis core for folder and live runs.** `classes/motion_analysis.py`
@@ -142,7 +142,7 @@ the Discobox). After such an edit, prove scores are unchanged against the commit
 analyse with both and compare every mite's raw `motion_scores` and `brightness` as
 `float.hex()`, on sample_data and on the long run (the slow regression test covers
 sample_data only). The cache file names in a dataset's `scores/` are made by the `_*_name`
-functions and `_metric_version`; `_rekeyed_scores` relies on them staying the same. Scores
+functions and `_metric_version`; old caches are found again only while they stay the same. Scores
 of one dataset differ slightly between this Windows laptop and the Discobox's Linux PC with
 the same code (2026-10-08: 56% of values, 0.009 median, 0.23 at most; likely the OpenCV
 build).
@@ -157,8 +157,11 @@ pages write thresholds and review bands into it. `DISCOBOX_CONFIG` overrides its
 plate), `ground_truth.json`, `poke_test.json`, `corrections.json`, `.settings.txt`,
 `run.json`, and a `scores/` cache. `results/<name>/` holds the latest analysis (workbook,
 figures, `clips/`, `kept/`, `calibration/`). Labels, ground truth and corrections are keyed
-by mite position, so they survive detector changes. On startup the server migrates older
-layouts (`output/`, `outputs/`, `uploads/`, `calibration_data/`).
+by mite position, so they survive detector changes. On startup the server removes pooled
+report folders that made no report. The one-off migrations of older layouts (`output/`,
+`outputs/`, `uploads/`, `calibration_data/`, BMP folders shrunk to ROIs in bulk) were
+deleted on 2026-10-22 at the user's request; uploads and typed-path calibrations are still
+shrunk to ROIs.
 
 There is one store, the user's choice of 2026-10-16 ("everything stored in recordings, get
 rid of the calibration folder"); never reintroduce a second one. A dataset is a folder in
@@ -169,9 +172,7 @@ Calibration sessions and reports go to `results/<run>/calibration/`, pooled repo
 `results/earlier calibration reports/`. A folder opened by typed path is copied into
 `recordings/` (with `copied_from.txt`) and shrunk to ROIs; Delete removes a run's ground
 truth, poke test and scores. Tests make datasets in `tmp_path/recordings` (see
-`calibration_library_test.py`). `pipeline.dissolve_calibration_library()` and
-`scripts/convert_stored_recordings.py` (run by start.bat/start.sh before the server) are
-one-offs the user asked for, to be deleted later.
+`calibration_library_test.py`).
 
 Saved runs keep only the mites' surroundings (the user's choices of 2026-10-15, for storage:
 sample_data takes 17.5 MB as ROIs against 574 MB as BMP): `first_frame.png`,
@@ -208,8 +209,7 @@ page: `Hint` (status lines), `ChartKit.show`, `Charts.PERCENT_AXIS`,
 `results/scripts/`. A notebook in `notebooks/` reads what its script wrote (the slow part), so
 it reruns in seconds. They import `pipeline`/`classes` and may use their private helpers.
 
-`pipeline.py` has a block marked `TEMPORARY` (the label-overlap check page,
-`web/static/overlap.html`) that lists what to delete together with it.
+The temporary label-overlap check page was deleted on 2026-10-22 at the user's request.
 
 ## The data
 

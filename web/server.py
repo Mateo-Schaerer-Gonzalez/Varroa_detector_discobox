@@ -75,9 +75,7 @@ def watch_pages():
 
 @asynccontextmanager
 async def lifespan(app):
-    # What earlier versions wrote to output/, uploads/ and outputs/ moves to today's folders.
-    for line in pipeline.tidy_folders():
-        print(f"Folders: {line}", flush=True)
+    pipeline.remove_empty_pooled_reports()
     if AUTO_STOP:
         threading.Thread(target=watch_pages, daemon=True).start()
     yield
@@ -909,60 +907,6 @@ def get_file(session_id: str, name: str):
     if not path.is_file() or folder.resolve() not in path.parents:
         raise HTTPException(status_code=404, detail=f"No such file: {name}")
     return FileResponse(path)
-
-
-# --- TEMPORARY: checking the ground truth where the labels overlap ---------------------
-#
-# The page static/overlap.html; see the block of the same name in pipeline.py for
-# what it is and what to delete with it.
-
-
-class OverlapRequest(BaseModel):
-    # ids of the saved datasets to pool; by default all of them
-    datasets: Optional[list[str]] = None
-    # the scores the overlap runs between; by default the ones the labels suggest
-    low: Optional[float] = None
-    high: Optional[float] = None
-    # also the recordings beyond the overlap on the wrong side
-    beyond: bool = True
-
-
-class OverlapLabel(BaseModel):
-    dataset: str
-    mite: str
-    recording: int
-    state: Optional[str] = None  # "moving", "still", or none: unlabelled
-
-
-@app.post("/api/overlap")
-def truth_overlap(request: OverlapRequest):
-    """The mite-recordings whose score lies where the two labels overlap. Slow
-    the first time a dataset meets the metric: every frame is decoded."""
-    with refused():
-        return as_it_is(pipeline.truth_overlap(request.datasets, request.low, request.high, request.beyond))
-
-
-@app.get("/api/overlap/clip/{dataset_id}/{mite}/{recording}")
-def overlap_clip(dataset_id: str, mite: str, recording: int):
-    """Frames of one mite during one recording, cut close around it, cached on first request."""
-    with refused():
-        return pipeline.overlap_clip(dataset_id, mite, recording)
-
-
-@app.get("/api/overlap/file/{name:path}")
-def overlap_file(name: str):
-    """One frame of a clip made by overlap_clip()."""
-    path = safe_join(pipeline.OVERLAP_DIR, name)
-    if not path.is_file():
-        raise HTTPException(status_code=404, detail=f"No such file: {name}")
-    return FileResponse(path)
-
-
-@app.post("/api/overlap/label")
-def set_overlap_label(request: OverlapLabel):
-    """Change one mite's label in one recording, saved at once."""
-    with truth_lock, refused():
-        return pipeline.set_overlap_label(request.dataset, request.mite, request.recording, request.state)
 
 
 # --- the recordings kept -------------------------------------------------------------

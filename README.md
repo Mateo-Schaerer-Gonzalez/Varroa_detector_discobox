@@ -232,9 +232,7 @@ movement score chosen, so old ground truth can judge a new metric.
 parameters and scoring code, to skip decoding again; it can be deleted at any
 time. A folder opened by typing its path is copied into `recordings/` first,
 its frames shrunk to the mites' surroundings, and calibrated there; opening it
-again opens that copy. Earlier versions kept a second copy of every labelled
-recording in `calibration_data/`; `scripts/convert_stored_recordings.py`, run
-once by `start.bat` and `start.sh`, brings it home and removes it.
+again opens that copy.
 
 `config.yaml` holds the metric in use and, under `metric_params`, the
 parameters of each metric (`{topN_variability: {n: 10}}`); one left out uses the
@@ -543,12 +541,6 @@ to change that).
 | `results/<name>/` | The last analysis of that recording, replaced when it is analysed again (files below). `clips/` holds the frames the result pages play, and `kept/` the scores, so that analysing the same recordings again, with the same metric and the same scoring code, takes a moment instead of scoring every frame again; both can be deleted at any time. `calibration/` holds its calibration session and report, `calibration.xlsx`. |
 | `results/pooled/<date time>/` | A calibration report pooled over saved ground truth alone: its `calibration.xlsx`. Those that made no report are removed at the next start. |
 | `results/scripts/` | What the scripts in `scripts/` write: tables, optuna studies. |
-
-Earlier versions kept live runs in `output/`, dropped folders in `uploads/`
-and every page session in `outputs/<random id>/`. When the app starts, it
-moves them: recordings to `recordings/`, and
-the old sessions to `results/earlier sessions/`. A folder whose new place is
-already taken stays where it was.
 
 ## Results
 
