@@ -254,10 +254,21 @@ def test_a_mite_added_later_counts_its_life_from_when_it_was_added():
     assert not SurvivalAnalysis([0, 10, 20, 30], 15).counts_dead(never)  # not yet 15
     # Its curve is drawn on its own clock: dead 10 min after its start.
     assert survival.alive_percent([added]) == [100.0, 0.0, 0.0, 0.0]
-    # Given the start in the results, the pages count it so.
+    # And so is the count of mites alive beside the curve.
+    assert survival.alive_numbers([added]) == [1, 0, 0, 0]
+    # Given the start in the results, the pages count it so; its lifeline is on
+    # the run's clock: from 10 min, when it was added, to its death at 20.
     results = results_with({(1, "venom"): [[False, True, False, False]]})
     results["times"], results["censored"], results["started"] = [0, 10, 20, 30], {"0": [0]}, {"0": 1}
-    assert SurvivalReport(results, 5).describe()["mites"]["0"] == {"in_study": True, "time": 10, "dead": True, "lost": False}
+    report = SurvivalReport(results, 5).describe()
+    assert report["mites"]["0"] == {"in_study": True, "time": 20, "dead": True, "lost": False, "added": 10, "lived": 10}
+    assert report["zones"][1]["alive"] == [100.0, 0.0, 0.0, 0.0] and report["zones"][1]["n_alive"] == [1, 0, 0, 0]
+
+
+def test_the_count_of_mites_alive_is_the_same_on_both_clocks_without_mites_added_later():
+    survival = SurvivalAnalysis(TIMES, 15)
+    movings = [FIRST_ONLY, ALWAYS, FIRST_TWO, Calls([True, None, None])]
+    assert survival.alive_numbers(movings) == survival.alive_counts(movings)
 
 
 def test_a_mite_never_seen_moving_is_left_out():

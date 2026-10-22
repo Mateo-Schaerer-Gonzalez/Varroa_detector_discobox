@@ -221,7 +221,9 @@ def mite_survival(rows, times, is_moving):
     """(time, dead) for one mite from its labelled rows, by the rule of the result
     pages (classes/survival.py) with no time to count as dead: dead at the first
     labelled recording after its last movement, else censored at its last labelled
-    recording. None when it never moved: it is left out of the study.
+    recording. None when it never moved: it is left out of the study. A mite a
+    live run added later counts its time from the recording it was added in
+    (its rows' "start"), as the result pages do.
 
     `rows` have "recording"; `is_moving(row)` says whether the mite moved in it,
     by the labels or as called by the detector."""
@@ -229,10 +231,11 @@ def mite_survival(rows, times, is_moving):
     moved = [index for index, row in enumerate(rows) if is_moving(row)]
     if not moved:
         return None
+    zero = times[rows[0].get("start", 0)] - times[0]
     after = rows[moved[-1] + 1:]
     if after:
-        return times[after[0]["recording"]], True
-    return times[rows[-1]["recording"]], False
+        return times[after[0]["recording"]] - zero, True
+    return times[rows[-1]["recording"]] - zero, False
 
 
 def _rows_by_mite(rows):

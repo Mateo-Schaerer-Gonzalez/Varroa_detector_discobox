@@ -53,14 +53,30 @@ class ResultsPage {
   // The mite's call in a recording, marked when it is the user's, not the
   // detector's; "gone" where the user marked the mite gone, "set aside" where
   // something disturbed it (see the unusual activity on the overview).
-  callBadge(mite, recording) {
-    // A live run follows a mite only from when it was added, and until it counts as dead (classes/follow_up.py).
+  // A live run follows a mite only from when it was added, and until it counts as
+  // dead (classes/follow_up.py): "not added yet" before, "dead, not followed"
+  // after, null while it is followed.
+  unfollowed(mite, recording) {
     const started = this.results.started?.[mite.id];
-    if (started != null && recording < started) {
+    if (started != null && recording < started) return "not added yet";
+    const stopped = this.results.stopped?.[mite.id];
+    if (stopped != null && recording >= stopped) return "dead, not followed";
+    return null;
+  }
+
+  // The recordings in which the mite was not added yet.
+  notAddedYet(mite) {
+    return this.results.started?.[mite.id] || 0;
+  }
+
+  callBadge(mite, recording) {
+    const unfollowed = this.unfollowed(mite, recording);
+    if (unfollowed === "not added yet") {
+      const started = this.results.started[mite.id];
       return `<span class="status gone" title="Added during the run, at ${minutes(this.results.times[started])}: not followed before"><span aria-hidden="true">–</span> not added yet</span>`;
     }
-    const stopped = this.results.stopped?.[mite.id];
-    if (stopped != null && recording >= stopped) {
+    if (unfollowed) {
+      const stopped = this.results.stopped[mite.id];
       return `<span class="status still" title="Counted as dead: no longer scored nor saved from ${minutes(this.results.times[stopped])} on"><span aria-hidden="true">–</span> dead, not followed</span>`;
     }
     if (this.setAside(mite, recording)) {
@@ -79,6 +95,7 @@ class ResultsPage {
   // the results again, every number following the change. With `checked`, the
   // call is kept as checked by eye, also when it is the detector's (ReviewCheck).
   async correctCall(mite, recording = ctx.shown, state = null, checked = false) {
+    if (this.unfollowed(mite, recording)) return;  // nothing of it was saved there to call
     if (await this.saveCall(mite, recording, state, checked)) resultsView.draw();
   }
 
@@ -176,7 +193,8 @@ class ResultsPage {
   static LEFT_OUT_RULE = `Only the mites seen moving at least once are in the survival numbers: a mite never seen moving
     may have been dead from the start, or no live mite at all, so it is left out, its id greyed out and struck through.`;
 
-  // A mite's lifeline, the server's (results.survival.mites): {in_study, time, dead, lost}.
+  // A mite's lifeline, the server's (results.survival.mites): {in_study, time, dead,
+  // lost}, `time` on the run's clock; one added later also has `added` and `lived`.
   lifeline(mite) {
     return this.results.survival.mites?.[mite.id] || { in_study: true, time: null, dead: null, lost: false };
   }
@@ -185,13 +203,21 @@ class ResultsPage {
     return this.lifeline(mite).in_study;
   }
 
-  // "died at 10 min", "alive at 20 min (censored)" or "left out: never seen moving".
+  // "died at 10 min", "alive at 20 min (censored)" or "left out: never seen moving";
+  // for a mite added during the run, with how long after it was added.
   survivalText(mite) {
-    const { in_study: inStudy, time, dead, lost } = this.lifeline(mite);
+    const { in_study: inStudy, time, dead, lost, added, lived } = this.lifeline(mite);
     if (!inStudy) return "left out: never seen moving";
-    if (lost) return `alive at ${minutes(time)}, then gone (censored)`;
     if (time == null) return "–";
-    return dead ? `died at ${minutes(time)}` : `alive at ${minutes(time)} (censored)`;
+    const since = added == null ? "" : `, ${minutes(lived)} after it was added at ${minutes(added)}`;
+    if (lost) return `alive at ${minutes(time)}${since}, then gone (censored)`;
+    return dead ? `died at ${minutes(time)}${since}` : `alive at ${minutes(time)}${since} (censored)`;
+  }
+
+  // Under the survival numbers, when a live run added mites: whose clock they are on.
+  addedNote() {
+    return this.results.started && Object.keys(this.results.started).length
+      ? " A mite added during the run counts its time from the recording it was added in, as if that were the first: the survival curves and the LT50s are in time since each mite was first followed." : "";
   }
 
   // The mite's id, as a link when `href`, greyed out and struck through when left out.

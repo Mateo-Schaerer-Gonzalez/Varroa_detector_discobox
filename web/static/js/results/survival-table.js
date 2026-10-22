@@ -54,7 +54,7 @@ class SurvivalTable {
     <b>Mites</b> are those in the study. <b>Dead</b> is how many of the group's mites died; <b>expected dead</b> how many would have, had they died at the rate of the control's.
     <b>LT50</b> is the time from the first recording by which half the mites are dead: the first recording in which the Kaplan–Meier curve of Fig. 2
     is at 50% or below, with its 95% confidence interval from where the curve's band first reaches 50%; <i>&gt;</i> marks one not reached by the last recording.
-    The p values are not corrected for testing several groups.${this.page.timeDomain() ? " While the run goes on, the test takes the recordings so far." : ""}
+    The p values are not corrected for testing several groups.${this.page.addedNote()}${this.page.timeDomain() ? " While the run goes on, the test takes the recordings so far." : ""}
     Select a zone number to open the zone.`;
   }
 

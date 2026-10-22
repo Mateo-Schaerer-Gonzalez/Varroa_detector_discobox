@@ -112,6 +112,13 @@ def test_the_pages_are_told_which_calls_are_the_users_and_where_a_mite_is_gone()
     assert first["mean_score"] == 1.5 and first["max_score"] == 2.0  # not the scores of an empty spot
     [zone] = described["zones"]
     assert zone["n_seen"] == [3, 2, 2, 2] and zone["rests"] is None  # no rest through a recording not seen
+    assert "n_followed" not in zone  # every mite was there from the first recording
+
+
+def test_a_mite_added_later_is_not_gone_before_it_was_added():
+    added = {**results(), "censored": {"2": [0, 1]}, "started": {"2": 2}}
+    [zone] = MovementReport(added).describe()["zones"]
+    assert zone["n_seen"] == [2, 2, 3, 3] and zone["n_followed"] == [2, 2, 3, 3]
 
 
 def test_a_rest_is_not_counted_through_a_recording_in_which_the_mite_was_gone():

@@ -1035,6 +1035,7 @@ def _describe_calibration(data_dir, coords_file=None, names=None):
                     "x": round(float((mite.x1 + mite.x2) / 2), 1),
                     "y": round(float((mite.y1 + mite.y2) / 2), 1),
                     "r": round(float((mite.x2 - mite.x1) / 2), 1),
+                    "start": mite.start,  # the recording a live run added it in: 0 but for one added later
                 }
             )
     if not mites:
@@ -2350,7 +2351,8 @@ def _observations(dataset, dataset_key, scores, benchmark=None, outline=None):
     With `benchmark` (its calls, see _dataset_benchmark()), each row also says
     what the benchmark called it; with `outline` ({changes, calls}, each mite id
     to one per recording, see _between_recordings()), the outline's change from
-    the recording before and what it calls it."""
+    the recording before and what it calls it. A mite a live run added later
+    has no rows before it was added, where nothing of it was saved."""
     times = dataset["times"]
     n_recordings = len(times)
     groups = {zone["id"]: zone["label"] or UNLABELED for zone in dataset["zones"]}
@@ -2362,7 +2364,10 @@ def _observations(dataset, dataset_key, scores, benchmark=None, outline=None):
         if calibration.is_rejected(states):
             n_rejected += 1
             continue
+        start = mite.get("start", 0)
         for recording, movement in enumerate(states):
+            if recording < start:
+                continue
             if movement is None:
                 n_unlabelled += 1
                 continue
@@ -2378,6 +2383,7 @@ def _observations(dataset, dataset_key, scores, benchmark=None, outline=None):
                     "y": mite["y"],
                     "recording": recording,
                     "time": times[recording],
+                    "start": start,
                     "movement": movement,
                     "score": scores[mite["id"]][recording],
                     **({} if benchmark is None else {

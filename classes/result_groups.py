@@ -42,6 +42,15 @@ class ResultGroups:
         """The mites of the zones `zone_ids`, zone by zone."""
         return [mite for zone_id in zone_ids for mite in self._mites.get(zone_id, [])]
 
+    @property
+    def any_added(self):
+        """Whether a live run added mites after the first recording."""
+        return any(self._started.values())
+
+    def start(self, mite):
+        """The recording the mite's follow-up starts in: 0 but for a mite added later."""
+        return self._started.get(mite["id"], 0)
+
     def censored(self, mite):
         """Per recording, whether the user marked the mite gone in it, e.g. fallen
         off (classes/call_corrections.py)."""
@@ -55,7 +64,7 @@ class ResultGroups:
         seen = self._seen.get(mite["id"])
         if seen is None:
             seen = Calls([None if gone else moving for moving, gone in zip(mite["moving"], self.censored(mite))],
-                         self._started.get(mite["id"], 0))
+                         self.start(mite))
             self._seen[mite["id"]] = seen
         return seen
 

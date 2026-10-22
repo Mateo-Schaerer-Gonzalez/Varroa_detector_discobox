@@ -16,10 +16,13 @@ class MitePage extends ResultsPage {
     this.breadcrumb([["Results", ctx.href("results")], [this.zoneName(zone), ctx.href(`zone/${zone.id}`)], [`Mite ${mite.id}`, ""]]);
 
     const nCorrected = mite.corrected.filter(Boolean).length;
-    const nAside = mite.censored.filter((gone, i) => gone && this.setAside(mite, i)).length;
-    const nGone = mite.censored.filter(Boolean).length - nAside;
+    // A mite a live run added later is not gone before then, only not added yet.
+    const nNotYet = this.notAddedYet(mite);
+    const nAside = mite.censored.filter((gone, i) => gone && i >= nNotYet && this.setAside(mite, i)).length;
+    const nGone = mite.censored.filter((gone, i) => gone && i >= nNotYet).length - nAside;
     const { STATES, STATE_NAMES } = ResultsPage;
     const movingNote = [
+      nNotYet ? `added in the run at ${minutes(times[nNotYet])}` : "",
       nCorrected ? `${nCorrected} call${nCorrected === 1 ? "" : "s"} corrected by hand` : "",
       nGone ? `gone in ${nGone} more` : "",
       nAside ? `set aside in ${nAside} more (disturbed)` : "",
@@ -39,7 +42,7 @@ class MitePage extends ResultsPage {
     </header>
 
     <div class="stats">
-      ${stat("Moving in", `${mite.n_moving}/${times.length - nGone}`, movingNote ? `recordings; ${movingNote}` : "recordings above the threshold")}
+      ${stat("Moving in", `${mite.n_moving}/${times.length - nNotYet - nGone}`, movingNote ? `recordings; ${movingNote}` : "recordings above the threshold")}
       ${stat("Last movement", this.lastMovementText(mite), mite.n_moving ? "last recording with movement" : "no movement in any recording")}
       ${stat("Survival", this.survivalText(mite), this.inStudy(mite) ? (this.lifeline(mite).dead ? "time of death" : this.lifeline(mite).lost ? "right-censored where it was last there" : "right-censored") : "")}
       ${stat("Max motion score", score(mite.max_score), `mean ${score(mite.mean_score)} · threshold ${score(results.threshold)}${this.normalizedNote()}`)}
@@ -61,10 +64,10 @@ class MitePage extends ResultsPage {
           <td class="num">${minutes(t)}</td>
           <td class="num">${score(mite.scores[i])}</td>
           <td>${this.callBadge(mite, i)}${review.mark(mite, i)}</td>
-          <td><select class="state-select" data-correct="${i}" aria-label="Mite ${esc(mite.id)} at ${minutes(t)}"
+          <td>${this.unfollowed(mite, i) ? "" : `<select class="state-select" data-correct="${i}" aria-label="Mite ${esc(mite.id)} at ${minutes(t)}"
             title="Set by hand what the mite is in this recording. Gone, e.g. fallen off: censored, in this recording or from it on.">
             ${STATES.map((state) => `<option value="${state}"${state === this.callState(mite, i) ? " selected" : ""}>${STATE_NAMES[state]}</option>`).join("")}
-          </select></td></tr>`).join("")}</tbody>
+          </select>`}</td></tr>`).join("")}</tbody>
       </table></div>
       <p class="caption">A mite <i>gone</i> in a recording, e.g. one that fell off the plate, is censored there: it counts neither as moving nor as still.
         One gone from a recording on leaves the survival numbers at the recording before, alive as far as is known, unless it counted as dead by then.</p>`)}`;
@@ -94,7 +97,7 @@ class MitePage extends ResultsPage {
         width: 1.5,
         pointColors: mite.moving.map((moving, i) => token(mite.censored[i] ? "--muted" : moving ? "--moving" : "--still")),
       }],
-      tooltipExtra: (i) => `<div class="tip-note">${mite.censored[i] ? "gone" : mite.moving[i] ? "moving" : "still"}${mite.corrected[i] ? ", corrected by hand" : mite.to_check.includes(i) ? ", to check" : ""}</div>`,
+      tooltipExtra: (i) => `<div class="tip-note">${this.unfollowed(mite, i) || (mite.censored[i] ? "gone" : mite.moving[i] ? "moving" : "still")}${mite.corrected[i] ? ", corrected by hand" : mite.to_check.includes(i) ? ", to check" : ""}</div>`,
     });
   }
 

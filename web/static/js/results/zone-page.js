@@ -48,9 +48,9 @@ class ZonePage extends ResultsPage {
     ${mites.length ? `<div class="block">${figure("chart-zone-moving", 2, "Mites moving", `Fraction of this zone's mites moving in each recording, with the whole group for comparison where the group spans several zones. Click a time to show that recording.${this.stillToCome()}`)}</div>` : ""}
 
     ${mites.length ? `<div class="block">${figure("chart-zone-alive", 3, "Survival rate", `Survival rate of this zone's mites in each recording, with the whole group for comparison where the group spans several zones.
-      ${this.aliveBandNote()} ${this.deathRule()} ${this.leftOutNote(survival.n_left_out)}${this.aliveLiveNote()} Click a time to show that recording.${this.stillToCome()}`, "", this.deathControl())}</div>` : ""}
+      ${this.aliveBandNote()} ${this.deathRule()} ${this.leftOutNote(survival.n_left_out)}${this.aliveLiveNote()}${this.addedNote()} Click a time to show that recording.${this.stillToCome()}`, "", this.deathControl())}</div>` : ""}
 
-    ${mites.length ? `<div class="block">${figure("chart-zone-lifelines", 4, "Lifelines", `One line per mite, from the first recording to its death (×) or,
+    ${mites.length ? `<div class="block">${figure("chart-zone-lifelines", 4, "Lifelines", `One line per mite, from the first recording (or the one it was added in, during a live run) to its death (×) or,
       for a mite still alive in the last recording, to there (○, right-censored: it lived at least that long). The dots on a line are the recordings in which the mite moved.
       The death times follow the rule of Fig. 3. ${this.leftOutNote(survival.n_left_out)}Hover a line's end for its numbers; select it to open the mite.${this.stillToCome()}`)}</div>` : ""}
 
@@ -99,7 +99,12 @@ class ZonePage extends ResultsPage {
           ? [{ name: `all “${group}”`, values: groupCurve.moving.map((v) => (v == null ? null : v * 100)), color: token("--muted"), dashed: true, markers: false }]
           : []),
       ],
-      tooltipExtra: (i) => `<div class="tip-note">${zone.n_moving[i]} of ${zone.n_seen[i]} mites moving${zone.n_seen[i] < mites.length ? `, ${mites.length - zone.n_seen[i]} gone` : ""}</div>`,
+      tooltipExtra: (i) => {
+        // A live run's mites added later are not gone before then, only not there yet.
+        const followed = zone.n_followed ? zone.n_followed[i] : mites.length;
+        return `<div class="tip-note">${zone.n_moving[i]} of ${zone.n_seen[i]} mites moving${zone.n_seen[i] < followed ? `, ${followed - zone.n_seen[i]} gone` : ""}${
+          followed < mites.length ? `, ${mites.length - followed} not added yet` : ""}</div>`;
+      },
     });
   }
 
@@ -122,8 +127,9 @@ class ZonePage extends ResultsPage {
     });
   }
 
-  // One row per mite, first on top: a line from the first recording to its death
-  // (×) or its censoring in the last recording (○), with a dot where it moved. A
+  // One row per mite, first on top: a line from the first recording (or the one it
+  // was added in) to its death (×) or its censoring in the last recording (○), on
+  // the run's clock, with a dot where it moved. A
   // mite left out has no line, only its id greyed out. The lifelines are the
   // server's (results.survival.mites).
   drawLifelines(color, mites) {
@@ -135,12 +141,12 @@ class ZonePage extends ResultsPage {
     const notes = [];
     mites.forEach((mite, index) => {
       const y = rowY(index);
-      const { in_study: inStudy, time, dead } = this.lifeline(mite);
+      const { in_study: inStudy, time, dead, added } = this.lifeline(mite);
       if (!inStudy) {
         notes.push({ y, text: "never seen moving: left out" });
         return;
       }
-      lines.push({ points: [[times[0], y], [time, y]], color, width: 2 });
+      lines.push({ points: [[added ?? times[0], y], [time, y]], color, width: 2 });
       mite.moving.forEach((moving, recording) => {
         if (moving) points.push({ x: times[recording], y, color: token("--moving"), shape: "circle", r: 3.25 });
       });

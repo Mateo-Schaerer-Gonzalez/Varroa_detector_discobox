@@ -89,7 +89,9 @@ class MovementReport:
                            to_check (the recordings to check by eye, the latest
                            first; see classes/review_band.py)
             zones        + n_moving (mites moving per recording), n_seen (mites there
-                           per recording, not gone), n_moving_observations,
+                           per recording, not gone), with mites a live run added later
+                           n_followed (per recording, the mites added by then: those
+                           of them not seen are gone), n_moving_observations,
                            n_never_moved, overall_mean_score and rests (see zone_rests());
                            None for a zone without mites
             group_rows   [{group, zones (ids), n_mites, moving_scores}] for the groups
@@ -128,9 +130,13 @@ class MovementReport:
             return {"n_moving": None, "n_seen": None, "n_moving_observations": None, "n_never_moved": None,
                     "overall_mean_score": None, "rests": None}
         censored = [self.groups.censored(mite) for mite in mites]
+        followed = {}
+        if self.groups.any_added:
+            followed["n_followed"] = [sum(1 for mite in mites if self.groups.start(mite) <= recording) for recording in range(len(self.times))]
         return {
             "n_moving": [sum(1 for mite in mites if mite["moving"][recording]) for recording in range(len(self.times))],
             "n_seen": [sum(1 for gone in censored if not gone[recording]) for recording in range(len(self.times))],
+            **followed,
             "n_moving_observations": sum(MovementStats.moving_count(mite["moving"]) for mite in mites),
             "n_never_moved": sum(1 for mite in mites if not any(mite["moving"])),
             "overall_mean_score": MovementStats.mean([score for mite in mites for score in self.seen_scores(mite)]),

@@ -427,7 +427,13 @@ plate a new mite is on. Then *Add N mites* (or *Cancel*). They are
 followed from the next recording on, numbered after the mites of their zone
 (mite `13.7` after `13.6`). Before then they count as not there (censored, as
 a mite marked gone), and their survival is counted from the recording they
-were added in, as if it were their first.
+were added in, as if it were their first: the survival curves, the mites alive
+beside them, the LT50s and the log-rank tests (and the calibration's survival)
+are in time since each mite was first followed. Its lifeline is drawn on the
+run's clock from when it was added, and its page says "died at 80 min, 20 min
+after it was added at 60 min". Before it was added, and once it counts as dead,
+its recordings say *not added yet* / *dead, not followed* (in the playback too,
+where its square is black: nothing was saved) and cannot be set by hand.
 
 **Mites counted dead.** After each recording, every mite that counts as dead by
 the *Dead when still for* rule (a mite never seen moving too, once still that

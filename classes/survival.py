@@ -22,6 +22,10 @@ was gone in between says nothing: the mite did not move in it, as far as is know
 A mite a live run added later (classes/follow_up.py) has None in the
 recordings before it, and its own clock: its follow-up starts at the recording
 it was added in (`Calls.start`), and the time it lived is counted from there.
+The survival curves, their counts of mites alive, the LT50s and the log-rank
+tests are all on that clock: time since each mite's follow-up started, which
+for the mites found at the start is the run's own. A lifeline is drawn on the
+run's clock, from when the mite was added.
 
 SurvivalAnalysis applies that rule; SurvivalReport describes it for the result
 pages: the survival rate over time per group and per zone, each mite's lifeline,
@@ -147,6 +151,14 @@ class SurvivalAnalysis:
                 counts[recording] += 1
         return counts
 
+    def alive_numbers(self, movings):
+        """How many of the mites are alive at each recording's time on the clock
+        of survival(), as alive_percent() counts them: alive_counts() when every
+        mite was there from the first recording, but a mite added later counts
+        from its own start, as if it had been there from the first."""
+        survivals = [self.survival(moving) for moving in movings]
+        return [sum(1 for time, dead in survivals if (time > at if dead else time >= at)) for at in self.times]
+
     def alive_percent(self, movings):
         """The share of the mites alive in each recording, in percent; None
         throughout without mites. With a mite gone before the last recording it
@@ -172,8 +184,9 @@ class SurvivalAnalysis:
         which at most 50% of them are alive, the median of the Kaplan-Meier curve.
         Its 95% confidence interval runs from the first recording in which the low
         bound of alive_ci() is at most 50% to the first in which the high bound
-        is. As {estimate, low, high}, in minutes from the first recording; each
-        None when it is not reached by the last recording."""
+        is. As {estimate, low, high}, in minutes from the first recording (from
+        its own start for a mite added later, see survival()); each None when it
+        is not reached by the last recording."""
         def first_at_most_half(percents):
             for time, percent in zip(self.times, percents):
                 if percent is not None and percent <= 50:
@@ -193,12 +206,18 @@ class SurvivalAnalysis:
         recording, or the last before it was gone) is censored there: all that
         is known is that it lived at least that long. A mite added later
         counts its time from the recording it was added in, as if that were the first."""
+        recording, dead = self.end_of_life(moving)
+        zero = self.times[start_of(moving)] - self.times[0] if self.times else 0  # 0 but for a mite added later
+        return self.times[recording] - zero, dead
+
+    def end_of_life(self, moving):
+        """(recording, dead): the recording survival() puts the mite's death or
+        censoring at."""
         end = self.followed(moving)
         until = self.alive_until(moving)
-        zero = self.times[start_of(moving)] - self.times[0] if self.times else 0  # 0 but for a mite added later
         if until < end:
-            return self.times[until + 1] - zero, True
-        return self.times[max(end, 0)] - zero, False
+            return until + 1, True
+        return max(end, 0), False
 
     def counts_dead(self, moving):
         """Whether a mite followed to the last recording counts as dead there:
@@ -291,9 +310,9 @@ class SurvivalReport:
                             interval (see alive_ci()), of its n_mites in the study;
                             n_left_out were never seen moving
             zones           {zone id: {alive, alive_ci, n_alive, n_mites, n_left_out}}: the
-                            same per zone, and how many are alive
-            mites           {mite id: {in_study, time, dead, lost}}: each mite's lifeline,
-                            see lifeline()
+                            same per zone, and how many are alive (alive_numbers())
+            mites           {mite id: {in_study, time, dead, lost[, added, lived]}}: each
+                            mite's lifeline, see lifeline()
             n_left_out      the mites never seen moving, left out
             log_rank        the groups against the negative controls, see log_rank()
         """
@@ -304,7 +323,7 @@ class SurvivalReport:
             zones[zone["id"]] = {
                 "alive": analysis.alive_percent(movings),
                 "alive_ci": analysis.alive_ci(movings),
-                "n_alive": analysis.alive_counts(movings),
+                "n_alive": analysis.alive_numbers(movings),
                 **self.counts([zone["id"]]),
             }
         groups = []
@@ -333,12 +352,21 @@ class SurvivalReport:
         """{in_study, time, dead, lost}: when a mite in the study died, or the
         time of the last recording of its follow-up when it is still alive then
         (right-censored, dead False): the last recording, or with `lost` the last
-        before the mite was gone. time and dead None for a mite left out."""
+        before the mite was gone. time and dead None for a mite left out.
+        `time` is on the run's clock. A mite added later also has `added`, the
+        time of the recording it was added in, and `lived`, the minutes from
+        then to `time` (its time on the clock of the survival curves)."""
         if not SurvivalAnalysis.in_study(moving):
             return {"in_study": False, "time": None, "dead": None, "lost": False}
         time, dead = self.analysis.survival(moving)
         lost = not dead and SurvivalAnalysis.followed(moving) < len(moving) - 1
-        return {"in_study": True, "time": time, "dead": dead, "lost": lost}
+        start = start_of(moving)
+        if not start:
+            return {"in_study": True, "time": time, "dead": dead, "lost": lost}
+        times = self.analysis.times
+        time = times[self.analysis.end_of_life(moving)[0]]
+        return {"in_study": True, "time": time, "dead": dead, "lost": lost,
+                "added": times[start], "lived": round(time - times[start], 2)}
 
     def log_rank(self):
         """Every group, its zones pooled, against the zones ticked as negative

@@ -53,6 +53,7 @@ class PlaybackPage extends ResultsPage {
     <p class="caption">Each square is a mite's box and a few pixels round it, as recorded (not moved back by the plate's shake), every frame of each recording
       in real time at 1×; between two recordings the time the box waited is skipped. The time is at the top, with the frame and the recording.
       A square's edge is the mite's call in the recording playing: ${Markup.movingBadge(true)} or ${Markup.movingBadge(false)}, grey where it is gone or set aside.
+      A mite added during a live run is black before it was added, and one counted dead is black once it is no longer followed: nothing of them was saved there.
       The fly-offs, left out of the analysis, are at the end of their zone. Select a mite to open it.</p>`;
     this.wireBar();
     this.load(false);
@@ -213,7 +214,12 @@ class PlaybackPage extends ResultsPage {
       const mite = byId.get(miteId);
       let state = "gone";
       let text = "–";
-      if (mite && recording < mite.moving.length) {
+      const unfollowed = mite && recording < mite.moving.length ? this.unfollowed(mite, recording) : null;
+      if (unfollowed) {
+        // a live run's mite not added yet, or counted dead: nothing saved, the square is black
+        state = unfollowed === "not added yet" ? "gone" : "still";
+        text = unfollowed;
+      } else if (mite && recording < mite.moving.length) {
         const call = this.callState(mite, recording);
         const aside = this.setAside(mite, recording);
         state = aside || call.startsWith("gone") ? "gone" : call;

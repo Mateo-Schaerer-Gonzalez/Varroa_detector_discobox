@@ -173,6 +173,9 @@ def test_a_mite_dies_at_the_first_labelled_recording_after_its_last_movement():
     # Moving in its last labelled recording: censored there.
     assert mite_survival(survival_rows("a", ["still", "moving", None, None], [0] * 4), times, by_label) == (10, False)
     assert mite_survival(survival_rows("a", ["still"] * 4, [0] * 4), times, by_label) is None
+    # A mite a live run added at 10 min counts its time from there, as the result pages do.
+    added = [{**row, "start": 1} for row in survival_rows("a", [None, "moving", "still", "still"], [0] * 4)]
+    assert mite_survival(added, times, by_label) == (10, True)  # dead at 20 min, 10 min after it was added
 
 
 def test_survival_curves_by_the_labels_and_the_detector_leave_out_mites_never_moving():

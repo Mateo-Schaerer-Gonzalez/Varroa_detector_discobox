@@ -41,7 +41,7 @@ class OverviewPage extends ResultsPage {
     <div class="block">
       ${figure("chart-group-alive", 2, "Survival rate by group",
         `Survival rate of each group's mites in each recording, pooling every zone with that label. ${this.aliveBandNote()} ${this.deathRule()}
-        ${this.leftOutNote(results.survival.n_left_out)}${this.aliveLiveNote()}
+        ${this.leftOutNote(results.survival.n_left_out)}${this.aliveLiveNote()}${this.addedNote()}
         Click a time to show that recording.${this.stillToCome()}`, "", this.deathControl())}
     </div>
 
