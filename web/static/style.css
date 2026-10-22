@@ -614,8 +614,6 @@ table.clickable tbody tr:hover, table.clickable tbody tr:focus-visible { backgro
     linear-gradient(-45deg, transparent 44%, #ffb52e 44%, #ffb52e 56%, transparent 56%);
 }
 .poke-map.no-round .poke-mite { opacity: 0.5; }
-/* added to the live run only after the round shown: not there to poke */
-.poke-mite.not-added, .poke-mite.not-added:hover { width: 18px; height: 18px; margin: -9px 0 0 -9px; border: 2px dotted var(--muted); opacity: 0.45; cursor: not-allowed; }
 .poke-rounds li.current { box-shadow: inset 3px 0 0 var(--ink); padding-left: 8px; }
 .poke-rounds button.group-name {
   padding: 0; font: inherit; font-weight: 500; text-align: left;

@@ -182,11 +182,12 @@ class TruthPage {
     this.drawRings();
   }
 
-  // The whole plate, small: the zones, a dot per mite by its status in the
-  // recording on screen, and the mite on screen marked.
+  // The whole plate, small, as in the recording on screen (the frame mites were
+  // added on, once a live run added some): the zones, a dot per mite by its
+  // status there, none for a mite not added yet, and the mite on screen marked.
   drawMap() {
     const map = $("truth-map");
-    const place = PlateView.overlay(map, cal.fileUrl(cal.data.preview), cal.data.image);
+    const place = PlateView.overlay(map, cal.fileUrl(cal.previewFor(cal.recording)), cal.data.image);
     cal.data.zones.forEach((zone) => {
       const first = cal.mites(zone.id)[0];
       if (!first) return;
@@ -221,6 +222,7 @@ class TruthPage {
       const off = groundTruth.unfollowed(mite, cal.recording);
       dot.className = `mite-dot ${state === "not_a_mite" ? "rejected" : off ? "not-followed" : state || "unset"}${mite === here ? " current" : ""}`;
       dot.title = `Mite ${mite.id}${off ? `: ${off}` : ""}`;
+      dot.hidden = off === "not added yet" && mite !== here;  // not on the plate shown yet
     });
   }
 

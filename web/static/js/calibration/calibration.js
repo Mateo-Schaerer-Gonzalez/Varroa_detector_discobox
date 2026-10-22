@@ -50,6 +50,15 @@ class Calibration {
     return this.data.n_recordings;
   }
 
+  // The picture of the plate to draw recording `recording`'s mites on: the first
+  // frame, or from when a live run added mites, the frame they were found on (the
+  // server's data.previews, one per recording).
+  previewFor(recording) {
+    const { previews, preview } = this.data;
+    if (!previews?.length) return preview;
+    return previews[Math.min(Math.max(recording, 0), previews.length - 1)];
+  }
+
   mites(zoneId) {
     return this.data.mites.filter((mite) => mite.zone_id === zoneId);
   }
@@ -140,7 +149,7 @@ class Calibration {
       const data = await post(`/api/calibration/${id}/grow`, {});
       if (id !== this.id || !this.showsLive() || data.dataset_id !== this.datasetId) return;
       const mitesChanged = JSON.stringify(data.mites) !== JSON.stringify(this.data.mites);
-      Object.assign(this.data, { times: data.times, n_recordings: data.n_recordings, recordings: data.recordings, mites: data.mites });
+      Object.assign(this.data, { times: data.times, n_recordings: data.n_recordings, recordings: data.recordings, mites: data.mites, previews: data.previews });
       groundTruth.take(data.truth_view);
       if (location.hash.startsWith("#/cal/truth")) {
         if (mitesChanged) truthPage.draw(String(this.miteId), String(this.recording));

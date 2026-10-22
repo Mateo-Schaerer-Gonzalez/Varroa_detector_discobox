@@ -6,7 +6,7 @@
 // once, and what it does is the server's (classes/poke_test.py).
 
 class PokePage {
-  static NAMES = { moved: "moved", unmoved: "did not move", unset: "not poked", "not-added": "added to the run after this round: not there to poke" };
+  static NAMES = { moved: "moved", unmoved: "did not move", unset: "not poked" };
 
   constructor() {
     this.view = null;                // the server's view of the poke test; null until loaded
@@ -94,15 +94,24 @@ class PokePage {
 
   // --- the plate
 
-  // The zones, each with its number to click, and a ring round every mite that can be poked.
+  // The picture of the plate as at the round shown: poked before recording
+  // `after` + 1, so as that recording (Calibration.previewFor()).
+  roundPreview() {
+    return cal.previewFor(this.round() ? this.after + 1 : 0);
+  }
+
+  // The zones, each with its number to click, and a ring round every mite that can
+  // be poked, on the plate as at the round shown.
   drawMap() {
     const map = $("poke-map");
-    const place = PlateView.overlay(map, cal.fileUrl(cal.data.preview), cal.data.image);
+    this.shownPreview = this.roundPreview();
+    const place = PlateView.overlay(map, cal.fileUrl(this.shownPreview), cal.data.image);
     const poked = new Set(this.view.mites);
     cal.data.zones.forEach((zone) => {
       if (!cal.mites(zone.id).some((mite) => poked.has(mite.id))) return;
       const box = document.createElement("div");
       box.className = "zone poke-zone";
+      box.dataset.zoneId = zone.id;
       Object.assign(box.style, place(zone.x1, zone.y1, zone.x2, zone.y2));
       const number = document.createElement("button");
       number.type = "button";
@@ -152,12 +161,17 @@ class PokePage {
     this.drawBrush();
     this.drawRounds();
     const round = this.round();
+    if (this.roundPreview() !== this.shownPreview) this.drawMap();
+    // A mite added to a live run after the round has no ring: it is not on the plate yet.
+    const later = new Set(round?.not_added_ids || []);
     document.querySelectorAll("#poke-map [data-mite-id]").forEach((ring) => {
-      const later = Boolean(round?.not_added_ids?.includes(ring.dataset.miteId));
-      const state = later ? "not-added" : round?.states[ring.dataset.miteId] || "unset";
+      const state = round?.states[ring.dataset.miteId] || "unset";
       ring.className = `poke-mite ${state}`;
-      ring.disabled = later;
+      ring.hidden = later.has(ring.dataset.miteId);
       ring.title = `Mite ${ring.dataset.miteId}: ${PokePage.NAMES[state]}`;
+    });
+    document.querySelectorAll("#poke-map .poke-zone").forEach((box) => {
+      box.hidden = cal.mites(Number(box.dataset.zoneId)).every((mite) => later.has(mite.id) || !this.view.mites.includes(mite.id));
     });
     $("poke-map").classList.toggle("no-round", !round);
   }

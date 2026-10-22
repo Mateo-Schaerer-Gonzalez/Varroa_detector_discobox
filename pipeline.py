@@ -973,6 +973,9 @@ def _calibration_view(stored, truth):
         "dataset_id": dataset_id(stored["data_dir"]),
         "recordings_available": Path(stored["data_dir"]).is_dir(),
         "preview": PREVIEW_NAME,
+        # the picture to draw each recording's mites on (_added_previews()); the first frame
+        # throughout for a session written before it had them
+        "previews": stored.get("previews") or [PREVIEW_NAME] * len(stored["times"]),
         "image": stored["image"],
         "n_recordings": len(stored["times"]),
         "times": stored["times"],
@@ -1014,8 +1017,28 @@ def _calibration_session(data_dir, coords_file, out_dir, names=None):
     With `names`, only the recordings of those names make the session."""
     stored, first_frame = _describe_calibration(data_dir, coords_file, names)
     _write_preview(first_frame, out_dir)
+    stored["previews"] = _added_previews(data_dir, out_dir, len(stored["times"]))
     _write_calibration_session(out_dir, stored)
     return stored
+
+
+def _added_previews(data_dir, out_dir, n_recordings):
+    """The picture of the plate for each recording, for the calibration pages to
+    draw the mites on: the first frame (PREVIEW_NAME), or from a recording a live
+    run added mites in, the frame they were found on (live_add_mites()), copied
+    to `out_dir` as preview_from_<recording>.jpg. So a mite has no ring before
+    it is there to see."""
+    previews = [PREVIEW_NAME] * n_recordings
+    folder = Path(data_dir) / ADDED_FRAMES_DIRNAME
+    added = sorted((int(path.stem.split("_")[1]), path) for path in folder.glob("from_*.jpg")
+                   if path.stem.split("_")[1].isdigit()) if folder.is_dir() else []
+    for start, path in added:
+        if start >= n_recordings:
+            continue
+        name = f"preview_from_{start}.jpg"
+        shutil.copyfile(path, Path(out_dir) / name)  # anew: `out_dir` may have shown another dataset
+        previews[start:] = [name] * (n_recordings - start)
+    return previews
 
 
 def _describe_calibration(data_dir, coords_file=None, names=None):
@@ -2968,6 +2991,9 @@ FIND_MITES_SPARE = 20
 # Pixels round a mite already followed in which a blob found is that mite.
 FOUND_MITE_REACH = 4
 ADD_PREVIEW_NAME = "add_mites.jpg"
+# In a live run's folder: the frame mites were added on, from_<recording>.jpg, the
+# recording they were added in (live_add_mites(), _added_previews()).
+ADDED_FRAMES_DIRNAME = "added_frames"
 
 _live = {}  # live id -> the run's parts
 _live_lock = threading.Lock()
@@ -3106,6 +3132,7 @@ def open_live(live_id, out_dir, run_name, camera_id=None, serial_port="auto", sa
             save_frames=bool(save_frames),
             coords_file=coords_file, layout=layout, feed=(None, None), feed_lock=threading.Lock(), started_at=None,
             preview_written=False, files_due=None, zones=[], stop_reason=None, finding=threading.Lock(),
+            found_frame=None,  # the lit frame the mites to add were last found on (live_find_mites())
         )
         run.analysis = analysis = MotionAnalysis(_live_zone_manager(run))
         run.session = LiveSession(live_source, analysis, publish=lambda session, write: _publish_live(run, write),
@@ -3435,6 +3462,7 @@ def grow_live_calibration(out_dir, live_id):
     if Path(stored["data_dir"]) == run.run_dir.resolve() and len(names) > len(stored["recordings"]):
         described, _first_frame = _describe_calibration(run.run_dir, run.coords_file, names)
         stored.update({key: described[key] for key in ("times", "recordings", "mites")})
+        stored["previews"] = _added_previews(run.run_dir, out_dir, len(stored["times"]))
         _write_calibration_session(out_dir, stored)
         draft = _draft(out_dir)
         with _drafts_lock:
@@ -3490,6 +3518,7 @@ def live_find_mites(live_id):
                 run.session.resume()
         found = _new_mites(run, image)
         zones = _add_zones(run, found)
+        run.found_frame = image
     finally:
         run.finding.release()
     _write_image(Path(run.out_dir) / ADD_PREVIEW_NAME, image, [cv2.IMWRITE_JPEG_QUALITY, 85])
@@ -3573,7 +3602,10 @@ def _new_mites(run, image):
 
 def live_add_mites(live_id, boxes):
     """Follow the mites of `boxes` ([x1, y1, x2, y2] each, as live_find_mites()
-    found them) from the next recording on, numbered after those of their zone."""
+    found them) from the next recording on, numbered after those of their zone.
+    The frame they were found on is kept with the run's recordings
+    (ADDED_FRAMES_DIRNAME), so the calibration pages show the plate with them
+    from that recording on (_added_previews())."""
     run = _get_live(live_id)
     if run.session.state not in ("running", "paused"):
         raise ValueError("Mites can be added while the test run is going on.")
@@ -3586,6 +3618,13 @@ def live_add_mites(live_id, boxes):
         checked.append(tuple(int(value) for value in box))
     with run.session.lock:
         run.analysis.add_mites(checked)
+        start = len(run.analysis.placed)  # the recording they are added in: the next to begin
+    if checked and run.save_frames and run.found_frame is not None:
+        try:  # several additions before one recording: the last frame shows them all
+            (run.run_dir / ADDED_FRAMES_DIRNAME).mkdir(parents=True, exist_ok=True)
+            _write_image(run.run_dir / ADDED_FRAMES_DIRNAME / f"from_{start}.jpg", run.found_frame, [cv2.IMWRITE_JPEG_QUALITY, 90])
+        except Exception:
+            _logger.exception("Could not keep the frame the mites were added on")
     return live_status(live_id)
 
 

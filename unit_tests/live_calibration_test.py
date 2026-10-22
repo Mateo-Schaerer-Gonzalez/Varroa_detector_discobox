@@ -86,3 +86,16 @@ def test_a_run_needs_its_first_recording_analysed_and_saved(tmp_path, monkeypatc
     with pytest.raises(ValueError, match="does not save its recordings"):
         pipeline.open_live_calibration("unsaved", tmp_path / "cal")
     pipeline.close_live("unsaved")
+
+
+def test_from_the_recording_mites_were_added_in_the_plate_is_drawn_from_the_frame_they_were_found_on(tmp_path):
+    data_dir, out_dir = tmp_path / "run", tmp_path / "out"
+    (data_dir / pipeline.ADDED_FRAMES_DIRNAME).mkdir(parents=True)
+    out_dir.mkdir()
+    for start in (2, 4, 9):  # the one added in recording 9 is not in the 5 recordings analysed yet
+        (data_dir / pipeline.ADDED_FRAMES_DIRNAME / f"from_{start}.jpg").write_bytes(b"jpeg %d" % start)
+    previews = pipeline._added_previews(data_dir, out_dir, 5)
+    first = pipeline.PREVIEW_NAME
+    assert previews == [first, first, "preview_from_2.jpg", "preview_from_2.jpg", "preview_from_4.jpg"]
+    assert (out_dir / "preview_from_4.jpg").read_bytes() == b"jpeg 4" and not (out_dir / "preview_from_9.jpg").exists()
+    assert pipeline._added_previews(tmp_path / "folder", out_dir, 3) == [first] * 3  # no mites added
