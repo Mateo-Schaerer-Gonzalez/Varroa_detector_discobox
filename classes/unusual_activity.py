@@ -313,19 +313,37 @@ class UnusualActivity:
         then every fly-off: its displacement until it flew off (after that its
         image is gone and it says nothing), `flew_off` the recording it left its
         place in and `walk` the way it walked ((dx, dy), one long; None where
-        its track has it nowhere else)."""
+        its track has it nowhere else).
+
+        A live run's mite added later is measured against its own first
+        recording, where its path starts at 0: it is set against its zone's path
+        from there (`zone_dx`, `zone_dy` as seen from its start, None before),
+        and has `start`. The zone's path is the median of its first mites'; a
+        mite added later joins it shifted by where that path was at its start."""
         dx, dy = self.values["dx"], self.values["dy"]
         zones = {}
         for m in kept:
             zones.setdefault(self.mites[m]["zone"], []).append(m)
+        offsets = {}  # mite index -> (x, y): where its zone's path was when it was added
+        zone_drift = {}
         with warnings.catch_warnings():  # a recording none of a zone's mites was measured in (a live run's dead ones): NaN
             warnings.simplefilter("ignore", RuntimeWarning)
-            zone_drift = {z: (np.nanmedian(dx[members], axis=0), np.nanmedian(dy[members], axis=0))
-                          for z, members in zones.items()}
+            for z, members in zones.items():
+                first = min(self.starts[m] for m in members)
+                base = [m for m in members if self.starts[m] == first]
+                path = (np.nanmedian(dx[base], axis=0), np.nanmedian(dy[base], axis=0))
+                later = [m for m in members if self.starts[m] != first]
+                for m in later:
+                    offsets[m] = (self._at_start(path[0], self.starts[m]), self._at_start(path[1], self.starts[m]))
+                if later:  # every mite on the first ones' reference
+                    path = (np.nanmedian(np.vstack([dx[base]] + [dx[m] + offsets[m][0] for m in later]), axis=0),
+                            np.nanmedian(np.vstack([dy[base]] + [dy[m] + offsets[m][1] for m in later]), axis=0))
+                zone_drift[z] = path
         ranked = []
         for m in kept:
             zx, zy = zone_drift[self.mites[m]["zone"]]
-            away = np.hypot(dx[m] - zx, dy[m] - zy)
+            ox, oy = offsets.get(m, (0.0, 0.0))
+            away = np.hypot(dx[m] + ox - zx, dy[m] + oy - zy)
             if np.isnan(away).all():
                 continue
             ranked.append((float(np.nanpercentile(away, 95)), m))
@@ -335,16 +353,31 @@ class UnusualActivity:
         def row(m, away, until=None):
             zone = zone_drift.get(self.mites[m]["zone"])
             cut = lambda values: rounded(values[:until]) + [None] * (self.n - until) if until is not None else rounded(values)
-            return {"id": self.ids[m], "zone": self.mites[m]["zone"], "x": round(float(self.centres[m][0]), 1),
-                    "y": round(float(self.centres[m][1]), 1), "away": away,
-                    "dx": cut(dx[m]), "dy": cut(dy[m]),
-                    "zone_dx": rounded(zone[0]) if zone else nowhere,
-                    "zone_dy": rounded(zone[1]) if zone else nowhere}
+            described = {"id": self.ids[m], "zone": self.mites[m]["zone"], "x": round(float(self.centres[m][0]), 1),
+                         "y": round(float(self.centres[m][1]), 1), "away": away,
+                         "dx": cut(dx[m]), "dy": cut(dy[m]),
+                         "zone_dx": rounded(zone[0]) if zone else nowhere,
+                         "zone_dy": rounded(zone[1]) if zone else nowhere}
+            start = int(self.starts[m])
+            if start and zone:  # the zone's path as the mite sees it: from where it was when the mite was added
+                ox, oy = offsets.get(m, (0.0, 0.0))
+                before = [None] * start
+                described.update({"start": start,
+                                  "zone_dx": before + rounded(zone[0][start:] - ox),
+                                  "zone_dy": before + rounded(zone[1][start:] - oy)})
+            return described
 
         movers = [row(m, round(away, 3)) for away, m in sorted(ranked, reverse=True)[:TOP_MOVERS]]
         for m, start in sorted(self.flown.items(), key=lambda item: item[1]):
             movers.append({**row(m, None, start), "flew_off": int(start), "walk": self._walk(m)})
         return movers
+
+    @staticmethod
+    def _at_start(path, start):
+        """Where a zone's `path` (per recording, NaN where unmeasured) was when a
+        mite was added in `start`: there, else the last measured before, else 0."""
+        known = np.flatnonzero(~np.isnan(path[:start + 1]))
+        return float(path[known[-1]]) if len(known) else 0.0
 
     def _walk(self, m):
         """The way the fly-off `m` walked off: from its place to the first point

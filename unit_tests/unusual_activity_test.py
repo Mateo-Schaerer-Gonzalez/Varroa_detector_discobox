@@ -159,6 +159,24 @@ class TestPlateShake:
         assert movers[0]["dx"][-1] == round(0.2 * (len(TIMES) - 1), 3)
 
 
+    def test_a_mite_added_later_is_set_against_its_zone_from_when_it_was_added(self):
+        # The plate drifts 0.3 px a recording; mite 1.3, added at recording 6, drifts with it,
+        # measured against its own first image there: it is no drifter.
+        def drift(mite_id, r):
+            if mite_id == "1.3":
+                return seen(dx=0.3 * (r - 6)) if r >= 6 else {}
+            return seen(dx=0.3 * r)
+
+        drifting = mites(drift)
+        for mite in drifting:
+            if mite["id"] == "1.3":
+                mite["start"], mite["activity"] = 6, [None] * 6 + mite["activity"][6:]
+        movers = {row["id"]: row for row in UnusualActivity(drifting, blobs(), TIMES).describe()["movers"]}
+        added = movers["1.3"]
+        assert added["away"] == 0 and added["start"] == 6
+        assert added["zone_dx"][:6] == [None] * 6 and added["zone_dx"][6:] == [round(0.3 * k, 3) for k in range(6)]
+        assert movers["1.1"]["away"] == 0 and "start" not in movers["1.1"]
+
 class TestMiteLook:
     def frames(self, angle, dx=0.0):
         image = np.full((40, 40), 200, np.float32)

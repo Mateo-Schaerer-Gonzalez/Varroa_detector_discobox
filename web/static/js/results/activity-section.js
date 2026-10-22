@@ -58,7 +58,7 @@ class ActivitySection {
         Each mite's patch is moved back by the plate's shift, the median of all the mites' own, before it is scored.
         Click a time to show that recording.${this.page.stillToCome()}`)}</div>
       <div class="block">${figure("activity-movers", first + 1, `The ${movers.length} mites that drifted furthest`,
-        `Each mite's path across the recordings: where its image sits against its image in the first recording (px, py, in pixels), from light (first recording) to dark (last), starting on the mite's centre.
+        `Each mite's path across the recordings: where its image sits against its image in the first recording (px, py, in pixels; for a mite added during a live run, the recording it was added in, and its zone from there), from light (first recording) to dark (last), starting on the mite's centre.
         Behind the path, the mite's outline in the first recording, at the same scale (the bar, bottom left), to read how far and which way it drifted against its body;
         <i>Path</i> zooms in until the path fills the square, the outline with it.
         The mites are ranked by how far they sit from their zone's median path, what the plate under them did
@@ -210,15 +210,19 @@ class ActivitySection {
 
   // Each mite's outline handed to `found(svg, outline)`, zone by zone as the server
   // sends them. Where it has none (no frames kept), the path stays alone.
+  // Each mover's outline in its first recording: the run's first, or the one a live
+  // run added it in (mover.start), where its path starts.
   async drawMoverOutlines(grid, plots, found) {
     const { sessionId } = ctx;
-    for (const zone of new Set([...plots.values()].map((mover) => String(mover.zone)))) {
-      const outlines = await this.outlines(0, zone);
+    const first = (mover) => `${mover.start || 0}/${mover.zone}`;
+    for (const key of new Set([...plots.values()].map(first))) {
+      const [recording, zone] = key.split("/");
+      const outlines = await this.outlines(Number(recording), zone);
       if (!grid.isConnected || ctx.sessionId !== sessionId) return;
       if (!outlines) continue;
       plots.forEach((mover, svg) => {
         const outline = outlines[mover.id];
-        if (String(mover.zone) === zone && outline && outline.dots.length) found(svg, outline);
+        if (first(mover) === key && outline && outline.dots.length) found(svg, outline);
       });
     }
   }
