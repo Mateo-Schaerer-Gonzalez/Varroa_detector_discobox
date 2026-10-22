@@ -66,17 +66,20 @@ class AddMites {
     const status = $("run-status");
     this.busy = true;
     labelPage.drawRunButton();
+    let added = false;
     try {
       live.status = await post(`/api/live/${live.id}/add-mites`, { boxes });
-      this.message = `${plural(boxes.length, "mite")} will be followed from the next recording on.`;
-      this.finish();
+      added = true;
     } catch (error) {
       status.className = "hint error";
       status.textContent = error.message;
     } finally {
-      this.busy = false;
-      if (this.active) labelPage.drawRunButton();
+      this.busy = false;  // before the panel is drawn again, or it shows the search still going on
     }
+    if (added) {
+      this.message = `${plural(boxes.length, "mite")} will be followed from the next recording on.`;
+      this.finish();
+    } else if (this.active) labelPage.drawRunButton();
   }
 
   cancel() {
