@@ -9,7 +9,7 @@ import yaml
 
 import pipeline
 from pipeline import run_results
-from pipeline.calibration import calibration_report
+from pipeline.calibration import suggested_band
 import reference
 from classes import app_config
 from classes.app_config import MiteConfig, get_default_config
@@ -22,7 +22,7 @@ THRESHOLD = 3.5
 BAND = ReviewBand(2.5, 4.5)
 # as pipeline has them, before conftest.py keeps the other tests' runs and reports from them
 REVIEW = run_results.review_calls
-KEEP_BAND_SHAPE = calibration_report._keep_band_shape
+KEEP_BAND_SHAPE = suggested_band.keep_shape
 
 
 def calls(scores):

@@ -35,8 +35,10 @@ call; scripts may also import a module for its helpers.
     pipeline/calibration/report_rows.py              the rows a calibration report is made of
     pipeline/calibration/movement_score.py           the metric, parameters and threshold in use
     pipeline/calibration/calibration_report.py       the calibration report
+    pipeline/calibration/suggested_band.py           the band of calls to check by eye a report suggests
     pipeline/live/live_runs.py                       the live runs open, and what their parts share
-    pipeline/live/live_setup.py                      before a live run: settings, camera, name, labels; closing it
+    pipeline/live/live_settings.py                   a test run's settings, and what the live page offers
+    pipeline/live/live_setup.py                      opening a live run: camera, name, labels, lights; closing it
     pipeline/live/live_capture.py                    a live run going on: start, stop, results after every recording
     pipeline/live/add_mites.py                       adding mites during a live run
     pipeline/live/live_calibration.py                entering ground truth on a live run as it goes
@@ -79,11 +81,15 @@ from pipeline.calibration.dataset_library import (
 )
 from pipeline.calibration.score_cache import mite_boxes
 from pipeline.calibration.movement_score import movement_scores, save_threshold, save_movement_score
-from pipeline.calibration.calibration_report import REVIEW_CHECKS, evaluate_calibration
+from pipeline.calibration.calibration_report import evaluate_calibration
+from pipeline.calibration.suggested_band import REVIEW_CHECKS
 from pipeline.live.live_runs import CameraError, LiveRunNotOpen, live_status, live_results, live_running
+from pipeline.live.live_settings import (
+    LIVE_SETTINGS_FILE, live_options, print_cameras, default_run_name, save_live_settings, live_plan,
+)
 from pipeline.live.live_setup import (
-    LIVE_SETTINGS_FILE, live_options, print_cameras, default_run_name, save_live_settings, live_plan, open_live,
-    set_live_options, live_preview, live_read_labels, set_live_light, live_frame, close_live, close_all_live,
+    open_live, set_live_options, live_preview, live_read_labels, set_live_light, live_frame, close_live,
+    close_all_live,
 )
 from pipeline.live.live_capture import (
     start_live, live_correct_call, live_refresh, pause_live, resume_live, stop_live,

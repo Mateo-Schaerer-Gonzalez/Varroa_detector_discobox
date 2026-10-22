@@ -19,6 +19,9 @@ recording.
 import logging
 import threading
 import time
+from dataclasses import dataclass, field
+from pathlib import Path
+from typing import Optional
 
 from classes.live import camera as live_camera
 from classes.live.progress import RunProgress
@@ -40,7 +43,33 @@ LEDS = ("led1", "led2")
 LIGHTS_SETTLE = 1.5
 
 
-open_runs = {}  # live id -> the run's parts
+@dataclass(eq=False)
+class LiveRun:
+    """One open live run: what its parts share. live_setup.open_live() makes it."""
+    live_id: str
+    source: "CameraSource"            # the camera's frames and the test run's schedule (classes/live/sources.py)
+    lights: "Lights"                  # the fan and LEDs (classes/live/lights.py)
+    run_dir: Path                     # recordings/<run name>/, where its recordings go; renamed with the run
+    out_dir: Path                     # where its results go
+    results_root: Optional[Path]      # results/ when out_dir is results/<run name>/ and follows a rename
+    new_results: bool                 # out_dir was made for this run, so a rename moves it
+    save_frames: bool                 # its recordings are saved (the mites' ROIs); else only analysed
+    coords_file: Optional[str]        # its zones, when not those of `layout`
+    layout: "ZoneLayout"              # one zone per plate or two
+    analysis: "MotionAnalysis" = None  # the analysis core it feeds, set right after
+    session: "LiveSession" = None     # capture and analysis in their threads, set right after
+    feed: tuple = (None, None)        # ((frame count, width), JPEG) of the live feed last encoded
+    feed_lock: threading.Lock = field(default_factory=threading.Lock)
+    started_at: Optional[str] = None  # when start_live() started it
+    preview_written: bool = False     # its first frame is in out_dir as the preview
+    files_due: Optional[float] = None  # when its workbook and figures are written next (time.monotonic())
+    zones: list = field(default_factory=list)  # the zones' progress (ZoneProgress.zones())
+    stop_reason: Optional[str] = None  # why it stopped by itself, if it did
+    finding: threading.Lock = field(default_factory=threading.Lock)  # held while mites to add are looked for
+    found_frame: object = None        # the lit frame the mites to add were last found on (add_mites.py)
+
+
+open_runs = {}  # live id -> its LiveRun
 open_runs_lock = threading.Lock()
 
 

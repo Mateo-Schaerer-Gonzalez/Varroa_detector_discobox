@@ -1,71 +1,27 @@
-"""Before a live run starts: its settings, opening the camera, naming the run,
-labelling the plates on the live feed; and closing it after.
+"""Opening a live run: the camera, the fan and LEDs, naming the run, labelling
+the plates on the live feed, checking the lights; and closing it after.
 """
 
 import re
 import shutil
-import threading
-from datetime import date
 from pathlib import Path
-from types import SimpleNamespace
 
 import cv2
 
 from classes.analyzer import Analyzer
 from classes.live import camera as live_camera
-from classes.live.lights import DEVICES, open_lights, serial_ports
+from classes.live.lights import DEVICES, open_lights
 from classes.live.session import LiveSession
-from classes.live.settings import RANGES as SETTING_RANGES, Settings
+from classes.live.settings import Settings
 from classes.live.sources import CameraSource
 from classes.motion_analysis import MotionAnalysis, detect_mites
 from classes.roi_recordings import open_recordings
 from classes.zone_layout import ZoneLayout
 from pipeline import folder_analysis, output_files, paths, plate_labels, preview_images
-from pipeline.live import live_capture, live_runs
-
-
-LIVE_SETTINGS_FILE = paths.APP_DIR / "settings.txt"
+from pipeline.live import live_capture, live_runs, live_settings
 
 
 LIVE_FEED_WIDTH = 960
-
-
-def _setting_ranges():
-    return {name: {"label": label, "unit": unit, "min": low, "max": high}
-            for name, (label, unit, low, high) in SETTING_RANGES.items()}
-
-
-def live_options(settings_path=LIVE_SETTINGS_FILE, recordings_root=paths.RECORDINGS_ROOT):
-    """What the live page offers before a run: the cameras (or why there are none),
-    the serial ports, the saved test-run settings with their ranges, and a run
-    name not taken yet."""
-    cameras, camera_error = [], None
-    try:
-        cameras = live_camera.list_cameras()
-    except live_camera.CameraError as error:
-        camera_error = str(error)
-    return {
-        "cameras": cameras,
-        "camera_error": camera_error,
-        "serial_ports": serial_ports(),
-        "settings": Settings.from_file(settings_path).as_dict(),
-        "plan": Settings.from_file(settings_path).plan(),
-        "ranges": _setting_ranges(),
-        "run_name": default_run_name(recordings_root),
-        "recordings_root": str(recordings_root),
-        "open": [live_runs.live_status(live_id) for live_id in list(live_runs.open_runs)],
-    }
-
-
-def print_cameras():
-    """Print every camera Vimba X sees, as the Discobox app's --list does."""
-    live_camera.print_cameras()
-
-
-def default_run_name(recordings_root=paths.RECORDINGS_ROOT):
-    """test_run_<today>, as the Discobox app names a run, with a number added if
-    that name is taken."""
-    return paths.free_name(f"test_run_{date.today():%Y-%m-%d}", recordings_root, "_")
 
 
 def _run_dir_for(run_name, recordings_root):
@@ -81,30 +37,8 @@ def _run_dir_for(run_name, recordings_root):
     return run_dir
 
 
-def save_live_settings(values, live_id=None, settings_path=LIVE_SETTINGS_FILE):
-    """Change the saved test-run settings (only the names in `values`), checked
-    against their ranges; with an open live run not started yet, it uses them
-    too."""
-    settings = Settings.from_dict({**Settings.from_file(settings_path).as_dict(), **values})
-    run = live_runs.open_runs.get(live_id) if live_id else None
-    if run is not None and run.session.state != "ready":
-        raise ValueError("The settings cannot change while the test run is going on.")
-    settings.save(settings_path)
-    if run is not None:
-        run.source.settings = settings
-        if settings.zones_per_plate != run.layout.zones_per_plate:
-            _set_live_layout(run, ZoneLayout(settings.zones_per_plate))
-    return settings.as_dict()
-
-
-def live_plan(settings):
-    """Settings.plan() of `settings` (name -> value): how long each recording and
-    the whole test run take."""
-    return Settings.from_dict(settings).plan()
-
-
 def open_live(live_id, out_dir, run_name, camera_id=None, serial_port="auto", save_frames=True,
-              settings_path=LIVE_SETTINGS_FILE, settings=None, recordings_root=paths.RECORDINGS_ROOT,
+              settings_path=live_settings.LIVE_SETTINGS_FILE, settings=None, recordings_root=paths.RECORDINGS_ROOT,
               results_root=paths.RESULTS_ROOT, coords_file=None):
     """Open the camera, with the fan and LEDs, for a live run called `run_name`,
     whose recordings go to recordings_root/run_name and whose results go to
@@ -120,27 +54,9 @@ def open_live(live_id, out_dir, run_name, camera_id=None, serial_port="auto", sa
     (name -> value, e.g. {"death_minutes": 240}) overriding them for this run only. Its
     zones per plate are among them."""
     with live_runs.open_runs_lock:
-        for other_id, other in list(live_runs.open_runs.items()):
-            if other.session.state in live_runs.LIVE_STATES:
-                raise ValueError(f"The test run {other.run_dir.name} is still going on; stop it first.")
-            _close_live(other_id)
-
+        _close_all_but_running()
         settings = Settings.from_dict({**Settings.from_file(settings_path).as_dict(), **(settings or {})})
-        camera_id = live_camera.choose_camera(camera_id)
-        lights = open_lights(serial_port)
-        live_source = CameraSource(camera_id, settings, lights)
-        layout = ZoneLayout(settings.zones_per_plate)
-
-        run_dir = None
-        try:
-            run_dir = _run_dir_for(run_name, recordings_root)
-            run_dir.mkdir(parents=True)
-            live_source.open()
-        except Exception:
-            lights.close()
-            if run_dir is not None:
-                shutil.rmtree(run_dir, ignore_errors=True)
-            raise
+        source, lights, run_dir = _open_camera(camera_id, serial_port, settings, run_name, recordings_root)
         # Without its LEDs the Discobox is dark: both stay on, for the camera's
         # image and for labelling, until the run starts and switches them itself.
         live_runs.leds_on(lights, settings)
@@ -150,22 +66,47 @@ def open_live(live_id, out_dir, run_name, camera_id=None, serial_port="auto", sa
         out_dir = paths.results_dir(run_dir, results_root) if own_results else Path(out_dir)
         new_results = not out_dir.exists()
         paths.clear_clips(out_dir)
+        layout = ZoneLayout(settings.zones_per_plate)
         # With the run's folder from the start: its plate labels go by the layout.
         layout.save(run_dir)
-        run = SimpleNamespace(
-            live_id=live_id, source=live_source, lights=lights, run_dir=run_dir,
-            out_dir=out_dir, results_root=Path(results_root) if own_results else None, new_results=new_results,
-            save_frames=bool(save_frames),
-            coords_file=coords_file, layout=layout, feed=(None, None), feed_lock=threading.Lock(), started_at=None,
-            preview_written=False, files_due=None, zones=[], stop_reason=None, finding=threading.Lock(),
-            found_frame=None,  # the lit frame the mites to add were last found on (live_find_mites())
-        )
-        run.analysis = analysis = MotionAnalysis(live_runs.live_zone_manager(run))
-        run.session = LiveSession(live_source, analysis,
+        run = live_runs.LiveRun(live_id=live_id, source=source, lights=lights, run_dir=run_dir, out_dir=out_dir,
+                                results_root=Path(results_root) if own_results else None, new_results=new_results,
+                                save_frames=bool(save_frames), coords_file=coords_file, layout=layout)
+        run.analysis = MotionAnalysis(live_runs.live_zone_manager(run))
+        run.session = LiveSession(source, run.analysis,
                                   publish=lambda session, write: live_capture.publish_live(run, write),
                                   on_finish=lambda session: live_capture.live_run_ended(run))
         live_runs.open_runs[live_id] = run
     return live_runs.live_status(live_id)
+
+
+def _close_all_but_running():
+    """Close every live run open, refused while one is going on: only one can be
+    open. Called holding live_runs.open_runs_lock."""
+    for other_id, other in list(live_runs.open_runs.items()):
+        if other.session.state in live_runs.LIVE_STATES:
+            raise ValueError(f"The test run {other.run_dir.name} is still going on; stop it first.")
+        _close_live(other_id)
+
+
+def _open_camera(camera_id, serial_port, settings, run_name, recordings_root):
+    """(source, lights, run_dir): the camera streaming (a CameraSource), the fan
+    and LEDs, and the new folder of the run called `run_name`. On a failure,
+    the lights are closed and the folder removed again."""
+    camera_id = live_camera.choose_camera(camera_id)
+    lights = open_lights(serial_port)
+    source = CameraSource(camera_id, settings, lights)
+    run_dir = None
+    try:
+        run_dir = _run_dir_for(run_name, recordings_root)
+        run_dir.mkdir(parents=True)
+        source.open()
+    except Exception:
+        lights.close()
+        if run_dir is not None:
+            shutil.rmtree(run_dir, ignore_errors=True)
+        raise
+    return source, lights, run_dir
 
 
 def set_live_options(live_id, run_name=None, save_frames=None):
@@ -199,16 +140,6 @@ def _rename_live(run, run_name):
             shutil.copytree(old, run.out_dir, dirs_exist_ok=True)
             if made:  # results of an earlier recording of the old name are not this run's to remove
                 shutil.rmtree(old, ignore_errors=True)
-
-
-def _set_live_layout(run, layout):
-    """Cut the plates of a live run not started yet into other zones: nothing is
-    analysed yet, so its analysis starts again on them."""
-    with run.session.lock:
-        run.layout = layout
-        layout.save(run.run_dir)
-        run.analysis = run.session.analysis = MotionAnalysis(live_runs.live_zone_manager(run))
-    paths.clear_clips(run.out_dir)
 
 
 def live_preview(live_id, out_dir=None):

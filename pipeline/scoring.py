@@ -99,10 +99,13 @@ def metric_pad(mite):
 
 
 def run_view(analysis, frames, data_dir=None):
-    """`frames`: what was saved of the recordings, for the pages: "whole"
-    frames, or the mites' "rois" alone (classes/roi_recordings.py); `data_dir`
-    the recordings' folder, where a live run keeps the frames mites were added
-    on (preview_images.added_previews())."""
+    """A run (`analysis`, a MotionAnalysis) as the results are described from
+    it: its zones and mites, analyzer, first frame (whole and masked), number of
+    recordings, unusual activity and recording times. `frames`: what was saved
+    of the recordings, for the pages: "whole" frames, or the mites' "rois" alone
+    (classes/roi_recordings.py), or "none"; `data_dir` the recordings' folder,
+    where a live run keeps the frames mites were added on
+    (preview_images.added_previews())."""
     return SimpleNamespace(
         frames=frames,
         data_dir=data_dir,
