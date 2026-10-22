@@ -2939,6 +2939,10 @@ LIVE_STATES = ("running", "paused", "stopping")
 LEDS = ("led1", "led2")
 # Seconds for the camera's automatic exposure to follow the LEDs coming on.
 LIGHTS_SETTLE = 1.5
+# The same when lighting the plates to find mites to add (_lit_frame()): between
+# recordings the camera has been in the dark, its exposure at its longest, and it
+# takes longer to come down than LIGHTS_SETTLE.
+FIND_MITES_SETTLE = 4
 # Seconds to spare before the next recording's cycle starts, for lighting the
 # plates to find mites to add (live_find_mites()).
 FIND_MITES_SPARE = 15
@@ -3473,7 +3477,7 @@ def _lit_frame(run):
         if lights.connected:
             for device in LEDS:
                 lights.switch(device, True, getattr(settings, device))
-            time.sleep(LIGHTS_SETTLE)
+            time.sleep(FIND_MITES_SETTLE)
             count, _image = run.source.latest.get()
         deadline = time.monotonic() + 5
         while time.monotonic() < deadline:  # a frame taken with the LEDs on
