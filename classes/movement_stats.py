@@ -59,14 +59,17 @@ class MovementStats:
 
     @classmethod
     def box_stats(cls, values):
-        """Quartiles and Tukey whiskers: the furthest values within 1.5 box lengths."""
+        """Quartiles and Tukey whiskers: the furthest values within 1.5 box lengths,
+        never inside the box. The quartiles lie between values, so with few the
+        furthest value in reach can be inside the box; the whisker then stops at
+        its edge."""
         ordered = sorted(values)
         q1, median, q3 = cls.quartiles(ordered)
         reach = 1.5 * (q3 - q1)
         return {
             "q1": q1, "median": median, "q3": q3,
-            "lo": next(v for v in ordered if v >= q1 - reach),
-            "hi": next(v for v in reversed(ordered) if v <= q3 + reach),
+            "lo": min(q1, next(v for v in ordered if v >= q1 - reach)),
+            "hi": max(q3, next(v for v in reversed(ordered) if v <= q3 + reach)),
         }
 
 

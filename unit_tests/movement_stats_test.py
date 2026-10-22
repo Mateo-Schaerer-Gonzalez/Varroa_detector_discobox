@@ -24,6 +24,10 @@ def test_quartiles_and_whiskers():
     box = MovementStats.box_stats(values)
     assert box == {"q1": 2, "median": 3, "q3": 4, "lo": 1, "hi": 4}  # 100 is past the whisker
     assert MovementStats.quantile([5], 0.5) == 5
+    # Fig. 4's poke test 2: q3 (1.0) lies between 0.68 and 2.0, past which 2.0 is out
+    # of reach; the whisker stops at the box, not at 0.68 inside it
+    box = MovementStats.box_stats([0.28, 0.48, 0.68, 2.0])
+    assert box["hi"] == box["q3"] == 0.68 + (2.0 - 0.68) * 0.25 and box["lo"] == 0.28
 
 
 def results():

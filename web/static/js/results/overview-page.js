@@ -61,7 +61,7 @@ class OverviewPage extends ResultsPage {
 
     <div class="block">${figure("chart-moving-scores", 4, "Motion scores of moving mites by group",
       `Only the recordings in which a mite moved, so the many still ones do not pull the distribution down: how strongly each group's mites move when they do.
-      The box spans the middle half of these scores with a line at the median; the whiskers reach the furthest scores within 1.5 box lengths.
+      The box spans the middle half of these scores with a line at the median; the whiskers reach the furthest scores within 1.5 box lengths, and stop at the box where no score lies between.
       The number is how many moving mite-recordings the row holds. Same scale as Fig. 3. Hover a box for its numbers; select a point to open that mite in that recording.`)}</div>
 
     <div class="block">${figure("chart-intervals", 5, "Rest between movements, per zone",
