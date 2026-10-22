@@ -72,6 +72,18 @@ def test_a_mite_added_is_numbered_after_its_zone_and_scored_from_the_next_record
     assert run.boxes_of(added) == [None, (500, 350, 510, 360), (500, 350, 510, 360)]
 
 
+
+def test_mites_added_together_are_numbered_in_reading_order_and_keep_the_order_they_were_added_in():
+    run = analysis([[]])
+    # given scrambled: lower right, upper left, upper right, lower left (all in the first mites' zone)
+    boxes = [(470, 345, 480, 355), (330, 320, 340, 330), (470, 320, 480, 330), (330, 345, 340, 355)]
+    run.run(event for event in _add_after_first(run, stream(3), boxes))
+    zone = run.mites[0].text.split(".")[0]
+    added = run.mites[2:]
+    assert [tuple(mite) for mite in added] == boxes  # the order of a saved run's index
+    # left to right, line by line, after the zone's two
+    assert [mite.text for mite in added] == [f"{zone}.6", f"{zone}.3", f"{zone}.4", f"{zone}.5"]
+
 def _add_after_first(run, events, boxes):
     for event in events:
         yield event

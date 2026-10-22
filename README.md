@@ -424,7 +424,7 @@ the run waits meanwhile; the camera is given 10 s to follow the LEDs), detects
 the mites and shows those not followed yet on the label page, over that frame,
 as before the run: a ring each, all kept; click one to leave it out, and name a
 plate a new mite is on. Then *Add N mites* (or *Cancel*). They are
-followed from the next recording on, numbered after the mites of their zone
+followed from the next recording on, numbered after the mites of their zone, those added together in reading order (left to right, line by line, as the first frame's)
 (mite `13.7` after `13.6`). Before then they count as not there (censored, as
 a mite marked gone), and their survival is counted from the recording they
 were added in, as if it were their first: the survival curves, the mites alive

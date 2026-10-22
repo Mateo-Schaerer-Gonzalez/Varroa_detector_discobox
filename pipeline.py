@@ -144,7 +144,7 @@ from classes.unusual_activity import UnusualActivity
 from classes.upload_plan import UploadPlan
 from classes.workers import one_ahead, side_by_side
 from classes.zone_layout import ZoneLayout
-from classes.zones import UNLABELED, ZoneManager
+from classes.zones import UNLABELED, ZoneManager, mites_in_reading_order
 
 _logger = logging.getLogger(__name__)
 
@@ -3554,9 +3554,12 @@ def _add_zones(run, found):
                 followed[zone.id] += 1
     controls = set(load_controls(run.run_dir))
     numbered = dict(followed)
-    for mite in found:
-        numbered[mite["zone_id"]] += 1
-        mite["id"] = f"{mite['zone_id']}.{numbered[mite['zone_id']]}"
+    # in reading order within each zone, as they will be numbered (MotionAnalysis._add_all())
+    boxes = [SimpleNamespace(**{key: mite[key] for key in ("x1", "y1", "x2", "y2")}, found=mite) for mite in found]
+    for zone_id in dict.fromkeys(mite["zone_id"] for mite in found):
+        for box in mites_in_reading_order([box for box in boxes if box.found["zone_id"] == zone_id]):
+            numbered[zone_id] += 1
+            box.found["id"] = f"{zone_id}.{numbered[zone_id]}"
     for zone in zones:
         zone["control"] = zone["id"] in controls
         zone["followed"] = followed.get(zone["id"], 0)

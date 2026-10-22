@@ -33,6 +33,7 @@ import numpy as np
 from classes.analyzer import Analyzer
 from classes.frame_source import Frame, frame_times, recordings
 from classes.mite import Mite
+from classes.zones import mites_in_reading_order
 
 DETECTION_LOCK = threading.Lock()
 # Pixels: a blob nearer than this to a mite's centre leaves its box where it is;
@@ -170,11 +171,11 @@ class MotionAnalysis:
         if not self.started:
             self.detect(frame)
         number = len(self.recording_times)
+        due = []
         while self._later and self._later[0][0] <= number:
-            self._add(self._later.pop(0)[1], number)
+            due.append(self._later.pop(0)[1])
         pending, self._pending = self._pending, []
-        for box in pending:
-            self._add(box, number)
+        self._add_all(due + pending, number)
         self.placed.append(self._place(frame, number))
 
     def add_recording(self, frames):
@@ -211,9 +212,21 @@ class MotionAnalysis:
         """Per recording: the box the mite was scored in, None where it was not followed."""
         return [placed.get(mite) for placed in self.placed]
 
+    def _add_all(self, boxes, number):
+        """The mites of `boxes` added when recording `number` begins, in that
+        order (a saved run's index has them so). Those of a zone are numbered
+        after its mites in reading order, as the first frame's are
+        (ZoneManager.number_mites()): left to right, line by line."""
+        added = [mite for mite in (self._add(box, number) for box in boxes) if mite is not None]
+        for zone in self.zone_manager.zones:
+            new = [mite for mite in added if self._zone_of[id(mite)] is zone]
+            before = len(self._zone_mites[id(zone)]) - len(new) if new else 0
+            for offset, mite in enumerate(mites_in_reading_order(new), start=1):
+                mite.text = f"{zone.id}.{before + offset}"
+
     def _add(self, box, number):
-        """A mite added when recording `number` begins, numbered after the
-        mites of its zone; None when it is in no zone."""
+        """A mite added when recording `number` begins, after the mites of its
+        zone (numbered by _add_all()); None when it is in no zone."""
         with DETECTION_LOCK:
             mite = Mite(*box, config=self.analyzer.config)
         zone = next((zone for zone in self.zone_manager.zones if zone.id is not None and mite in zone), None)

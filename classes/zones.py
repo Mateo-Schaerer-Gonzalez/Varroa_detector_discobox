@@ -109,6 +109,15 @@ def sort_reading_order(zones, row_tolerance=None):
     return [zone for row in rows for zone in sorted(row, key=lambda zone: zone.x1)]
 
 
+def mites_in_reading_order(mites):
+    """Mites (anything with x1, y1, x2, y2) in the order their ids number them:
+    left to right, line by line, a line MITE_LINE_HEIGHTS mite heights tall."""
+    if not mites:
+        return []
+    line = MITE_LINE_HEIGHTS * float(np.median([mite.y2 - mite.y1 for mite in mites]))
+    return sort_reading_order(list(mites), line)
+
+
 class ZoneManager:
     def __init__(self, zones, excluded_types=None):
         self.zones = zones
@@ -254,8 +263,7 @@ class ZoneManager:
         for zone in self.zones:
             if zone.id is None or not zone.mites:
                 continue
-            line = MITE_LINE_HEIGHTS * float(np.median([mite.y2 - mite.y1 for mite in zone.mites]))
-            for number, mite in enumerate(sort_reading_order(zone.mites, line), start=1):
+            for number, mite in enumerate(mites_in_reading_order(zone.mites), start=1):
                 mite.text = f"{zone.id}.{number}"
 
 
