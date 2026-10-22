@@ -132,7 +132,8 @@ class ScoreFigures {
   }
 
   // The rests pooled per zone, one ridge per zone, zones of a group together. The
-  // axis reaches as far as two recordings can be apart.
+  // axis reaches as far as two recordings so far are apart: not to the end of a
+  // live run still going, which would squash the rests seen so far against 0.
   drawRestPeriods() {
     const { times } = this.page.results;
     const ridges = [];
@@ -169,7 +170,7 @@ class ScoreFigures {
     Charts.ridgeline($("chart-intervals"), {
       rows: ridges,
       xMin: 0,
-      xMax: domain ? domain[1] - domain[0] : times[times.length - 1] - times[0],
+      xMax: times[times.length - 1] - times[0],
       xLabel: "Rest of a mite between two movements (min)",
       xFormat: (v) => `${+v.toFixed(1)}`,
       minBandwidth: steps.length ? Charts.quantile(steps, 0.5) / 2 : 0,
