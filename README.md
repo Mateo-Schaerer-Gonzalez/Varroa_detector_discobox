@@ -415,8 +415,10 @@ at most *Most a mite moves between recordings* away (nearest pairs first); a
 mite with no such blob stays where it was, and one off by less than 2 px stays
 put (the detector's jitter). Within a recording its box stays put, as the score
 needs. A mite is still known (labels, ground truth, corrections, its place on
-the plate map, its clips) by where it was found: its clips are cut there, so
-one that walked off shows its old place.
+the plate map) by where it was found, but what is shown of it in a recording
+follows it: its clip, the picture of where its pixels change, its outline on
+the mite page and its square in the playback are cut round where it was in that
+recording, with its ring there.
 
 **Adding mites.** *Add mites* on the panel lights the plates between two
 recordings (it is refused while one is being captured or is about to start;

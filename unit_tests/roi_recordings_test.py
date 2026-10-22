@@ -140,6 +140,29 @@ def test_a_region_holds_the_rois_in_it_black_elsewhere_and_only_an_roi_covers_a_
     assert loader.covers(100, 80, 117, 97) and not loader.covers(0, 0, WIDTH, HEIGHT)
 
 
+def test_a_followed_mites_clip_is_cut_where_it_was_in_that_recording(tmp_path):
+    run_dir, out_dir = tmp_path / "run", tmp_path / "out"
+    moved = (112, 71, 129, 88)  # the first mite, 12 px right and 9 up
+    writer = RoiWriter(run_dir)
+    every = [frames(number) for number in range(3)]
+    writer.start(every[0][0], BOXES, follow=True)
+    for number, boxes in enumerate([BOXES, [moved, *BOXES[1:]], [None, *BOXES[1:]]]):
+        writer.place(boxes)
+        for image in every[number]:
+            writer.add(recording(number), image)
+        writer.end(recording(number))
+    mites = [{"id": "0.1", "x": 108.5, "y": 88.5}]  # where it was found: its box's centre
+
+    clips = [pipeline.analysis_mite_clip(run_dir, out_dir, number, "0.1", mites) for number in range(3)]
+    assert [clip["mite"] for clip in clips] == [{"x": 108.5, "y": 88.5}, {"x": 120.5, "y": 79.5}, {"x": 108.5, "y": 88.5}]
+    assert (clips[1]["x"], clips[1]["y"]) == (round(120.5) - pipeline.MITE_CLIP_REACH, round(79.5) - pipeline.MITE_CLIP_REACH)
+    x, y, side = clips[1]["x"], clips[1]["y"], 2 * pipeline.MITE_CLIP_REACH
+    shown = np.stack([cv2.imread(str(out_dir / name), cv2.IMREAD_GRAYSCALE) for name in clips[1]["frames"]])
+    assert np.array_equal(shown, every[1][:, y:y + side, x:x + side])  # all of it saved, nothing black
+    loader = RoiRecordings(run_dir)
+    assert loader.roi_in(recording(2).name, 108.5, 88.5) is None and loader.roi_in(recording(1).name, 200, 30) is None
+
+
 def test_reading_past_the_margin_is_refused(tmp_path):
     write_session(tmp_path, counts=(2,))
     RoiRecordings(tmp_path).check_margin(ROI_MARGIN)

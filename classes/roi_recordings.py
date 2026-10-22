@@ -409,16 +409,38 @@ class RoiRecordings:
         found them on the whole frames (MotionAnalysis.blobs); None where not."""
         return {recording["name"]: recording.get("blobs") for recording in self.index["recordings"]}
 
-    def roi_at(self, x, y):
-        """The ROI (x1, y1, x2, y2) saved round the mite at (x, y): of the boxes that
-        hold it, the one whose centre is nearest; None when no box does."""
-        holding = [mite for mite in self.index["mites"]
-                   if mite["box"][0] <= x <= mite["box"][2] and mite["box"][1] <= y <= mite["box"][3]]
+    def number_at(self, x, y):
+        """The number of the mite found at (x, y): of the boxes where they were
+        found that hold it, the one whose centre is nearest; None when no box does."""
+        holding = {number: mite["box"] for number, mite in enumerate(self.index["mites"])
+                   if mite["box"][0] <= x <= mite["box"][2] and mite["box"][1] <= y <= mite["box"][3]}
         if not holding:
             return None
-        nearest = min(holding, key=lambda mite: ((mite["box"][0] + mite["box"][2]) / 2 - x) ** 2
-                      + ((mite["box"][1] + mite["box"][3]) / 2 - y) ** 2)
-        return tuple(nearest["roi"])
+        return min(holding, key=lambda number: ((holding[number][0] + holding[number][2]) / 2 - x) ** 2
+                   + ((holding[number][1] + holding[number][3]) / 2 - y) ** 2)
+
+    def roi_at(self, x, y):
+        """The ROI (x1, y1, x2, y2) saved round the mite at (x, y) where it was
+        found (number_at()); None when no box holds it."""
+        number = self.number_at(x, y)
+        return None if number is None else tuple(self.index["mites"][number]["roi"])
+
+    def roi_in(self, name, x, y):
+        """The ROI (x1, y1, x2, y2) saved in recording `name` of the mite found at
+        (x, y) (number_at()), where a live run followed it to; None when no box
+        holds (x, y) or nothing of that mite was saved there."""
+        number = self.number_at(x, y)
+        rect = None if number is None else self.rects_in(name)[number]
+        return None if rect is None or rect[0] is None else tuple(rect)
+
+    def centre_in(self, name, x, y):
+        """(x, y): the centre in recording `name` of the mite found at (x, y)
+        (number_at()), where a live run followed it to; (x, y) itself where the
+        recording does not say or nothing of that mite was saved there."""
+        number = self.number_at(x, y)
+        boxes = self.placements(name)
+        box = None if number is None or boxes is None else boxes[number]
+        return (x, y) if box is None else ((box[0] + box[2]) / 2, (box[1] + box[3]) / 2)
 
     def covers(self, x1, y1, x2, y2):
         """Whether one ROI holds all of (x1, y1)-(x2, y2), inside the image."""

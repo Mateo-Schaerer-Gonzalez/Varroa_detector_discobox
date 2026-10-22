@@ -129,6 +129,19 @@ class MitePage extends ResultsPage {
     $("mite-crop").appendChild(crop);
     this.drawOutlines(crop, zone.id);
     this.playClip(this.miteClipUrl(mite, ctx.shown), $("mite-crop"), $("mite-crop").nextElementSibling,
-      (clip) => ClipPlayer.onSvg(crop, clip));
+      (clip) => {
+        if (clip.mite) MitePage.centreOn(crop, clip.mite, size);
+        return ClipPlayer.onSvg(crop, clip);
+      });
+  }
+
+  // The close-up and the mite's ring moved to where a live run followed the mite
+  // in the recording shown (the clip's "mite"); its outline is drawn there already.
+  static centreOn(crop, at, size) {
+    crop.setAttribute("viewBox", `${at.x - size / 2} ${at.y - size / 2} ${size} ${size}`);
+    crop.querySelectorAll(".mite-marker > circle").forEach((circle) => {
+      circle.setAttribute("cx", at.x);
+      circle.setAttribute("cy", at.y);
+    });
   }
 }

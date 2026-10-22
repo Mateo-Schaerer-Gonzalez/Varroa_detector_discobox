@@ -1179,21 +1179,35 @@ def _variation_picture(frames):
     return np.stack([np.interp(shade, [0.0, 0.5, 1.0], colours[:, channel]) for channel in range(3)], axis=-1).astype(np.uint8)
 
 
+def _where_in(loader, name, mite):
+    """`mite` ({x, y}: where it was found) where it was in recording `name`:
+    where a live run followed it to (RoiRecordings.centre_in()), else where it
+    was found. What is cut round a mite from its frames is cut there."""
+    if not isinstance(loader, RoiRecordings):
+        return mite
+    x, y = loader.centre_in(name, mite["x"], mite["y"])
+    return {**mite, "x": x, "y": y}
+
+
 def _mite_clip(recordings_dir, source, mite, out_dir, name):
     """Every frame of one recording (`source`: {name, fps}) cut MITE_CLIP_REACH
-    pixels around `mite` ({x, y}) and kept as it is (PNG), to judge by eye
-    whether the mite moves, and one picture of how much each pixel varies over
-    them (_variation_picture()). Written to out_dir/clips/ once, with a
-    manifest `name`_x_y.json that later calls reuse; the name says where the
-    cut is, so a mite detected anew elsewhere gets a new clip. Returns the
-    files (relative to `out_dir`), where the cut sits in the image, and the
-    delay between frames that plays them in real time."""
-    x1, y1, x2, y2 = _square(mite, MITE_CLIP_REACH)
+    pixels around `mite` ({x, y}, where it was found) where it was in that
+    recording (_where_in()) and kept as it is (PNG), to judge by eye whether
+    the mite moves, and one picture of how much each pixel varies over them
+    (_variation_picture()). Written to out_dir/clips/ once, with a manifest
+    `name`_x_y.json that later calls reuse; the name says where the cut is, so
+    a mite detected anew elsewhere gets a new clip. Returns the files
+    (relative to `out_dir`), where the cut sits in the image, the mite's centre
+    in it ("mite": {x, y}, in image pixels) and the delay between frames that
+    plays them in real time."""
+    loader = open_recordings(recordings_dir)
+    here = _where_in(loader, source["name"], mite)
+    x1, y1, x2, y2 = _square(here, MITE_CLIP_REACH)
     x1, y1 = max(0, x1), max(0, y1)
     name = f"{name}_x{x1}_y{y1}"
 
     def make():
-        frames = open_recordings(recordings_dir).load_recording_region(source["name"], x1, y1, x2, y2)
+        frames = loader.load_recording_region(source["name"], x1, y1, x2, y2)
         names = [f"{CLIPS_DIRNAME}/{name}_{index:02d}.png" for index in range(len(frames))]
         for frame, frame_name in zip(frames, names):
             write_image(Path(out_dir) / frame_name, frame)
@@ -1206,6 +1220,7 @@ def _mite_clip(recordings_dir, source, mite, out_dir, name):
             "y": y1,
             "width": int(frames.shape[2]),
             "height": int(frames.shape[1]),
+            "mite": {"x": here["x"], "y": here["y"]},
             "interval_ms": int(round(1000 / source["fps"])),
         }
 
@@ -1292,14 +1307,15 @@ def _recording_name(loader, recording):
 
 def analysis_outlines(data_dir, out_dir, recording, zone_id, results):
     """What the score sees of each mite of one zone in one recording of an
-    analysis, for the result pages to draw over the mites: mite id to
+    analysis, where it was in that recording (_where_in()), for the result
+    pages to draw over the mites: mite id to
     OutlineView.describe(), None for a mite it finds no outline of; the
     fly-offs' too (_with_fly_offs()). `results` as run_analysis() gives them.
     Like analysis_clip(), worked out from the frames once, kept in `out_dir`
     under a name that says where the mites are, and reused after."""
     loader = open_recordings(data_dir)
     source = _recording_name(loader, recording)
-    mites = [mite for mite in _with_fly_offs(results) if mite["zone_id"] == zone_id]
+    mites = [_where_in(loader, source, mite) for mite in _with_fly_offs(results) if mite["zone_id"] == zone_id]
     if not mites:
         return {}
 
@@ -1403,9 +1419,9 @@ def playback_sheet(data_dir, out_dir, recording, zone_id, results):
     """Every mite of one zone in every frame of one recording, for the playback
     page: one picture with a row per mite (_with_fly_offs(), the fly-offs
     too) and a column per frame (as playback_timeline() thins them), each
-    2 * playback_reach() pixels square round the mite's centre, black where
-    nothing was saved (of a session saved as the mites' ROIs, beyond the
-    mite's own). `results` as run_analysis() gives them. Returns the picture's
+    2 * playback_reach() pixels square round the mite's centre where it was in
+    that recording (_where_in()), black where nothing was saved (of a session
+    saved as the mites' ROIs, beyond the mite's own there). `results` as run_analysis() gives them. Returns the picture's
     file (relative to `out_dir`), the mites in its rows, the side of a square
     and the frames. Written to out_dir/clips/ once, under a name that says
     where the mites are, and reused after."""
@@ -1415,17 +1431,18 @@ def playback_sheet(data_dir, out_dir, recording, zone_id, results):
     loader = open_recordings(data_dir)
     source = _recording_name(loader, recording)
     reach = playback_reach()
-    name = f"playback_r{recording}_z{zone_id}_s{2 * reach}_{_where_key(mites)}"
+    placed = [_where_in(loader, source, mite) for mite in mites]
+    name = f"playback_r{recording}_z{zone_id}_s{2 * reach}_{_where_key(placed)}"
 
     def make():
         step, side = _playback_step(loader, source), 2 * reach
         n_frames = len(range(0, loader.count_frames(source), step))
         sheet = np.zeros((len(mites) * side, n_frames * side), dtype=np.uint8)
-        for row, mite in enumerate(mites):
-            x1, y1, x2, y2 = _square(mite, reach)
+        for row, (mite, here) in enumerate(zip(mites, placed)):
+            x1, y1, x2, y2 = _square(here, reach)
             cut = [max(0, x1), max(0, y1), x2, y2]
             if isinstance(loader, RoiRecordings):
-                roi = loader.roi_at(mite["x"], mite["y"])
+                roi = loader.roi_in(source, mite["x"], mite["y"])
                 if roi is None:
                     continue
                 cut = [max(cut[0], roi[0]), max(cut[1], roi[1]), min(cut[2], roi[2]), min(cut[3], roi[3])]

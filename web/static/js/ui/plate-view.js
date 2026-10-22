@@ -79,7 +79,8 @@ class PlateView {
     const image = svg.querySelector("image");
     image.setAttribute("x", clip.x);
     image.setAttribute("y", clip.y);
-    svg.appendChild(PlateView.svgEl("circle", { cx: mite.x, cy: mite.y, r: Math.max(ring, mite.r * 2.5), class: ringClass }));
+    const at = clip.mite ?? mite;  // where the mite was in the clip's recording, if a live run followed it
+    svg.appendChild(PlateView.svgEl("circle", { cx: at.x, cy: at.y, r: Math.max(ring, mite.r * 2.5), class: ringClass }));
     return svg;
   }
 

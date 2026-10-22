@@ -73,8 +73,12 @@ followed in hold None (`classes/follow_up.py` turns them into censored/still row
 The user's choices for live runs (2026-10-20), not to be undone:
 - **Following** is live only (folder mode keeps fixed boxes, so references don't change):
   each mite moves to the nearest blob in its zone within `follow_px` (default 50), stays put
-  with none or under 2 px. Clips stay at the first position, even when a walked-off mite
-  then shows an empty clip.
+  with none or under 2 px. **Clips follow the mite** (the user's choice of 2026-10-22,
+  replacing "clips stay at the first position", which showed the ring off the mite and black
+  where its moved ROI no longer reached): a mite's clip, variation picture, outline and
+  playback square are cut round where it was in that recording (`pipeline._where_in()`,
+  `RoiRecordings.centre_in()`/`roi_in()`), and the clip says where (`"mite": {x, y}`) so the
+  pages put the ring there. Everything else (ids, labels, plate map) stays at the first position.
 - **Added mites** (live panel button: LEDs on between recordings, run held, detect, untick,
   confirm) are followed from the next recording, numbered after the zone's mites in reading
   order. Each mite and zone runs on its own clock from when it was added (not
