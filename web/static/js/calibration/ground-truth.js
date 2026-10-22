@@ -54,6 +54,15 @@ class GroundTruth {
     return this.statesOf(mite)[recording] || null;
   }
 
+  // Why there is nothing to label of a live run's mite in a recording: "not added
+  // yet" before it was added, "dead, not followed" once it counted as dead; null
+  // where it was followed (the server's: view.followed, classes/truth_draft.py).
+  unfollowed(mite, recording) {
+    const there = this.view.followed?.[mite.id];
+    if (!there || there[recording]) return null;
+    return recording < there.indexOf(true) || !there.includes(true) ? "not added yet" : "dead, not followed";
+  }
+
   // The view's numbers of one zone: done per recording, counts per recording.
   zone(zoneId) {
     return this.view.zones[zoneId];

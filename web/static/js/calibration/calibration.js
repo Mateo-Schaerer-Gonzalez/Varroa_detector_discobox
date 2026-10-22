@@ -132,16 +132,24 @@ class Calibration {
       ? " · live: each recording is added once the test run has analysed it" : "";
   }
 
-  // The live test run shown analysed another recording: add it, unlabelled.
+  // The live test run shown analysed another recording: add it, unlabelled, and
+  // the mites as the run has them now (added since, or no longer followed).
   async grow() {
     const { id } = this;
     try {
       const data = await post(`/api/calibration/${id}/grow`, {});
       if (id !== this.id || !this.showsLive() || data.dataset_id !== this.datasetId) return;
-      Object.assign(this.data, { times: data.times, n_recordings: data.n_recordings, recordings: data.recordings });
+      const mitesChanged = JSON.stringify(data.mites) !== JSON.stringify(this.data.mites);
+      Object.assign(this.data, { times: data.times, n_recordings: data.n_recordings, recordings: data.recordings, mites: data.mites });
       groundTruth.take(data.truth_view);
-      if (location.hash.startsWith("#/cal/truth")) truthPage.refreshPanel();
-      if (location.hash.startsWith("#/cal/poke")) pokePage.grown();
+      if (location.hash.startsWith("#/cal/truth")) {
+        if (mitesChanged) truthPage.draw(String(this.miteId), String(this.recording));
+        else truthPage.refreshPanel();
+      }
+      if (location.hash.startsWith("#/cal/poke")) {
+        if (mitesChanged) pokePage.draw();
+        else pokePage.grown();
+      }
     } catch {
       // the recordings shown stay; the next one analysed tries again
     }

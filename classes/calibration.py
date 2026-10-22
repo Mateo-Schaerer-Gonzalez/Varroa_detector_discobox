@@ -27,6 +27,16 @@ def _status(state):
     return state if state in TRUTH_STATES else None
 
 
+def followed(mite, recording):
+    """Whether a live run followed `mite` ({start, stop}, as a calibration session
+    stores it) in `recording`: from the recording it was added in ("start", 0 for
+    one found on the first frame) up to the one it counted as dead from ("stop",
+    None when it never did). Outside that nothing of it was saved, so there is
+    nothing to label, poke, score or compare."""
+    stop = mite.get("stop")
+    return mite.get("start", 0) <= recording and (stop is None or recording < stop)
+
+
 def per_recording(truth, n_recordings):
     """A saved status as a list with one entry per recording.
 

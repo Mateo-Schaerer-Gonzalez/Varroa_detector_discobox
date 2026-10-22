@@ -117,8 +117,13 @@ def test_the_pages_are_told_which_calls_are_the_users_and_where_a_mite_is_gone()
 
 def test_a_mite_added_later_is_not_gone_before_it_was_added():
     added = {**results(), "censored": {"2": [0, 1]}, "started": {"2": 2}}
-    [zone] = MovementReport(added).describe()["zones"]
+    described = MovementReport(added).describe()
+    [zone] = described["zones"]
     assert zone["n_seen"] == [2, 2, 3, 3] and zone["n_followed"] == [2, 2, 3, 3]
+    # It runs on its own timer, from the recording it was added in.
+    first, _second, third = described["mites"]
+    assert (third["start"], third["own_times"]) == (2, [0, 10])
+    assert "start" not in first and first["last_movement"] == 10
 
 
 def test_a_rest_is_not_counted_through_a_recording_in_which_the_mite_was_gone():

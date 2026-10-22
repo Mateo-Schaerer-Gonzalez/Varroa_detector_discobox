@@ -429,11 +429,19 @@ followed from the next recording on, numbered after the mites of their zone
 a mite marked gone), and their survival is counted from the recording they
 were added in, as if it were their first: the survival curves, the mites alive
 beside them, the LT50s and the log-rank tests (and the calibration's survival)
-are in time since each mite was first followed. Its lifeline is drawn on the
-run's clock from when it was added, and its page says "died at 80 min, 20 min
-after it was added at 60 min". Before it was added, and once it counts as dead,
-its recordings say *not added yet* / *dead, not followed* (in the playback too,
-where its square is black: nothing was saved) and cannot be set by hand.
+are in time since each mite was first followed: every mite runs on its own
+timer. Its lifeline starts at 0, its page shows only its own recordings, timed
+from when it was added (its score chart, its table, its last movement), and says
+"died 20 min after it was added (at 80 min of the run)". Before it was added,
+and once it counts as dead, its recordings say *not added yet* / *dead, not
+followed* (in the playback too, where its square is black: nothing was saved)
+and cannot be set by hand. The same holds on the calibration pages: on the
+ground-truth page those recordings show a placeholder and cannot be labelled
+(nor count among the mite-recordings to do), the poke test does not let a mite
+be poked in a round before it was added, and the reports leave those recordings
+out and count an added mite's survival from its start. A ground truth opened
+during a run takes the mites added since, and those counted dead, as each
+recording comes in.
 
 **Mites counted dead.** After each recording, every mite that counts as dead by
 the *Dead when still for* rule (a mite never seen moving too, once still that

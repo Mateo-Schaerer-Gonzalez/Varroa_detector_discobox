@@ -80,14 +80,18 @@ class MovementReport:
     def describe(self):
         """The results' mites and zones with their numbers added, and the groups:
 
-            mites        + n_moving, mean_score, max_score, last_movement (time, or None),
+            mites        + n_moving, mean_score, max_score, last_movement (time, or None;
+                           every mite on its own timer, see own_times),
                            corrected (per recording: the call is the user's, not the
                            detector's; see classes/call_corrections.py), censored (per
                            recording: the user marked the mite gone) and gone_from (the
                            recording from which it is gone for good, or None);
                            checked (per recording: the user set the call by hand) and
                            to_check (the recordings to check by eye, the latest
-                           first; see classes/review_band.py)
+                           first; see classes/review_band.py); for a mite a live run
+                           added later, start (the recording it was added in) and
+                           own_times (the time of each recording from then on,
+                           in minutes since it was added: its own timer)
             zones        + n_moving (mites moving per recording), n_seen (mites there
                            per recording, not gone), with mites a live run added later
                            n_followed (per recording, the mites added by then: those
@@ -107,7 +111,15 @@ class MovementReport:
         corrected = set(self.results.get("corrections", {}).get(mite["id"], []))
         checked = corrected | set(self.results.get("checked", {}).get(mite["id"], []))
         scores = self.seen_scores(mite)
+        start = self.groups.start(mite)
+        last_movement = self.survival.last_movement_time(mite["moving"])
+        own = {}
+        if start:
+            zero = self.times[start]
+            own = {"start": start, "own_times": [round(time - zero, 2) for time in self.times[start:]]}
+            last_movement = None if last_movement is None else round(last_movement - zero, 2)
         return {
+            **own,
             "corrected": [recording in corrected for recording in range(len(mite["moving"]))],
             "checked": [recording in checked for recording in range(len(mite["moving"]))],
             "to_check": list((self.results.get("review") or {}).get("to_check", {}).get(mite["id"], [])),
@@ -116,7 +128,7 @@ class MovementReport:
             "n_moving": MovementStats.moving_count(mite["moving"]),
             "mean_score": MovementStats.mean(scores),
             "max_score": max(scores, default=None),
-            "last_movement": self.survival.last_movement_time(mite["moving"]),
+            "last_movement": last_movement,
         }
 
     def seen_scores(self, mite):

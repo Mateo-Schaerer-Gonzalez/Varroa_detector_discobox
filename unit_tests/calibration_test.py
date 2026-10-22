@@ -306,3 +306,9 @@ def test_save_movement_score_sets_the_normalisations(tmp_path):
     mite = yaml.safe_load(path.read_text())["mite"]
     assert (mite["normalize_brightness"], mite["normalize_floor"]) == (True, True)
     assert path.read_text().count("normalize_floor") == 1
+
+
+def test_a_live_runs_mite_is_followed_from_its_start_until_it_counted_dead():
+    from classes.calibration import followed
+    assert [followed({"start": 1, "stop": 3}, r) for r in range(4)] == [False, True, True, False]
+    assert all(followed({}, r) for r in range(4))

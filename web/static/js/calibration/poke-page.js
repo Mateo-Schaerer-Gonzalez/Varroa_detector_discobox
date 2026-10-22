@@ -6,7 +6,7 @@
 // once, and what it does is the server's (classes/poke_test.py).
 
 class PokePage {
-  static NAMES = { moved: "moved", unmoved: "did not move", unset: "not poked" };
+  static NAMES = { moved: "moved", unmoved: "did not move", unset: "not poked", "not-added": "added to the run after this round: not there to poke" };
 
   constructor() {
     this.view = null;                // the server's view of the poke test; null until loaded
@@ -125,6 +125,7 @@ class PokePage {
 
   poke(miteId) {
     if (!this.round()) { this.setStatus("Add a poke round first.", true); return; }
+    if (this.round().not_added_ids?.includes(miteId)) return;  // not there to poke in this round
     this.edit({ action: "set", after: this.after, mite: miteId, state: this.brush || null });
   }
 
@@ -152,8 +153,10 @@ class PokePage {
     this.drawRounds();
     const round = this.round();
     document.querySelectorAll("#poke-map [data-mite-id]").forEach((ring) => {
-      const state = round?.states[ring.dataset.miteId] || "unset";
+      const later = Boolean(round?.not_added_ids?.includes(ring.dataset.miteId));
+      const state = later ? "not-added" : round?.states[ring.dataset.miteId] || "unset";
       ring.className = `poke-mite ${state}`;
+      ring.disabled = later;
       ring.title = `Mite ${ring.dataset.miteId}: ${PokePage.NAMES[state]}`;
     });
     $("poke-map").classList.toggle("no-round", !round);
@@ -173,7 +176,8 @@ class PokePage {
       <li class="${round.after === this.after ? "current" : ""}">
         <button type="button" class="link group-name" data-round="${round.after}">${PokePage.when(round.after, times)}</button>
         <button type="button" class="secondary small" data-remove="${round.after}" title="Remove this round">Remove</button>
-        <span class="hint">${round.counts.moved} moved · ${round.counts.unmoved} did not · ${round.counts.unset} not poked</span>
+        <span class="hint">${round.counts.moved} moved · ${round.counts.unmoved} did not · ${round.counts.unset} not poked${
+          round.counts.not_added ? ` · ${round.counts.not_added} not added yet` : ""}</span>
       </li>`).join("") : `<li><span class="hint">No round yet. Choose when you poked, and add it.</span></li>`;
     document.querySelectorAll("#poke-rounds [data-round]").forEach((button) => button.addEventListener("click", () => {
       this.after = Number(button.dataset.round);

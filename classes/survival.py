@@ -24,8 +24,8 @@ recordings before it, and its own clock: its follow-up starts at the recording
 it was added in (`Calls.start`), and the time it lived is counted from there.
 The survival curves, their counts of mites alive, the LT50s and the log-rank
 tests are all on that clock: time since each mite's follow-up started, which
-for the mites found at the start is the run's own. A lifeline is drawn on the
-run's clock, from when the mite was added.
+for the mites found at the start is the run's own. So is each mite's lifeline:
+every mite runs on its own timer.
 
 SurvivalAnalysis applies that rule; SurvivalReport describes it for the result
 pages: the survival rate over time per group and per zone, each mite's lifeline,
@@ -311,7 +311,7 @@ class SurvivalReport:
                             n_left_out were never seen moving
             zones           {zone id: {alive, alive_ci, n_alive, n_mites, n_left_out}}: the
                             same per zone, and how many are alive (alive_numbers())
-            mites           {mite id: {in_study, time, dead, lost[, added, lived]}}: each
+            mites           {mite id: {in_study, time, dead, lost[, added, at]}}: each
                             mite's lifeline, see lifeline()
             n_left_out      the mites never seen moving, left out
             log_rank        the groups against the negative controls, see log_rank()
@@ -353,9 +353,10 @@ class SurvivalReport:
         time of the last recording of its follow-up when it is still alive then
         (right-censored, dead False): the last recording, or with `lost` the last
         before the mite was gone. time and dead None for a mite left out.
-        `time` is on the run's clock. A mite added later also has `added`, the
-        time of the recording it was added in, and `lived`, the minutes from
-        then to `time` (its time on the clock of the survival curves)."""
+        Each mite is on its own clock, as the survival curves are: `time` is
+        from the start of its follow-up. A mite a live run added later also has
+        `added`, the run's time of the recording it was added in, and `at`, the
+        run's time of `time`."""
         if not SurvivalAnalysis.in_study(moving):
             return {"in_study": False, "time": None, "dead": None, "lost": False}
         time, dead = self.analysis.survival(moving)
@@ -364,9 +365,8 @@ class SurvivalReport:
         if not start:
             return {"in_study": True, "time": time, "dead": dead, "lost": lost}
         times = self.analysis.times
-        time = times[self.analysis.end_of_life(moving)[0]]
-        return {"in_study": True, "time": time, "dead": dead, "lost": lost,
-                "added": times[start], "lived": round(time - times[start], 2)}
+        return {"in_study": True, "time": round(time, 2), "dead": dead, "lost": lost,
+                "added": times[start], "at": times[self.analysis.end_of_life(moving)[0]]}
 
     def log_rank(self):
         """Every group, its zones pooled, against the zones ticked as negative

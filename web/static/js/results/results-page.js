@@ -194,7 +194,8 @@ class ResultsPage {
     may have been dead from the start, or no live mite at all, so it is left out, its id greyed out and struck through.`;
 
   // A mite's lifeline, the server's (results.survival.mites): {in_study, time, dead,
-  // lost}, `time` on the run's clock; one added later also has `added` and `lived`.
+  // lost}, `time` on the mite's own timer; one added later also has `added` and
+  // `at`, the run's times of its start and of `time`.
   lifeline(mite) {
     return this.results.survival.mites?.[mite.id] || { in_study: true, time: null, dead: null, lost: false };
   }
@@ -203,15 +204,22 @@ class ResultsPage {
     return this.lifeline(mite).in_study;
   }
 
-  // "died at 10 min", "alive at 20 min (censored)" or "left out: never seen moving";
-  // for a mite added during the run, with how long after it was added.
+  // "died at 10 min", "alive at 20 min (censored)" or "left out: never seen moving",
+  // on the mite's own timer; for one added during the run, with the run's time.
   survivalText(mite) {
-    const { in_study: inStudy, time, dead, lost, added, lived } = this.lifeline(mite);
+    const { in_study: inStudy, time, dead, lost, added, at } = this.lifeline(mite);
     if (!inStudy) return "left out: never seen moving";
     if (time == null) return "–";
-    const since = added == null ? "" : `, ${minutes(lived)} after it was added at ${minutes(added)}`;
-    if (lost) return `alive at ${minutes(time)}${since}, then gone (censored)`;
-    return dead ? `died at ${minutes(time)}${since}` : `alive at ${minutes(time)}${since} (censored)`;
+    const when = added == null ? `at ${minutes(time)}` : `${minutes(time)} after it was added (at ${minutes(at)} of the run)`;
+    if (lost) return `alive ${when}, then gone (censored)`;
+    return dead ? `died ${when}` : `alive ${when} (censored)`;
+  }
+
+  // The times of the recordings on the mite's own timer, from the one it was
+  // added in on (the server's own_times), and that first recording; every
+  // recording and 0 for a mite there from the start.
+  ownTimes(mite) {
+    return mite.own_times ? { times: mite.own_times, start: mite.start } : { times: this.results.times, start: 0 };
   }
 
   // Under the survival numbers, when a live run added mites: whose clock they are on.

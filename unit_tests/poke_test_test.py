@@ -124,3 +124,23 @@ def test_other_calls_get_a_curve_of_their_own_on_the_same_mites():
     assert curves["others"]["outline"]["alive"] == [50, 50, 50, 0]
     assert curves["detector"]["alive"] == [100, 50, 0, 0]
     assert PokeSurvival.curves(PokeSurvival(poke, TIMES, moving).mites(), TIMES)["others"] == {}
+
+
+def test_a_mite_added_later_cannot_be_poked_before_and_counts_its_time_from_its_start():
+    later = mites(2)
+    later[1]["start"] = 2  # added when the third recording began
+    poke = PokeTest(later, len(TIMES))
+    poke.add(0)
+    with pytest.raises(ValueError, match="added to the run after"):
+        poke.set(0, "1", "moved")
+    poke.fill(0, "moved")
+    view = poke.view()["rounds"][0]
+    assert view["states"] == {"0": "moved"} and view["not_added_ids"] == ["1"]
+    assert view["counts"] == {"moved": 1, "unmoved": 0, "unset": 0, "not_added": 1}
+    poke.add(1)  # poked just before the third recording: there by then
+    poke.set(1, "1", "unmoved")
+    # never seen moving: dead at its start, 0 min after it was added, by the detector and by the poke
+    [row] = [row for row in PokeSurvival(poke, TIMES, {"0": [True] * 4, "1": [False] * 4}).mites() if row.get("start")]
+    assert row == {"n_recordings": 4, "start": 2, "death": 2, "alive_until": None, "dead_from": 2}
+    curves = PokeSurvival.curves([row], TIMES)
+    assert curves["poke"]["alive"][0] == 0 and curves["detector"]["alive"][0] == 0

@@ -1035,7 +1035,10 @@ def _describe_calibration(data_dir, coords_file=None, names=None):
                     "x": round(float((mite.x1 + mite.x2) / 2), 1),
                     "y": round(float((mite.y1 + mite.y2) / 2), 1),
                     "r": round(float((mite.x2 - mite.x1) / 2), 1),
-                    "start": mite.start,  # the recording a live run added it in: 0 but for one added later
+                    # the recordings a live run followed it in (calibration.followed()): from the
+                    # one it was added in (0 but for one added later), up to the one it counted dead from
+                    "start": mite.start,
+                    "stop": mite.stopped,
                 }
             )
     if not mites:
@@ -2313,14 +2316,15 @@ def _last_recording(dataset, scores, threshold, benchmark=None, circles=None):
     when it has none there. With `benchmark` (its calls, see
     _dataset_benchmark()) each mite also has the benchmark's call, and
     `circles` are what the benchmark draws on that recording, each of radius
-    "circle_radius" (see _dataset_circles())."""
+    "circle_radius" (see _dataset_circles()). A mite a live run did not follow
+    there (counted dead by then, see calibration.followed()) is left out."""
     n_recordings = len(dataset["times"])
     last = n_recordings - 1
     boxes = mite_boxes(dataset["mites"])
     mites = []
     for mite in dataset["mites"]:
         states = calibration.per_recording(dataset["truth"].get(mite["id"]), n_recordings)
-        if calibration.is_rejected(states):
+        if calibration.is_rejected(states) or not calibration.followed(mite, last):
             continue
         score = scores[mite["id"]][last]
         mites.append(
@@ -2351,8 +2355,9 @@ def _observations(dataset, dataset_key, scores, benchmark=None, outline=None):
     With `benchmark` (its calls, see _dataset_benchmark()), each row also says
     what the benchmark called it; with `outline` ({changes, calls}, each mite id
     to one per recording, see _between_recordings()), the outline's change from
-    the recording before and what it calls it. A mite a live run added later
-    has no rows before it was added, where nothing of it was saved."""
+    the recording before and what it calls it. A mite a live run did not follow
+    in a recording (added later, or counted dead, see calibration.followed())
+    has no row there: nothing of it was saved."""
     times = dataset["times"]
     n_recordings = len(times)
     groups = {zone["id"]: zone["label"] or UNLABELED for zone in dataset["zones"]}
@@ -2366,7 +2371,7 @@ def _observations(dataset, dataset_key, scores, benchmark=None, outline=None):
             continue
         start = mite.get("start", 0)
         for recording, movement in enumerate(states):
-            if recording < start:
+            if not calibration.followed(mite, recording):
                 continue
             if movement is None:
                 n_unlabelled += 1
@@ -2399,8 +2404,14 @@ def _observations(dataset, dataset_key, scores, benchmark=None, outline=None):
 def _between_recordings(key, dataset, stabilize=False):
     """The outline change of every mite of a dataset from the recording before
     (_dataset_outline_changes()) and whether it says the mite moved
-    (OutlineChange.calls()): {changes, calls}, each mite id to one per recording."""
-    changes = _dataset_outline_changes(key, dataset, stabilize)
+    (OutlineChange.calls()): {changes, calls}, each mite id to one per recording.
+    A change into or out of a recording a live run did not follow the mite in
+    (calibration.followed()) is None: nothing of it was saved there."""
+    changes = dict(_dataset_outline_changes(key, dataset, stabilize))
+    for mite in dataset["mites"]:
+        if mite.get("start") or mite.get("stop") is not None:
+            changes[mite["id"]] = [None if not (calibration.followed(mite, at) and calibration.followed(mite, at - 1)) else change
+                                   for at, change in enumerate(changes[mite["id"]])]
     judge = OutlineChange()
     return {"changes": changes, "calls": {mite_id: judge.calls(values) for mite_id, values in changes.items()}}
 
@@ -2416,7 +2427,8 @@ def _outline_rows(dataset, key, outline):
         if calibration.is_rejected(states):
             continue
         rows.append({"dataset": key, "dataset_name": dataset["name"], "mite_id": mite["id"], "zone_id": mite["zone_id"],
-                     "moving": [None if state is None else state == calibration.MOVING for state in states],
+                     "moving": [None if state is None or not calibration.followed(mite, at) else state == calibration.MOVING
+                                for at, state in enumerate(states)],
                      "changes": outline["changes"][mite["id"]], "calls": outline["calls"][mite["id"]]})
     return rows
 
@@ -3412,18 +3424,22 @@ def open_live_calibration(live_id, out_dir):
 def grow_live_calibration(out_dir, live_id):
     """Bring a calibration session made by open_live_calibration() up to the
     recordings its live run has analysed since: they come unlabelled, and the
-    ground truth's changes not saved yet stay (TruthDraft.grow()). Returns the
+    ground truth's changes not saved yet stay (TruthDraft.grow()). The mites
+    are described again too: the run may have added some, or counted some dead
+    and stopped following them (calibration.followed()). Returns the
     session as open_live_calibration() does. A session showing another dataset
     by now, e.g. one a pooled report opened, is left as it is."""
     run = _get_live(live_id)
     stored = _read_calibration_session(out_dir)
     names = list(run.session.recordings)
     if Path(stored["data_dir"]) == run.run_dir.resolve() and len(names) > len(stored["recordings"]):
-        stored.update(_calibration_recordings(run.run_dir, names))
+        described, _first_frame = _describe_calibration(run.run_dir, run.coords_file, names)
+        stored.update({key: described[key] for key in ("times", "recordings", "mites")})
         _write_calibration_session(out_dir, stored)
         draft = _draft(out_dir)
         with _drafts_lock:
             draft.grow(len(stored["times"]))
+            draft.set_mites(stored["mites"])
     return {**_calibration_view(stored, _saved_truth(stored)), "truth_view": truth_view(out_dir)}
 
 

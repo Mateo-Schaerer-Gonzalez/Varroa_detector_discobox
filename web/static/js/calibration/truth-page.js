@@ -57,7 +57,8 @@ class TruthPage {
     · <span title="${esc(cal.data.data_dir)}">${esc(folderOf(cal.data.data_dir))}</span>${source ? ` / <code>${esc(source)}</code>` : ""}${cal.liveNote()}`;
     $("truth-pager").innerHTML = Markup.pager(mites, index, (m) => cal.truthHref(m.id), (m) => `Mite ${m.id}`);
 
-    this.playClip(mite, recording);
+    if (groundTruth.unfollowed(mite, recording)) this.drawUnfollowed(mite, recording);
+    else this.playClip(mite, recording);
     this.drawWrongCall();
     this.drawRecordingSlider();
     this.drawLabel();
@@ -65,11 +66,31 @@ class TruthPage {
     this.drawCounts();
   }
 
-  // The recording slider, with a mark under each recording in which this mite is labelled.
+  // A recording a live run did not follow the mite in: nothing was saved of it
+  // there, so there is no clip and nothing to label.
+  drawUnfollowed(mite, recording) {
+    player.stop();
+    const why = groundTruth.unfollowed(mite, recording);
+    const text = why === "not added yet"
+      ? `Mite ${esc(mite.id)} was not added to the run yet in this recording: it is followed from ${
+        mite.start ? `recording ${mite.start + 1} (${minutes(cal.data.times[mite.start])})` : "a later recording"} on.`
+      : `Mite ${esc(mite.id)} counted as dead before this recording, so the run no longer followed it${
+        mite.stop != null ? ` from recording ${mite.stop + 1} (${minutes(cal.data.times[mite.stop])}) on` : ""}.`;
+    [$("truth-crop"), $("truth-variation")].forEach((holder) => {
+      holder.classList.remove("loading");
+      holder.innerHTML = `<div class="truth-unfollowed"><span class="status gone"><span aria-hidden="true">–</span> ${why}</span></div>`;
+    });
+    $("clip-status").className = "";
+    $("clip-status").innerHTML = `${text} Nothing of it was saved here, so there is nothing to label.`;
+  }
+
+  // The recording slider, with a mark under each recording in which this mite is
+  // labelled, or has nothing to label (not followed there).
   drawRecordingSlider() {
     const { times } = cal.data;
-    const states = groundTruth.statesOf(this.mite());
-    const done = states.map((state) => state !== null);
+    const mite = this.mite();
+    const states = groundTruth.statesOf(mite);
+    const done = states.map((state, recording) => state !== null || Boolean(groundTruth.unfollowed(mite, recording)));
     const holder = $("rec-tabs");
     holder.innerHTML = RecordingSlider.html({ times, current: cal.recording, done, label: "Recording" });
     RecordingSlider.wire(holder, times, done, (recording) => router.go(cal.truthHref(cal.miteId, recording)));
@@ -149,11 +170,15 @@ class TruthPage {
   }
 
   // The label of the mite in the recording on screen: on its buttons and on the rings.
+  // None to give where the mite was not followed.
   drawLabel() {
     const state = this.state();
+    const off = Boolean(groundTruth.unfollowed(this.mite(), cal.recording));
     document.querySelectorAll(".truth-labels [data-truth]").forEach((button) => {
-      button.classList.toggle("current", (button.dataset.truth || null) === state);
+      button.classList.toggle("current", !off && (button.dataset.truth || null) === state);
+      button.disabled = off;
     });
+    $("truth-dead").disabled = off;
     this.drawRings();
   }
 
@@ -193,7 +218,9 @@ class TruthPage {
     map.querySelectorAll("[data-mite-id]").forEach((dot) => {
       const mite = cal.data.mites.find((m) => m.id === dot.dataset.miteId);
       const state = groundTruth.stateAt(mite, cal.recording);
-      dot.className = `mite-dot ${state === "not_a_mite" ? "rejected" : state || "unset"}${mite === here ? " current" : ""}`;
+      const off = groundTruth.unfollowed(mite, cal.recording);
+      dot.className = `mite-dot ${state === "not_a_mite" ? "rejected" : off ? "not-followed" : state || "unset"}${mite === here ? " current" : ""}`;
+      dot.title = `Mite ${mite.id}${off ? `: ${off}` : ""}`;
     });
   }
 
@@ -203,13 +230,17 @@ class TruthPage {
     const mite = this.mite();
     const states = groundTruth.statesOf(mite);
     const all = view.counts[cal.recording];
+    const followed = (recording) => !groundTruth.unfollowed(mite, recording);
     $("truth-counts").innerHTML = ORDER.map((state) => `
     <li><span class="truth-key ${state || "unset"}" aria-hidden="true">${state ? GLYPHS[state] : "?"}</span>
       <span class="group-name">${state ? NAMES[state] : "unlabelled"}</span>
-      <span class="hint">${states.filter((s) => s === state).length} of this mite's recordings · ${all[state || "unset"]} mites in this one</span></li>`).join("");
+      <span class="hint">${states.filter((s, recording) => s === state && followed(recording)).length} of this mite's recordings · ${all[state || "unset"]} mites in this one</span></li>`).join("")
+      + (all.not_followed ? `<li><span class="truth-key unset" aria-hidden="true">–</span>
+      <span class="group-name">not followed</span>
+      <span class="hint">${all.not_followed} mite${all.not_followed === 1 ? "" : "s"} in this one: added to the run later, or counted dead before</span></li>` : "");
 
     const { cells, done, ready } = view;
-    $("truth-progress").innerHTML = `<b>${done}</b> of ${cells} mite-recordings labelled · this mite: ${view.mites_done[mite.id]} of ${cal.nRecordings}`;
+    $("truth-progress").innerHTML = `<b>${done}</b> of ${cells} mite-recordings labelled · this mite: ${view.mites_done[mite.id]} of ${view.mites_cells[mite.id]}`;
     $("truth-progress-bar").style.width = `${(done / cells) * 100}%`;
     groundTruth.drawSaveState();
 
@@ -246,11 +277,13 @@ class TruthPage {
   // on a wrong call being checked, to the next wrong call.
   async label(state) {
     const { miteId, recording } = cal;
+    if (groundTruth.unfollowed(this.mite(), recording)) return;  // nothing to label there
     if (!await this.change({ action: "set", state })) return;
     if (cal.miteId !== miteId || cal.recording !== recording) return;  // moved on meanwhile
     if (state && reportPage.wrongCalls.answered(miteId, recording)) return;
     this.refreshPanel();
-    if (state === "not_a_mite" || (state && recording + 1 >= cal.nRecordings)) this.goToWork();
+    const last = recording + 1 >= cal.nRecordings || Boolean(groundTruth.unfollowed(this.mite(), recording + 1));
+    if (state === "not_a_mite" || (state && last)) this.goToWork();
     else if (state) router.go(cal.truthHref(miteId, recording + 1));
   }
 
@@ -258,6 +291,7 @@ class TruthPage {
   // later one not labelled yet. On to the next mite with work left.
   async dead() {
     const { miteId, recording } = cal;
+    if (groundTruth.unfollowed(this.mite(), recording)) return;
     if (!await this.change({ action: "dead" })) return;
     if (cal.miteId !== miteId || cal.recording !== recording) return;
     this.refreshPanel();

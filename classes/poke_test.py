@@ -11,6 +11,11 @@ after recording k is at k + 1, the number of recordings before it, as a death is
 the number of recordings up to the mite's last movement
 (calibration.death_recording()).
 
+A mite a live run added later ("start", the recording it was added in) can be
+poked only from the round before that recording on, and counts its time from
+there, as the result pages do (classes/survival.py): both curves are in time
+since each mite was first followed.
+
 PokeTest holds the rounds, by mite id, and reads and writes them by mite
 position, as the ground truth is saved, so they survive a change of detector
 settings that renumbers the mites. PokeSurvival draws the two curves.
@@ -27,7 +32,7 @@ POKE_STATES = (MOVED, UNMOVED)
 
 class PokeTest:
     def __init__(self, mites, n_recordings, saved=None, tolerance=10.0):
-        """`mites`: [{id, zone_id, x, y}, ...]; `saved`: the rounds by position,
+        """`mites`: [{id, zone_id, x, y[, start]}, ...]; `saved`: the rounds by position,
         as saved() gives them. A saved poke belongs to the nearest mite within
         `tolerance` pixels; those away from every mite, e.g. of detections
         since marked not a mite, are kept as they are."""
@@ -79,12 +84,21 @@ class PokeTest:
     def remove(self, after):
         self.rounds.remove(self._round(after))
 
+    @staticmethod
+    def pokeable(mite, after):
+        """Whether `mite` was there to poke in the round after `after`: not
+        before the recording a live run added it in."""
+        return int(after) + 1 >= mite.get("start", 0)
+
     def set(self, after, mite_id, state):
         """What one mite did in the round after `after`: MOVED, UNMOVED, or None for not poked."""
         self._check(state)
-        if all(mite["id"] != mite_id for mite in self.mites):
+        mite = next((mite for mite in self.mites if mite["id"] == mite_id), None)
+        if mite is None:
             raise ValueError(f"No mite {mite_id} in this dataset.")
         states = self._round(after)["states"]
+        if state is not None and not self.pokeable(mite, after):
+            raise ValueError(f"Mite {mite_id} was added to the run after this round: it cannot have been poked in it.")
         if state is None:
             states.pop(mite_id, None)
         else:
@@ -97,6 +111,8 @@ class PokeTest:
         states = self._round(after)["states"]
         for mite in self.mites:
             if zone_id is not None and mite["zone_id"] != zone_id:
+                continue
+            if not self.pokeable(mite, after):
                 continue
             if state is None:
                 states.pop(mite["id"], None)
@@ -137,13 +153,18 @@ class PokeTest:
 
     def view(self):
         """What the poke-test page shows: the mites that can be poked, and each
-        round with what its mites did and how many did what ("unset": not poked)."""
+        round with what its mites did and how many did what ("unset": not poked).
+        A round some mites were added to a live run only after also has those
+        ("not_added_ids") and their number ("not_added"): they were not there to poke."""
         rounds = []
         for poke_round in self.rounds:
             states = poke_round["states"]
             counts = {state: sum(1 for value in states.values() if value == state) for state in POKE_STATES}
+            later = [mite["id"] for mite in self.mites if not self.pokeable(mite, poke_round["after"])]
+            unset = sum(1 for mite in self.mites if mite["id"] not in states and mite["id"] not in later)
             rounds.append({"after": poke_round["after"], "states": dict(states),
-                           "counts": {**counts, "unset": len(self.mites) - len(states)}})
+                           **({"not_added_ids": later} if later else {}),
+                           "counts": {**counts, "unset": unset, **({"not_added": len(later)} if later else {})}})
         return {"mites": [mite["id"] for mite in self.mites], "n_recordings": self.n, "rounds": rounds}
 
 
@@ -162,17 +183,24 @@ class PokeSurvival:
         """One row per mite poked at least once: {n_recordings (of its dataset),
         death (the detector's, in recordings: the one after its last movement, 0
         for a mite it never saw moving), alive_until, dead_from (what the pokes
-        say, see PokeTest.bounds())}, and with `others`, "others": {name: the
-        death by those calls, as the detector's}."""
+        say, see PokeTest.bounds()), for a mite a live run added later start
+        (the recording it was added in)}, and with `others`, "others": {name: the
+        death by those calls, as the detector's}. A mite never seen moving dies
+        at its start: the first recording it was followed in."""
         rows = []
         for mite in self.poke.mites:
             if self.poke.pokes(mite["id"]):
                 alive_until, dead_from = self.poke.bounds(mite["id"])
-                rows.append({"n_recordings": len(self.times),
-                             "death": SurvivalAnalysis.last_movement(self.moving[mite["id"]]) + 1,
+                start = mite.get("start", 0)
+
+                def death(calls):
+                    return max(SurvivalAnalysis.last_movement(calls) + 1, start)
+
+                rows.append({"n_recordings": len(self.times), **({"start": start} if start else {}),
+                             "death": death(self.moving[mite["id"]]),
                              "alive_until": alive_until, "dead_from": dead_from,
-                             **({"others": {name: SurvivalAnalysis.last_movement(calls[mite["id"]]) + 1
-                                            for name, calls in self.others.items()}} if self.others else {})})
+                             **({"others": {name: death(calls[mite["id"]]) for name, calls in self.others.items()}}
+                                if self.others else {})})
         return rows
 
     @staticmethod
@@ -205,15 +233,18 @@ class PokeSurvival:
         final_poke = any(n in (mite["dead_from"], mite["alive_until"]) for mite in poked)
         grid = list(times) + ([times[-1] + (times[-1] - times[-2] if n > 1 else 1.0)] if final_poke else [])
 
+        def zero(mite):  # a mite added later counts its time from its start
+            return grid[mite.get("start", 0)] - grid[0]
+
         def by_poke(mite):
             if mite["dead_from"] is not None:
-                return grid[mite["dead_from"]], True
-            return grid[mite["alive_until"]], False
+                return grid[mite["dead_from"]] - zero(mite), True
+            return grid[mite["alive_until"]] - zero(mite), False
 
         def by_calls(mite, death):
             if death < mite["n_recordings"]:
-                return grid[death], True
-            return grid[mite["n_recordings"] - 1], False
+                return grid[death] - zero(mite), True
+            return grid[mite["n_recordings"] - 1] - zero(mite), False
 
         def curve(survivals, until):
             described = kaplan_meier(survivals, grid)

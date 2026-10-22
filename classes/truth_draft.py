@@ -9,6 +9,10 @@ leaving it brings back the statuses the mite had before it was marked here, so
 clicking through "not a mite" on the way from still to moving loses nothing. A
 mite marked elsewhere, or before the dataset was opened, is left unlabelled.
 
+A mite a live run did not follow in a recording (added later, or counted dead:
+calibration.followed()) has nothing to label there: those recordings cannot be
+labelled, are none of the mite-recordings to do and count as "not_followed".
+
 Only the statuses changed are kept as changes, mite by mite and recording by
 recording, and what is shown is always calibration.apply_changes() of them on
 the saved statuses: exactly what saving them will store, even when another
@@ -17,7 +21,7 @@ window changed what is saved meanwhile.
 
 import copy
 
-from classes.calibration import MOVING, NOT_A_MITE, STILL, apply_changes, is_rejected, per_recording
+from classes.calibration import MOVING, NOT_A_MITE, STILL, apply_changes, followed, is_rejected, per_recording
 
 # A click on a mite steps through these; None is unlabelled.
 CYCLE = (None, MOVING, STILL, NOT_A_MITE)
@@ -30,12 +34,12 @@ COUNTED = {MOVING: MOVING, STILL: STILL, NOT_A_MITE: NOT_A_MITE, None: "unset"}
 
 class TruthDraft:
     def __init__(self, mites, zones, n_recordings, saved=None):
-        """`mites`: [{id, zone_id}, ...]; `zones`: [{id}, ...] in page order;
-        `saved`: mite id -> statuses, as saved."""
+        """`mites`: [{id, zone_id[, start, stop]}, ...] (start and stop: see
+        calibration.followed()); `zones`: [{id}, ...] in page order; `saved`:
+        mite id -> statuses, as saved."""
         self.n = n_recordings
-        self.mite_ids = [mite["id"] for mite in mites]
-        self.zone_of = {mite["id"]: mite["zone_id"] for mite in mites}
-        self.zone_ids = [zone["id"] for zone in zones if any(z == zone["id"] for z in self.zone_of.values())]
+        self.zones = list(zones)
+        self.set_mites(mites)
         self.saved = {}
         self.unsaved = {}            # mite id -> {recording: status} changed and not saved yet
         self.before_rejection = {}   # mite id -> its statuses before it was marked "not a mite" here
@@ -52,10 +56,15 @@ class TruthDraft:
         """mite id -> statuses, for the mites with any status."""
         return {mite_id: states for mite_id in self.mite_ids if any(states := self.states(mite_id))}
 
+    def followed(self, mite_id, recording):
+        """Whether the mite was followed in the recording, so has a label to give there."""
+        return followed(self.span[mite_id], recording)
+
     def cell_done(self, mite_id, recording):
-        """Whether a mite needs nothing more in a recording: labelled, or not a mite at all."""
+        """Whether a mite needs nothing more in a recording: labelled, not a mite
+        at all, or not followed there."""
         states = self.states(mite_id)
-        return is_rejected(states) or states[recording] is not None
+        return is_rejected(states) or states[recording] is not None or not self.followed(mite_id, recording)
 
     def mites_in(self, zone_id):
         return [mite_id for mite_id in self.mite_ids if self.zone_of[mite_id] == zone_id]
@@ -63,8 +72,13 @@ class TruthDraft:
     # --- changes
 
     def set(self, mite_id, recording, state):
-        """Give one mite one status in one recording (see the module's docstring)."""
+        """Give one mite one status in one recording (see the module's docstring).
+        "Not a mite" can be given in a recording the mite was not followed in,
+        being about the detection; nothing else can."""
         self._check(mite_id, recording)
+        if state != NOT_A_MITE and not self.followed(mite_id, recording):
+            raise ValueError(f"Mite {mite_id} was not followed in recording {recording + 1}: "
+                             "it was added later, or counted dead before, so there is nothing to label.")
         before = self.states(mite_id)
         rejected = is_rejected(before)
         if state == NOT_A_MITE:
@@ -93,14 +107,16 @@ class TruthDraft:
             raise ValueError(f"Unknown fill {kind!r}.")
         for mite_id in self.mites_in(zone_id):
             states = self.states(mite_id)
-            if kind == "clear":
-                if not is_rejected(states):
-                    self.set(mite_id, recording, None)
-            elif kind == "dead":
+            if kind == "dead":
                 if not is_rejected(states):
                     for later in range(recording, self.n):
-                        if states[later] is None:
+                        if states[later] is None and self.followed(mite_id, later):
                             self.set(mite_id, later, STILL)
+            elif not self.followed(mite_id, recording):
+                continue
+            elif kind == "clear":
+                if not is_rejected(states):
+                    self.set(mite_id, recording, None)
             elif not self.cell_done(mite_id, recording):
                 state = (states[recording - 1] if recording > 0 else None) if kind == "previous" else kind
                 if state:
@@ -113,7 +129,7 @@ class TruthDraft:
         self._check(mite_id, recording)
         self.set(mite_id, recording, STILL)
         for later in range(recording + 1, self.n):
-            if self.states(mite_id)[later] is None:
+            if self.states(mite_id)[later] is None and self.followed(mite_id, later):
                 self.set(mite_id, later, STILL)
 
     def _check(self, mite_id, recording):
@@ -121,6 +137,14 @@ class TruthDraft:
             raise ValueError(f"No mite {mite_id} in this dataset.")
         if not 0 <= recording < self.n:
             raise ValueError(f"No recording {recording} in this dataset.")
+
+    def set_mites(self, mites):
+        """The dataset's mites, e.g. a live run's again once it added some or
+        counted some dead: their statuses and changes stay, by id."""
+        self.mite_ids = [mite["id"] for mite in mites]
+        self.zone_of = {mite["id"]: mite["zone_id"] for mite in mites}
+        self.span = {mite["id"]: {"start": mite.get("start", 0), "stop": mite.get("stop")} for mite in mites}
+        self.zone_ids = [zone["id"] for zone in self.zones if any(z == zone["id"] for z in self.zone_of.values())]
 
     def grow(self, n_recordings):
         """The dataset has more recordings, e.g. a live run's, recorded since: they
@@ -171,26 +195,35 @@ class TruthDraft:
 
             states            mite id -> statuses, for the mites with any
             unsaved           how many mites have changes not saved yet
-            cells, done       mite-recordings in all, and those needing nothing more
+            cells, done       mite-recordings to label in all (those the mites were
+                              followed in), and those needing nothing more
+            followed          mite id -> per recording whether it was followed there,
+                              for the mites a live run did not follow in every one
             ready             a mite is labelled moving or still somewhere: a report can be made
             zones_with_mites  the zones to visit, in order
             zones             zone id -> {done (per recording: every mite labelled),
                               n_done, complete, counts (per recording)}
-            counts            per recording, how many mites have each status ("unset": none)
+            counts            per recording, how many mites have each status ("unset": none;
+                              with mites not followed throughout, "not_followed": not there)
             next              [zone id, recording] of the first zone and recording with a
                               mite still to label; None when every one is done
             next_mite         [mite id, recording] of the first mite, in their order, and
                               its first recording still to label; None when every one is done
-            mites_done        mite id -> how many of its recordings need nothing more
+            mites_done        mite id -> how many of its recordings to label need nothing more
+            mites_cells       mite id -> how many of its recordings there are to label
         """
         recordings = range(self.n)
         states = {mite_id: self.states(mite_id) for mite_id in self.mite_ids}
-        done_cell = {mite_id: [is_rejected(s) or s[r] is not None for r in recordings] for mite_id, s in states.items()}
+        follows = {mite_id: [self.followed(mite_id, r) for r in recordings] for mite_id in self.mite_ids}
+        done_cell = {mite_id: [is_rejected(s) or s[r] is not None or not follows[mite_id][r] for r in recordings]
+                     for mite_id, s in states.items()}
+
+        partly = any(not all(there) for there in follows.values())  # a live run's mites not followed throughout
 
         def counts(mite_ids, recording):
-            counted = dict.fromkeys(COUNTED.values(), 0)
+            counted = {**dict.fromkeys(COUNTED.values(), 0), **({"not_followed": 0} if partly else {})}
             for mite_id in mite_ids:
-                counted[COUNTED[states[mite_id][recording]]] += 1
+                counted[COUNTED[states[mite_id][recording]] if follows[mite_id][recording] else "not_followed"] += 1
             return counted
 
         zones = {}
@@ -205,11 +238,14 @@ class TruthDraft:
         waiting = next((mite_id for mite_id in self.mite_ids if not all(done_cell[mite_id])), None)
         return {
             "next_mite": None if waiting is None else [waiting, done_cell[waiting].index(False)],
-            "mites_done": {mite_id: sum(cells) for mite_id, cells in done_cell.items()},
+            "mites_done": {mite_id: sum(done and there for done, there in zip(cells, follows[mite_id]))
+                           for mite_id, cells in done_cell.items()},
+            "mites_cells": {mite_id: sum(there) for mite_id, there in follows.items()},
+            "followed": {mite_id: there for mite_id, there in follows.items() if not all(there)},
             "states": {mite_id: s for mite_id, s in states.items() if any(s)},
             "unsaved": len(self.unsaved),
-            "cells": len(self.mite_ids) * self.n,
-            "done": sum(sum(cells) for cells in done_cell.values()),
+            "cells": sum(sum(there) for there in follows.values()),
+            "done": sum(done and there for mite_id, cells in done_cell.items() for done, there in zip(cells, follows[mite_id])),
             "ready": any(not is_rejected(s) and any(state in (MOVING, STILL) for state in s) for s in states.values()),
             "zones_with_mites": self.zone_ids,
             "zones": zones,

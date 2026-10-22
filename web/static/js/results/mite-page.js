@@ -16,13 +16,15 @@ class MitePage extends ResultsPage {
     this.breadcrumb([["Results", ctx.href("results")], [this.zoneName(zone), ctx.href(`zone/${zone.id}`)], [`Mite ${mite.id}`, ""]]);
 
     const nCorrected = mite.corrected.filter(Boolean).length;
-    // A mite a live run added later is not gone before then, only not added yet.
-    const nNotYet = this.notAddedYet(mite);
-    const nAside = mite.censored.filter((gone, i) => gone && i >= nNotYet && this.setAside(mite, i)).length;
-    const nGone = mite.censored.filter((gone, i) => gone && i >= nNotYet).length - nAside;
+    // Every mite runs on its own timer: a mite a live run added later from the
+    // recording it was added in, which is its 0; the recordings before are not its.
+    const own = this.ownTimes(mite);
+    const nNotYet = own.start;
+    const mine = (i) => i >= nNotYet;
+    const nAside = mite.censored.filter((gone, i) => gone && mine(i) && this.setAside(mite, i)).length;
+    const nGone = mite.censored.filter((gone, i) => gone && mine(i)).length - nAside;
     const { STATES, STATE_NAMES } = ResultsPage;
     const movingNote = [
-      nNotYet ? `added in the run at ${minutes(times[nNotYet])}` : "",
       nCorrected ? `${nCorrected} call${nCorrected === 1 ? "" : "s"} corrected by hand` : "",
       nGone ? `gone in ${nGone} more` : "",
       nAside ? `set aside in ${nAside} more (disturbed)` : "",
@@ -36,6 +38,7 @@ class MitePage extends ResultsPage {
       <div>
         <h1>Mite ${this.miteId(mite)}</h1>
         <p class="meta">${this.callBadge(mite, ctx.lastIndex())} in the last recording · <a href="${ctx.href(`zone/${zone.id}`)}">Zone ${zone.id}</a> · ${Markup.groupTag(zone.label || "unlabeled", color)}</p>
+        ${nNotYet ? `<p class="meta">Added during the run, at ${minutes(times[nNotYet])}: its times below count from then, its own 0.</p>` : ""}
         ${this.inStudy(mite) ? "" : `<p class="meta">Never seen moving, so left out of the survival numbers: it may have been dead from the start, or no live mite at all.</p>`}
       </div>
       ${Markup.pager(siblings, siblings.indexOf(mite), (m) => this.miteHref(m), (m) => `Mite ${m.id}`)}
@@ -43,7 +46,7 @@ class MitePage extends ResultsPage {
 
     <div class="stats">
       ${stat("Moving in", `${mite.n_moving}/${times.length - nNotYet - nGone}`, movingNote ? `recordings; ${movingNote}` : "recordings above the threshold")}
-      ${stat("Last movement", this.lastMovementText(mite), mite.n_moving ? "last recording with movement" : "no movement in any recording")}
+      ${stat("Last movement", this.lastMovementText(mite), mite.n_moving ? (nNotYet ? "after it was added" : "last recording with movement") : "no movement in any recording")}
       ${stat("Survival", this.survivalText(mite), this.inStudy(mite) ? (this.lifeline(mite).dead ? "time of death" : this.lifeline(mite).lost ? "right-censored where it was last there" : "right-censored") : "")}
       ${stat("Max motion score", score(mite.max_score), `mean ${score(mite.mean_score)} · threshold ${score(results.threshold)}${this.normalizedNote()}`)}
     </div>
@@ -58,9 +61,9 @@ class MitePage extends ResultsPage {
     </div>
 
     ${section("Recordings", `<div class="table-wrap"><table class="clickable" id="recording-table">
-        <thead><tr><th class="num">Time</th><th class="num">Motion score</th><th>Movement</th><th></th></tr></thead>
-        <tbody>${times.map((t, i) => `<tr data-recording-row="${i}" tabindex="0" class="${i === ctx.shown ? "current" : ""}"
-          title="Show this recording above">
+        <thead><tr><th class="num">${nNotYet ? "Since added" : "Time"}</th><th class="num">Motion score</th><th>Movement</th><th></th></tr></thead>
+        <tbody>${own.times.map((t, k) => [t, k + nNotYet]).map(([t, i]) => `<tr data-recording-row="${i}" tabindex="0" class="${i === ctx.shown ? "current" : ""}"
+          title="Show this recording above${nNotYet ? ` (at ${minutes(times[i])} of the run)` : ""}">
           <td class="num">${minutes(t)}</td>
           <td class="num">${score(mite.scores[i])}</td>
           <td>${this.callBadge(mite, i)}${review.mark(mite, i)}</td>
@@ -85,19 +88,39 @@ class MitePage extends ResultsPage {
     });
 
     this.drawCloseUp(mite, zone);
-    this.timeChart($("chart-mite"), {
+    this.drawScoreChart(mite, review);
+  }
+
+  // The motion score over the mite's own timer: its recordings only, from 0 where
+  // it was added (a mite there from the start: the run's times).
+  drawScoreChart(mite, review) {
+    const { results } = this;
+    const { times: x, start } = this.ownTimes(mite);
+    const mine = (values) => values.slice(start);
+    const domain = this.timeDomain();
+    Charts.line($("chart-mite"), {
+      x,
+      xDomain: domain && [0, domain[1] - results.times[start]],
+      xLabel: start ? "Time since the mite was added (min)" : undefined,
+      enterFrom: resultsView.enterFrom == null ? null : Math.max(0, resultsView.enterFrom - start),
+      selected: ctx.shown >= start ? ctx.shown - start : null,
+      onXClick: (index) => resultsView.showRecording(index + start),
       yLabel: "Motion score",
       noDirectLabels: true,
       threshold: { value: results.threshold, label: "threshold" },
       range: review.review,
       series: [{
         name: `Mite ${mite.id}`,
-        values: mite.scores,
+        values: mine(mite.scores),
         color: token("--ink"),
         width: 1.5,
-        pointColors: mite.moving.map((moving, i) => token(mite.censored[i] ? "--muted" : moving ? "--moving" : "--still")),
+        pointColors: mine(mite.moving.map((moving, i) => token(mite.censored[i] ? "--muted" : moving ? "--moving" : "--still"))),
       }],
-      tooltipExtra: (i) => `<div class="tip-note">${this.unfollowed(mite, i) || (mite.censored[i] ? "gone" : mite.moving[i] ? "moving" : "still")}${mite.corrected[i] ? ", corrected by hand" : mite.to_check.includes(i) ? ", to check" : ""}</div>`,
+      tooltipExtra: (k) => {
+        const i = k + start;
+        return `<div class="tip-note">${this.unfollowed(mite, i) || (mite.censored[i] ? "gone" : mite.moving[i] ? "moving" : "still")}${
+          mite.corrected[i] ? ", corrected by hand" : mite.to_check.includes(i) ? ", to check" : ""}${start ? ` · at ${minutes(results.times[i])} of the run` : ""}</div>`;
+      },
     });
   }
 

@@ -185,3 +185,31 @@ def test_the_view_says_which_mite_and_recording_to_label_next():
     for recording in range(3):
         d.set("2", recording, "still")
     assert d.view()["next_mite"] is None
+
+
+def test_a_live_runs_mite_has_nothing_to_label_where_it_was_not_followed():
+    # mite 0 added at the second recording, mite 1 counted dead from the third
+    followed = [{"id": "0", "zone_id": 1, "start": 1, "stop": None}, {"id": "1", "zone_id": 1, "start": 0, "stop": 2},
+                {"id": "2", "zone_id": 2}]
+    d = TruthDraft(followed, ZONES, 3)
+    with pytest.raises(ValueError, match="not followed"):
+        d.set("0", 0, "moving")
+    with pytest.raises(ValueError, match="not followed"):
+        d.cycle("1", 2)
+    d.fill(1, 0, "moving")  # only mite 1 was there in the first recording
+    d.fill(1, 1, "dead")    # still from the second on, where each was followed
+    assert d.states("0") == [None, "still", "still"] and d.states("1") == ["moving", "still", None]
+    d.dead_from("2", 0)
+    view = d.view()
+    assert view["cells"] == 2 + 2 + 3 and view["done"] == 7 and view["next_mite"] is None
+    assert view["mites_cells"] == {"0": 2, "1": 2, "2": 3} and view["mites_done"] == {"0": 2, "1": 2, "2": 3}
+    assert view["followed"] == {"0": [False, True, True], "1": [True, True, False]}
+    assert view["counts"][0]["not_followed"] == 1 and view["zones"][1]["counts"][2]["not_followed"] == 1
+    # "not a mite" is about the detection, so it can still be given
+    d.set("0", 0, "not_a_mite")
+    assert d.states("0") == ["not_a_mite"] * 3
+
+
+def test_a_dataset_whose_mites_were_all_followed_throughout_has_no_count_of_mites_not_followed():
+    view = draft().view()
+    assert "not_followed" not in view["counts"][0] and view["followed"] == {}

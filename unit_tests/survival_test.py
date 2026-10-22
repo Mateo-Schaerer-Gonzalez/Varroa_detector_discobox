@@ -257,11 +257,11 @@ def test_a_mite_added_later_counts_its_life_from_when_it_was_added():
     # And so is the count of mites alive beside the curve.
     assert survival.alive_numbers([added]) == [1, 0, 0, 0]
     # Given the start in the results, the pages count it so; its lifeline is on
-    # the run's clock: from 10 min, when it was added, to its death at 20.
+    # its own clock: dead 10 min after it was added at 10, at 20 min of the run.
     results = results_with({(1, "venom"): [[False, True, False, False]]})
     results["times"], results["censored"], results["started"] = [0, 10, 20, 30], {"0": [0]}, {"0": 1}
     report = SurvivalReport(results, 5).describe()
-    assert report["mites"]["0"] == {"in_study": True, "time": 20, "dead": True, "lost": False, "added": 10, "lived": 10}
+    assert report["mites"]["0"] == {"in_study": True, "time": 10, "dead": True, "lost": False, "added": 10, "at": 20}
     assert report["zones"][1]["alive"] == [100.0, 0.0, 0.0, 0.0] and report["zones"][1]["n_alive"] == [1, 0, 0, 0]
 
 
