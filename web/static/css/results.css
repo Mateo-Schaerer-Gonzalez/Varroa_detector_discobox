@@ -1,0 +1,144 @@
+/* --- 3 · results ---------------------------------------------------------------- */
+
+.breadcrumb { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 18px; font-size: 13px; }
+.breadcrumb[hidden] { display: none; }
+.breadcrumb [aria-current] { color: var(--ink); }
+.crumb-sep { color: var(--rule); }
+
+.banner {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap;
+  padding: 8px 12px; margin-bottom: 20px; font-size: 13px;
+  border-left: 3px solid var(--series-4); background: #fdf7e8;
+}
+
+.page-head {
+  display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; flex-wrap: wrap;
+  padding-bottom: 14px; margin-bottom: 0;
+}
+.page-head .meta { margin: 4px 0 0; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.pager { display: flex; gap: 6px; }
+
+/* Key figures: a single row between two rules, divided by hairlines. */
+.stats {
+  display: grid; grid-template-columns: repeat(4, minmax(0, 1fr));
+  border-top: 1px solid var(--rule-strong); border-bottom: 1px solid var(--rule);
+  margin-bottom: 32px;
+}
+.stat { padding: 12px 16px 12px 0; }
+.stat + .stat { padding-left: 16px; border-left: 1px solid var(--rule); }
+.stat-label { font-size: 12px; color: var(--muted); }
+.stat-value { font-size: 22px; font-weight: 500; color: var(--ink); line-height: 1.3; }
+.stat-value small { font-size: 13px; color: var(--muted); font-weight: 400; }
+.stat-note { font-size: 12px; color: var(--muted); }
+
+.grid-2 { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 40px; margin-bottom: 36px; align-items: start; }
+.grid-mite { display: grid; grid-template-columns: 380px minmax(0, 1fr); gap: 40px; margin-bottom: 36px; align-items: start; }
+
+/* Figures: title above, numbered caption below, no box. */
+.fig { margin: 0; min-width: 0; }
+.fig-title { font-size: 14px; font-weight: 600; color: var(--ink); margin-bottom: 10px; }
+.fig figcaption { margin-top: 10px; font-size: 12.5px; line-height: 1.5; color: var(--muted); }
+.fig figcaption b { color: var(--ink); font-weight: 600; }
+
+.block { margin-bottom: 36px; min-width: 0; }
+.block > h2 { padding-bottom: 8px; margin-bottom: 12px; border-bottom: 1px solid var(--rule); }
+.grid-2 > .block { margin-bottom: 0; }
+#report-body > .fig { margin-bottom: 36px; }
+
+/* Small multiples of the fraction of mites moving per zone. */
+/* Each cell draws its right and bottom rule, so a part-filled last row leaves no gaps. */
+.zone-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); border-top: 1px solid var(--rule); border-left: 1px solid var(--rule); }
+.zone-card { display: block; padding: 8px 10px 6px; color: var(--text); background: var(--paper); border-right: 1px solid var(--rule); border-bottom: 1px solid var(--rule); }
+.zone-card:hover, .zone-card:focus-visible { background: var(--wash); text-decoration: none; outline: none; }
+.zone-card-head { display: flex; align-items: baseline; justify-content: space-between; }
+.zone-card-id { font-weight: 600; color: var(--ink); font-size: 13px; }
+.zone-card-value { font-size: 13px; color: var(--ink); }
+.zone-card-group { font-size: 12px; margin: 1px 0 4px; overflow: hidden; }
+.zone-card-plot { height: 40px; display: flex; align-items: center; font-size: 12px; }
+.spark { display: block; width: 100%; height: 40px; }
+.spark-frame { fill: none; stroke: var(--rule); stroke-width: 1; }
+
+.crop-wrap { background: #000; line-height: 0; }
+.crop { width: 100%; height: auto; display: block; max-height: 420px; }
+.crop-wrap.square .crop { aspect-ratio: 1; max-height: none; }
+.zone-outline { fill: none; stroke-width: 2.5; }
+.mite-marker .hit { fill: transparent; stroke: none; }
+.mite-marker .ring { fill: none; stroke-width: 2.5; pointer-events: none; }
+.mite-marker.moving .ring { stroke: #3fdc8f; }
+.mite-marker.still .ring { stroke: #ffb52e; }
+.mite-marker text { fill: #fff; font-weight: 600; paint-order: stroke; stroke: #000; stroke-width: 3px; font-family: var(--sans); pointer-events: none; }
+.mite-marker:hover .ring { stroke-width: 4.5; }
+/* What the score sees of the mite, in place of its ring: dots round its outline and
+   an arrow to the side the outline changes on, in the colour of the call. */
+.mite-marker.outlined .ring { stroke: transparent; }
+.mite-outline { pointer-events: none; }
+.mite-outline circle { stroke: rgba(0, 0, 0, 0.25); stroke-width: 0.5; vector-effect: non-scaling-stroke; }
+.mite-outline .arrow { stroke-width: 2.5; stroke-linecap: round; vector-effect: non-scaling-stroke; }
+.mite-marker.moving .mite-outline .arrow { stroke: #3fdc8f; }
+.mite-marker.moving .mite-outline .arrow-head { fill: #3fdc8f; }
+.mite-marker.still .mite-outline .arrow { stroke: #ffb52e; }
+.mite-marker.still .mite-outline .arrow-head { fill: #ffb52e; }
+.mite-marker.gone .mite-outline .arrow { stroke: #b9bdc2; }
+.mite-marker.gone .mite-outline .arrow-head { fill: #b9bdc2; }
+.mite-marker.corrected .mite-outline .arrow { stroke-dasharray: 5 3; }
+/* A call corrected by hand: the ring dashed, "corrected" beside the call. */
+.mite-marker.corrected .ring { stroke-dasharray: 6 3; }
+/* A mite marked gone in the recording shown, e.g. fallen off. */
+.mite-marker.gone .ring { stroke: #b9bdc2; stroke-dasharray: 1 3; stroke-linecap: round; }
+.tip-glyphs .gone { color: var(--muted); }
+.state-select { font: inherit; font-size: 12px; padding: 3px 6px; color: var(--ink); background: var(--paper); border: 1px solid var(--rule); border-radius: 3px; }
+.corrected-mark { color: var(--muted); font-size: 0.85em; white-space: nowrap; }
+/* The calls to check by eye: "to check" beside a close call, the question under the close-up. */
+.check-mark { color: var(--muted); font-size: 0.85em; white-space: nowrap; }
+.check-mark.to-check { color: var(--ink); font-weight: 600; padding: 1px 5px; background: #fdf7e8; border: 1px solid var(--series-4); border-radius: 2px; }
+.review-note { margin: 0 0 16px; }
+.review-times { display: inline-flex; gap: 6px; flex-wrap: wrap; }
+.review-times .current { border-color: var(--ink); font-weight: 600; }
+.review-ask { display: block; margin-top: 8px; padding: 8px 10px; color: var(--ink); background: #fdf7e8; border-left: 3px solid var(--series-4); }
+.review-ask button { margin: 4px 4px 0 0; }
+.review-now { flex-basis: 100%; display: flex; align-items: center; gap: 8px; font-weight: 600; }
+[data-answer].chosen { outline: 2px solid var(--ink); outline-offset: 1px; }
+[data-answer] kbd { margin-left: 4px; padding: 0 4px; font: inherit; font-size: 0.85em; border: 1px solid currentColor; border-radius: 2px; opacity: 0.7; }
+/* How many of the mites to check are done. */
+.review-progress { flex-basis: 100%; display: flex; align-items: center; gap: 10px; }
+.review-progress .progress-bar { flex: 1; max-width: 320px; height: 6px; }
+.review-progress .hint { margin: 0; white-space: nowrap; }
+.review-intro + .review-progress { margin: 0 0 12px; }
+.review-intro { max-width: 78ch; }
+.review-band { margin-top: 12px; align-items: center; }
+.review-band .hint { margin: 0; }
+.tip-glyphs .corrected { outline: 1px solid currentColor; border-radius: 2px; }
+/* A mite never seen moving, left out of the survival numbers: its id greyed out. */
+.mite-marker.left-out text { fill: #c4c8cd; font-style: italic; }
+.left-out-id, .left-out-id a { color: var(--muted); font-style: italic; text-decoration: line-through; }
+
+/* The recording shown on the result pages, played over the first frame. */
+.crop-wrap.loading .crop image, .plate.loading img { opacity: 0.45; }
+.clip-status { min-height: 1.5em; }
+.clip-block { margin-bottom: 36px; }
+.clip-block .plate { max-width: 1100px; }
+tr.current td { background: var(--wash); font-weight: 600; }
+.tip-glyphs { display: flex; flex-wrap: wrap; gap: 3px; font-size: 13px; line-height: 1.4; }
+.tip-glyphs .moving { color: var(--moving); }
+.tip-glyphs .still { color: var(--still); }
+.tip-glyphs .current { border-bottom: 2px solid var(--ink); }
+
+/* On the labelling page, a zone without mites is only a faint outline. */
+.zone.no-mites { --zone-color: var(--rule); border-style: dotted; cursor: default; opacity: 0.7; }
+.zone.no-mites:hover { outline: none; }
+
+/* Tables in the booktabs style: rules at top, under the header and at the bottom only. */
+.table-wrap { overflow-x: auto; }
+table { border-collapse: collapse; width: 100%; font-size: 13px; border-top: 1px solid var(--rule-strong); border-bottom: 1px solid var(--rule-strong); }
+th, td { padding: 5px 10px; text-align: left; white-space: nowrap; }
+th:first-child, td:first-child { padding-left: 0; }
+th { font-weight: 600; color: var(--ink); border-bottom: 1px solid var(--rule-strong); }
+td.num, th.num { text-align: right; }
+table.clickable tbody tr { cursor: pointer; }
+tr.control-row td { font-weight: 600; border-bottom: 1px solid var(--rule); }
+table.clickable tbody tr:hover, table.clickable tbody tr:focus-visible { background: var(--wash); outline: none; }
+
+.files { margin: 0; padding: 0; list-style: none; font-size: 13px; }
+.files li { padding: 3px 0; font-family: var(--mono); font-size: 12.5px; }
+.files li .muted { font-family: var(--sans); font-size: 12.5px; margin-left: 8px; }
+

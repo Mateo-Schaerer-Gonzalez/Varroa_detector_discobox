@@ -1,0 +1,65 @@
+/* --- recordings kept ------------------------------------------------------------------ */
+
+.recordings-block { margin-top: 44px; }
+.recordings-block > h2 { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.recordings-block > h2 .hint { margin: 0; font-weight: 400; }
+.recordings td { vertical-align: top; padding-top: 8px; padding-bottom: 8px; white-space: normal; }
+.recordings tbody tr + tr td { border-top: 1px solid var(--rule); }
+.recordings .rec-name { font-weight: 600; color: var(--ink); white-space: nowrap; }
+.recordings .sub { display: block; color: var(--muted); font-size: 12px; }
+.recordings .settings { min-width: 260px; }
+.recordings .plates { min-width: 180px; }
+.recordings .name { min-width: 160px; }
+.recordings td.nowrap { white-space: nowrap; }
+.recordings .row-actions { white-space: nowrap; }
+.recordings .row-actions button + button { margin-left: 4px; }
+.rec-state { display: inline-block; margin-left: 6px; padding: 0 5px; font-size: 11px; font-weight: 600; color: #fff; background: var(--muted); border-radius: 2px; vertical-align: 1px; }
+.rec-state.now { background: var(--critical); }
+.rec-state.cut { background: var(--still); }
+
+/* A setting of a figure, between its title and the chart. */
+.fig-controls { display: flex; align-items: baseline; flex-wrap: wrap; gap: 4px 12px; margin: 4px 0 8px; font-size: 12.5px; }
+.death-field { display: inline-flex; align-items: baseline; gap: 6px; }
+.death-field .number-input { width: 84px; padding: 3px 6px; font-size: 12.5px; }
+.death-status { margin: 0; }
+
+/* unusual activity and plate shake (js/results/activity-section.js) */
+.mover-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 12px; }
+.mover-card { display: block; color: var(--text); }
+.mover-card[href]:hover .mover-frame { stroke: var(--ink); }
+.mover-head { font-size: 12px; margin-bottom: 4px; }
+.mover-plot { width: 100%; height: auto; display: block; }
+.mover-frame { fill: var(--paper); stroke: var(--rule); }
+.mover-body { fill: var(--rule); fill-opacity: 0.35; stroke: var(--muted); stroke-width: 1; stroke-linejoin: round; }
+.mover-step { stroke-width: 1.4; stroke-linecap: round; }
+.mover-scale { font-size: 9px; fill: var(--muted); }
+.mover-bar { stroke: var(--muted); stroke-width: 1.4; }
+.activity-plate { position: relative; max-width: 1100px; }
+.activity-plate .track-layer { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+.track line { stroke-width: 4; stroke-linecap: round; }
+.track-edge { fill: none; stroke: #ffffff; stroke-width: 8; stroke-linejoin: round; stroke-linecap: round; opacity: 0.85; }
+.track, .track-disturbed, .track-rotator { pointer-events: visiblePainted; }
+.track-start { fill: #ffffff; stroke: var(--ink); stroke-width: 2; }
+.track-label, .track-disturbed text, .track-rotator text { font: 600 22px var(--sans); fill: #ffffff; paint-order: stroke; stroke: var(--ink); stroke-width: 4px; }
+.track-disturbed circle { fill: none; stroke: var(--series-2); stroke-width: 3; }
+.track-rotator circle { fill: none; stroke: var(--series-7); stroke-width: 3; }
+.mover-exit { stroke: var(--ink); stroke-dasharray: 4 3; }
+.rotator-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 16px; }
+.rotator-card { min-width: 0; }
+
+/* the playback (js/results/playback-page.js) */
+.playback-bar { position: sticky; top: 0; z-index: 5; display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px;
+  padding: 10px 0; margin-bottom: 4px; background: var(--paper); border-bottom: 1px solid var(--rule); }
+.playback-bar input[type="range"] { flex: 1 1 260px; min-width: 0; }
+.playback-speed { font-size: 13px; }
+.playback-time { font-size: 13px; font-variant-numeric: tabular-nums; min-width: 18em; }
+.playback-zones { display: grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); gap: 16px; margin: 12px 0 24px; }
+.playback-zone { border: 1px solid var(--rule); border-radius: 6px; padding: 10px; }
+.playback-zone-head { font-size: 13px; margin-bottom: 8px; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.playback-mites { display: grid; grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); gap: 8px; }
+.playback-card { display: block; color: var(--text); }
+.playback-card canvas { width: 100%; height: auto; display: block; image-rendering: pixelated; background: #000;
+  border: 3px solid var(--rule); border-radius: 3px; box-sizing: border-box; }
+.playback-card[data-state="moving"] canvas { border-color: var(--moving); }
+.playback-card[data-state="still"] canvas { border-color: var(--still); }
+.playback-card[href]:hover canvas { outline: 2px solid var(--ink); }

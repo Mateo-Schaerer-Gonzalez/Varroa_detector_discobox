@@ -78,7 +78,9 @@ only draws (the user's choice: "make all classes python", logic in Python rather
 Python UI framework). Math only for drawing (chart scales, jitter, kernel density) may stay
 in JS. The front end in `web/static/` has no framework and no build step: small files under
 `web/static/js/<area>/`, one class each, loaded in order by `index.html`,
-wired up in `js/main.js`.
+wired up in `js/main.js`. The styles are in `web/static/css/`, one file per part of the page (cut from
+one `style.css` on 2026-10-22), linked by `index.html` in an order the cascade depends on
+(`narrow-screens.css` overrides those before it).
 
 **One analysis core for folder and live runs.** `classes/motion_analysis.py`
 (`MotionAnalysis`) detects mites on the first frame, then scores each recording from all its

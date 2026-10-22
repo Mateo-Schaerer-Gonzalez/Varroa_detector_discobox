@@ -1,0 +1,27 @@
+/* --- 1 · recordings -------------------------------------------------------------- */
+
+/* The start pages of the analysis and calibration: the choice in a narrow
+   column, the lists of recordings under it at full width. */
+.open-narrow { max-width: 640px; margin: 48px auto 0; }
+
+.drop-zone {
+  display: flex; flex-direction: column; align-items: center; text-align: center; gap: 4px;
+  padding: 44px 24px;
+  border: 1px dashed #aeb4bb;
+  transition: background 0.12s, border-color 0.12s;
+}
+.drop-zone:focus-visible { outline: 1px solid var(--ink); outline-offset: 3px; }
+.drop-zone.dragging { background: var(--wash); border-color: var(--ink); border-style: solid; }
+.drop-icon { width: 28px; height: 28px; fill: none; stroke: var(--muted); stroke-width: 1.4; stroke-linecap: round; stroke-linejoin: round; }
+.drop-title { font-size: 16px; font-weight: 600; color: var(--ink); margin: 6px 0 0; }
+.drop-zone button { margin-top: 12px; }
+
+.progress { width: 100%; max-width: 420px; margin-top: 18px; }
+.progress-bar { height: 3px; background: var(--rule); overflow: hidden; }
+.progress-bar > div { height: 100%; width: 0; background: var(--ink); transition: width 0.15s; }
+
+.path-option { margin-top: 20px; }
+.path-option summary { cursor: pointer; color: var(--muted); font-size: 13px; }
+.path-option summary:hover { color: var(--ink); }
+.path-option .row { margin-top: 8px; }
+

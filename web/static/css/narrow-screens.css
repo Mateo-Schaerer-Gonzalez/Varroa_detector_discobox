@@ -1,0 +1,38 @@
+/* --- narrow screens --------------------------------------------------------------- */
+
+@media (max-width: 900px) {
+  main { padding: 20px 16px 64px; }
+  .topbar { padding: 0 16px; }
+  .split, .grid-2, .grid-mite { grid-template-columns: minmax(0, 1fr); gap: 28px; }
+  .split-side { position: static; padding-left: 0; border-left: 0; }
+  .stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .mode-choice, .confusion-grid { grid-template-columns: minmax(0, 1fr); }
+  .stat:nth-child(3) { padding-left: 0; border-left: 0; }
+  .stat:nth-child(n + 3) { border-top: 1px solid var(--rule); }
+}
+@media (max-width: 600px) {
+  .text-tag { font-size: 10px; padding: 1px 3px; }
+  .zone-num { display: none; }
+  .steps { gap: 14px; }
+}
+
+/* Saved ground truth: the list on the calibration page and the report's picker. */
+.saved-datasets { margin-top: 36px; }
+.saved-datasets td { vertical-align: middle; }
+.saved-datasets input[type="checkbox"], .dataset-option input { margin: 0; accent-color: var(--ink); }
+.row-actions { text-align: right; }
+.row-actions button + button { margin-left: 4px; }
+.pool-row { margin-top: 12px; }
+.pool-row .hint { margin: 0; }
+.dataset-list { margin-top: 0; }
+.dataset-list li { display: block; }
+.dataset-option { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; cursor: pointer; }
+.dataset-option .hint { font-family: var(--sans); }
+
+/* Calibration report: pool saved ground truth, and choose the movement score. */
+.pool-toggle { display: flex; align-items: baseline; gap: 10px; margin-bottom: 10px; cursor: pointer; }
+.pool-toggle input { margin: 0; accent-color: var(--ink); }
+.pool-toggle .hint { display: block; margin: 2px 0 0; }
+.dataset-option input:disabled + .group-name { color: var(--muted); }
+#zone-errors tbody tr { cursor: pointer; }
+

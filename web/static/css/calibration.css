@@ -1,0 +1,221 @@
+/* --- calibration window -------------------------------------------------------------- */
+
+#view-cal-open .open-narrow > .hint { margin: 6px 0 20px; }
+.mode-choice { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin: 0 0 20px; padding: 0; border: 0; }
+.mode-choice legend { padding: 0; margin-bottom: 8px; font-weight: 600; color: var(--ink); }
+.mode-option {
+  display: grid; grid-template-columns: auto 1fr; gap: 2px 8px; align-items: baseline;
+  padding: 12px 14px; border: 1px solid var(--rule); cursor: pointer;
+}
+.mode-option:hover { background: var(--wash); }
+.mode-option:has(input:checked) { border-color: var(--ink); box-shadow: inset 0 0 0 1px var(--ink); }
+.mode-option input { margin: 0; accent-color: var(--ink); }
+.mode-title { font-weight: 600; color: var(--ink); }
+.mode-option .hint { grid-column: 2; margin: 0; }
+
+/* The recording slider over a clip: the same size however many recordings there
+   are. On the ground-truth page a strip under the track marks the labelled ones. */
+.rec-bar { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 10px; }
+.rec-tabs { flex: 1; min-width: 0; display: flex; }
+.rec-slider { --thumb: 14px; flex: 1; min-width: 0; display: flex; align-items: center; gap: 14px; }
+.rec-track { flex: 1; min-width: 120px; }
+.rec-track input[type="range"] {
+  position: relative; z-index: 1;  /* the thumb over the ticks */
+  -webkit-appearance: none; appearance: none;
+  display: block; width: 100%; height: 20px; margin: 0;
+  background: transparent; cursor: pointer;
+}
+.rec-track input[type="range"]:disabled { cursor: default; opacity: 0.5; }
+.rec-track input[type="range"]:focus { outline: none; }
+.rec-track input[type="range"]::-webkit-slider-runnable-track { height: 3px; background: var(--rule); }
+.rec-track input[type="range"]::-moz-range-track { height: 3px; background: var(--rule); }
+.rec-track input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: var(--thumb); height: var(--thumb); margin-top: calc((3px - var(--thumb)) / 2);
+  border-radius: 50%; background: var(--ink); border: 2px solid var(--paper); box-shadow: 0 0 0 1px var(--ink);
+}
+.rec-track input[type="range"]::-moz-range-thumb {
+  box-sizing: border-box; width: var(--thumb); height: var(--thumb);
+  border-radius: 50%; background: var(--ink); border: 2px solid var(--paper); box-shadow: 0 0 0 1px var(--ink);
+}
+.rec-track input[type="range"]:focus-visible::-webkit-slider-thumb { box-shadow: 0 0 0 1px var(--ink), 0 0 0 4px var(--rule); }
+.rec-track input[type="range"]:focus-visible::-moz-range-thumb { box-shadow: 0 0 0 1px var(--ink), 0 0 0 4px var(--rule); }
+/* One cell per recording, each centred under the thumb's place for it. The strip
+   runs from the first thumb centre to the last, so the end cells are half cells. */
+.rec-done { display: flex; height: 4px; margin: 1px calc(var(--thumb) / 2) 0; }
+.rec-done i { flex: 1; background: var(--wash); }
+.rec-done i:first-child, .rec-done i:last-child { flex: 0.5; }
+.rec-done i.done { background: var(--ink); }
+/* The ticks: from the first thumb centre to the last, just under the track. */
+.rec-ticks { position: relative; height: 5px; margin: -7px calc(var(--thumb) / 2) 2px; }
+.rec-ticks i { position: absolute; top: 0; width: 1px; height: 5px; margin-left: -0.5px; background: var(--rule-strong); }
+.rec-readout { flex: none; min-width: 150px; font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.rec-readout b { color: var(--ink); font-weight: 600; margin-right: 6px; }
+.rec-tick { color: var(--ink); margin-left: 6px; }
+.truth-crop .crop { max-height: 68vh; }
+/* One mite at a time: its clip and where its pixels change, side by side. */
+.truth-split { grid-template-columns: minmax(0, 1fr) 320px; }
+.truth-labels { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin-bottom: 10px; }
+.truth-labels button.current { color: #fff; background: var(--ink); border-color: var(--ink); }
+.truth-labels kbd { margin-left: 2px; padding: 0 4px; font: inherit; font-size: 0.85em; color: inherit; background: none; border: 1px solid currentColor; border-radius: 2px; opacity: 0.6; }
+.truth-labels .truth-key { font-size: 12px; }
+.truth-labels button.current .truth-key.moving { color: #3fdc8f; }
+.truth-labels button.current .truth-key.still { color: #ffb52e; }
+.truth-labels button.current .truth-key.not_a_mite, .truth-labels button.current .truth-key.unset { color: #fff; }
+#truth-dead { margin-left: auto; }
+.truth-views { display: grid; grid-template-columns: minmax(0, 3fr) minmax(0, 2fr); gap: 16px; align-items: start; }
+.truth-views .crop { aspect-ratio: 1; max-height: 62vh; }
+#truth-variation .crop { image-rendering: pixelated; }
+/* The ring round the mite keeps its width however far the clip is zoomed. */
+.truth-ring { fill: none; stroke-width: 2; vector-effect: non-scaling-stroke; }
+.truth-ring.moving { stroke: #3fdc8f; }
+.truth-ring.still { stroke: #ffb52e; }
+.truth-ring.unset { stroke: #fff; stroke-dasharray: 4 3; }
+.truth-ring.not_a_mite { stroke: #b9bdc2; stroke-dasharray: 1 4; stroke-linecap: round; }
+/* On the small plate every mite is a dot to click; the one on screen stands out. */
+.truth-map a.mite-dot { pointer-events: auto; z-index: 2; }
+.truth-map .mite-dot.current { width: 11px; height: 11px; margin: -5.5px 0 0 -5.5px; border: 2px solid var(--ink); z-index: 3; box-shadow: 0 0 0 2px #fff; }
+#clip-status { min-height: 1.5em; }
+.truth-progress { margin: 12px 0 0; max-width: none; }
+.truth-progress .hint b { color: var(--ink); font-weight: 600; }
+.truth-marker { cursor: pointer; outline: none; }
+.truth-marker .hit { fill: transparent; }
+.truth-marker .ring { fill: none; stroke-width: 2.5; }
+.truth-marker text { fill: #fff; font-weight: 600; paint-order: stroke; stroke: #000; stroke-width: 3px; font-family: var(--sans); pointer-events: none; }
+.truth-marker.unset .ring { stroke: #fff; stroke-dasharray: 4 3; }
+.truth-marker.moving .ring { stroke: #3fdc8f; }
+.truth-marker.still .ring { stroke: #ffb52e; }
+.truth-marker.not_a_mite .ring { stroke: #b9bdc2; stroke-dasharray: 1 3; stroke-linecap: round; }
+.truth-marker:hover .ring, .truth-marker:focus-visible .ring { stroke-width: 4.5; }
+
+.truth-map { margin: 14px 0 0; }
+.truth-map .zone-num { font-size: 9px; padding: 0 3px; }
+.nav-zone { --zone-color: var(--series-other); border-style: dashed; }
+.nav-zone.done { --zone-color: var(--ink); border-style: solid; }
+.nav-zone.current { outline: 2px solid var(--series-1); outline-offset: 1px; }
+.truth-map .mite-dot { width: 5px; height: 5px; margin: -2.5px 0 0 -2.5px; border-width: 0.5px; }
+.mite-dot.unset { background: #fff; border-color: var(--muted); }
+.mite-dot.moving { background: var(--moving); }
+.mite-dot.still { background: var(--still); }
+.mite-dot.rejected { background: var(--series-other); }
+/* a live run's mite not followed in the recording shown: added later, or counted dead */
+.mite-dot.not-followed { background: none; border-style: dashed; border-color: var(--muted); opacity: 0.6; }
+.truth-unfollowed { display: flex; align-items: center; justify-content: center; min-height: 220px; background: var(--wash); color: var(--muted); }
+
+/* The poke test: the whole plate, a ring to click round every mite. */
+.poke-link { display: block; margin-top: 8px; text-align: center; }
+.poke-map .poke-zone { pointer-events: none; cursor: default; }
+.poke-map .poke-zone .zone-num { pointer-events: auto; border: 0; border-radius: 0; cursor: pointer; }
+.poke-map .poke-zone .zone-num:hover { background: var(--ink); }
+.poke-mite {
+  position: absolute; z-index: 2;
+  width: 18px; height: 18px; margin: -9px 0 0 -9px; padding: 0;
+  border: 2px dashed #fff; border-radius: 50%; background: none;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.55);
+  cursor: pointer;
+}
+.poke-mite:hover, .poke-mite:focus-visible { width: 22px; height: 22px; margin: -11px 0 0 -11px; outline: none; }
+.poke-mite.unset:hover { background: none; }
+.poke-mite.moved, .poke-mite.moved:hover { border: 2.5px solid #3fdc8f; background: none; box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.55), inset 0 0 0 1px rgba(0, 0, 0, 0.55); }
+/* did not move: a ring with a cross through it, so it does not rest on colour alone */
+.poke-mite.unmoved, .poke-mite.unmoved:hover {
+  border: 2.5px solid #ffb52e;
+  background:
+    linear-gradient(45deg, transparent 44%, #ffb52e 44%, #ffb52e 56%, transparent 56%),
+    linear-gradient(-45deg, transparent 44%, #ffb52e 44%, #ffb52e 56%, transparent 56%);
+}
+.poke-map.no-round .poke-mite { opacity: 0.5; }
+.poke-rounds li.current { box-shadow: inset 3px 0 0 var(--ink); padding-left: 8px; }
+.poke-rounds button.group-name {
+  padding: 0; font: inherit; font-weight: 500; text-align: left;
+  color: var(--ink); background: none; border: 0; cursor: pointer;
+}
+.poke-rounds button.group-name:hover { text-decoration: underline; background: none; }
+.poke-rounds li.current button.group-name { font-weight: 600; }
+.poke-rounds .hint { flex-basis: 100%; }
+.poke-new { margin-top: 12px; }
+.poke-new select { flex: 1; min-width: 0; }
+
+.truth-key { display: inline-block; width: 14px; text-align: center; font-size: 11px; }
+.truth-key.moving { color: var(--moving); }
+.truth-key.still { color: var(--still); }
+.truth-key.not_a_mite, .truth-key.unset { color: var(--muted); }
+.zone-actions { margin-top: 14px; }
+.zone-actions .hint { display: block; margin-bottom: 6px; }
+
+/* Report */
+.segmented { display: inline-flex; }
+.segmented button + button { margin-left: -1px; }
+.save-threshold label { font-weight: 500; color: var(--ink); }
+.save-band { margin-top: 10px; }
+.save-band label { display: inline-flex; align-items: center; gap: 6px; }
+.save-threshold input[type="number"] {
+  width: 110px; padding: 6px 8px; font: inherit; font-size: 13px;
+  border: 1px solid var(--rule); border-radius: 2px;
+}
+.save-threshold input[type="number"]:focus { outline: none; border-color: var(--ink); }
+
+table.confusion { width: 100%; }
+table.confusion th.cm-group { text-align: center; border-bottom: 1px solid var(--rule); font-weight: 500; color: var(--muted); }
+table.confusion th.cm-col { text-align: center; }
+table.confusion td { padding: 10px 14px; }
+td.cm {
+  text-align: center;
+  background: color-mix(in srgb, var(--series-1) calc(var(--f) * 40%), var(--paper));
+  border: 2px solid var(--paper);
+}
+td.cm b { display: block; font-size: 20px; font-weight: 500; color: var(--ink); }
+td.cm small { color: var(--text); font-size: 12px; }
+td.cm .cm-name { display: block; margin-top: 2px; font-size: 11px; color: var(--muted); }
+td.num.error { color: var(--critical); font-weight: 600; }
+
+.zone.passive { --zone-color: rgba(255, 255, 255, 0.55); border-width: 1px; cursor: default; }
+.zone.passive:hover { outline: none; }
+.outcome-dot {
+  position: absolute; width: 7px; height: 7px; margin: -3.5px 0 0 -3.5px;
+  border-radius: 50%; border: 1.25px solid rgba(255, 255, 255, 0.85); cursor: pointer;
+}
+/* The two kinds of error: moving called still, and still called moving. */
+.outcome-dot.missed-positive, .outcome-dot.missed-negative {
+  width: 11px; height: 11px; margin: -5.5px 0 0 -5.5px; border: 1.5px solid #fff; z-index: 1;
+}
+.outcome-dot.missed-positive { background: var(--series-2); }
+.outcome-dot.missed-negative { background: var(--series-7); border-radius: 1px; }
+
+/* The last recording with every mite's box by its call, and the benchmark's circles. */
+.plate-calls { max-width: 1100px; }
+.plate-calls .crop { max-height: none; }
+.call-mite { cursor: pointer; }
+.call-mite .hit { fill: transparent; stroke: none; }
+.call-mite .box { fill: none; stroke-width: 1.5; vector-effect: non-scaling-stroke; pointer-events: none; }
+.call-mite.moving .box { stroke: #3fdc8f; }
+.call-mite.still .box { stroke: #ffb52e; }
+.call-mite:hover .box { stroke-width: 3; }
+.benchmark-circle { fill: none; stroke: #ff5fa2; stroke-width: 1.5; vector-effect: non-scaling-stroke; pointer-events: none; }
+
+.confusion-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 40px; }
+.confusion-grid + .table-wrap { margin-top: 28px; }
+.threshold-switch { display: flex; align-items: center; gap: 10px; margin-bottom: 14px; font-size: 13px; }
+.map-legend { margin-top: 8px; }
+
+.fig-title-row { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+.fig-download { display: inline-flex; gap: 4px; flex: none; opacity: 0.55; transition: opacity 0.15s; }
+.fig:hover .fig-download, .fig-download:focus-within { opacity: 1; }
+.fig-download button { padding: 1px 7px; font-size: 11px; font-weight: 500; }
+/* Only charts can be downloaded; a figure holding a table or a map has no buttons. */
+.fig:not(:has(.chart > svg)) .fig-download { display: none; }
+.fig-title-row select, .fig select {
+  font: inherit; font-size: 12px; font-weight: 400; color: var(--ink);
+  padding: 3px 6px; border: 1px solid var(--rule); border-radius: 2px; background: var(--paper);
+}
+
+/* Mites moving per group: small multiples, one framed chart per group. */
+.group-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 12px 28px; }
+.group-card-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; font-size: 13px; font-weight: 500; }
+.group-card-head .hint { margin: 0 0 0 auto; font-size: 12px; }
+
+.chart .point .hit { cursor: default; }
+.chart .point.hover .marker, .chart .point.hover .glyph { stroke-width: 3; }
+.chart .point-label { fill: var(--ink); font-size: 11.5px; font-weight: 600; paint-order: stroke; stroke: var(--paper); stroke-width: 3px; }
+.legend-item svg { flex: none; }
+

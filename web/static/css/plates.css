@@ -1,0 +1,98 @@
+/* --- plate images with zones laid over them ------------------------------------- */
+
+.plate { position: relative; line-height: 0; }
+.plate img { width: 100%; height: auto; display: block; }
+
+/* A plate is only an outline with its number, so nothing covers the mites. */
+.zone {
+  --zone-color: var(--series-other);
+  position: absolute;
+  border: 1.5px solid var(--zone-color);
+  cursor: pointer;
+}
+.zone.empty { border-style: dashed; }
+.zone:hover, .zone.hot, .zone:focus-visible { outline: 2px solid var(--zone-color); outline-offset: 1px; }
+.zone.editing { outline: 3px solid var(--zone-color); outline-offset: 1px; }
+.zone-num {
+  position: absolute; top: 0; left: 0;
+  padding: 1px 5px;
+  font-size: 10px; font-weight: 600; line-height: 1.4;
+  color: #fff; background: var(--zone-color);
+}
+
+/* A plate's name lives in its printed-label area, beside the plate. */
+.text-zone {
+  --zone-color: var(--series-other);
+  position: absolute;
+  display: flex; align-items: center; justify-content: center;
+  padding: 2px;
+  line-height: 1.25;
+  cursor: pointer;
+}
+.text-zone:hover { text-decoration: none; }
+/* On the labelling page an unnamed plate's label area is blank, so the writing on
+   the glass shows; hovering it outlines where to click. */
+#label-plate .text-zone:hover, #label-plate .text-zone.hot { outline: 1px dashed var(--zone-color); }
+#label-plate .text-zone.editing { outline: 2px solid var(--zone-color); }
+.text-tag {
+  max-width: 100%;
+  padding: 2px 5px;
+  font-size: 12px; font-weight: 500; text-align: center;
+  overflow: hidden; text-overflow: ellipsis;  /* wrap between words, never inside one */
+  color: var(--ink); background: rgba(255, 255, 255, 0.92);
+  border-left: 3px solid var(--zone-color);
+}
+.text-tag small { display: block; font-size: 11px; color: var(--muted); }
+.text-tag.empty { color: var(--muted); border-left-style: dotted; }
+.text-zone:hover .text-tag, .text-zone.hot .text-tag { background: #fff; outline: 1px solid var(--zone-color); }
+#result-plate .text-tag { padding: 1px 3px; font-size: 10px; border-left-width: 2px; }
+#result-plate .text-tag small { font-size: 10px; }
+
+/* While a plate is named nothing lies over its label area, so the writing on the
+   glass shows: the editor is beside the picture, in the side panel, and only its
+   colour marks the plate. */
+.text-zone.editing .text-tag { display: none; }
+.zone-editor-slot { min-height: 92px; margin-top: 18px; }
+.zone-editor-slot:empty::before { content: "No plate selected."; font-size: 13px; color: var(--muted); }
+.zone-editor {
+  --zone-color: var(--ink);
+  padding: 8px 10px;
+  border-left: 4px solid var(--zone-color); background: var(--wash);
+}
+.zone-editor-title { display: flex; align-items: center; gap: 6px; margin-bottom: 6px; font-size: 12px; font-weight: 600; color: var(--ink); }
+.zone-editor-title .swatch { background: var(--zone-color); }
+.zone-editor input[type="text"] {
+  width: 100%;
+  padding: 4px 6px; font-size: 13px;
+  border: 1px solid var(--zone-color); border-radius: 0;
+}
+.control-check {
+  display: flex; align-items: center; gap: 5px;
+  margin-top: 6px;
+  font-size: 12px; color: var(--ink);
+  cursor: pointer;
+}
+.control-check input { margin: 0; }
+
+/* A detection on the labelling page: a ring around it, to click when it is not
+   a mite. Fixed size on screen, centred on the mite, and clear of it. */
+.label-mite {
+  position: absolute; z-index: 1;
+  width: 16px; height: 16px; margin: -8px 0 0 -8px;
+  border: 2px solid #3fdc8f; border-radius: 50%;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.55), inset 0 0 0 1px rgba(0, 0, 0, 0.55);
+  cursor: pointer;
+}
+.label-mite:hover, .label-mite:focus-visible { width: 20px; height: 20px; margin: -10px 0 0 -10px; outline: none; }
+.label-mite.rejected {
+  border-color: #ff5a5a; box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.55);
+  background:
+    linear-gradient(45deg, transparent 44%, #ff5a5a 44%, #ff5a5a 56%, transparent 56%),
+    linear-gradient(-45deg, transparent 44%, #ff5a5a 44%, #ff5a5a 56%, transparent 56%);
+}
+
+.mite-dot {
+  position: absolute; width: 7px; height: 7px; margin: -3.5px 0 0 -3.5px;
+  border-radius: 50%; border: 1px solid #fff; pointer-events: none;
+}
+

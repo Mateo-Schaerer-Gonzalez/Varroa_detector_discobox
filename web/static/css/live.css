@@ -1,0 +1,79 @@
+/* --- live from the Discobox ---------------------------------------------------------- */
+
+.live-form { display: grid; gap: 4px; margin-bottom: 12px; }
+.live-form label, .live-settings label, .light-row label { font-size: 12.5px; color: var(--ink); font-weight: 500; }
+.live-form label:not(.live-check) { margin-top: 8px; }
+.live-form input[type="text"] { min-width: 0; width: 100%; }
+.live-check { display: flex; align-items: baseline; gap: 6px; flex-wrap: wrap; cursor: pointer; font-weight: 400 !important; }
+.live-check input { margin: 0; accent-color: var(--ink); }
+.live-check .hint { flex-basis: 100%; margin: 0 0 0 19px; font-size: 12px; }
+.number-input {
+  width: 100%; font: inherit; font-size: 13px; color: var(--ink); background: var(--paper);
+  padding: 6px 8px; border: 1px solid var(--rule); border-radius: 2px;
+}
+.number-input:focus { outline: none; border-color: var(--ink); }
+.zones-option { display: grid; grid-template-columns: minmax(0, 1fr) 84px; gap: 4px 10px; align-items: center; margin-top: 20px; }
+.zones-option label { font-size: 12.5px; color: var(--ink); font-weight: 500; }
+.zones-option .hint { grid-column: 1 / -1; margin: 0; font-size: 12px; }
+.read-option { margin-top: 20px; }
+.read-option .control-check { margin-top: 0; font-size: 12.5px; font-weight: 500; }
+.live-heading { margin-top: 22px; padding-top: 14px; border-top: 1px solid var(--rule); }
+.live-settings { display: grid; grid-template-columns: minmax(0, 1fr) 84px; gap: 6px 10px; align-items: center; }
+.live-settings .live-check { grid-column: 1 / -1; }
+.live-lights { display: grid; gap: 6px; margin-top: 8px; }
+.light-row { display: grid; grid-template-columns: 44px minmax(0, 1fr) 28px 44px; gap: 8px; align-items: center; }
+.light-row input[type="range"] { width: 100%; accent-color: var(--ink); }
+.light-row output { font-size: 12px; text-align: right; color: var(--muted); }
+.light-toggle.on { color: #fff; background: var(--moving); border-color: var(--moving); }
+
+/* Not :has(img[hidden]): older Firefox on the Discobox's Linux doesn't support
+   :has(), which left the box permanently black. */
+.live-feed { background: var(--wash); line-height: 0; min-height: 120px; }
+.live-feed.filled { background: #000; }
+.live-feed img { width: 100%; height: auto; display: block; }
+
+/* How the test run is going: a strip over the result pages, apart from the charts. */
+.live-panel {
+  display: grid; grid-template-columns: 180px minmax(0, 1fr) auto; gap: 18px; align-items: start;
+  padding: 12px 0 14px; margin-bottom: 22px;
+  border-top: 1px solid var(--rule-strong); border-bottom: 1px solid var(--rule);
+  font-size: 13px;
+}
+.live-thumb-wrap { background: #000; line-height: 0; min-height: 60px; }
+.live-thumb-wrap img { width: 100%; height: auto; display: block; }
+.live-facts { display: grid; gap: 2px; color: var(--text); min-width: 0; }
+.live-facts > div:empty { display: none; }
+.live-title { color: var(--ink); font-weight: 500; }
+.live-next { color: var(--ink); }
+.live-next b { font-weight: 600; font-variant-numeric: tabular-nums; }
+.live-state { display: inline-block; margin-right: 6px; padding: 0 6px; font-size: 12px; font-weight: 600; color: #fff; background: var(--muted); border-radius: 2px; }
+.live-state.running { background: var(--critical); }
+.live-state.paused, .live-state.stopping { background: var(--still); }
+.live-state.finished { background: var(--ink); }
+.live-actions { display: grid; gap: 8px; justify-items: end; }
+.live-waiting { max-width: 640px; margin-top: 16px; color: var(--muted); }
+
+/* A circle per zone, filled clockwise by its mites dead. */
+.run-progress { grid-column: 1 / -1; }
+.zone-circles { display: flex; flex-wrap: wrap; gap: 10px 14px; }
+.zone-circle { display: grid; justify-items: center; gap: 1px; min-width: 34px; font-size: 12px; color: var(--text); }
+.zone-circle .circle { width: 28px; height: 28px; border-radius: 50%;
+  background: conic-gradient(var(--ink) var(--turn), var(--wash) 0); box-shadow: inset 0 0 0 1px var(--rule); }
+.zone-circle.done .circle { background: var(--ink); }
+.zone-circle.idle .circle { background: var(--paper); box-shadow: inset 0 0 0 1px var(--rule); }
+.zone-circle.idle { color: var(--muted); }
+.zone-circle-name { font-weight: 500; }
+.zone-circle-count { color: var(--muted); font-variant-numeric: tabular-nums; }
+.run-progress-text { display: flex; justify-content: space-between; gap: 4px 16px; flex-wrap: wrap; margin-top: 6px; color: var(--text); }
+#run-left { color: var(--muted); }
+
+.live-save { margin-top: 10px; }
+
+/* Adding mites during a run: the lit plates, the mites found on them. */
+.live-add { grid-column: 1 / -1; display: grid; gap: 8px; }
+
+@media (max-width: 900px) {
+  .live-panel { grid-template-columns: minmax(0, 1fr); }
+  .live-actions { justify-items: start; }
+}
+
