@@ -569,7 +569,8 @@ pipeline/     the only package the interface may call: one small module per job
               (its __init__.py lists them), calibration/ and live/ for those pages
 reporting.py  score table -> Excel + figures
 main.py       command-line entry point
-web/          FastAPI server + static page (no framework, no build step)
+web/          FastAPI server: server.py, one router per page area in routes/
+web/static/  the page (no framework, no build step)
 unit_tests/   includes test_layering.py, which enforces the boundary above
 ```
 

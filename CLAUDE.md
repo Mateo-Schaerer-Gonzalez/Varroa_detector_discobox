@@ -44,7 +44,7 @@ skip.
 ## Architecture
 
 **One-way layering, enforced by `unit_tests/test_layering.py`:** `web/` → `pipeline/` →
-`classes/`. `web/server.py` (FastAPI) may import only `pipeline` from the project, never
+`classes/`. `web/` (FastAPI) may import only `pipeline` from the project, never
 cv2/numpy/pandas/matplotlib/`classes`; `pipeline`/`classes` never import web libraries; the
 static page may not reference any remote URL (the app works offline). Everything crossing
 `pipeline`'s boundary is plain dicts/lists/strings/numbers, never a `Zone`, `Mite`,
@@ -63,6 +63,14 @@ keeps it. Imports inside the package point one way with no circle (enforced by
 `test_layering.py`); `paths.py` is at the bottom. Keep modules small (about 300 lines at
 most) and add a module rather than grow one. Module state (the last runs, the truth drafts,
 the open live runs) sits at the top of its module, each in one module only.
+
+**The server** (`web/`, split 2026-10-22): `server.py` puts the app together (still
+`uvicorn web.server:app`) and lists the modules; `routes/` holds one FastAPI router per part
+of the page (recordings, analysis, playback, calibration, live), each with its request
+models; `page_sessions.py` the pages' sessions and what several routes ask of them;
+`page_watch.py` the auto-stop; `http_helpers.py` the shared replies. FastAPI 0.143 matches
+an included router as a unit: a new route whose path another router's could also match must
+go in the same router, in order.
 
 **Logic in Python, drawing in JS.** Any number a page shows (survival, tests, summaries)
 is computed in a class under `classes/` and served through a `pipeline` function; the JS
@@ -216,8 +224,9 @@ own clock and the death rule), `Mite.home` (a mite's centre), `ZoneManager.mites
 `score_cache._cached_by_mite` and the `_*_name` functions (a dataset's `scores/`),
 `ground_truth.mite_states` (a dataset's mites not marked "not a mite"),
 `plate_zones.mite_view`, `plate_zones.zones_of` (a folder's ZoneManager), `paths` (every
-folder and file name), `refusals` (`find`/`check_recording`/`recordings_dir`/`whole_number`). In `web/server.py`: `refused()`/`answer()` turn refusals into HTTP errors. In the
-page: `Hint` (status lines), `ChartKit.show`, `Charts.PERCENT_AXIS`,
+folder and file name), `refusals` (`find`/`check_recording`/`recordings_dir`/
+`whole_number`). In `web/`: `http_helpers.refused()`/`answer()` turn refusals into HTTP
+errors. In the page: `Hint` (status lines), `ChartKit.show`, `Charts.PERCENT_AXIS`,
 `ResultsPage.clockOf()`, `PlateView.clipPicture()`. Scripts: `scripts/script_data.py`.
 
 **Scripts and notebooks.** `scripts/` holds benchmarks and searches; they write to
