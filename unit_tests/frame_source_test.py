@@ -54,7 +54,7 @@ def test_frame_times_are_those_folder_mode_gives_each_frame():
 def test_a_saved_grey_frame_reads_back_as_it_was_and_as_each_channel_of_a_colour_read(tmp_path):
     gray = np.random.default_rng(0).integers(0, 256, (6, 8), dtype=np.uint8)
     cv2.imwrite(str(tmp_path / "frame.bmp"), gray)
-    read = FolderSource._read(tmp_path / "frame.bmp")
+    read = DataLoader.read_image(tmp_path / "frame.bmp")
     assert read.shape == (6, 8) and np.array_equal(read, gray)
     colour = cv2.imread(str(tmp_path / "frame.bmp"), cv2.IMREAD_COLOR)
     assert all(np.array_equal(colour[..., channel], read) for channel in range(3))
@@ -74,9 +74,14 @@ def test_the_folder_source_reads_what_the_data_loader_reads(tmp_path):
     root = write_session(tmp_path, [3, 2])
     events = list(FolderSource(root).events())
     frames = [event for event in events if isinstance(event, Frame)]
-    loaded, times = DataLoader(root).load_folder()
+    loader = DataLoader(root)
+    names = loader.recording_names
+    loaded = np.concatenate([loader.load_recording(name) for name in names])
+    start = loader.get_start_time(names[0])
+    times = [(loader.get_start_time(name) - start).total_seconds() + index / loader.get_fps(name)
+             for name in names for index in range(loader.count_frames(name))]
     assert np.array_equal(np.stack([frame.image for frame in frames]), loaded)
-    assert frame_times(frames, frames[0].recording.start) == list(times)
+    assert frame_times(frames, frames[0].recording.start) == times
     assert [type(event).__name__ for event in events] == ["Frame"] * 3 + ["RecordingEnd"] + ["Frame"] * 2 + ["RecordingEnd"]
 
 

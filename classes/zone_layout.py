@@ -12,10 +12,9 @@ one zone per plate, labels_2.json and controls_2.json for two.
 
 from pathlib import Path
 
-from classes.data_loader import DataLoader
+from classes import settings_file
 
 APP_DIR = Path(__file__).resolve().parent.parent
-SETTINGS_FILENAME = ".settings.txt"
 
 
 class ZoneLayout:
@@ -47,16 +46,15 @@ class ZoneLayout:
     def of_folder(cls, data_dir):
         """The layout saved with the recordings in `data_dir`; one zone per plate
         when none is, or what is saved is not one of the choices."""
-        path = Path(data_dir) / SETTINGS_FILENAME
         try:
-            return cls(DataLoader._parse_settings_file(path).get(cls.SETTING, cls.DEFAULT) if path.is_file() else cls.DEFAULT)
+            return cls(settings_file.of_folder(data_dir).get(cls.SETTING, cls.DEFAULT))
         except (OSError, ValueError):
             return cls()
 
     def save(self, data_dir):
         """Keep this layout with the recordings in `data_dir`: the zones_per_plate
         line of their .settings.txt, every other line kept as it is."""
-        DataLoader.save_setting(Path(data_dir) / SETTINGS_FILENAME, self.SETTING, self.zones_per_plate)
+        settings_file.save(data_dir, self.SETTING, self.zones_per_plate)
 
     @property
     def coords_file(self):

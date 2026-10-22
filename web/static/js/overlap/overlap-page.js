@@ -67,16 +67,14 @@ class OverlapPage {
     const status = first ? $("ov-loading") : $("ov-status");
     const asked = ++this.asked;
     this.stopDwell();
-    status.className = "hint";
-    status.innerHTML = `<span class="spinner"></span> ${first
+    Hint.busy(status, first
       ? "Scoring the saved ground truth… the first time, and after a change to the scoring code, every frame is decoded, which takes a couple of minutes."
-      : "Listing…"}`;
+      : "Listing…");
     try {
       await check.load(change);
     } catch (error) {
       if (asked !== this.asked) return;
-      status.className = "hint error";
-      status.textContent = error.message;
+      Hint.error(status, error.message);
       if (!first) { this.drawSide(); this.startDwell(); }
       return;
     }
@@ -93,8 +91,7 @@ class OverlapPage {
     const edge = (id) => ($(id).value.trim() === "" ? null : Number($(id).value));
     const [low, high] = [edge("ov-low"), edge("ov-high")];
     if ([low, high].some((value) => value !== null && !(value >= 0))) {
-      $("ov-status").className = "hint error";
-      $("ov-status").textContent = "The overlap's edges are scores: numbers from 0 up.";
+      Hint.error($("ov-status"), "The overlap's edges are scores: numbers from 0 up.");
       return;
     }
     this.reload({ low, high });
@@ -233,8 +230,7 @@ class OverlapPage {
     document.querySelectorAll(".ov-ring").forEach((ring) => ring.setAttribute("class", `ov-ring ${point.movement || "unset"}`));
     const was = check.was(point);
     const status = $("ov-label-status");
-    status.className = "hint";
-    status.textContent = was ? `Changed here: it was ${was.label ? OverlapPage.NAMES[was.label] : "unlabelled"}.` : "";
+    Hint.note(status, was ? `Changed here: it was ${was.label ? OverlapPage.NAMES[was.label] : "unlabelled"}.` : "");
     const row = $("ov-table").tBodies[0].rows[this.index];
     if (row) row.innerHTML = this.rowHtml(point, this.index);
   }
@@ -258,12 +254,7 @@ class OverlapPage {
 
   // A picture of the clip's cut of the recording, with the ring round the mite.
   static picture(clip, point, src) {
-    const svg = PlateView.crop(clip.x, clip.y, clip.width, clip.height, src, clip);
-    const image = svg.querySelector("image");
-    image.setAttribute("x", clip.x);
-    image.setAttribute("y", clip.y);
-    svg.appendChild(PlateView.svgEl("circle", { cx: point.x, cy: point.y, r: Math.max(OverlapPage.RING, point.r * 2.5), class: `ov-ring ${point.movement || "unset"}` }));
-    return svg;
+    return PlateView.clipPicture(clip, src, point, OverlapPage.RING, `ov-ring ${point.movement || "unset"}`);
   }
 
   speed() {
@@ -283,16 +274,14 @@ class OverlapPage {
     this.stopDwell();
     this.clip = null;
     holders.forEach((holder) => holder.classList.add("loading"));
-    status.className = "hint";
-    status.innerHTML = `<span class="spinner"></span> Loading…`;
+    Hint.busy(status, `Loading…`);
     let clip = null;
     try {
       clip = await player.load(OverlapPage.clipUrl(point), OverlapPage.frameUrl);
     } catch (error) {
       if (point !== this.current()) return;
       holders.forEach((holder) => { holder.classList.remove("loading"); holder.innerHTML = ""; });
-      status.className = "hint error";
-      status.textContent = error.message;
+      Hint.error(status, error.message);
       this.startDwell();
       return;
     }
@@ -326,14 +315,12 @@ class OverlapPage {
   // Make a change of a label and show it: `send` resolves with the datapoint changed, if still listed.
   async change(send) {
     const status = $("ov-label-status");
-    status.className = "hint";
-    status.textContent = "Saving…";
+    Hint.note(status, "Saving…");
     let point;
     try {
       point = await send();
     } catch (error) {
-      status.className = "hint error";
-      status.textContent = `Not saved: ${error.message}`;
+      Hint.error(status, `Not saved: ${error.message}`);
       return;
     }
     this.drawChanged();

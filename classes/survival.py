@@ -82,11 +82,31 @@ def start_of(moving):
     return getattr(moving, "start", 0)
 
 
+def own_time(times, start, recording):
+    """The time of recording `recording` on the clock of a mite (or a zone)
+    followed from recording `start`: minutes since that one. Every mite runs on
+    its own clock; one there from the first recording on the run's."""
+    return times[recording] - times[start]
+
+
+def since_start(times, start):
+    """own_time() of every recording from `start` on."""
+    return [own_time(times, start, recording) for recording in range(start, len(times))]
+
+
+def death_after(calls):
+    """Where a mite dies by `calls` (one per recording, in order): the recording
+    after its last movement; 0 when it never moved."""
+    return SurvivalAnalysis.last_movement(calls) + 1
+
+
 class SurvivalAnalysis:
     def __init__(self, times, death_minutes=0):
         """`times`: the recordings' times in minutes, in order."""
         self.times = list(times)
         self.death_minutes = death_minutes or 0
+        # each recording's time on the clock the survival is read on: since the first recording
+        self.clock = since_start(self.times, 0) if self.times else []
 
     @staticmethod
     def in_study(moving):
@@ -159,13 +179,13 @@ class SurvivalAnalysis:
         times on that clock to count them at (own_clock())."""
         survivals = [self.survival(moving) for moving in movings]
         return [sum(1 for time, dead in survivals if (time > when if dead else time >= when))
-                for when in (self.times if at is None else at)]
+                for when in (self.clock if at is None else at)]
 
     def own_clock(self, start):
         """The times of the recordings from `start` on, on the clock of
-        survival() with `start` as its 0: where a zone whose mites were all
-        added at `start` has its survival read."""
-        return [self.times[recording] - self.times[start] + self.times[0] for recording in range(start, len(self.times))]
+        survival() with `start` as its 0 (since_start()): where a zone whose
+        mites were all added at `start` has its survival read."""
+        return since_start(self.times, start)
 
     def alive_percent(self, movings, at=None):
         """The share of the mites alive in each recording, in percent; None
@@ -173,7 +193,7 @@ class SurvivalAnalysis:
         is the Kaplan-Meier estimate, which takes that mite out of the count
         from then on instead of counting it as dead. `at`: other times to read
         it at, on the clock of survival() (own_clock())."""
-        times = self.times if at is None else at
+        times = self.clock if at is None else at
         if not movings:
             return [None] * len(times)
         if at is not None or any(self.followed(moving) < len(self.times) - 1 or start_of(moving) for moving in movings):
@@ -186,7 +206,7 @@ class SurvivalAnalysis:
         end, alive_percent() is the Kaplan-Meier estimate; the interval is
         scipy's, by Greenwood's formula on the log-log scale (see
         kaplan_meier()). None throughout without mites."""
-        curve = kaplan_meier([self.survival(moving) for moving in movings], self.times if at is None else at, confidence)
+        curve = kaplan_meier([self.survival(moving) for moving in movings], self.clock if at is None else at, confidence)
         return {"low": curve["low"], "high": curve["high"]}
 
     def lt50(self, movings):
@@ -198,7 +218,7 @@ class SurvivalAnalysis:
         its own start for a mite added later, see survival()); each None when it
         is not reached by the last recording."""
         def first_at_most_half(percents):
-            for time, percent in zip(self.times, percents):
+            for time, percent in zip(self.clock, percents):
                 if percent is not None and percent <= 50:
                     return time
             return None
@@ -217,8 +237,7 @@ class SurvivalAnalysis:
         is known is that it lived at least that long. A mite added later
         counts its time from the recording it was added in, as if that were the first."""
         recording, dead = self.end_of_life(moving)
-        zero = self.times[start_of(moving)] - self.times[0] if self.times else 0  # 0 but for a mite added later
-        return self.times[recording] - zero, dead
+        return own_time(self.times, start_of(moving), recording), dead
 
     def end_of_life(self, moving):
         """(recording, dead): the recording survival() puts the mite's death or

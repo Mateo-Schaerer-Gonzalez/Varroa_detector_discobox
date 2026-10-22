@@ -6,6 +6,8 @@ from pathlib import Path
 import cv2
 import numpy as np
 
+from classes import settings_file
+
 # An 8-bit BMP's grey palette: entry i is (i, i, i, 0), so its pixels are the grey levels.
 _GREY_PALETTE = bytes(value for level in range(256) for value in (level, level, level, 0))
 
@@ -47,45 +49,7 @@ class DataLoader:
     def __init__(self, data_dir, grayscale=True):
         self.data_dir = Path(data_dir)
         self.grayscale = grayscale
-
-        settings_path = self.data_dir / ".settings.txt"
-        self.settings = self._parse_settings_file(settings_path) if settings_path.exists() else {}
-
-    @staticmethod
-    def _parse_settings_file(path):
-        settings = {}
-        for line in path.read_text().splitlines():
-            line = line.strip()
-            if not line or "=" not in line:
-                continue
-            key, value = line.split("=", 1)
-            key = key.strip()
-            value = value.strip()
-            try:
-                settings[key] = int(value)
-            except ValueError:
-                settings[key] = value
-        return settings
-
-    @staticmethod
-    def save_setting(path, name, value):
-        """Make `name=value` a line of the settings file `path`, added or
-        replaced, every other line kept as it is."""
-        path = Path(path)
-        lines = path.read_text(encoding="utf-8").splitlines() if path.is_file() else []
-        lines = [line for line in lines if line.split("=", 1)[0].strip() != name]
-        path.write_text("".join(f"{line}\n" for line in [*lines, f"{name}={value}"]), encoding="utf-8")
-
-    @staticmethod
-    def remove_setting(path, name):
-        """Take the `name=` line out of the settings file `path`, if it has one."""
-        path = Path(path)
-        if not path.is_file():
-            return
-        lines = path.read_text(encoding="utf-8").splitlines()
-        kept = [line for line in lines if line.split("=", 1)[0].strip() != name]
-        if kept != lines:
-            path.write_text("".join(f"{line}\n" for line in kept), encoding="utf-8")
+        self.settings = settings_file.of_folder(self.data_dir)
 
     @property
     def recording_dirs(self):
@@ -103,11 +67,7 @@ class DataLoader:
 
     def get_settings(self, name):
         """Session-level settings, overridden by the recording's own .settings.txt if present."""
-        merged = dict(self.settings)
-        recording_settings_path = self.data_dir / name / ".settings.txt"
-        if recording_settings_path.exists():
-            merged.update(self._parse_settings_file(recording_settings_path))
-        return merged
+        return {**self.settings, **settings_file.of_folder(self.data_dir / name)}
 
     def get_fps(self, name):
         settings = self.get_settings(name)
@@ -131,15 +91,19 @@ class DataLoader:
         date_str, time_str, _ = match.groups()
         return datetime.strptime(f"{date_str} {time_str}", "%Y-%m-%d %H-%M-%S")
 
+    def frame_paths(self, name):
+        """The frame files of one recording, in the order they are read: by name."""
+        paths = sorted((self.data_dir / name).glob("*.bmp"))
+        if not paths:
+            raise FileNotFoundError(f"No .bmp images found in {self.data_dir / name}")
+        return paths
+
+    def _imread(self, path):
+        return cv2.imread(str(path), cv2.IMREAD_GRAYSCALE if self.grayscale else cv2.IMREAD_COLOR)
+
     def load_recording(self, name):
-        recording_dir = self.data_dir / name
-        image_paths = sorted(recording_dir.glob("*.bmp"))
-        if not image_paths:
-            raise FileNotFoundError(f"No .bmp images found in {recording_dir}")
-        flag = cv2.IMREAD_GRAYSCALE if self.grayscale else cv2.IMREAD_COLOR
         with ThreadPoolExecutor() as executor:
-            frames = list(executor.map(lambda p: cv2.imread(str(p), flag), image_paths))
-        return np.stack(frames, axis=0)
+            return np.stack(list(executor.map(self._imread, self.frame_paths(name))), axis=0)
 
     def count_frames(self, name):
         """Number of frames in one recording."""
@@ -153,23 +117,24 @@ class DataLoader:
         grey, a frame saved as the Discobox saves them is not even decoded: the
         region is read straight off its file (read_region()).
         """
-        image_paths = sorted((self.data_dir / name).glob("*.bmp"))[::step]
-        if not image_paths:
-            raise FileNotFoundError(f"No .bmp images found in {self.data_dir / name}")
-        flag = cv2.IMREAD_GRAYSCALE if self.grayscale else cv2.IMREAD_COLOR
-
         def read(path):
             if self.grayscale:
                 return self.read_region(path, x1, y1, x2, y2)
-            frame = cv2.imread(str(path), flag)
-            height, width = frame.shape[:2]
-            return frame[max(0, y1):min(height, y2), max(0, x1):min(width, x2)].copy()
+            return _cut(self._imread(path), x1, y1, x2, y2)
 
         with ThreadPoolExecutor() as executor:
-            return np.stack(list(executor.map(read, image_paths)), axis=0)
+            return np.stack(list(executor.map(read, self.frame_paths(name)[::step])), axis=0)
 
     @staticmethod
-    def read_region(path, x1, y1, x2, y2):
+    def read_image(path):
+        """One frame file in grey, as cv2.imread(path, cv2.IMREAD_GRAYSCALE) decodes it."""
+        image = cv2.imread(str(path), cv2.IMREAD_GRAYSCALE)
+        if image is None:
+            raise ValueError(f"Could not read the image {path}")
+        return image
+
+    @classmethod
+    def read_region(cls, path, x1, y1, x2, y2):
         """The grey pixels [y1:y2, x1:x2] of one frame file, cut off at the
         image's edge, exactly as cv2.imread(path, cv2.IMREAD_GRAYSCALE) gives
         them: read straight off an 8-bit grey BMP (a fraction of a
@@ -178,78 +143,22 @@ class DataLoader:
         region = _bmp_region(path, x1, y1, x2, y2)
         if region is not None:
             return region
-        frame = cv2.imread(str(path), cv2.IMREAD_GRAYSCALE)
-        if frame is None:
-            raise ValueError(f"Could not read the image {path}")
-        height, width = frame.shape
-        return frame[max(0, y1):min(height, y2), max(0, x1):min(width, x2)].copy()
-
-    def load_all(self):
-        return {d.name: self.load_recording(d.name) for d in self.recording_dirs}
-
-    def load_folder(self):
-        """Stack every recording's frames and compute each frame's wall-clock time
-        (in seconds, relative to the first frame of the first recording)."""
-        dirs = self.recording_dirs
-        if not dirs:
-            raise FileNotFoundError(f"No recordings found in {self.data_dir}")
-
-        base_time = self.get_start_time(dirs[0].name)
-        frame_chunks = []
-        time_chunks = []
-        for d in dirs:
-            frames = self.load_recording(d.name)
-            fps = self.get_fps(d.name)
-            offset = (self.get_start_time(d.name) - base_time).total_seconds()
-            time_chunks.append(offset + np.arange(frames.shape[0]) / fps)
-            frame_chunks.append(frames)
-
-        self.frames = np.concatenate(frame_chunks, axis=0)
-        self.times = np.concatenate(time_chunks, axis=0)
-
-        return self.frames, self.times
-
-    def load_bursts(self):
-        """Split the concatenated frames/times from load_folder back into a list of
-        (frames, times) tuples, one per recording burst, in recording order."""
-        if not hasattr(self, "frames"):
-            self.load_folder()
-
-        bursts = []
-        start = 0
-        for d in self.recording_dirs:
-            n = len(list(d.glob("*.bmp")))
-            end = start + n
-            bursts.append((self.frames[start:end], self.times[start:end]))
-            start = end
-        return bursts
+        return _cut(cls.read_image(path), x1, y1, x2, y2)
 
     def load_preview_frame(self):
-        """Decode only the first image of the first recording.
-
-        `get_first_frame` decodes every frame in the session to return one of them,
-        which is far too expensive just to draw a preview for zone labelling.
-        """
+        """Decode only the first image of the first recording, to find the mites
+        on and to draw the plates."""
         dirs = self.recording_dirs
         if not dirs:
             raise FileNotFoundError(f"No recordings found in {self.data_dir}")
-
-        image_paths = sorted(dirs[0].glob("*.bmp"))
-        if not image_paths:
-            raise FileNotFoundError(f"No .bmp images found in {dirs[0]}")
-
-        flag = cv2.IMREAD_GRAYSCALE if self.grayscale else cv2.IMREAD_COLOR
-        return cv2.imread(str(image_paths[0]), flag)
+        return self._imread(self.frame_paths(dirs[0].name)[0])
 
     def count_recordings(self):
         """Number of recording bursts in this session."""
         return len(self.recording_dirs)
 
-    def get_first_frame(self):
-        """Returns the first frame of the first recording burst."""
-        if not hasattr(self, "frames"):
-            self.load_folder()
-        return self.frames[0]
 
-    def get_times(self):
-        return self.times
+def _cut(frame, x1, y1, x2, y2):
+    """A copy of [y1:y2, x1:x2] of `frame`, cut off at its edge."""
+    height, width = frame.shape[:2]
+    return frame[max(0, y1):min(height, y2), max(0, x1):min(width, x2)].copy()

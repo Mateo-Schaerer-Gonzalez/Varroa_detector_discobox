@@ -88,7 +88,6 @@ import logging
 import os
 import re
 import shutil
-import stat
 import tempfile
 import threading
 import time
@@ -115,6 +114,9 @@ from classes.poke_test import PokeSurvival, PokeTest
 from classes.data_loader import DataLoader
 from classes.deferred_files import DeferredFiles
 from classes.error_map import ErrorMap
+from classes import positions, settings_file
+from classes.files import (read_json, remove_if_empty, remove_tree, try_json, write_image, write_image_whole, write_jpeg,
+                           write_json)
 from classes.follow_up import FollowUp
 from classes.frame_source import RoiSource, open_source
 from classes.kept_scores import KeptScores
@@ -134,7 +136,7 @@ from classes.outline_view import OutlineView
 from classes.movement_stats import MovementReport
 from classes.recording_info import RecordingInfo
 from classes.roi_conversion import RoiConversion
-from classes.roi_recordings import ROI_DIRNAME, RoiRecordings, RoiVideo, is_roi_session, open_recordings, remove_tree
+from classes.roi_recordings import ROI_DIRNAME, RoiRecordings, RoiVideo, is_roi_session, open_recordings
 from classes.review_band import ReviewBand
 from classes.score_normalizer import ScoreNormalizer
 from classes.survival import SurvivalReport
@@ -144,7 +146,8 @@ from classes.unusual_activity import UnusualActivity
 from classes.upload_plan import UploadPlan
 from classes.workers import one_ahead, side_by_side
 from classes.zone_layout import ZoneLayout
-from classes.zones import UNLABELED, ZoneManager, mites_in_reading_order
+from classes.rect import Rect
+from classes.zones import UNLABELED, ZoneManager, mite_ids
 
 _logger = logging.getLogger(__name__)
 
@@ -160,6 +163,7 @@ LABELS_FILENAME = "labels.json"
 CONTROLS_FILENAME = "controls.json"  # the zones ticked as negative controls
 GROUND_TRUTH_FILENAME = "ground_truth.json"
 POKE_FILENAME = "poke_test.json"  # which mites answered a poke, round by round
+SETTINGS_FILENAME = settings_file.FILENAME  # the recordings' Discobox settings, with the app's own lines
 PREVIEW_NAME = "preview.jpg"
 CALIBRATION_SESSION_NAME = "calibration_session.json"
 CLIPS_DIRNAME = "clips"  # in a results folder: the frames the pages play, remade when missing
@@ -248,16 +252,13 @@ def _describe_zones(zone_manager, labels):
 
 def load_labels(data_dir):
     """Read previously saved zone labels for this recording session, if any."""
-    path = _layout_file(data_dir, LABELS_FILENAME)
-    if not path.is_file():
-        return {}
-    return json.loads(path.read_text(encoding="utf-8"))
+    return read_json(_layout_file(data_dir, LABELS_FILENAME), {})
 
 
 def save_labels(data_dir, labels):
     """Store zone labels next to the recordings so they survive a restart."""
     path = _layout_file(data_dir, LABELS_FILENAME)
-    path.write_text(json.dumps(labels, indent=2), encoding="utf-8")
+    write_json(path, labels, indent=2)
     return str(path)
 
 
@@ -305,14 +306,14 @@ def _read_labels(zone_manager, data_dir, out_dir, mites):
 def load_controls(data_dir):
     """The ids of the zones ticked as negative controls, which the survival of
     every other zone is compared with; none if nothing was ticked."""
-    ids = _read_json(_layout_file(data_dir, CONTROLS_FILENAME), [])
+    ids = try_json(_layout_file(data_dir, CONTROLS_FILENAME), [])
     return sorted({i for i in ids if isinstance(i, int)}) if isinstance(ids, list) else []
 
 
 def save_controls(data_dir, controls):
     """Store the negative-control zones next to the recordings, beside the labels."""
     ids = sorted({int(i) for i in controls})
-    _layout_file(data_dir, CONTROLS_FILENAME).write_text(json.dumps(ids), encoding="utf-8")
+    write_json(_layout_file(data_dir, CONTROLS_FILENAME), ids)
     return ids
 
 
@@ -392,19 +393,8 @@ def _session_view(zone_manager, frame, data_dir, n_recordings):
     """What the labelling page needs: the zones, with their labels and number of
     mites, and every detection, those marked "not a mite" included."""
     # Rejected detections are listed too, marked, so the user can take a mark back.
-    rejected = set(map(id, _rejected_detections(zone_manager, _folder_truth(data_dir))))
-    mites = [
-        {
-            "id": mite.text,
-            "zone_id": zone.id,
-            "x": round(float((mite.x1 + mite.x2) / 2), 1),
-            "y": round(float((mite.y1 + mite.y2) / 2), 1),
-            "r": round(float((mite.x2 - mite.x1) / 2), 1),
-            "rejected": id(mite) in rejected,
-        }
-        for zone in zone_manager.zones
-        for mite in zone.mites
-    ]
+    rejected = set(map(id, _rejected_detections(zone_manager, load_ground_truth(data_dir))))
+    mites = [_mite_view(mite, zone.id, rejected=id(mite) in rejected) for zone in zone_manager.zones for mite in zone.mites]
 
     zones = _describe_zones(zone_manager, load_labels(data_dir))
     controls = set(load_controls(data_dir))
@@ -424,7 +414,15 @@ def _session_view(zone_manager, frame, data_dir, n_recordings):
     }
 
 
-def set_rejected(data_dir, x, y, rejected, restore=None, tolerance=10.0):
+def _mite_view(mite, zone_id, **more):
+    """A detected mite (a Mite) as the pages and the ground truth know it: {id,
+    zone_id, x, y (its centre), r (half its box's width)}, and `more`."""
+    x, y = mite.home
+    return {"id": mite.text, "zone_id": zone_id, "x": round(float(x), 1), "y": round(float(y), 1),
+            "r": round(float((mite.x2 - mite.x1) / 2), 1), **more}
+
+
+def set_rejected(data_dir, x, y, rejected, restore=None, tolerance=positions.TOLERANCE):
     """Mark the detection at (x, y) as not a mite, or take that mark back.
 
     The mark goes into the session's ground truth, where an analysis run and a
@@ -434,10 +432,9 @@ def set_rejected(data_dir, x, y, rejected, restore=None, tolerance=10.0):
     mistake and unmarked keeps its labels; without them it is left unlabelled.
     """
     data_dir = Path(data_dir)
-    saved = _folder_truth(data_dir)
-    near = [entry for entry in saved if np.hypot(entry["x"] - x, entry["y"] - y) <= tolerance]
-    # a detection matches only the nearest saved entry
-    nearest = min(near, key=lambda entry: np.hypot(entry["x"] - x, entry["y"] - y), default=None)
+    saved = load_ground_truth(data_dir)
+    near = positions.within(saved, x, y, tolerance)
+    nearest = positions.nearest(saved, x, y, tolerance)  # a detection matches only the nearest saved entry
 
     replaced = None
     if rejected:
@@ -459,7 +456,7 @@ def set_rejected(data_dir, x, y, rejected, restore=None, tolerance=10.0):
                 entry["truth"] = None
         saved = [entry for entry in saved if any(entry["truth"] if isinstance(entry.get("truth"), list) else [entry.get("truth")])]
 
-    (data_dir / GROUND_TRUTH_FILENAME).write_text(json.dumps(saved), encoding="utf-8")
+    _write_truth(data_dir, saved)
     return replaced
 
 
@@ -474,9 +471,7 @@ def mark_detection(data_dir, mites, mite_id, rejected):
     the mark back, as set_rejected() does. What a mark replaced is remembered and
     put back when the mark is taken back, so a click by mistake loses nothing.
     Returns the marks now: {mites: {id: rejected}, zones: {zone id: mites left}}."""
-    mite = next((m for m in mites if m["id"] == str(mite_id)), None)
-    if mite is None:
-        raise ValueError(f"No detection {mite_id} in this session.")
+    mite = _find(mites, mite_id, "this session", what="detection")
     key = (_draft_key(data_dir), mite["x"], mite["y"])
     restore = None if rejected else _replaced.pop(key, None)
     replaced = set_rejected(data_dir, mite["x"], mite["y"], rejected, restore)
@@ -488,7 +483,7 @@ def mark_detection(data_dir, mites, mite_id, rejected):
 def detection_marks(data_dir, mites):
     """Which of the label page's `mites` are marked "not a mite" in the ground
     truth saved for `data_dir`, and how many mites each zone has left."""
-    rejected = [entry for entry in _folder_truth(data_dir) if calibration.is_rejected(entry.get("truth"))]
+    rejected = [entry for entry in load_ground_truth(data_dir) if calibration.is_rejected(entry.get("truth"))]
     positions = [{"id": m["id"], "x": m["x"], "y": m["y"]} for m in mites]
     matched = calibration.match_ground_truth(positions, rejected, n_recordings=1) if rejected else {}
     marks = {m["id"]: m["id"] in matched for m in mites}
@@ -518,8 +513,7 @@ def _detect_and_score(data_dir, coords_file, labels=None, reject=True, score=Tru
                               starts=source.starts if rois else None, placements=source.placements if rois else None)
     if rois and score:
         mite = analysis.analyzer.config.mite
-        source.loader.check_margin(Analyzer.roi_padding(mite.metric, mite.params_for(mite.metric))
-                                   + (STABILIZE_MARGIN if mite.stabilize_plate else 0))
+        source.loader.check_margin(_metric_pad(mite) + (STABILIZE_MARGIN if mite.stabilize_plate else 0))
     if not score or kept_in is not None:
         # The mites and the recordings, from the first frame and the names of
         # the others: those are counted, not decoded.
@@ -547,7 +541,7 @@ def _arrange(analysis, data_dir, labels, reject):
     that flew off (classes/unusual_activity.py: their activity is worked out
     here, on every detection). Folder and live runs both go through here, so the
     same marks give the same results."""
-    truth = _folder_truth(data_dir) if reject else []
+    truth = load_ground_truth(data_dir) if reject else []
 
     def left_out(zone_manager):
         rejected = _rejected_detections(zone_manager, truth)
@@ -563,8 +557,12 @@ def _arrange(analysis, data_dir, labels, reject):
 def _activity_reach(mite):
     """Pixels from a mite's centre to the edge of its scored patch: a mite walking
     closer disturbs its recording (classes/unusual_activity.py)."""
-    params = mite.params_for(mite.metric)
-    return float(mite.radius) + Analyzer.roi_padding(mite.metric, params)
+    return float(mite.radius) + _metric_pad(mite)
+
+
+def _metric_pad(mite):
+    """Pixels the metric in use (config.yaml's `mite`) reads round a mite's box."""
+    return Analyzer.roi_padding(mite.metric, mite.params_for(mite.metric))
 
 
 def _run_view(analysis, frames, data_dir=None):
@@ -594,19 +592,8 @@ def _write_preview(frame, out_dir):
     """The first frame as preview.jpg, written whole before it takes the name: a
     page may be loading the one it replaces, e.g. a live run's labels page while
     the first recording's results come in."""
-    out_dir = Path(out_dir)
-    out_dir.mkdir(parents=True, exist_ok=True)
-    partial = out_dir / f"partial_{PREVIEW_NAME}"
-    _write_image(partial, frame, [cv2.IMWRITE_JPEG_QUALITY, 85])
-    # Windows refuses to replace a file while it is being sent; that takes moments.
-    for attempt in range(20):
-        try:
-            partial.replace(out_dir / PREVIEW_NAME)
-            return
-        except PermissionError:
-            if attempt == 19:
-                raise
-            time.sleep(0.05)
+    Path(out_dir).mkdir(parents=True, exist_ok=True)
+    write_image_whole(Path(out_dir) / PREVIEW_NAME, frame, [cv2.IMWRITE_JPEG_QUALITY, 85])
 
 
 def run_analysis(data_dir, out_dir, labels=None, coords_file=None,
@@ -713,13 +700,12 @@ def _change_call(zone_manager, corrections, mite_id, recording, state, detected=
     state without one (CallCorrections.change()). `detected` maps mite id to
     the detector's call per recording, where normalised scores make them other
     than the mite's own. With `checked` the call is kept as checked by eye."""
-    mite = next((m for zone in zone_manager.zones for m in zone.mites if m.text == str(mite_id)), None)
+    mite = next((m for m in zone_manager.mites if m.text == str(mite_id)), None)
     if mite is None:
         raise ValueError(f"No mite {mite_id} in these results.")
     calls = mite.moving if detected is None else detected[mite.text]
-    if not 0 <= recording < len(calls):
-        raise ValueError(f"No recording {recording} in these results.")
-    corrections.change((mite.x1 + mite.x2) / 2, (mite.y1 + mite.y2) / 2, recording, bool(calls[recording]), state,
+    _check_recording(recording, len(calls), "these results")
+    corrections.change(*mite.home, recording, bool(calls[recording]), state,
                        checked=checked)
 
 
@@ -755,30 +741,31 @@ def review_mites(data_dir=None):
     `data_dir`: their own number, saved with them, or config.yaml's
     (mite.review_mites) without one or without `data_dir`."""
     default = max(0, int(get_default_config().mite.review_mites))
-    path = Path(data_dir) / SETTINGS_FILENAME if data_dir is not None else None
-    try:
-        own = DataLoader._parse_settings_file(path).get(REVIEW_MITES) if path and path.is_file() else None
-        return default if own is None else max(0, int(own))
-    except (OSError, TypeError, ValueError):
-        return default
+    return default if data_dir is None else settings_file.whole_number(data_dir, REVIEW_MITES, default)
 
 
 def save_review_mites(data_dir, mites):
     """Make `mites` the number of mites to check by eye for the recordings in
     `data_dir`: the review_mites line of their .settings.txt. With None the
     line goes, and config.yaml's number holds again. Returns the number now."""
-    path = Path(data_dir) / SETTINGS_FILENAME
     if mites is None:
-        DataLoader.remove_setting(path, REVIEW_MITES)
+        settings_file.remove(data_dir, REVIEW_MITES)
         return review_mites(data_dir)
-    try:
-        value = int(mites)
-    except (TypeError, ValueError):
-        raise ValueError("The mites to check must be a whole number.")
-    if value != mites or value < 0:
-        raise ValueError("The mites to check must be a whole number, 0 or more.")
-    DataLoader.save_setting(path, REVIEW_MITES, value)
+    value = _whole_number(mites, "The mites to check must be a whole number", 0)
+    settings_file.save(data_dir, REVIEW_MITES, value)
     return value
+
+
+def _whole_number(value, what, lowest, highest=None):
+    """`value` as an int from `lowest` (to `highest`, if given), or a ValueError
+    saying `what` (e.g. "The time must be a whole number of minutes") it must be."""
+    try:
+        number = int(value)
+    except (TypeError, ValueError):
+        raise ValueError(f"{what}.")
+    if number != value or number < lowest or (highest is not None and number > highest):
+        raise ValueError(f"{what}, {lowest} or more." if highest is None else f"{what} between {lowest} and {highest}.")
+    return number
 
 
 def review_again(out_dir):
@@ -796,12 +783,7 @@ def death_minutes(data_dir):
     """How long a mite must be still to count as dead, from the test-run settings
     saved with the recordings; 0 (dead from its last movement on) without them.
     The pages take it with the results, for the mites alive over time."""
-    path = Path(data_dir) / SETTINGS_FILENAME
-    try:
-        value = DataLoader._parse_settings_file(path).get("death_minutes", 0) if path.is_file() else 0
-        return max(0, int(value))
-    except (OSError, TypeError, ValueError):
-        return 0
+    return settings_file.whole_number(data_dir, "death_minutes", 0)
 
 
 def death_minutes_range():
@@ -815,14 +797,8 @@ def save_death_minutes(data_dir, minutes):
     recordings in `data_dir`: the death_minutes line of their .settings.txt,
     added or replaced, every other line kept as it is."""
     label, unit, lowest, highest = SETTING_RANGES["death_minutes"]
-    try:
-        value = int(minutes)
-    except (TypeError, ValueError):
-        raise ValueError(f"{label} must be a whole number of {unit}.")
-    if value != minutes or not lowest <= value <= highest:
-        raise ValueError(f"{label} must be a whole number of {unit} between {lowest} and {highest}.")
-    path = Path(data_dir) / SETTINGS_FILENAME
-    DataLoader.save_setting(path, "death_minutes", value)
+    value = _whole_number(minutes, f"{label} must be a whole number of {unit}", lowest, highest)
+    settings_file.save(data_dir, "death_minutes", value)
     return value
 
 
@@ -837,7 +813,7 @@ def _mite_table(run, corrections=None, normalizer=None):
         mite_data, changes = corrections.apply(mite_data)
     if getattr(run, "activity", None) is not None:
         mite_data, changes = run.activity.censor(mite_data, changes)
-    mite_data, changes = FollowUp.of(m for zone in run.zone_manager.zones for m in zone.mites).censor(mite_data, changes)
+    mite_data, changes = FollowUp.of(run.zone_manager.mites).censor(mite_data, changes)
     if normalizer is not None:
         mite_data = normalizer.apply(mite_data, run.analyzer.config.mite.motion_threshold)
     return mite_data, changes
@@ -939,17 +915,14 @@ CLIP_MAX_FRAMES = 15    # frames per clip; a recording is thinned out to this
 
 def load_ground_truth(data_dir):
     """Saved ground truth for a recording session: a list of {x, y, truth}, where
-    truth holds one status per recording."""
-    path = Path(data_dir) / GROUND_TRUTH_FILENAME
-    if not path.is_file():
-        return []
-    return json.loads(path.read_text(encoding="utf-8"))
+    truth holds one status per recording, as every window reads it."""
+    return read_json(Path(data_dir) / GROUND_TRUTH_FILENAME, [])
 
 
-def _folder_truth(data_dir):
-    """The ground truth saved for a recording folder, by position, as every window
-    reads it: the file next to the recordings."""
-    return load_ground_truth(data_dir)
+def _write_truth(data_dir, entries):
+    """Save ground truth (entries by position, as load_ground_truth() reads them)
+    next to the recordings in `data_dir`."""
+    write_json(Path(data_dir) / GROUND_TRUTH_FILENAME, entries)
 
 
 def _rejected_detections(zone_manager, saved):
@@ -957,17 +930,17 @@ def _rejected_detections(zone_manager, saved):
     rejected = [entry for entry in saved if calibration.is_rejected(entry.get("truth"))]
     if not rejected:
         return []
-    mites = [mite for zone in zone_manager.zones for mite in zone.mites]
-    described = [{"id": index, "x": (m.x1 + m.x2) / 2, "y": (m.y1 + m.y2) / 2} for index, m in enumerate(mites)]
+    mites = zone_manager.mites
+    described = [{"id": index, "x": m.home[0], "y": m.home[1]} for index, m in enumerate(mites)]
     matched = calibration.match_ground_truth(described, rejected, n_recordings=1)
     return [mites[index] for index in matched]
 
 
 def _read_calibration_session(out_dir):
-    path = Path(out_dir) / CALIBRATION_SESSION_NAME
-    if not path.is_file():
+    stored = read_json(Path(out_dir) / CALIBRATION_SESSION_NAME)
+    if stored is None:
         raise FileNotFoundError("This calibration session has no mites. Open the folder again.")
-    return json.loads(path.read_text(encoding="utf-8"))
+    return stored
 
 
 def _mite_positions(mites):
@@ -1061,22 +1034,10 @@ def _describe_calibration(data_dir, coords_file=None, names=None):
     labels = load_labels(data_dir)
     run = _detect_and_score(data_dir, coords_file, labels, reject=False, score=False, names=names)
 
-    mites = []
-    for zone in run.zone_manager.zones:
-        for mite in zone.mites:
-            mites.append(
-                {
-                    "id": mite.text,
-                    "zone_id": zone.id,
-                    "x": round(float((mite.x1 + mite.x2) / 2), 1),
-                    "y": round(float((mite.y1 + mite.y2) / 2), 1),
-                    "r": round(float((mite.x2 - mite.x1) / 2), 1),
-                    # the recordings a live run followed it in (calibration.followed()): from the
-                    # one it was added in (0 but for one added later), up to the one it counted dead from
-                    "start": mite.start,
-                    "stop": mite.stopped,
-                }
-            )
+    # with the recordings a live run followed each in (calibration.followed()): from the
+    # one it was added in (0 but for one added later), up to the one it counted dead from
+    mites = [_mite_view(mite, zone.id, start=mite.start, stop=mite.stopped)
+             for zone in run.zone_manager.zones for mite in zone.mites]
     if not mites:
         raise ValueError("No mites were detected, so there is nothing to calibrate.")
     mites.sort(key=lambda mite: Mite.id_order(mite["id"]))
@@ -1109,10 +1070,67 @@ def _calibration_recordings(data_dir, names=None):
 def _write_calibration_session(out_dir, stored):
     """Written whole before it takes the name: a live run's session grows while
     its pages read it."""
-    path = Path(out_dir) / CALIBRATION_SESSION_NAME
-    partial = path.with_name(f"partial_{path.name}")
-    partial.write_text(json.dumps(stored), encoding="utf-8")
-    partial.replace(path)
+    write_json(Path(out_dir) / CALIBRATION_SESSION_NAME, stored)
+
+
+def _find(items, item_id, where, what="mite"):
+    """The item of `items` ({id, ...}) whose id is `item_id`, or a ValueError:
+    no such `what` in `where`."""
+    found = next((item for item in items if item["id"] == str(item_id)), None)
+    if found is None:
+        raise ValueError(f"No {what} {item_id} in {where}.")
+    return found
+
+
+def _check_recording(recording, count, where="this session"):
+    """Refuse a recording index that is not one of `count`."""
+    if not 0 <= recording < count:
+        raise ValueError(f"No recording {recording} in {where}.")
+
+
+def _recordings_dir(source, what):
+    """The folder of the recordings of `source` (a calibration session or a
+    dataset: its data_dir), or a FileNotFoundError: they are gone, so `what`."""
+    folder = Path(source["data_dir"])
+    if not folder.is_dir():
+        of = f" of {source['name']}" if "name" in source else ""
+        raise FileNotFoundError(f"The recordings{of} are no longer at {source['data_dir']}, so {what}.")
+    return folder
+
+
+def _kept_clip(out_dir, name, make):
+    """What `make()` works out from the frames (a clip, the mites' outlines, a
+    playback sheet), kept in out_dir/clips/ as `name`.json and read back from
+    there after: the frames are read once. make() writes its pictures into
+    clips/, which is there when it is called."""
+    manifest = Path(out_dir) / CLIPS_DIRNAME / f"{name}.json"
+    kept = read_json(manifest)
+    if kept is not None:
+        return kept
+    manifest.parent.mkdir(parents=True, exist_ok=True)
+    made = make()
+    write_json(manifest, made)
+    return made
+
+
+def _square(mite, reach):
+    """(x1, y1, x2, y2): `reach` pixels round the whole pixel nearest a mite's
+    centre ({x, y}); x1 and y1 may be negative."""
+    x, y = int(round(mite["x"])), int(round(mite["y"]))
+    return x - reach, y - reach, x + reach, y + reach
+
+
+def _bounds(boxes, margin=0):
+    """(x0, y0, x_end, y_end): the region holding every one of `boxes` grown by
+    `margin`, cut at the image's top left."""
+    boxes = list(boxes)
+    return (max(0, min(box[0] for box in boxes) - margin), max(0, min(box[1] for box in boxes) - margin),
+            max(box[2] for box in boxes) + margin, max(box[3] for box in boxes) + margin)
+
+
+def _local(boxes, x0, y0):
+    """`boxes` (id to (x1, y1, x2, y2)) in a region whose top left is (x0, y0)."""
+    return {key: (x1 - x0, y1 - y0, x2 - x0, y2 - y0) for key, (x1, y1, x2, y2) in boxes.items()}
 
 
 def calibration_clip(out_dir, recording, zone_id):
@@ -1123,26 +1141,18 @@ def calibration_clip(out_dir, recording, zone_id):
     the delay between frames that plays them back in real time.
     """
     stored = _read_calibration_session(out_dir)
-    if not 0 <= recording < len(stored["recordings"]):
-        raise ValueError(f"No recording {recording} in this session.")
+    _check_recording(recording, len(stored["recordings"]))
     zone = next((zone for zone in stored["zones"] if zone["id"] == zone_id), None)
     if zone is None:
         raise ValueError(f"No zone {zone_id} in this session.")
 
     # One session can switch between datasets, so clips are named after theirs.
     name = f"clip_{_clip_key(dataset_id(stored['data_dir']))}_r{recording}_z{zone_id}"
-    manifest = Path(out_dir) / CLIPS_DIRNAME / f"{name}.json"
-    if manifest.is_file():
-        return json.loads(manifest.read_text(encoding="utf-8"))
-    recordings_dir = Path(stored["data_dir"])
-    if not recordings_dir.is_dir():
-        raise FileNotFoundError(
-            f"The recordings are no longer at {stored['data_dir']}, so there is no clip to play."
-        )
-
     source = stored["recordings"][recording]
     box = (zone["x1"] - CLIP_MARGIN, zone["y1"] - CLIP_MARGIN, zone["x2"] + CLIP_MARGIN, zone["y2"] + CLIP_MARGIN)
-    return _write_clip(open_recordings(recordings_dir), source["name"], source["fps"], box, out_dir, name)
+    # the recordings are only needed for a clip not kept yet
+    return _write_clip(lambda: open_recordings(_recordings_dir(stored, "there is no clip to play")),
+                       source["name"], source["fps"], box, out_dir, name)
 
 
 def _clip_key(dataset):
@@ -1151,14 +1161,6 @@ def _clip_key(dataset):
     refuses a path of more than 259 characters, which a long dataset name
     repeated in both reached."""
     return hashlib.sha1(str(dataset).encode("utf-8")).hexdigest()[:10]
-
-
-def _write_image(path, image, params=()):
-    """cv2.imwrite(), which only returns False where it cannot write (a path too
-    long for Windows, a folder gone), made to say so."""
-    if not cv2.imwrite(str(path), image, list(params)):
-        raise OSError(f"Could not write {path} ({len(str(path))} characters"
-                      f"{', longer than Windows allows' if len(str(path)) > 259 else ''}).")
 
 
 MITE_CLIP_REACH = 40            # pixels from a mite's centre to the edge of its own clip
@@ -1186,90 +1188,77 @@ def _mite_clip(recordings_dir, source, mite, out_dir, name):
     cut is, so a mite detected anew elsewhere gets a new clip. Returns the
     files (relative to `out_dir`), where the cut sits in the image, and the
     delay between frames that plays them in real time."""
-    x, y = int(round(mite["x"])), int(round(mite["y"]))
-    x1, y1 = max(0, x - MITE_CLIP_REACH), max(0, y - MITE_CLIP_REACH)
+    x1, y1, x2, y2 = _square(mite, MITE_CLIP_REACH)
+    x1, y1 = max(0, x1), max(0, y1)
     name = f"{name}_x{x1}_y{y1}"
-    clips_dir = Path(out_dir) / CLIPS_DIRNAME
-    manifest = clips_dir / f"{name}.json"
-    if manifest.is_file():
-        return json.loads(manifest.read_text(encoding="utf-8"))
-    frames = open_recordings(recordings_dir).load_recording_region(
-        source["name"], x1, y1, x + MITE_CLIP_REACH, y + MITE_CLIP_REACH)
-    clips_dir.mkdir(parents=True, exist_ok=True)
-    names = [f"{CLIPS_DIRNAME}/{name}_{index:02d}.png" for index in range(len(frames))]
-    for frame, frame_name in zip(frames, names):
-        _write_image(Path(out_dir) / frame_name, frame)
-    variation = f"{CLIPS_DIRNAME}/{name}_variation.png"
-    _write_image(Path(out_dir) / variation, _variation_picture(frames))
-    clip = {
-        "frames": names,
-        "variation": variation,
-        "x": x1,
-        "y": y1,
-        "width": int(frames.shape[2]),
-        "height": int(frames.shape[1]),
-        "interval_ms": int(round(1000 / source["fps"])),
-    }
-    manifest.write_text(json.dumps(clip), encoding="utf-8")
-    return clip
+
+    def make():
+        frames = open_recordings(recordings_dir).load_recording_region(source["name"], x1, y1, x2, y2)
+        names = [f"{CLIPS_DIRNAME}/{name}_{index:02d}.png" for index in range(len(frames))]
+        for frame, frame_name in zip(frames, names):
+            write_image(Path(out_dir) / frame_name, frame)
+        variation = f"{CLIPS_DIRNAME}/{name}_variation.png"
+        write_image(Path(out_dir) / variation, _variation_picture(frames))
+        return {
+            "frames": names,
+            "variation": variation,
+            "x": x1,
+            "y": y1,
+            "width": int(frames.shape[2]),
+            "height": int(frames.shape[1]),
+            "interval_ms": int(round(1000 / source["fps"])),
+        }
+
+    return _kept_clip(out_dir, name, make)
 
 
 def calibration_mite_clip(out_dir, recording, mite_id):
     """Frames of one mite during one recording of a calibration session, cut
     close around it, for the ground-truth page (see _mite_clip())."""
     stored = _read_calibration_session(out_dir)
-    if not 0 <= recording < len(stored["recordings"]):
-        raise ValueError(f"No recording {recording} in this session.")
-    mite = next((mite for mite in stored["mites"] if mite["id"] == str(mite_id)), None)
-    if mite is None:
-        raise ValueError(f"No mite {mite_id} in this session.")
-    recordings_dir = Path(stored["data_dir"])
-    if not recordings_dir.is_dir():
-        raise FileNotFoundError(
-            f"The recordings are no longer at {stored['data_dir']}, so there is no clip to play."
-        )
+    _check_recording(recording, len(stored["recordings"]))
+    mite = _find(stored["mites"], mite_id, "this session")
+    recordings_dir = _recordings_dir(stored, "there is no clip to play")
     return _mite_clip(recordings_dir, stored["recordings"][recording], mite, out_dir,
                       f"mite_{_clip_key(dataset_id(stored['data_dir']))}_r{recording}")
 
 
 def _write_clip(loader, recording_name, fps, box, out_dir, name, max_width=None):
     """Write up to CLIP_MAX_FRAMES JPEGs of the region `box` = (x1, y1, x2, y2) of
-    one recording, and a manifest `name`.json that later calls reuse, to out_dir/clips/.
+    one recording, and a manifest `name`.json that later calls reuse, to
+    out_dir/clips/ (_kept_clip()). `loader` reads the recordings, or is called
+    for the one that does when the clip is not kept yet.
 
     Returns the frame files (relative to `out_dir`), where the region sits in the
     full image (in full image pixels, even when `max_width` scales the frames
     down), and the delay between frames that plays them back in real time.
     """
-    clips_dir = Path(out_dir) / CLIPS_DIRNAME
-    manifest = clips_dir / f"{name}.json"
-    if manifest.is_file():
-        return json.loads(manifest.read_text(encoding="utf-8"))
-    clips_dir.mkdir(parents=True, exist_ok=True)
+    def make():
+        reader = loader() if callable(loader) else loader
+        _check_saved(reader, *box)
+        n_frames = reader.count_frames(recording_name)
+        step = max(1, int(np.ceil(n_frames / CLIP_MAX_FRAMES)))
+        x1, y1 = max(0, int(box[0])), max(0, int(box[1]))
+        frames = reader.load_recording_region(recording_name, x1, y1, int(box[2]), int(box[3]), step=step)
+        height, width = frames.shape[1:3]
+        scale = min(1.0, max_width / width) if max_width else 1.0
 
-    _check_saved(loader, *box)
-    n_frames = loader.count_frames(recording_name)
-    step = max(1, int(np.ceil(n_frames / CLIP_MAX_FRAMES)))
-    x1, y1 = max(0, int(box[0])), max(0, int(box[1]))
-    frames = loader.load_recording_region(recording_name, x1, y1, int(box[2]), int(box[3]), step=step)
-    height, width = frames.shape[1:3]
-    scale = min(1.0, max_width / width) if max_width else 1.0
+        names = []
+        for index, frame in enumerate(frames):
+            if scale < 1:
+                frame = cv2.resize(frame, (round(width * scale), round(height * scale)), interpolation=cv2.INTER_AREA)
+            names.append(f"{CLIPS_DIRNAME}/{name}_{index:02d}.jpg")
+            write_jpeg(Path(out_dir) / names[-1], frame)
+        return {
+            "frames": names,
+            "x": x1,
+            "y": y1,
+            "width": int(width),
+            "height": int(height),
+            "interval_ms": int(round(1000 * step / fps)),
+        }
 
-    names = []
-    for index, frame in enumerate(frames):
-        if scale < 1:
-            frame = cv2.resize(frame, (round(width * scale), round(height * scale)), interpolation=cv2.INTER_AREA)
-        names.append(f"{CLIPS_DIRNAME}/{name}_{index:02d}.jpg")
-        _write_image(Path(out_dir) / names[-1], frame, [cv2.IMWRITE_JPEG_QUALITY, 85])
-    clip = {
-        "frames": names,
-        "x": x1,
-        "y": y1,
-        "width": int(width),
-        "height": int(height),
-        "interval_ms": int(round(1000 * step / fps)),
-    }
-    manifest.write_text(json.dumps(clip), encoding="utf-8")
-    return clip
+    return _kept_clip(out_dir, name, make)
 
 
 PLATE_CLIP_WIDTH = 1400  # the whole plate is scaled down to this width in its clip
@@ -1287,8 +1276,7 @@ def dataset_clip(out_dir, dataset, recording, recordings_root=RECORDINGS_ROOT):
     dataset, for the test report to draw the calls on. Like calibration_clip(),
     written to `out_dir` once and reused after."""
     saved = _read_dataset(dataset, recordings_root)
-    if not 0 <= recording < len(saved["recordings"]):
-        raise ValueError(f"No recording {recording} in {saved['name']}.")
+    _check_recording(recording, len(saved["recordings"]), saved["name"])
     recordings_dir = Path(saved["data_dir"])
     source = saved["recordings"][recording]
     return _write_clip(open_recordings(recordings_dir), source["name"], source["fps"], (0, 0, 10**6, 10**6),
@@ -1298,8 +1286,7 @@ def dataset_clip(out_dir, dataset, recording, recordings_root=RECORDINGS_ROOT):
 def _recording_name(loader, recording):
     """The name of recording `recording` of an analysis, counted from 0."""
     recordings = loader.recording_names
-    if not 0 <= recording < len(recordings):
-        raise ValueError(f"No recording {recording} in this session.")
+    _check_recording(recording, len(recordings))
     return recordings[recording]
 
 
@@ -1313,28 +1300,22 @@ def analysis_outlines(data_dir, out_dir, recording, zone_id, results):
     loader = open_recordings(data_dir)
     source = _recording_name(loader, recording)
     mites = [mite for mite in _with_fly_offs(results) if mite["zone_id"] == zone_id]
-    manifest = Path(out_dir) / CLIPS_DIRNAME / f"outline_r{recording}_z{zone_id}_{_where_key(mites)}.json"
-    if manifest.is_file():
-        return json.loads(manifest.read_text(encoding="utf-8"))
     if not mites:
         return {}
 
-    mite = get_default_config().mite
-    params = Analyzer.check_metric_params(mite.metric, mite.params_for(mite.metric))
-    pad, width = Analyzer.roi_padding(mite.metric, params), params.get("width", 1.5)
-    reach = int(mite.radius) + pad
-    boxes = {m["id"]: (int(round(m["x"])) - reach, int(round(m["y"])) - reach, int(round(m["x"])) + reach, int(round(m["y"])) + reach)
-             for m in mites}
-    x0, y0 = max(0, min(box[0] for box in boxes.values())), max(0, min(box[1] for box in boxes.values()))
-    frames = loader.load_recording_region(source, x0, y0, max(box[2] for box in boxes.values()),
-                                          max(box[3] for box in boxes.values()))
-    outlines = {}
-    for mite_id, (x1, y1, x2, y2) in boxes.items():
-        x1, y1 = max(x1, x0), max(y1, y0)
-        outlines[mite_id] = OutlineView.describe(frames[:, y1 - y0:y2 - y0, x1 - x0:x2 - x0], x1, y1, width, pad)
-    manifest.parent.mkdir(parents=True, exist_ok=True)
-    manifest.write_text(json.dumps(outlines), encoding="utf-8")
-    return outlines
+    def make():
+        mite = get_default_config().mite
+        pad, width = _metric_pad(mite), Analyzer.check_metric_params(mite.metric, mite.params_for(mite.metric)).get("width", 1.5)
+        boxes = {m["id"]: _square(m, int(mite.radius) + pad) for m in mites}
+        x0, y0, x_end, y_end = _bounds(boxes.values())
+        frames = loader.load_recording_region(source, x0, y0, x_end, y_end)
+        outlines = {}
+        for mite_id, (x1, y1, x2, y2) in boxes.items():
+            x1, y1 = max(x1, x0), max(y1, y0)
+            outlines[mite_id] = OutlineView.describe(frames[:, y1 - y0:y2 - y0, x1 - x0:x2 - x0], x1, y1, width, pad)
+        return outlines
+
+    return _kept_clip(out_dir, f"outline_r{recording}_z{zone_id}_{_where_key(mites)}", make)
 
 
 def analysis_clip(data_dir, out_dir, recording, zone_id=None, coords_file=None):
@@ -1359,9 +1340,7 @@ def analysis_mite_clip(data_dir, out_dir, recording, mite_id, mites):
     """Frames of one mite during one recording of an analysis, cut close around
     it, for the mite page of a session saved as the mites' ROIs, which has no
     zone clip (see _mite_clip()). `mites` are the results' ({id, x, y})."""
-    mite = next((mite for mite in mites if mite["id"] == str(mite_id)), None)
-    if mite is None:
-        raise ValueError(f"No mite {mite_id} in these results.")
+    mite = _find(mites, mite_id, "these results")
     loader = open_recordings(data_dir)
     name = _recording_name(loader, recording)
     return _mite_clip(data_dir, {"name": name, "fps": loader.get_fps(name)}, mite, out_dir, f"mite_r{recording}")
@@ -1437,34 +1416,29 @@ def playback_sheet(data_dir, out_dir, recording, zone_id, results):
     source = _recording_name(loader, recording)
     reach = playback_reach()
     name = f"playback_r{recording}_z{zone_id}_s{2 * reach}_{_where_key(mites)}"
-    clips_dir = Path(out_dir) / CLIPS_DIRNAME
-    manifest = clips_dir / f"{name}.json"
-    if manifest.is_file():
-        return json.loads(manifest.read_text(encoding="utf-8"))
 
-    step, side = _playback_step(loader, source), 2 * reach
-    n_frames = len(range(0, loader.count_frames(source), step))
-    sheet = np.zeros((len(mites) * side, n_frames * side), dtype=np.uint8)
-    for row, mite in enumerate(mites):
-        x, y = int(round(mite["x"])), int(round(mite["y"]))
-        x1, y1, x2, y2 = x - reach, y - reach, x + reach, y + reach
-        cut = [max(0, x1), max(0, y1), x2, y2]
-        if isinstance(loader, RoiRecordings):
-            roi = loader.roi_at(mite["x"], mite["y"])
-            if roi is None:
-                continue
-            cut = [max(cut[0], roi[0]), max(cut[1], roi[1]), min(cut[2], roi[2]), min(cut[3], roi[3])]
-        frames = loader.load_recording_region(source, *cut, step=step)
-        top, left = row * side + cut[1] - y1, cut[0] - x1
-        height, width = frames.shape[1:3]
-        for column, frame in enumerate(frames[:n_frames]):
-            sheet[top:top + height, column * side + left:column * side + left + width] = frame
-    clips_dir.mkdir(parents=True, exist_ok=True)
-    picture = f"{CLIPS_DIRNAME}/{name}.jpg"
-    _write_image(Path(out_dir) / picture, sheet, [cv2.IMWRITE_JPEG_QUALITY, 85])
-    described = {"sheet": picture, "mites": [mite["id"] for mite in mites], "tile": side, "frames": n_frames}
-    manifest.write_text(json.dumps(described), encoding="utf-8")
-    return described
+    def make():
+        step, side = _playback_step(loader, source), 2 * reach
+        n_frames = len(range(0, loader.count_frames(source), step))
+        sheet = np.zeros((len(mites) * side, n_frames * side), dtype=np.uint8)
+        for row, mite in enumerate(mites):
+            x1, y1, x2, y2 = _square(mite, reach)
+            cut = [max(0, x1), max(0, y1), x2, y2]
+            if isinstance(loader, RoiRecordings):
+                roi = loader.roi_at(mite["x"], mite["y"])
+                if roi is None:
+                    continue
+                cut = [max(cut[0], roi[0]), max(cut[1], roi[1]), min(cut[2], roi[2]), min(cut[3], roi[3])]
+            frames = loader.load_recording_region(source, *cut, step=step)
+            top, left = row * side + cut[1] - y1, cut[0] - x1
+            height, width = frames.shape[1:3]
+            for column, frame in enumerate(frames[:n_frames]):
+                sheet[top:top + height, column * side + left:column * side + left + width] = frame
+        picture = f"{CLIPS_DIRNAME}/{name}.jpg"
+        write_jpeg(Path(out_dir) / picture, sheet)
+        return {"sheet": picture, "mites": [mite["id"] for mite in mites], "tile": side, "frames": n_frames}
+
+    return _kept_clip(out_dir, name, make)
 
 
 def save_ground_truth(out_dir, truth):
@@ -1592,10 +1566,10 @@ def load_calibration_truth(out_dir):
 
 def _saved_truth(stored):
     """The saved ground truth of a calibration session's mites, by mite id."""
-    return calibration.match_ground_truth(stored["mites"], _folder_truth(stored["data_dir"]), len(stored["times"]))
+    return calibration.match_ground_truth(stored["mites"], load_ground_truth(stored["data_dir"]), len(stored["times"]))
 
 
-def _write_ground_truth(stored, truth, tolerance=10.0):
+def _write_ground_truth(stored, truth, tolerance=positions.TOLERANCE):
     """Write the ground truth of a calibration session's mites (`truth`, by
     mite id) next to its recordings, by position; returns the mites labelled."""
     n_recordings = len(stored["times"])
@@ -1605,18 +1579,15 @@ def _write_ground_truth(stored, truth, tolerance=10.0):
         if any(states):
             labelled[mite["id"]] = states
 
-    recordings_dir = Path(stored["data_dir"])
-    if not recordings_dir.is_dir():
-        raise FileNotFoundError(f"The recordings are no longer at {stored['data_dir']}, so the ground truth "
-                                "cannot be saved with them.")
+    recordings_dir = _recordings_dir(stored, "the ground truth cannot be saved with them")
     if True:
         entries = [{"x": mite["x"], "y": mite["y"], "truth": labelled[mite["id"]]}
                    for mite in stored["mites"] if mite["id"] in labelled]
         # Entries away from every mite of this session, e.g. detections marked
         # "not a mite" under other detector settings, are not this session's to drop.
         entries += [entry for entry in load_ground_truth(recordings_dir)
-                    if all(np.hypot(entry["x"] - m["x"], entry["y"] - m["y"]) > tolerance for m in stored["mites"])]
-        (recordings_dir / GROUND_TRUTH_FILENAME).write_text(json.dumps(entries), encoding="utf-8")
+                    if positions.away_from_all(entry, stored["mites"], tolerance)]
+        _write_truth(recordings_dir, entries)
     return labelled
 
 
@@ -1632,21 +1603,15 @@ def _write_ground_truth(stored, truth, tolerance=10.0):
 def load_poke_test(data_dir):
     """The poke test saved for a recording folder: {rounds: [{after, mites: [{x,
     y, state}]}]}, as PokeTest.saved() gives it; {} without one."""
-    path = Path(data_dir) / POKE_FILENAME
-    if not path.is_file():
-        return {}
-    return json.loads(path.read_text(encoding="utf-8"))
+    return read_json(Path(data_dir) / POKE_FILENAME, {})
 
 
 def _poke_of(source):
     """The poke test of a calibration session or a saved dataset (`source` has
     its data_dir, mites and times), by mite id. Detections marked not a mite in
     the ground truth have no part in it."""
-    n_recordings = len(source["times"])
-    truth = source["truth"] if "truth" in source else _saved_truth(source)
-    mites = [mite for mite in source["mites"]
-             if not calibration.is_rejected(calibration.per_recording(truth.get(mite["id"]), n_recordings))]
-    return PokeTest(mites, n_recordings, load_poke_test(source["data_dir"]))
+    mites = [mite for mite, _states in _mite_states(source, source["truth"] if "truth" in source else _saved_truth(source))]
+    return PokeTest(mites, len(source["times"]), load_poke_test(source["data_dir"]))
 
 
 def poke_view(out_dir):
@@ -1661,10 +1626,7 @@ def edit_poke(out_dir, action, after, mite=None, zone=None, state=None):
     "fill" the mites of a `zone` (of every zone without one) not poked yet in it
     with `state`, None taking their pokes back. Returns the view with it."""
     stored = _read_calibration_session(out_dir)
-    recordings_dir = Path(stored["data_dir"])
-    if not recordings_dir.is_dir():
-        raise FileNotFoundError(
-            f"The recordings are no longer at {stored['data_dir']}, so the poke test cannot be saved with them.")
+    recordings_dir = _recordings_dir(stored, "the poke test cannot be saved with them")
     poke = _poke_of(stored)
     if action == "add":
         poke.add(after)
@@ -1676,7 +1638,7 @@ def edit_poke(out_dir, action, after, mite=None, zone=None, state=None):
         poke.fill(after, state, None if zone is None else int(zone))
     else:
         raise ValueError(f"Unknown change {action!r}.")
-    (recordings_dir / POKE_FILENAME).write_text(json.dumps(poke.saved()), encoding="utf-8")
+    write_json(recordings_dir / POKE_FILENAME, poke.saved())
     return poke.view()
 
 
@@ -1715,6 +1677,16 @@ def _poke_survival(mites, times):
 # be deleted at any time.
 
 
+def _mite_states(dataset, truth=None):
+    """[(mite, its statuses per recording, see calibration.per_recording())] of a
+    dataset or a calibration session (`truth` by mite id, the dataset's own by
+    default), the mites marked not a mite left out."""
+    truth = dataset["truth"] if truth is None else truth
+    n_recordings = len(dataset["times"])
+    states = ((mite, calibration.per_recording(truth.get(mite["id"]), n_recordings)) for mite in dataset["mites"])
+    return [(mite, mite_states) for mite, mite_states in states if not calibration.is_rejected(mite_states)]
+
+
 def dataset_id(data_dir):
     """The id of the dataset of a recording folder: its name."""
     return Path(data_dir).name
@@ -1745,9 +1717,10 @@ def _cached_per_recording(cache, field, dataset):
     """What `cache` holds under `field` (mite id to one value per recording), or
     None when there is no cache or it was written when the dataset had another
     number of recordings: a run recorded on after it was scored."""
-    if not cache.is_file():
+    cached = read_json(cache)
+    if cached is None:
         return None
-    by_mite = json.loads(cache.read_text(encoding="utf-8"))[field]
+    by_mite = cached[field]
     n_recordings = len(dataset["recordings"])
     return by_mite if all(len(values) == n_recordings for values in by_mite.values()) else None
 
@@ -1912,9 +1885,10 @@ def _copy_recordings(data_dir, target):
         partial.replace(copy)  # only a complete file ever has the real name
 
 
-def _free_name(name, recordings_root):
-    """`name`, or `name-2`, `name-3`... : the first not taken in `recordings_root`."""
-    candidates = itertools.chain([name], (f"{name}-{number}" for number in itertools.count(2)))
+def _free_name(name, recordings_root, separator="-"):
+    """`name`, or `name-2`, `name-3`... (`separator` before the number): the
+    first not taken in `recordings_root`."""
+    candidates = itertools.chain([name], (f"{name}{separator}{number}" for number in itertools.count(2)))
     return next(candidate for candidate in candidates if not (Path(recordings_root) / candidate).exists())
 
 
@@ -1959,10 +1933,10 @@ EARLIER_REPORTS = "earlier calibration reports"
 
 def _merged_truth(kept, extra):
     """Ground truth `kept` (by position) with the entries of `extra` that are not
-    within 10 px of one of its own added."""
+    within positions.TOLERANCE of one of its own added."""
     merged = list(kept)
     for entry in extra:
-        if all(np.hypot(entry["x"] - other["x"], entry["y"] - other["y"]) > 10.0 for other in merged):
+        if positions.away_from_all(entry, merged):
             merged.append(entry)
     return merged
 
@@ -1980,36 +1954,28 @@ def _rekeyed_scores(scores_dir, old_mites, new_mites):
             or all(old == new for old, new in ids.items()):
         return 0
 
-    def mites_key(mites):
-        return [[m["id"], m["x"], m["y"], m["r"]] for m in mites]
-
-    def short(*parts):
-        return hashlib.sha1(json.dumps(list(parts)).encode("utf-8")).hexdigest()[:12]
-
-    benchmark_source = inspect.getsource(benchmark_module)
-    stabilizer_source = inspect.getsource(plate_stabilizer)
     renamed = 0
     for path in sorted(Path(scores_dir).glob("*.json")):
-        cached = _read_json(path)
+        cached = try_json(path)
         if not isinstance(cached, dict):
             continue
-        name, by_mite, new_name = path.stem, None, None
+        by_mite, new_name = None, None
         if "scores" in cached and "metric" in cached:
             for stabilize in (False, True):
-                if _metric_version(cached["metric"], cached.get("params"), old_mites, stabilize) == name:
-                    by_mite, new_name = "scores", _metric_version(cached["metric"], cached.get("params"), new_mites, stabilize)
-        elif "calls" in cached and name == f"benchmark-{short(benchmark_source, mites_key(old_mites))}":
-            by_mite, new_name = "calls", f"benchmark-{short(benchmark_source, mites_key(new_mites))}"
+                if path.name == f"{_metric_version(cached['metric'], cached.get('params'), old_mites, stabilize)}.json":
+                    by_mite = "scores"
+                    new_name = f"{_metric_version(cached['metric'], cached.get('params'), new_mites, stabilize)}.json"
+        elif "calls" in cached and path.name == _benchmark_name(old_mites):
+            by_mite, new_name = "calls", _benchmark_name(new_mites)
         elif "brightness" in cached:
             for pad, stabilize in itertools.product(range(65), (False, True)):
-                if name == f"brightness-{short(stabilizer_source, pad, stabilize, mites_key(old_mites))}":
-                    by_mite, new_name = "brightness", f"brightness-{short(stabilizer_source, pad, stabilize, mites_key(new_mites))}"
+                if path.name == _brightness_name(old_mites, pad, stabilize):
+                    by_mite, new_name = "brightness", _brightness_name(new_mites, pad, stabilize)
         if by_mite is None or not set(cached[by_mite]) <= set(ids):
             continue
-        target = path.with_name(f"{new_name}.json")
+        target = path.with_name(new_name)
         if not target.exists():
-            target.write_text(json.dumps({**cached, by_mite: {ids[key]: value for key, value in cached[by_mite].items()}}),
-                              encoding="utf-8")
+            write_json(target, {**cached, by_mite: {ids[key]: value for key, value in cached[by_mite].items()}})
             renamed += 1
     return renamed
 
@@ -2035,7 +2001,7 @@ def dissolve_calibration_library(library_dir=OLD_LIBRARY, recordings_root=RECORD
         return
     for path in sorted(library_dir.glob(f"*/{DATASET_NAME}")):
         folder = path.parent
-        saved = _read_json(path)
+        saved = try_json(path)
         if not isinstance(saved, dict):
             continue
         original = Path(str(saved.get("data_dir", "")))
@@ -2059,7 +2025,7 @@ def dissolve_calibration_library(library_dir=OLD_LIBRARY, recordings_root=RECORD
                   for mite_id, states in (saved.get("truth") or {}).items() if mite_id in positions]
         merged = _merged_truth(truth, extra)
         if len(merged) > len(truth):
-            (run / GROUND_TRUTH_FILENAME).write_text(json.dumps(merged), encoding="utf-8")
+            _write_truth(run, merged)
             report(f"{run.name}: {len(merged) - len(truth)} ground truth entries added from the library")
         poke = copy / POKE_FILENAME if copy.is_dir() else None
         if poke is not None and poke.is_file():
@@ -2108,14 +2074,52 @@ def dissolve_calibration_library(library_dir=OLD_LIBRARY, recordings_root=RECORD
 # --- evaluation -------------------------------------------------------------------------
 
 
+def _digest(*parts, sort_keys=False):
+    """Twelve hex digits that change with `parts` (as JSON): the version in a
+    cached file's name."""
+    return hashlib.sha1(json.dumps(list(parts), sort_keys=sort_keys).encode("utf-8")).hexdigest()[:12]
+
+
+def _mites_key(mites):
+    """What of the mites ({id, x, y, r}) a cached measure of them depends on."""
+    return [[m["id"], m["x"], m["y"], m["r"]] for m in mites]
+
+
 def _metric_version(metric, params, mites, stabilize=False):
     """Changes whenever the scores of these mites could: another metric, other
     parameters, plate stabilization switched, an edit to the scoring code, or
     other mites."""
     source = inspect.getsource(Analyzer) + inspect.getsource(plate_stabilizer)
-    key = json.dumps([metric, params, source, [[m["id"], m["x"], m["y"], m["r"]] for m in mites]]
-                     + ([True] if stabilize else []), sort_keys=True)
-    return hashlib.sha1(key.encode("utf-8")).hexdigest()[:12]
+    return _digest(metric, params, source, _mites_key(mites), *([True] if stabilize else []), sort_keys=True)
+
+
+def _brightness_name(mites, pad, stabilize):
+    return f"brightness-{_digest(inspect.getsource(plate_stabilizer), pad, bool(stabilize), _mites_key(mites))}.json"
+
+
+def _benchmark_name(mites):
+    return f"benchmark-{_digest(inspect.getsource(benchmark_module), _mites_key(mites))}.json"
+
+
+def _outline_name(mites, stabilize):
+    source = inspect.getsource(outline_change_module) + inspect.getsource(plate_stabilizer)
+    return f"outline-{_digest(source, bool(stabilize), _mites_key(mites))}.json"
+
+
+def _cached_by_mite(dataset, filename, field, measure, **more):
+    """`measure()` of a dataset's mites (mite id to one value per recording),
+    kept in its scores/ as `filename` under `field` (with `more` beside it) and
+    read back from there while the dataset has as many recordings
+    (_cached_per_recording()). The cache is only a shortcut: deleting it just
+    means decoding the recordings again."""
+    cache = _scores_dir(dataset) / filename
+    cached = _cached_per_recording(cache, field, dataset)
+    if cached is not None:
+        return cached
+    values = measure()
+    cache.parent.mkdir(parents=True, exist_ok=True)
+    write_json(cache, {**more, field: values})
+    return values
 
 
 def mite_boxes(mites, pad=0):
@@ -2140,13 +2144,8 @@ def _measure_mites(dataset, recordings_dir, measure, pad=0, stabilize=False):
     loader = open_recordings(recordings_dir)
     boxes = mite_boxes(dataset["mites"], pad)
     # Stabilizing reads a little around each cut; keep real pixels there.
-    margin = STABILIZE_MARGIN if stabilize else 0
-    x0 = max(0, min(box[0] for box in boxes.values()) - margin)
-    y0 = max(0, min(box[1] for box in boxes.values()) - margin)
-    x_end = max(box[2] for box in boxes.values()) + margin
-    y_end = max(box[3] for box in boxes.values()) + margin
-    local = {mite_id: (x1 - x0, y1 - y0, x2 - x0, y2 - y0)
-             for mite_id, (x1, y1, x2, y2) in mite_boxes(dataset["mites"]).items()}
+    x0, y0, x_end, y_end = _bounds(boxes.values(), STABILIZE_MARGIN if stabilize else 0)
+    local = _local(mite_boxes(dataset["mites"]), x0, y0)
 
     def measured(frames):
         shifts = dict(zip(local, PlateStabilizer().shifts(frames, list(local.values())))) if stabilize else None
@@ -2165,17 +2164,15 @@ def _measure_mites(dataset, recordings_dir, measure, pad=0, stabilize=False):
         yield measured(frames)
 
 
-def _check_recordings(dataset, recordings_dir, what):
-    if not Path(recordings_dir).is_dir():
-        raise FileNotFoundError(
-            f"The recordings of {dataset['name']} are no longer at {dataset['data_dir']}, so {what}."
-        )
+def _check_there(dataset, recordings_dir, what):
+    """_recordings_dir() of `dataset`, its recordings read from `recordings_dir`."""
+    _recordings_dir({**dataset, "data_dir": str(recordings_dir)}, what)
 
 
 def _score_mites(dataset, metric, recordings_dir, params=None, stabilize=False):
     """Score every mite of a dataset in every recording with `metric` and its
     `params`: mite id to one score per recording (see _measure_mites())."""
-    _check_recordings(dataset, recordings_dir, f"its mites cannot be scored with {metric}")
+    _check_there(dataset, recordings_dir, f"its mites cannot be scored with {metric}")
     scores = {mite["id"]: [] for mite in dataset["mites"]}
 
     def score(roi):
@@ -2191,7 +2188,7 @@ def _brightness_mites(dataset, recordings_dir, pad=0, stabilize=False):
     """The brightness of every mite's patch in every recording, as an analysis
     run records it with the score (Analyzer.score_pool()): mite id to one mean
     pixel value per recording."""
-    _check_recordings(dataset, recordings_dir, "the brightness of its mites cannot be measured")
+    _check_there(dataset, recordings_dir, "the brightness of its mites cannot be measured")
     brightness = {mite["id"]: [] for mite in dataset["mites"]}
 
     def mean(roi):
@@ -2206,17 +2203,8 @@ def _brightness_mites(dataset, recordings_dir, pad=0, stabilize=False):
 def _dataset_brightness(key, dataset, pad, stabilize=False):
     """The brightness of the dataset's mites, from the cache when exactly these
     patches were measured before."""
-    version = hashlib.sha1(json.dumps(
-        [inspect.getsource(plate_stabilizer), pad, bool(stabilize),
-         [[m["id"], m["x"], m["y"], m["r"]] for m in dataset["mites"]]]).encode("utf-8")).hexdigest()[:12]
-    cache = _scores_dir(dataset) / f"brightness-{version}.json"
-    cached = _cached_per_recording(cache, "brightness", dataset)
-    if cached is not None:
-        return cached
-    brightness = _brightness_mites(dataset, Path(dataset["data_dir"]), pad, stabilize)
-    cache.parent.mkdir(parents=True, exist_ok=True)
-    cache.write_text(json.dumps({"brightness": brightness}), encoding="utf-8")
-    return brightness
+    return _cached_by_mite(dataset, _brightness_name(dataset["mites"], pad, stabilize), "brightness",
+                           lambda: _brightness_mites(dataset, Path(dataset["data_dir"]), pad, stabilize))
 
 
 def _normalised_scores(key, dataset, scores, normalizer, pad, stabilize):
@@ -2226,9 +2214,7 @@ def _normalised_scores(key, dataset, scores, normalizer, pad, stabilize):
     if not normalizer.active:
         return scores
     brightness = _dataset_brightness(key, dataset, pad, stabilize) if normalizer.brightness else None
-    n_recordings = len(dataset["times"])
-    mites = [mite["id"] for mite in dataset["mites"]
-             if not calibration.is_rejected(calibration.per_recording(dataset["truth"].get(mite["id"]), n_recordings))]
+    mites = [mite["id"] for mite, _states in _mite_states(dataset)]
     normalised = normalizer.by_mite({mite_id: scores[mite_id] for mite_id in mites},
                                     brightness and {mite_id: brightness[mite_id] for mite_id in mites})
     return {**scores, **{mite_id: [round(value, 3) for value in values] for mite_id, values in normalised.items()}}
@@ -2239,29 +2225,20 @@ def _dataset_scores(key, dataset, metric, params, stabilize=False):
     exactly this metric, with these parameters, this plate stabilization and
     this scoring code, has scored them before. The cache is only a shortcut:
     deleting it just means decoding the recordings again."""
-    version = _metric_version(metric, params, dataset["mites"], stabilize)
-    cache = _scores_dir(dataset) / f"{version}.json"
-    cached = _cached_per_recording(cache, "scores", dataset)
-    if cached is not None:
-        return cached
-    scores = _score_mites(dataset, metric, Path(dataset["data_dir"]), params, stabilize)
-    cache.parent.mkdir(parents=True, exist_ok=True)
-    cache.write_text(json.dumps({"metric": metric, "params": params, "scores": scores}), encoding="utf-8")
-    return scores
+    return _cached_by_mite(dataset, f"{_metric_version(metric, params, dataset['mites'], stabilize)}.json", "scores",
+                           lambda: _score_mites(dataset, metric, Path(dataset["data_dir"]), params, stabilize),
+                           metric=metric, params=params)
 
 
 def _benchmark_mites(dataset, recordings_dir):
     """Whether the benchmark (classes/benchmark.py) calls each mite of a dataset
     moving in each recording: mite id to one True or False per recording. Slow:
     every frame is decoded and denoised, in the part of the image holding mites."""
-    _check_recordings(dataset, recordings_dir, "the benchmark cannot be run on them")
+    _check_there(dataset, recordings_dir, "the benchmark cannot be run on them")
     loader = open_recordings(recordings_dir)
     boxes = mite_boxes(dataset["mites"])
-    x0 = max(0, min(box[0] for box in boxes.values()) - Benchmark.MARGIN)
-    y0 = max(0, min(box[1] for box in boxes.values()) - Benchmark.MARGIN)
-    x_end = max(box[2] for box in boxes.values()) + Benchmark.MARGIN
-    y_end = max(box[3] for box in boxes.values()) + Benchmark.MARGIN
-    local = {mite_id: (x1 - x0, y1 - y0, x2 - x0, y2 - y0) for mite_id, (x1, y1, x2, y2) in boxes.items()}
+    x0, y0, x_end, y_end = _bounds(boxes.values(), Benchmark.MARGIN)
+    local = _local(boxes, x0, y0)
 
     calls = {mite_id: [] for mite_id in boxes}
     for recording in dataset["recordings"]:
@@ -2274,17 +2251,8 @@ def _benchmark_mites(dataset, recordings_dir):
 def _dataset_benchmark(key, dataset):
     """The benchmark's calls for the dataset's mites, from the cache when this
     benchmark code has called exactly these mites before."""
-    source = inspect.getsource(benchmark_module)
-    version = hashlib.sha1(json.dumps(
-        [source, [[m["id"], m["x"], m["y"], m["r"]] for m in dataset["mites"]]]).encode("utf-8")).hexdigest()[:12]
-    cache = _scores_dir(dataset) / f"benchmark-{version}.json"
-    cached = _cached_per_recording(cache, "calls", dataset)
-    if cached is not None:
-        return cached
-    calls = _benchmark_mites(dataset, Path(dataset["data_dir"]))
-    cache.parent.mkdir(parents=True, exist_ok=True)
-    cache.write_text(json.dumps({"benchmark": Benchmark.NAME, "calls": calls}), encoding="utf-8")
-    return calls
+    return _cached_by_mite(dataset, _benchmark_name(dataset["mites"]), "calls",
+                           lambda: _benchmark_mites(dataset, Path(dataset["data_dir"])), benchmark=Benchmark.NAME)
 
 
 def _outline_mites(dataset, recordings_dir, stabilize=False):
@@ -2292,7 +2260,7 @@ def _outline_mites(dataset, recordings_dir, stabilize=False):
     (OutlineChange.changes()): mite id to one change per recording, in px, None
     for the first. Slow: every frame is decoded, as scoring decodes them
     (_measure_mites()), each mite cut with outline_change.PAD pixels around it."""
-    _check_recordings(dataset, recordings_dir, "their outlines cannot be compared")
+    _check_there(dataset, recordings_dir, "their outlines cannot be compared")
     outlines = {mite["id"]: [] for mite in dataset["mites"]}
     for recording in _measure_mites(dataset, recordings_dir, OutlineChange.outline_of, outline_change_module.PAD,
                                     stabilize):
@@ -2305,17 +2273,8 @@ def _outline_mites(dataset, recordings_dir, stabilize=False):
 def _dataset_outline_changes(key, dataset, stabilize=False):
     """_outline_mites() of the dataset, from the cache when this outline code,
     with this plate stabilization, has measured exactly these mites before."""
-    source = inspect.getsource(outline_change_module) + inspect.getsource(plate_stabilizer)
-    version = hashlib.sha1(json.dumps(
-        [source, bool(stabilize), [[m["id"], m["x"], m["y"], m["r"]] for m in dataset["mites"]]]).encode("utf-8")).hexdigest()[:12]
-    cache = _scores_dir(dataset) / f"outline-{version}.json"
-    cached = _cached_per_recording(cache, "changes", dataset)
-    if cached is not None:
-        return cached
-    changes = _outline_mites(dataset, Path(dataset["data_dir"]), stabilize)
-    cache.parent.mkdir(parents=True, exist_ok=True)
-    cache.write_text(json.dumps({"changes": changes}), encoding="utf-8")
-    return changes
+    return _cached_by_mite(dataset, _outline_name(dataset["mites"], stabilize), "changes",
+                           lambda: _outline_mites(dataset, Path(dataset["data_dir"]), stabilize))
 
 
 def _benchmark_circles(recordings_dir, recording_name):
@@ -2332,16 +2291,16 @@ def _dataset_circles(key, dataset, recording):
     when this benchmark code has drawn them before; None when the recording's
     frames are gone, so there is nothing to draw them from."""
     name = dataset["recordings"][recording]["name"]
-    version = hashlib.sha1(json.dumps([inspect.getsource(benchmark_module), name]).encode("utf-8")).hexdigest()[:12]
-    cache = _scores_dir(dataset) / f"benchmark-circles-{version}.json"
-    if cache.is_file():
-        return json.loads(cache.read_text(encoding="utf-8"))["circles"]
+    cache = _scores_dir(dataset) / f"benchmark-circles-{_digest(inspect.getsource(benchmark_module), name)}.json"
+    cached = read_json(cache)
+    if cached is not None:
+        return cached["circles"]
     try:
         circles = _benchmark_circles(Path(dataset["data_dir"]), name)
     except FileNotFoundError:
         return None
     cache.parent.mkdir(parents=True, exist_ok=True)
-    cache.write_text(json.dumps({"benchmark": Benchmark.NAME, "recording": name, "circles": circles}), encoding="utf-8")
+    write_json(cache, {"benchmark": Benchmark.NAME, "recording": name, "circles": circles})
     return circles
 
 
@@ -2354,13 +2313,11 @@ def _last_recording(dataset, scores, threshold, benchmark=None, circles=None):
     `circles` are what the benchmark draws on that recording, each of radius
     "circle_radius" (see _dataset_circles()). A mite a live run did not follow
     there (counted dead by then, see calibration.followed()) is left out."""
-    n_recordings = len(dataset["times"])
-    last = n_recordings - 1
+    last = len(dataset["times"]) - 1
     boxes = mite_boxes(dataset["mites"])
     mites = []
-    for mite in dataset["mites"]:
-        states = calibration.per_recording(dataset["truth"].get(mite["id"]), n_recordings)
-        if calibration.is_rejected(states) or not calibration.followed(mite, last):
+    for mite, states in _mite_states(dataset):
+        if not calibration.followed(mite, last):
             continue
         score = scores[mite["id"]][last]
         mites.append(
@@ -2369,10 +2326,9 @@ def _last_recording(dataset, scores, threshold, benchmark=None, circles=None):
                 "zone_id": mite["zone_id"],
                 "box": list(boxes[mite["id"]]),
                 "score": score,
-                "call": calibration.MOVING if score >= threshold else calibration.STILL,
+                "call": calibration.call(score >= threshold),
                 "movement": states[last],
-                **({} if benchmark is None else {
-                    "benchmark_call": calibration.MOVING if benchmark[mite["id"]][last] else calibration.STILL}),
+                **({} if benchmark is None else {"benchmark_call": calibration.call(benchmark[mite["id"]][last])}),
             }
         )
     return {
@@ -2399,12 +2355,10 @@ def _observations(dataset, dataset_key, scores, benchmark=None, outline=None):
     groups = {zone["id"]: zone["label"] or UNLABELED for zone in dataset["zones"]}
     recording_names = [recording["name"] for recording in dataset["recordings"]]
     recording_names += [""] * (n_recordings - len(recording_names))
-    rows, n_rejected, n_unlabelled = [], 0, 0
-    for mite in dataset["mites"]:
-        states = calibration.per_recording(dataset["truth"].get(mite["id"]), n_recordings)
-        if calibration.is_rejected(states):
-            n_rejected += 1
-            continue
+    rows, n_unlabelled = [], 0
+    kept = _mite_states(dataset)
+    n_rejected = len(dataset["mites"]) - len(kept)
+    for mite, states in kept:
         start = mite.get("start", 0)
         for recording, movement in enumerate(states):
             if not calibration.followed(mite, recording):
@@ -2427,11 +2381,10 @@ def _observations(dataset, dataset_key, scores, benchmark=None, outline=None):
                     "start": start,
                     "movement": movement,
                     "score": scores[mite["id"]][recording],
-                    **({} if benchmark is None else {
-                        "benchmark_call": calibration.MOVING if benchmark[mite["id"]][recording] else calibration.STILL}),
+                    **({} if benchmark is None else {"benchmark_call": calibration.call(benchmark[mite["id"]][recording])}),
                     **({} if outline is None else {
                         "outline_change": outline["changes"][mite["id"]][recording],
-                        "outline_call": calibration.MOVING if outline["calls"][mite["id"]][recording] else calibration.STILL}),
+                        "outline_call": calibration.call(outline["calls"][mite["id"]][recording])}),
                 }
             )
     return rows, n_rejected, n_unlabelled
@@ -2456,12 +2409,8 @@ def _outline_rows(dataset, key, outline):
     """Every mite of a dataset not marked not a mite, for the figure of the
     outline change (OutlineChange.raster()): where it is, its labels per
     recording (True moving, False still, None unlabelled) and its changes."""
-    n_recordings = len(dataset["times"])
     rows = []
-    for mite in dataset["mites"]:
-        states = calibration.per_recording(dataset["truth"].get(mite["id"]), n_recordings)
-        if calibration.is_rejected(states):
-            continue
+    for mite, states in _mite_states(dataset):
         rows.append({"dataset": key, "dataset_name": dataset["name"], "mite_id": mite["id"], "zone_id": mite["zone_id"],
                      "moving": [None if state is None or not calibration.followed(mite, at) else state == calibration.MOVING
                                 for at, state in enumerate(states)],
@@ -2927,13 +2876,9 @@ def overlap_clip(dataset, mite_id, recording, recordings_root=RECORDINGS_ROOT):
     """Frames of one mite during one recording of a saved dataset, cut close
     around it (see _mite_clip()), kept in OVERLAP_DIR."""
     saved = _read_dataset(dataset, recordings_root)
-    mite = next((mite for mite in saved["mites"] if mite["id"] == str(mite_id)), None)
-    if mite is None:
-        raise ValueError(f"No mite {mite_id} in {saved['name']}.")
-    if not 0 <= recording < len(saved["recordings"]):
-        raise ValueError(f"No recording {recording} in {saved['name']}.")
-    recordings_dir = Path(saved["data_dir"])
-    _check_recordings(saved, recordings_dir, "there is no clip to play")
+    mite = _find(saved["mites"], mite_id, saved["name"])
+    _check_recording(recording, len(saved["recordings"]), saved["name"])
+    recordings_dir = _recordings_dir(saved, "there is no clip to play")
     return _mite_clip(recordings_dir, saved["recordings"][recording], mite, OVERLAP_DIR, f"{dataset}_r{recording}")
 
 
@@ -2949,10 +2894,8 @@ def set_overlap_label(dataset, mite_id, recording, state, recordings_root=RECORD
     stored = {key: saved[key] for key in ("data_dir", "times", "recordings", "image", "zones", "mites")}
     n_recordings = len(stored["times"])
     mite_id = str(mite_id)
-    if all(mite["id"] != mite_id for mite in stored["mites"]):
-        raise ValueError(f"No mite {mite_id} in {saved['name']}.")
-    if not 0 <= recording < n_recordings:
-        raise ValueError(f"No recording {recording} in {saved['name']}.")
+    _find(stored["mites"], mite_id, saved["name"])
+    _check_recording(recording, n_recordings, saved["name"])
 
     truth = _saved_truth(stored)
     if calibration.is_rejected(truth.get(mite_id)):
@@ -2986,7 +2929,6 @@ CameraError = live_camera.CameraError  # the camera or Vimba X cannot be used
 class LiveRunNotOpen(ValueError):
     """No live run is open by that id: closed, or the server restarted since."""
 LIVE_SETTINGS_FILE = APP_DIR / "settings.txt"
-SETTINGS_FILENAME = ".settings.txt"
 RUN_INFO_NAME = "run.json"
 LIVE_FEED_WIDTH = 960
 LIVE_STATES = ("running", "paused", "stopping")
@@ -3047,12 +2989,7 @@ def print_cameras():
 def default_run_name(recordings_root=RECORDINGS_ROOT):
     """test_run_<today>, as the Discobox app names a run, with a number added if
     that name is taken."""
-    base = f"test_run_{date.today():%Y-%m-%d}"
-    name, number = base, 1
-    while (Path(recordings_root) / name).exists():
-        number += 1
-        name = f"{base}_{number}"
-    return name
+    return _free_name(f"test_run_{date.today():%Y-%m-%d}", recordings_root, "_")
 
 
 def _run_dir_for(run_name, recordings_root):
@@ -3322,10 +3259,7 @@ def _write_run_info(run, ended=False):
             "error": status["error"] or status["save_error"],
             "stop_reason": run.stop_reason,
         }
-        path = run.run_dir / RUN_INFO_NAME
-        partial = path.with_name(path.name + ".part")
-        partial.write_text(json.dumps(info, indent=2), encoding="utf-8")
-        partial.replace(path)
+        write_json(run.run_dir / RUN_INFO_NAME, info, indent=2)
     except Exception:
         _logger.exception("Could not write %s", RUN_INFO_NAME)
 
@@ -3506,11 +3440,7 @@ def live_find_mites(live_id):
     of mites `followed` in each (those to add with the next recording
     included), and the mites found [{id, zone_id, x, y, r, x1, y1, x2, y2,
     rejected}], each numbered after the mites of its zone."""
-    run = _get_live(live_id)
-    if run.session.state not in ("running", "paused"):
-        raise ValueError("Mites can be added while the test run is going on.")
-    if not run.analysis.started:
-        raise ValueError("Mites can be added once the first recording has begun.")
+    run = _adding_to(live_id)
     if not run.finding.acquire(blocking=False):
         raise ValueError("Mites are being looked for already.")
     try:
@@ -3534,8 +3464,18 @@ def live_find_mites(live_id):
         run.found_frame = image
     finally:
         run.finding.release()
-    _write_image(Path(run.out_dir) / ADD_PREVIEW_NAME, image, [cv2.IMWRITE_JPEG_QUALITY, 85])
+    write_jpeg(Path(run.out_dir) / ADD_PREVIEW_NAME, image)
     return {"preview": ADD_PREVIEW_NAME, "image": _image_size(image), "zones": zones, "mites": found}
+
+
+def _adding_to(live_id):
+    """The live run `live_id`, refused unless mites can be added to it now."""
+    run = _get_live(live_id)
+    if run.session.state not in ("running", "paused"):
+        raise ValueError("Mites can be added while the test run is going on.")
+    if not run.analysis.started:
+        raise ValueError("Mites can be added once the first recording has begun.")
+    return run
 
 
 def _add_zones(run, found):
@@ -3547,19 +3487,19 @@ def _add_zones(run, found):
     with run.session.lock:
         zones = _describe_zones(analysis.zone_manager, load_labels(run.run_dir))
         followed = {zone.id: len(zone.mites) for zone in analysis.zone_manager.zones if zone.id is not None}
-        for x1, y1, x2, y2 in analysis._pending:
-            zone = next((zone for zone in analysis.zone_manager.zones if zone.id is not None
-                         and zone.x1 <= (x1 + x2) / 2 <= zone.x2 and zone.y1 <= (y1 + y2) / 2 <= zone.y2), None)
+        for box in analysis._pending:
+            zone = analysis.zone_manager.zone_of(box)
             if zone is not None:
                 followed[zone.id] += 1
     controls = set(load_controls(run.run_dir))
     numbered = dict(followed)
-    # in reading order within each zone, as they will be numbered (MotionAnalysis._add_all())
-    boxes = [SimpleNamespace(**{key: mite[key] for key in ("x1", "y1", "x2", "y2")}, found=mite) for mite in found]
+    # the ids they will have (MotionAnalysis._add_all())
+    boxes = [Rect(mite["x1"], mite["y1"], mite["x2"], mite["y2"], found=mite) for mite in found]
     for zone_id in dict.fromkeys(mite["zone_id"] for mite in found):
-        for box in mites_in_reading_order([box for box in boxes if box.found["zone_id"] == zone_id]):
-            numbered[zone_id] += 1
-            box.found["id"] = f"{zone_id}.{numbered[zone_id]}"
+        here = [box for box in boxes if box.found["zone_id"] == zone_id]
+        for box, text in mite_ids(here, zone_id, numbered[zone_id]):
+            box.found["id"] = text
+        numbered[zone_id] += len(here)
     for zone in zones:
         zone["control"] = zone["id"] in controls
         zone["followed"] = followed.get(zone["id"], 0)
@@ -3598,7 +3538,6 @@ def _new_mites(run, image):
     with run.session.lock:
         last = analysis.placed[-1] if analysis.placed else {}
         known = [last.get(mite, tuple(mite)) for mite in analysis.mites] + list(analysis._pending)
-        zones = [zone for zone in analysis.zone_manager.zones if zone.id is not None]
         masked = analysis.zone_manager.mask_image_to_valid_rois(image)
     with DETECTION_LOCK:  # a Mite counts the ids on
         detected = analysis.analyzer.detect(masked)
@@ -3608,11 +3547,9 @@ def _new_mites(run, image):
         if any(x1 - FOUND_MITE_REACH <= x <= x2 + FOUND_MITE_REACH and y1 - FOUND_MITE_REACH <= y <= y2 + FOUND_MITE_REACH
                for x1, y1, x2, y2 in known):
             continue
-        zone = next((zone for zone in zones if mite in zone), None)
+        zone = analysis.zone_manager.zone_of(mite)
         if zone is not None:
-            found.append({"x1": mite.x1, "y1": mite.y1, "x2": mite.x2, "y2": mite.y2,
-                          "x": round(x, 1), "y": round(y, 1), "r": round(float((mite.x2 - mite.x1) / 2), 1),
-                          "zone_id": zone.id, "rejected": False})
+            found.append(_mite_view(mite, zone.id, x1=mite.x1, y1=mite.y1, x2=mite.x2, y2=mite.y2, rejected=False))
     return found
 
 
@@ -3622,11 +3559,7 @@ def live_add_mites(live_id, boxes):
     The frame they were found on is kept with the run's recordings
     (ADDED_FRAMES_DIRNAME), so the calibration pages show the plate with them
     from that recording on (_added_previews())."""
-    run = _get_live(live_id)
-    if run.session.state not in ("running", "paused"):
-        raise ValueError("Mites can be added while the test run is going on.")
-    if not run.analysis.started:
-        raise ValueError("Mites can be added once the first recording has begun.")
+    run = _adding_to(live_id)
     checked = []
     for box in boxes:
         if len(box) != 4:
@@ -3638,7 +3571,7 @@ def live_add_mites(live_id, boxes):
     if checked and run.save_frames and run.found_frame is not None:
         try:  # several additions before one recording: the last frame shows them all
             (run.run_dir / ADDED_FRAMES_DIRNAME).mkdir(parents=True, exist_ok=True)
-            _write_image(run.run_dir / ADDED_FRAMES_DIRNAME / f"from_{start}.jpg", run.found_frame, [cv2.IMWRITE_JPEG_QUALITY, 90])
+            write_jpeg(run.run_dir / ADDED_FRAMES_DIRNAME / f"from_{start}.jpg", run.found_frame, quality=90)
         except Exception:
             _logger.exception("Could not keep the frame the mites were added on")
     return live_status(live_id)
@@ -3726,13 +3659,6 @@ def close_all_live():
 # recordings/ holds every recording session the app has: each live test run and
 # each folder dropped into the page. The pages list them with how they were
 # recorded, so any of them can be analysed, or calibrated on, again.
-
-
-def _read_json(path, default=None):
-    try:
-        return json.loads(Path(path).read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        return default
 
 
 def list_recordings(recordings_root=RECORDINGS_ROOT, results_root=RESULTS_ROOT):
@@ -3843,12 +3769,12 @@ def describe_recording(data_dir, results_root=RESULTS_ROOT):
     frames = loader.count_frames(first)
     ended = DataLoader.parse_start_time(last) + timedelta(seconds=loader.count_frames(last) / loader.get_fps(last))
 
-    run = _read_json(data_dir / RUN_INFO_NAME)
+    run = try_json(data_dir / RUN_INFO_NAME)
     if not isinstance(run, dict):
         run = None
-    labels = _read_json(_layout_file(data_dir, LABELS_FILENAME), {})
+    labels = try_json(_layout_file(data_dir, LABELS_FILENAME), {})
     groups = [str(group).strip() for group in labels.values() if str(group).strip()] if isinstance(labels, dict) else []
-    truth = [entry.get("truth") for entry in _folder_truth(data_dir) if isinstance(entry, dict)]
+    truth = [entry.get("truth") for entry in load_ground_truth(data_dir) if isinstance(entry, dict)]
     rejected = sum(calibration.is_rejected(value) for value in truth)
     labelled = sum(1 for value in truth
                    if not calibration.is_rejected(value) and any(calibration.per_recording(value, len(recordings))))
@@ -3932,23 +3858,6 @@ def _move(folder, target, app_dir, done):
     return True
 
 
-def _remove_if_empty(folder):
-    """Remove a folder that has been emptied. On Windows a read-only flag, which
-    OneDrive sets on its folders, keeps even an empty folder: it is cleared first."""
-    try:
-        folder.rmdir()
-    except PermissionError:
-        if os.name != "nt":
-            return
-        try:
-            os.chmod(folder, stat.S_IWRITE)
-            folder.rmdir()
-        except OSError:
-            pass
-    except OSError:  # not there, or not empty
-        pass
-
-
 def tidy_folders(app_dir=APP_DIR, recordings_root=RECORDINGS_ROOT, results_root=RESULTS_ROOT):
     """Move what earlier versions wrote into today's folders -- recordings from
     output/ and uploads/ to recordings/, outputs/ to results/earlier sessions/ --
@@ -3963,7 +3872,7 @@ def tidy_folders(app_dir=APP_DIR, recordings_root=RECORDINGS_ROOT, results_root=
     for folder in _subfolders(app_dir / OLD_RESULTS_FOLDER):
         _move(folder, Path(results_root) / EARLIER_SESSIONS / folder.name, app_dir, done)
     for old in (*OLD_RECORDING_FOLDERS, OLD_RESULTS_FOLDER):
-        _remove_if_empty(app_dir / old)
+        remove_if_empty(app_dir / old)
     # A pooled report's folder is only of use for its report.
     for folder in _subfolders(Path(results_root) / POOLED_DIRNAME):
         if not any(folder.glob("*.xlsx")):

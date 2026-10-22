@@ -37,8 +37,7 @@ class LiveSetupPage {
       try {
         live.options = await getJson("/api/live/options", "Could not list the cameras");
       } catch (error) {
-        $("live-open-status").className = "hint error";
-        $("live-open-status").textContent = `Could not ask the server: ${error.message}`;
+        Hint.error($("live-open-status"), `Could not ask the server: ${error.message}`);
         return;
       }
       this.fill(live.notice);
@@ -115,8 +114,7 @@ class LiveSetupPage {
     $("live-feed").hidden = !shown;
     $("live-feed").parentElement.classList.toggle("filled", Boolean(shown));
     if (connected && lights && !lights.connected && !$("live-settings-status").textContent) {
-      $("live-settings-status").className = "hint";
-      $("live-settings-status").textContent = "No fan/LED controller found: the run goes ahead without them.";
+      Hint.note($("live-settings-status"), "No fan/LED controller found: the run goes ahead without them.");
     }
   }
 
@@ -139,12 +137,10 @@ class LiveSetupPage {
       const saved = await post(`/api/live/${live.id}/options`, { run_name: $("live-run-name").value.trim(), save_frames: $("live-save").checked });
       live.status = saved;
       router.setFolder("live", saved.run_name, saved.run_dir);
-      status.className = "hint";
-      status.textContent = LiveRun.connectedText(saved);
+      Hint.note(status, LiveRun.connectedText(saved));
     } catch (error) {
       this.optionsChanged = true;
-      status.className = "hint error";
-      status.textContent = error.message;
+      Hint.error(status, error.message);
       throw error;
     }
   }
@@ -156,8 +152,7 @@ class LiveSetupPage {
     try {
       const saved = await post("/api/live/settings", { settings: { [name]: value }, session_id: live.id });
       Object.assign(live.options, { settings: saved.settings, plan: saved.plan });
-      status.className = "hint";
-      status.textContent = "Saved to settings.txt.";
+      Hint.note(status, "Saved to settings.txt.");
       this.drawRecordingTime();
       // A device switched on to check it follows its slider at once.
       const device = input.dataset.device;
@@ -165,8 +160,7 @@ class LiveSetupPage {
         await post(`/api/live/${live.id}/light`, { device, level: value });
       }
     } catch (error) {
-      status.className = "hint error";
-      status.textContent = error.message;
+      Hint.error(status, error.message);
     }
   }
 
@@ -176,8 +170,7 @@ class LiveSetupPage {
       live.status.lights = lights;
       this.drawForm();
     } catch (error) {
-      $("live-settings-status").className = "hint error";
-      $("live-settings-status").textContent = error.message;
+      Hint.error($("live-settings-status"), error.message);
     }
   }
 }

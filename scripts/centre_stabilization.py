@@ -120,12 +120,7 @@ def _dataset(name):
                 raise ValueError(f"{name}: mite {mite_id}'s ROI does not hold its box and {margin} px round it")
             zone = next(m["zone_id"] for m in dataset["mites"] if m["id"] == mite_id)
             mites.append((mite_id, zone, number, (box[0] - rx1, box[1] - ry1, box[2] - rx1, box[3] - ry1)))
-        n = len(dataset["recordings"])
-        labels = {}
-        for mite_id, truth in dataset["truth"].items():
-            states = calibration.per_recording(truth, n)
-            if not calibration.is_rejected(states):
-                labels[mite_id] = states
+        labels = {mite["id"]: states for mite, states in pipeline._mite_states(dataset) if mite["id"] in dataset["truth"]}
         _datasets[name] = dataset, loader, mites, labels
     return _datasets[name]
 

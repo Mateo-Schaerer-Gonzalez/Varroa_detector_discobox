@@ -18,12 +18,6 @@
  *   enterFrom   index of the first new x value, whose points are drawn in
  */
 class LineChart {
-  static show(container, options) {
-    const render = (target, opts) => new LineChart(target, opts).draw();
-    container.chartRedraw = (target, adjust) => render(target, adjust(options));
-    ChartKit.keepLive(container, render, options);
-  }
-
   constructor(container, options) {
     this.container = container;
     this.options = options;

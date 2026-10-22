@@ -18,12 +18,6 @@ class RasterChart {
   static RAMP = [[255, 255, 255], [156, 195, 238], [42, 120, 214], [13, 47, 94]];
   static LEVELS = 24;
 
-  static show(container, options) {
-    const render = (target, opts) => new RasterChart(target, opts).draw();
-    container.chartRedraw = (target, adjust) => render(target, adjust(options));
-    ChartKit.keepLive(container, render, options);
-  }
-
   constructor(container, options) {
     this.container = container;
     this.options = options;

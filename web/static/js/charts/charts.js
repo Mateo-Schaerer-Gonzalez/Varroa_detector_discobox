@@ -5,10 +5,10 @@
 // with curves in percent over them) and Charts.spark (a bare mini line for the zone cards).
 
 const Charts = {
-  line: (container, options) => LineChart.show(container, options),
-  scatter: (container, options) => ScatterChart.show(container, options),
-  ridgeline: (container, options) => RidgelineChart.show(container, options),
-  raster: (container, options) => RasterChart.show(container, options),
+  line: (container, options) => ChartKit.show(LineChart, container, options),
+  scatter: (container, options) => ChartKit.show(ScatterChart, container, options),
+  ridgeline: (container, options) => ChartKit.show(RidgelineChart, container, options),
+  raster: (container, options) => ChartKit.show(RasterChart, container, options),
   spark: (container, options) => SparkLine.draw(container, options),
   legendHtml: ChartKit.legendHtml,
   showTooltip: ChartKit.showTooltip,
@@ -17,4 +17,6 @@ const Charts = {
   quantile: ChartKit.quantile,
   exportSvg: ChartExport.svg,
   download: ChartExport.download,
+  // a y axis in percent, 0 to 100, its ticks whole numbers
+  PERCENT_AXIS: { yMin: 0, yMax: 100, yFormat: (v) => `${Math.round(v)}` },
 };

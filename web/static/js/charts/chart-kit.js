@@ -72,6 +72,14 @@ class ChartKit {
 
   // Draw now, and again on every resize for as long as the container is on the
   // page. Only the first drawing draws the new points in; a resize just redraws.
+  // Draw a chart of the class `Chart` in `container` and keep it drawn (keepLive());
+  // container.chartRedraw(target, adjust) draws it again elsewhere, e.g. to export it.
+  static show(Chart, container, options) {
+    const render = (target, opts) => new Chart(target, opts).draw();
+    container.chartRedraw = (target, adjust) => render(target, adjust(options));
+    ChartKit.keepLive(container, render, options);
+  }
+
   static keepLive(container, render, options) {
     let first = true;
     const redraw = () => {

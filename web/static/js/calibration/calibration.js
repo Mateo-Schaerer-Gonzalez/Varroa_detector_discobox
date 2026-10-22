@@ -201,8 +201,7 @@ class Calibration {
     try {
       await this.saveChanges();
     } catch (error) {
-      status.className = "hint error";
-      status.textContent = `Not opened: the last changes could not be saved (${error.message}).`;
+      Hint.error(status, `Not opened: the last changes could not be saved (${error.message}).`);
       return;
     }
     await open();
@@ -227,15 +226,13 @@ class Calibration {
   openFolder(dataDir) {
     return this.openWithTruthSaved($("cal-open-status"), async () => {
       const status = $("cal-open-status");
-      status.className = "hint";
-      status.innerHTML = `<span class="spinner"></span> Detecting and scoring the mites… every frame is decoded, this takes a while.`;
+      Hint.busy(status, `Detecting and scoring the mites… every frame is decoded, this takes a while.`);
       try {
         const data = await post("/api/calibration", { data_dir: dataDir });
         status.textContent = "";
         this.start(data);
       } catch (error) {
-        status.className = "hint error";
-        status.textContent = error.message;
+        Hint.error(status, error.message);
       }
     });
   }
@@ -252,15 +249,13 @@ class Calibration {
     const button = $("evaluate-btn");
     const status = $("evaluate-status");
     button.disabled = true;
-    status.className = "hint";
-    status.innerHTML = `<span class="spinner"></span> Comparing…${this.mode === "test" ? " the first time a dataset meets the benchmark this takes about a minute." : ""}`;
+    Hint.busy(status, `Comparing…${this.mode === "test" ? " the first time a dataset meets the benchmark this takes about a minute." : ""}`);
     try {
       this.takeReport(await this.requestReport());
       status.textContent = "";
       router.go("#/cal/report");
     } catch (error) {
-      status.className = "hint error";
-      status.textContent = error.message;
+      Hint.error(status, error.message);
     } finally {
       button.disabled = false;
     }
@@ -307,16 +302,14 @@ class Calibration {
   // Evaluate again after changing what the report uses. On failure `undo` puts the
   // choice back and the error shows in the element `statusId`.
   async reportAgain(statusId, undo, message = "Scoring and comparing… the first time a dataset meets a movement score its recordings are decoded, which takes a while.") {
-    $(statusId).className = "hint";
-    $(statusId).innerHTML = `<span class="spinner"></span> ${message}`;
+    Hint.busy($(statusId), message);
     try {
       this.takeReport(await this.requestReport());
       reportPage.draw();
     } catch (error) {
       undo();
       reportPage.draw();
-      $(statusId).className = "hint error";
-      $(statusId).textContent = error.message;
+      Hint.error($(statusId), error.message);
     }
   }
 }

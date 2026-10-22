@@ -78,8 +78,7 @@ class PlaybackPage extends ResultsPage {
       timeline = await getJson(`/api/session/${sessionId}/playback`, "Could not load the recordings");
     } catch (error) {
       if (ctx.sessionId !== sessionId || !$("playback-status")) return;
-      $("playback-status").className = "hint clip-status error";
-      $("playback-status").textContent = error.message;
+      Hint.error($("playback-status"), error.message, "clip-status");
       $("playback-time").textContent = "";
       return;
     }
@@ -233,7 +232,7 @@ class PlaybackPage extends ResultsPage {
     // A zone whose mites a live run all added later is not there before then.
     document.querySelectorAll("#playback-grid .playback-zone").forEach((section) => {
       const zone = ctx.zone(Number(section.dataset.zone));
-      section.hidden = Boolean(zone) && recording < this.zoneClock(zone).start;
+      section.hidden = Boolean(zone) && recording < this.clockOf(zone).start;
     });
   }
 

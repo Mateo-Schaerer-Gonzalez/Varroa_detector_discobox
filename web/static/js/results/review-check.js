@@ -103,8 +103,7 @@ class ReviewCheck {
     const { sessionId } = workspace;
     const status = body.querySelector(".band-status");
     if (mites != null && !(Number.isInteger(mites) && mites >= 0)) {
-      status.className = "hint error band-status";
-      status.textContent = "Enter a whole number of mites, 0 or more.";
+      Hint.error(status, "Enter a whole number of mites, 0 or more.", "band-status");
       return;
     }
     try {
@@ -114,8 +113,7 @@ class ReviewCheck {
       if (workspace.mode === "live" && answer.version != null) live.version = answer.version;
       if (ctx === workspace && /^#\/(live\/)?(results|zone|mite)/.test(location.hash)) resultsView.draw();
     } catch (error) {
-      status.className = "hint error band-status";
-      status.textContent = error.message;
+      Hint.error(status, error.message, "band-status");
     }
   }
 

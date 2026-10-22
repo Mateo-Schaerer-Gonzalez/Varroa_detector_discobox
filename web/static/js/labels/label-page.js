@@ -15,15 +15,14 @@ class LabelPage {
   showLoadedStatus() {
     const { session } = ctx;
     const withMites = ctx.labelZones().length;
-    $("run-status").className = "hint";
     if (session.adding) {
-      $("run-status").textContent = `${plural(session.mites.length, "mite")} found that ${session.mites.length === 1 ? "is" : "are"} not followed yet; `
-        + "those kept are followed from the next recording on.";
+      Hint.note($("run-status"), `${plural(session.mites.length, "mite")} found that ${session.mites.length === 1 ? "is" : "are"} not followed yet; `
+        + "those kept are followed from the next recording on.");
       return;
     }
-    $("run-status").textContent = ctx.mode === "live"
+    Hint.note($("run-status"), ctx.mode === "live"
       ? `Mites detected in ${withMites} of ${session.zones.length} zones on ${session.n_recordings ? "the first recording" : "the camera's newest frame"}.`
-      : `${session.n_recordings} recordings loaded · mites detected in ${withMites} of ${session.zones.length} zones.`;
+      : `${session.n_recordings} recordings loaded · mites detected in ${withMites} of ${session.zones.length} zones.`);
   }
 
   draw() {

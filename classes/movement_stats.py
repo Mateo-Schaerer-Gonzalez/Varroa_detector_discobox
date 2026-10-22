@@ -8,7 +8,7 @@ results: per mite, per zone, and per group in the order the pages list them.
 """
 
 from classes.result_groups import ResultGroups
-from classes.survival import SurvivalAnalysis
+from classes.survival import SurvivalAnalysis, own_time, since_start
 
 
 class MovementStats:
@@ -118,9 +118,9 @@ class MovementReport:
         last_movement = self.survival.last_movement_time(mite["moving"])
         own = {}
         if start:
-            zero = self.times[start]
-            own = {"start": start, "own_times": [round(time - zero, 2) for time in self.times[start:]]}
-            last_movement = None if last_movement is None else round(last_movement - zero, 2)
+            last = SurvivalAnalysis.last_movement(mite["moving"])
+            own = self.own_clock(start)
+            last_movement = None if last < 0 else round(own_time(self.times, start, last), 2)
         return {
             **own,
             "corrected": [recording in corrected for recording in range(len(mite["moving"]))],
@@ -133,6 +133,11 @@ class MovementReport:
             "max_score": max(scores, default=None),
             "last_movement": last_movement,
         }
+
+    def own_clock(self, start):
+        """{start, own_times}: of a mite or a zone a live run added at recording
+        `start`, each recording's time from then on (since_start()), its own clock."""
+        return {"start": start, "own_times": [round(time, 2) for time in since_start(self.times, start)]}
 
     def seen_scores(self, mite):
         """The mite's scores in the recordings in which it was there and scored
@@ -150,8 +155,7 @@ class MovementReport:
             followed["n_followed"] = [sum(1 for mite in mites if self.groups.start(mite) <= recording) for recording in range(len(self.times))]
         start = self.groups.zone_start(zone["id"])
         if start:
-            zero = self.times[start]
-            followed.update({"start": start, "own_times": [round(time - zero, 2) for time in self.times[start:]]})
+            followed.update(self.own_clock(start))
         return {
             "n_moving": [sum(1 for mite in mites if mite["moving"][recording]) for recording in range(len(self.times))],
             "n_seen": [sum(1 for gone in censored if not gone[recording]) for recording in range(len(self.times))],

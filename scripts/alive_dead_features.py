@@ -20,7 +20,6 @@ are kept beside them, so only the first run is slow (a few minutes).
 
     python scripts/alive_dead_features.py     # cuts and measures, prints the ranking
 """
-import hashlib
 import inspect
 import os
 import sys
@@ -35,10 +34,10 @@ import numpy as np
 from scipy.ndimage import median_filter
 from scipy.optimize import nnls
 
-import pipeline
 from classes.analyzer import Analyzer
 from classes.app_config import get_default_config
 from classes.recording_change import RecordingChange, noise_floor
+import script_data
 from optuna_death_time import MAX_PAD, load_dataset
 
 CACHE = Path(tempfile.gettempdir()) / "varroa_death_time_patches"
@@ -76,12 +75,10 @@ class Run:
 
 def load_run(cache=CACHE, jobs=None):
     """The longest labelled run saved in recordings/."""
-    saved = {summary["id"]: pipeline._read_dataset(summary["id"])
-             for summary in pipeline.list_calibration_datasets()}
-    dataset_id = max(saved, key=lambda key: len(saved[key]["times"]))
+    longest = script_data.longest_dataset()
     Path(cache).mkdir(parents=True, exist_ok=True)
-    dataset = load_dataset({"id": dataset_id}, cache, get_default_config().mite.stabilize_plate, jobs or os.cpu_count())
-    return Run(dataset["name"], dataset["mites"], np.array(saved[dataset_id]["times"], dtype=float),
+    dataset = load_dataset({"id": longest["name"]}, cache, get_default_config().mite.stabilize_plate, jobs or os.cpu_count())
+    return Run(dataset["name"], dataset["mites"], np.array(longest["times"], dtype=float),
                dataset["moving"], dataset["labelled"], dataset["sizes"], dataset["path"])
 
 
@@ -223,23 +220,21 @@ def features(run, cache=CACHE):
     """Every feature of every mite in every recording: {name: (mites,
     recordings)}, and `images`, each mite's mean image per recording (a list,
     as the mites' boxes differ in size). Kept in `cache`."""
-    version = hashlib.sha1((inspect.getsource(sys.modules[__name__]) + run.path).encode("utf-8")).hexdigest()[:12]
-    path = Path(cache) / f"alive_dead_features-{version}.npz"
-    if path.is_file():
-        kept = np.load(path)
-        table = {name: kept[name] for name in kept.files if not name.startswith("image/")}
-        return table, [kept[f"image/{mite}"] for mite in range(len(run.mites))]
-    images, silhouettes, within = [], [], []
-    for mite in range(len(run.mites)):
-        patches = run.grey(mite)
-        images.append(np.ascontiguousarray(patches.mean(axis=1)))
-        silhouettes.append(silhouette_features(images[-1]))
-        within.append(within_features(patches, images[-1]))
-    table = {name: np.array([s[name] for s in silhouettes]) for name in silhouettes[0]}
-    table.update({name: np.array([w[name] for w in within]) for name in within[0]})
-    table.update(between_features(images, silhouettes))
-    np.savez(path, **table, **{f"image/{mite}": image for mite, image in enumerate(images)})
-    return table, images
+    def make():
+        images, silhouettes, within = [], [], []
+        for mite in range(len(run.mites)):
+            patches = run.grey(mite)
+            images.append(np.ascontiguousarray(patches.mean(axis=1)))
+            silhouettes.append(silhouette_features(images[-1]))
+            within.append(within_features(patches, images[-1]))
+        table = {name: np.array([s[name] for s in silhouettes]) for name in silhouettes[0]}
+        table.update({name: np.array([w[name] for w in within]) for name in within[0]})
+        table.update(between_features(images, silhouettes))
+        return {**table, **{f"image/{mite}": image for mite, image in enumerate(images)}}
+
+    kept = script_data.kept_arrays(cache, "alive_dead_features", inspect.getsource(sys.modules[__name__]) + run.path, make)
+    table = {name: values for name, values in kept.items() if not name.startswith("image/")}
+    return table, [kept[f"image/{mite}"] for mite in range(len(run.mites))]
 
 
 def since_start(values, baseline=BASELINE):
@@ -273,8 +268,7 @@ def outline_profiles(run, table, cache=CACHE):
     the rays that cross it longer, and when it moves, other rays are. Angle 0
     points right in the image, and they go on clockwise. Kept in `cache`."""
     source = inspect.getsource(outline_profiles) + inspect.getsource(darkness)
-    version = hashlib.sha1((source + run.path).encode("utf-8")).hexdigest()[:12]
-    path = Path(cache) / f"alive_dead_outlines-{version}.npy"
+    path = script_data.cache_path(cache, "alive_dead_outlines", source + run.path, ".npy")
     if path.is_file():
         return np.load(path)
     angle = np.arange(ANGLES) * 2 * np.pi / ANGLES

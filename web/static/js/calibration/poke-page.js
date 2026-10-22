@@ -73,8 +73,7 @@ class PokePage {
   }
 
   setStatus(text, error = false) {
-    $("poke-status").className = error ? "hint error" : "hint";
-    $("poke-status").textContent = text;
+    (error ? Hint.error : Hint.note)($("poke-status"), text);
   }
 
   // Send a change, after the ones before it, and show the view the server sends back.
@@ -213,8 +212,7 @@ class PokePage {
   async showReport() {
     const button = $("poke-report-btn");
     button.disabled = true;
-    $("poke-status").className = "hint";
-    $("poke-status").innerHTML = `<span class="spinner"></span> Comparing… the first time a dataset meets the benchmark this takes about a minute.`;
+    Hint.busy($("poke-status"), `Comparing… the first time a dataset meets the benchmark this takes about a minute.`);
     try {
       await this.queue;
       cal.setMode("test");

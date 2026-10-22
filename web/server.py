@@ -12,7 +12,7 @@ import subprocess
 import threading
 import time
 import uuid
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, contextmanager
 from typing import Optional
 from pathlib import Path
 
@@ -222,6 +222,33 @@ def as_it_is(content):
         return content
 
 
+# What pipeline raises when it refuses a request, e.g. a folder that is not there.
+REFUSALS = (FileNotFoundError, ValueError, pipeline.CameraError)
+
+
+@contextmanager
+def refused(status=400, errors=REFUSALS):
+    """Answer what pipeline refuses in the block with `status` and its reason; a
+    live run no longer open (e.g. the server restarted: the page lets it go)
+    with 404."""
+    try:
+        yield
+    except pipeline.LiveRunNotOpen as error:
+        raise HTTPException(status_code=404, detail=str(error))
+    except errors as error:
+        raise HTTPException(status_code=status, detail=str(error))
+
+
+def answer(call, *args, **kwargs):
+    """call(*args, **kwargs), what it refuses answered as refused() answers it."""
+    with refused():
+        return call(*args, **kwargs)
+
+
+def new_id():
+    return uuid.uuid4().hex[:8]
+
+
 def get_session(session_id: str) -> dict:
     if session_id not in sessions:
         raise HTTPException(status_code=404, detail="Unknown session. Open a folder again.")
@@ -231,12 +258,10 @@ def get_session(session_id: str) -> dict:
 @app.post("/api/session")
 def open_session(request: OpenRequest):
     """Point the app at a folder of recordings and get back the zones to label."""
-    session_id = uuid.uuid4().hex[:8]
+    session_id = new_id()
     out_dir = pipeline.results_dir(request.data_dir)
-    try:
+    with refused():
         session = pipeline.open_session(request.data_dir, out_dir)
-    except (FileNotFoundError, ValueError) as error:
-        raise HTTPException(status_code=400, detail=str(error))
 
     # the detections of the label page, for the "not a mite" marks
     sessions[session_id] = {"data_dir": session["data_dir"], "out_dir": out_dir, "mites": session["mites"]}
@@ -247,20 +272,16 @@ def open_session(request: OpenRequest):
 def upload_manifest(name: str, request: ManifestRequest):
     """Say which files of a dropped folder still need sending, and where they go
     (pipeline.plan_upload): every file of the folder is listed, the server picks."""
-    try:
+    with refused():
         return pipeline.plan_upload(name, [{"path": file.path, "size": file.size} for file in request.files], UPLOAD_ROOT)
-    except ValueError as error:
-        raise HTTPException(status_code=400, detail=str(error))
 
 
 @app.post("/api/uploads/{name}/finish")
 def upload_finish(name: str):
     """Every file of a dropped folder is in: shrink its frames to the mites'
     surroundings (pipeline.finish_upload)."""
-    try:
+    with refused(errors=(*REFUSALS, RuntimeError)):
         return pipeline.finish_upload(name, UPLOAD_ROOT)
-    except (FileNotFoundError, ValueError, RuntimeError) as error:
-        raise HTTPException(status_code=400, detail=str(error))
 
 
 @app.put("/api/uploads/{name}/file")
@@ -282,8 +303,7 @@ def save_labels(session_id: str, request: LabelsRequest):
     A live run's results take them at once."""
     session = get_session(session_id)
     pipeline.save_labels(session["data_dir"], request.labels)
-    if session.get("live"):
-        pipeline.live_refresh(session_id)
+    refresh_live(session_id)
     return {"saved": len(request.labels)}
 
 
@@ -299,14 +319,13 @@ def read_labels(session_id: str):
     for the label page to fill in. Nothing is saved until the page saves them."""
     session = get_session(session_id)
     mites = session.get("mites", [])
-    try:
-        if session.get("live"):
-            return {"labels": live_call(pipeline.live_read_labels, session_id, session["out_dir"], mites)}
-        return {"labels": pipeline.read_labels(session["data_dir"], session["out_dir"], mites)}
-    except pipeline.LabelReadError as error:
-        raise HTTPException(status_code=502, detail=str(error))
-    except (FileNotFoundError, ValueError) as error:
-        raise HTTPException(status_code=400, detail=str(error))
+    with refused():
+        try:
+            if session.get("live"):
+                return {"labels": pipeline.live_read_labels(session_id, session["out_dir"], mites)}
+            return {"labels": pipeline.read_labels(session["data_dir"], session["out_dir"], mites)}
+        except pipeline.LabelReadError as error:
+            raise HTTPException(status_code=502, detail=str(error))
 
 
 def session_results(session_id):
@@ -314,8 +333,14 @@ def session_results(session_id):
     far; None before there are any."""
     session = get_session(session_id)
     if session.get("live"):
-        return live_call(pipeline.live_results, session_id)["results"]
+        return answer(pipeline.live_results, session_id)["results"]
     return session.get("results")
+
+
+def refresh_live(session_id):
+    """A live run's results take what was saved with its recordings at once, as a new version."""
+    if get_session(session_id).get("live"):
+        pipeline.live_refresh(session_id)
 
 
 def survival_of(session_id, results):
@@ -352,8 +377,7 @@ def save_controls(session_id: str, request: ControlsRequest):
     at once too, as a new version."""
     session = get_session(session_id)
     controls = pipeline.save_controls(session["data_dir"], request.controls)
-    if session.get("live"):
-        pipeline.live_refresh(session_id)
+    refresh_live(session_id)
     return {"controls": controls, "survival": survival_now(session_id)}
 
 
@@ -363,13 +387,9 @@ def reject_detection(session_id: str, request: RejectRequest):
     back puts back the labels the mark replaced. Returns every detection's mark and
     how many mites each zone has left (pipeline.mark_detection)."""
     session = get_session(session_id)
-    try:
-        with truth_lock:
-            marks = pipeline.mark_detection(session["data_dir"], session.get("mites", []), request.mite, request.rejected)
-    except ValueError as error:
-        raise HTTPException(status_code=400, detail=str(error))
-    if session.get("live"):
-        pipeline.live_refresh(session_id)
+    with truth_lock, refused():
+        marks = pipeline.mark_detection(session["data_dir"], session.get("mites", []), request.mite, request.rejected)
+    refresh_live(session_id)
     return marks
 
 
@@ -378,10 +398,8 @@ def save_death_minutes(session_id: str, request: DeathRequest):
     """How long a mite must be still to count as dead, saved with the recordings.
     The survival numbers of the results come back with the change."""
     session = get_session(session_id)
-    try:
+    with refused():
         death = pipeline.save_death_minutes(session["data_dir"], request.minutes)
-    except ValueError as error:
-        raise HTTPException(status_code=400, detail=str(error))
     return {"death_minutes": death, "survival": survival_now(session_id)}
 
 
@@ -393,12 +411,10 @@ def save_zones_per_plate(session_id: str, request: ZonesRequest):
     not started yet takes them too, and keeps them as its setting."""
     session = get_session(session_id)
     if session.get("live"):
-        live_call(pipeline.save_live_settings, {"zones_per_plate": request.zones_per_plate}, session_id)
+        answer(pipeline.save_live_settings, {"zones_per_plate": request.zones_per_plate}, session_id)
         return live_preview(session_id)
-    try:
+    with refused():
         opened = pipeline.save_zones_per_plate(session["data_dir"], session["out_dir"], request.zones_per_plate)
-    except (FileNotFoundError, ValueError) as error:
-        raise HTTPException(status_code=400, detail=str(error))
     session["mites"] = opened["mites"]
     session.pop("results", None)
     return {"session_id": session_id, "results_dir": str(session["out_dir"]), **opened}
@@ -409,10 +425,8 @@ def run_analysis(session_id: str, request: LabelsRequest):
     """Run the full analysis. Synchronous: the browser waits with a spinner."""
     session = get_session(session_id)
     pipeline.save_labels(session["data_dir"], request.labels)
-    try:
+    with refused():
         results = pipeline.run_analysis(session["data_dir"], session["out_dir"], request.labels, files_later=True)
-    except (FileNotFoundError, ValueError) as error:
-        raise HTTPException(status_code=400, detail=str(error))
     session["results"] = results  # for the survival numbers, which follow the controls and the time to count dead
     return as_it_is(for_pages(session_id, results))
 
@@ -424,14 +438,12 @@ def correct_call(session_id: str, request: CorrectRequest):
     it. A live run's come with their version."""
     session = get_session(session_id)
     if session.get("live"):
-        answer = live_call(pipeline.live_correct_call, session_id, request.mite, request.recording, request.state,
-                           request.checked)
-        return as_it_is({**answer, "results": for_pages(session_id, answer["results"])})
-    try:
+        live = answer(pipeline.live_correct_call, session_id, request.mite, request.recording, request.state,
+                      request.checked)
+        return as_it_is({**live, "results": for_pages(session_id, live["results"])})
+    with refused():
         results = pipeline.correct_call(session["out_dir"], request.mite, request.recording, request.state,
                                         request.checked)
-    except ValueError as error:
-        raise HTTPException(status_code=400, detail=str(error))
     session["results"] = results
     return as_it_is({"results": for_pages(session_id, results)})
 
@@ -443,14 +455,12 @@ def save_review_mites(session_id: str, request: ReviewMitesRequest):
     as the band fitted to that number makes them. A live run's come with their
     version."""
     session = get_session(session_id)
-    try:
+    with refused():
         pipeline.save_review_mites(session["data_dir"], request.mites)
-    except ValueError as error:
-        raise HTTPException(status_code=400, detail=str(error))
     if session.get("live"):
-        pipeline.live_refresh(session_id)
-        answer = live_call(pipeline.live_results, session_id)
-        return as_it_is({**answer, "results": for_pages(session_id, answer["results"])})
+        refresh_live(session_id)
+        live = answer(pipeline.live_results, session_id)
+        return as_it_is({**live, "results": for_pages(session_id, live["results"])})
     results = pipeline.review_again(session["out_dir"]) if session.get("results") else None
     if results is None:
         raise HTTPException(status_code=400, detail="The number is saved. Run the analysis again to see what to check.")
@@ -465,85 +475,65 @@ def analysis_clip(session_id: str, recording: int, zone_id: Optional[int] = None
     session = get_session(session_id)
     if session.get("live") and not session.get("save_frames"):
         raise HTTPException(status_code=400, detail="This test run does not save its recordings, so there is no clip to play.")
-    try:
+    with refused():
         return pipeline.analysis_clip(session["data_dir"], session["out_dir"], recording, zone_id)
-    except (FileNotFoundError, ValueError) as error:
-        raise HTTPException(status_code=400, detail=str(error))
 
 
 @app.get("/api/session/{session_id}/mite-clip/{recording}/{mite}")
 def analysis_mite_clip(session_id: str, recording: int, mite: str):
     """Frames of one mite during one recording, cut close around it: the clip of
     a session saved as the mites' ROIs. Cached on first request."""
-    session = get_session(session_id)
-    if session.get("live") and not session.get("save_frames"):
-        raise HTTPException(status_code=400, detail="This test run does not save its recordings, so there is no clip to play.")
-    results = session_results(session_id)
-    if results is None:
-        raise HTTPException(status_code=400, detail="No results yet.")
-    try:
+    session, results = played(session_id, "there is no clip to play")
+    with refused():
         return pipeline.analysis_mite_clip(session["data_dir"], session["out_dir"], recording, mite, results["mites"])
-    except (FileNotFoundError, ValueError) as error:
-        raise HTTPException(status_code=400, detail=str(error))
 
 
 @app.get("/api/session/{session_id}/playback")
 def playback_timeline(session_id: str):
     """What the playback page plays of each recording, one after the other."""
-    session = get_session(session_id)
-    if session.get("live") and not session.get("save_frames"):
-        raise HTTPException(status_code=400, detail="This test run does not save its recordings, so there is nothing to play back.")
-    results = session_results(session_id)
-    if results is None:
-        raise HTTPException(status_code=400, detail="No results yet.")
-    try:
+    session, results = played(session_id, "there is nothing to play back")
+    with refused():
         return pipeline.playback_timeline(session["data_dir"], results)
-    except (FileNotFoundError, ValueError) as error:
-        raise HTTPException(status_code=400, detail=str(error))
 
 
 @app.get("/api/session/{session_id}/playback/{recording}/{zone_id}")
 def playback_sheet(session_id: str, recording: int, zone_id: int):
     """Every mite of one zone in every frame of one recording, for the playback
     page (pipeline.playback_sheet). Cached on first request."""
-    session = get_session(session_id)
-    if session.get("live") and not session.get("save_frames"):
-        raise HTTPException(status_code=400, detail="This test run does not save its recordings, so there is nothing to play back.")
-    results = session_results(session_id)
-    if results is None:
-        raise HTTPException(status_code=400, detail="No results yet.")
-    try:
+    session, results = played(session_id, "there is nothing to play back")
+    with refused():
         return pipeline.playback_sheet(session["data_dir"], session["out_dir"], recording, zone_id, results)
-    except (FileNotFoundError, ValueError) as error:
-        raise HTTPException(status_code=400, detail=str(error))
 
 
 @app.get("/api/session/{session_id}/outline/{recording}/{zone_id}")
 def analysis_outlines(session_id: str, recording: int, zone_id: int):
     """What the score sees of each mite of one zone in one recording: the dots and
     the arrow the result pages draw over the mites. Cached on first request."""
+    session, results = played(session_id, "the outlines cannot be drawn")
+    with refused():
+        return pipeline.analysis_outlines(session["data_dir"], session["out_dir"], recording, zone_id, results)
+
+
+def played(session_id, what):
+    """The session, and its results so far: what plays a recording needs both.
+    A live run that saves no recordings has nothing to play, so `what`."""
     session = get_session(session_id)
     if session.get("live") and not session.get("save_frames"):
-        raise HTTPException(status_code=400, detail="This test run does not save its recordings, so the outlines cannot be drawn.")
+        raise HTTPException(status_code=400, detail=f"This test run does not save its recordings, so {what}.")
     results = session_results(session_id)
     if results is None:
         raise HTTPException(status_code=400, detail="No results yet.")
-    try:
-        return pipeline.analysis_outlines(session["data_dir"], session["out_dir"], recording, zone_id, results)
-    except (FileNotFoundError, ValueError) as error:
-        raise HTTPException(status_code=400, detail=str(error))
+    return session, results
 
 
 def new_calibration_session(data_dir, open_it, live_id=None):
     """Run `open_it(out_dir)` in a new calibration session of the recordings in
     `data_dir` and remember it; it works in their results/<name>/calibration/.
     A session on a live run's recordings keeps the run's `live_id`, to grow with it."""
-    session_id = uuid.uuid4().hex[:8]
+    session_id = new_id()
     out_dir = pipeline.calibration_dir(data_dir)
-    try:
-        calibration = live_call(open_it, out_dir) if live_id else open_it(out_dir)
-    except (FileNotFoundError, ValueError) as error:
-        raise HTTPException(status_code=400, detail=str(error))
+    with refused():
+        calibration = open_it(out_dir)
 
     sessions[session_id] = {
         "data_dir": calibration["data_dir"],
@@ -559,10 +549,8 @@ def new_calibration_session(data_dir, open_it, live_id=None):
 def open_calibration(request: OpenRequest):
     """Detect the mites of a calibration recording. A folder outside recordings/
     is copied there first, its frames shrunk (pipeline.calibration_folder)."""
-    try:
+    with refused():
         data_dir = pipeline.calibration_folder(request.data_dir)
-    except (FileNotFoundError, ValueError) as error:
-        raise HTTPException(status_code=400, detail=str(error))
     return new_calibration_session(data_dir, lambda out_dir: pipeline.open_calibration(data_dir, out_dir))
 
 
@@ -575,20 +563,16 @@ def list_datasets():
 @app.post("/api/calibration/datasets/{dataset_id}/open")
 def open_dataset(dataset_id: str):
     """Reopen a recording with ground truth to go on labelling it."""
-    try:
+    with refused():
         data_dir = pipeline.dataset_folder(dataset_id)
-    except (FileNotFoundError, ValueError) as error:
-        raise HTTPException(status_code=400, detail=str(error))
     return new_calibration_session(data_dir, lambda out_dir: pipeline.open_saved_calibration(dataset_id, out_dir))
 
 
 @app.get("/api/calibration/datasets/{dataset_id}/preview")
 def dataset_preview(dataset_id: str):
     """The first frame of a saved dataset, for the error map of a pooled report."""
-    try:
+    with refused(404):
         return FileResponse(pipeline.dataset_preview(dataset_id))
-    except (FileNotFoundError, ValueError) as error:
-        raise HTTPException(status_code=404, detail=str(error))
 
 
 @app.get("/api/calibration/metrics")
@@ -599,16 +583,14 @@ def movement_scores():
 
 @app.delete("/api/calibration/datasets/{dataset_id}")
 def delete_dataset(dataset_id: str):
-    try:
+    with refused():
         return {"deleted": pipeline.delete_calibration_dataset(dataset_id)}
-    except (FileNotFoundError, ValueError) as error:
-        raise HTTPException(status_code=400, detail=str(error))
 
 
 @app.post("/api/calibration/pooled")
 def open_pooled():
     """A session for reports on saved datasets alone, with no recording opened."""
-    session_id = uuid.uuid4().hex[:8]
+    session_id = new_id()
     out_dir = pipeline.new_pooled_report_dir()
     sessions[session_id] = {"data_dir": None, "out_dir": out_dir, "report_dir": out_dir, "dataset_id": None}
     return {"session_id": session_id}
@@ -620,11 +602,9 @@ def switch_dataset(session_id: str, dataset_id: str):
     pooled report comes from: the session works in that recording's calibration
     folder from now on. Its report stays where it was made."""
     session = get_session(session_id)
-    try:
+    with refused():
         out_dir = pipeline.calibration_dir(pipeline.dataset_folder(dataset_id))
         calibration = pipeline.open_saved_calibration(dataset_id, out_dir)
-    except (FileNotFoundError, ValueError) as error:
-        raise HTTPException(status_code=400, detail=str(error))
     session.update(data_dir=calibration["data_dir"], dataset_id=calibration["dataset_id"], out_dir=out_dir)
     return as_it_is({"session_id": session_id, **calibration})
 
@@ -637,17 +617,15 @@ def grow_calibration(session_id: str):
     if not session.get("live_id"):
         raise HTTPException(status_code=400, detail="This calibration is not of a live run.")
     return as_it_is({"session_id": session_id,
-                     **live_call(pipeline.grow_live_calibration, session["out_dir"], session["live_id"])})
+                     **answer(pipeline.grow_live_calibration, session["out_dir"], session["live_id"])})
 
 
 @app.get("/api/calibration/{session_id}/clip/{recording}/{zone_id}")
 def calibration_clip(session_id: str, recording: int, zone_id: int):
     """Frames of one zone during one recording, cropped and cached on first request."""
     session = get_session(session_id)
-    try:
+    with refused():
         return pipeline.calibration_clip(session["out_dir"], recording, zone_id)
-    except (FileNotFoundError, ValueError) as error:
-        raise HTTPException(status_code=400, detail=str(error))
 
 
 @app.get("/api/calibration/{session_id}/mite-clip/{recording}/{mite}")
@@ -655,10 +633,8 @@ def calibration_mite_clip(session_id: str, recording: int, mite: str):
     """Frames of one mite during one recording, cut close around it, with a picture
     of where its pixels change; cached on first request."""
     session = get_session(session_id)
-    try:
+    with refused():
         return pipeline.calibration_mite_clip(session["out_dir"], recording, mite)
-    except (FileNotFoundError, ValueError) as error:
-        raise HTTPException(status_code=400, detail=str(error))
 
 
 @app.get("/api/calibration/{session_id}/plate-clip/{dataset_id}/{recording}")
@@ -666,10 +642,8 @@ def dataset_clip(session_id: str, dataset_id: str, recording: int):
     """Frames of the whole plate during one recording of a saved dataset, for the
     test report; kept with this session's files."""
     session = get_session(session_id)
-    try:
+    with refused():
         return pipeline.dataset_clip(session["out_dir"], dataset_id, recording)
-    except (FileNotFoundError, ValueError) as error:
-        raise HTTPException(status_code=400, detail=str(error))
 
 
 @app.get("/api/calibration/{session_id}/truth")
@@ -677,22 +651,18 @@ def get_ground_truth(session_id: str):
     """The ground truth of this session's mites as saved now, which another window
     may have changed, with the changes not saved yet on top (pipeline.truth_view)."""
     session = get_session(session_id)
-    try:
+    with refused():
         return as_it_is(pipeline.truth_view(session["out_dir"]))
-    except (FileNotFoundError, ValueError) as error:
-        raise HTTPException(status_code=400, detail=str(error))
 
 
 @app.post("/api/calibration/{session_id}/truth/edit")
 def edit_ground_truth(session_id: str, request: TruthEdit):
     """A change on the ground-truth page; the page saves it next (save_ground_truth)."""
     session = get_session(session_id)
-    try:
+    with refused():
         return as_it_is(pipeline.edit_truth(session["out_dir"], request.action, mite=request.mite, zone=request.zone,
                                             recording=request.recording, backwards=request.backwards, kind=request.kind,
                                             state=request.state))
-    except (FileNotFoundError, ValueError) as error:
-        raise HTTPException(status_code=400, detail=str(error))
 
 
 @app.post("/api/calibration/{session_id}/truth")
@@ -700,33 +670,25 @@ def save_ground_truth(session_id: str):
     """Save the changes made on the ground-truth page next to the recordings, so
     they survive a restart. Everything else keeps what is saved."""
     session = get_session(session_id)
-    try:
-        with truth_lock:
-            return as_it_is(pipeline.save_truth(session["out_dir"]))
-    except (FileNotFoundError, ValueError) as error:
-        raise HTTPException(status_code=400, detail=str(error))
+    with truth_lock, refused():
+        return as_it_is(pipeline.save_truth(session["out_dir"]))
 
 
 @app.get("/api/calibration/{session_id}/poke")
 def get_poke_test(session_id: str):
     """The poke test of this session's mites, round by round (pipeline.poke_view)."""
     session = get_session(session_id)
-    try:
+    with refused():
         return as_it_is(pipeline.poke_view(session["out_dir"]))
-    except (FileNotFoundError, ValueError) as error:
-        raise HTTPException(status_code=400, detail=str(error))
 
 
 @app.post("/api/calibration/{session_id}/poke")
 def edit_poke_test(session_id: str, request: PokeEdit):
     """A change on the poke-test page, saved at once next to the recordings."""
     session = get_session(session_id)
-    try:
-        with truth_lock:
-            return as_it_is(pipeline.edit_poke(session["out_dir"], request.action, request.after, mite=request.mite,
-                                               zone=request.zone, state=request.state))
-    except (FileNotFoundError, ValueError) as error:
-        raise HTTPException(status_code=400, detail=str(error))
+    with truth_lock, refused():
+        return as_it_is(pipeline.edit_poke(session["out_dir"], request.action, request.after, mite=request.mite,
+                                           zone=request.zone, state=request.state))
 
 
 @app.post("/api/calibration/{session_id}/evaluate")
@@ -734,35 +696,29 @@ def evaluate_calibration(session_id: str, request: EvaluateRequest):
     """Compare the detector's calls with the ground truth, pooled over the chosen datasets."""
     session = get_session(session_id)
     datasets = request.datasets if request.datasets is not None else [session["dataset_id"]]
-    try:
+    with refused():
         return as_it_is(pipeline.evaluate_calibration(session["report_dir"], datasets, request.metric, request.params,
                                                       stabilize=request.stabilize, benchmark=request.benchmark,
                                                       normalize_brightness=request.normalize_brightness,
                                                       normalize_floor=request.normalize_floor,
                                                       checks_per_mite=request.checks_per_mite,
                                                       between=request.between))
-    except (FileNotFoundError, ValueError) as error:
-        raise HTTPException(status_code=400, detail=str(error))
 
 
 @app.post("/api/threshold")
 def save_threshold(request: ThresholdRequest):
     """Make a new movement threshold the default for every later analysis."""
-    try:
+    with refused():
         return {"threshold": pipeline.save_threshold(request.value)}
-    except ValueError as error:
-        raise HTTPException(status_code=400, detail=str(error))
 
 
 @app.post("/api/movement-score")
 def save_movement_score(request: MovementScoreRequest):
     """Make a metric, its parameters and its threshold the default for every later analysis."""
-    try:
+    with refused():
         return pipeline.save_movement_score(request.metric, request.params, request.threshold, request.stabilize,
                                             request.normalize_brightness, request.normalize_floor,
                                             review_band=request.review_band)
-    except ValueError as error:
-        raise HTTPException(status_code=400, detail=str(error))
 
 
 # --- live runs -------------------------------------------------------------------
@@ -771,9 +727,6 @@ def save_movement_score(request: MovementScoreRequest):
 # folder in recordings/, where its recordings, labels and "not a mite" marks go, so
 # the label and result pages and their clips work on it unchanged. Its results go
 # to results/<run name>/.
-
-LIVE_ERRORS = (FileNotFoundError, ValueError, pipeline.CameraError)
-
 
 class LiveOpenRequest(BaseModel):
     run_name: str
@@ -803,16 +756,6 @@ class AddMitesRequest(BaseModel):
     boxes: list[list[float]]  # [x1, y1, x2, y2] each, as find-mites gave them
 
 
-def live_call(call, *args, **kwargs):
-    try:
-        return call(*args, **kwargs)
-    except pipeline.LiveRunNotOpen as error:
-        # e.g. the server restarted: the page lets the run go
-        raise HTTPException(status_code=404, detail=str(error))
-    except LIVE_ERRORS as error:
-        raise HTTPException(status_code=400, detail=str(error))
-
-
 @app.get("/api/live/options")
 def live_options():
     """The cameras, serial ports and saved test-run settings, and any run still open."""
@@ -822,8 +765,8 @@ def live_options():
 @app.post("/api/live")
 def open_live(request: LiveOpenRequest):
     """Open the camera and start the live feed; nothing is recorded yet."""
-    session_id = uuid.uuid4().hex[:8]
-    status = live_call(pipeline.open_live, session_id, None, request.run_name, camera_id=request.camera_id,
+    session_id = new_id()
+    status = answer(pipeline.open_live, session_id, None, request.run_name, camera_id=request.camera_id,
                        serial_port=request.serial_port, save_frames=request.save_frames)
     attach_live(session_id, status)
     return {"session_id": session_id, **status}
@@ -847,13 +790,13 @@ def attach_live(session_id, status):
 @app.post("/api/live/settings")
 def save_live_settings(request: LiveSettingsRequest):
     """Change the test-run settings; an open camera takes a new frame rate at once."""
-    settings = live_call(pipeline.save_live_settings, request.settings, request.session_id)
+    settings = answer(pipeline.save_live_settings, request.settings, request.session_id)
     return {"settings": settings, "plan": pipeline.live_plan(settings)}
 
 
 @app.post("/api/live/{session_id}/attach")
 def reattach_live(session_id: str):
-    status = live_call(pipeline.live_status, session_id)
+    status = answer(pipeline.live_status, session_id)
     attach_live(session_id, status)
     return {"session_id": session_id, **status}
 
@@ -863,7 +806,7 @@ def set_live_options(session_id: str, request: LiveOptionsRequest):
     """Rename a test run not started yet, or choose whether its recordings are
     saved: its session follows its folders to their new names."""
     session = live_session(session_id)
-    status = live_call(pipeline.set_live_options, session_id, request.run_name, request.save_frames)
+    status = answer(pipeline.set_live_options, session_id, request.run_name, request.save_frames)
     session.update(data_dir=status["run_dir"], out_dir=Path(status["out_dir"]), save_frames=status["save_frames"])
     return {"session_id": session_id, **status}
 
@@ -872,14 +815,14 @@ def set_live_options(session_id: str, request: LiveOptionsRequest):
 def set_live_light(session_id: str, request: LightRequest):
     """Switch the fan, or set an intensity, to check the settings; both LEDs stay on until the run starts."""
     live_session(session_id)
-    return {"lights": live_call(pipeline.set_live_light, session_id, request.device, request.on, request.level)}
+    return {"lights": answer(pipeline.set_live_light, session_id, request.device, request.on, request.level)}
 
 
 @app.post("/api/live/{session_id}/preview")
 def live_preview(session_id: str):
     """Detect the mites on the newest frame, to label the plates."""
     session = live_session(session_id)
-    preview = live_call(pipeline.live_preview, session_id, session["out_dir"])
+    preview = answer(pipeline.live_preview, session_id, session["out_dir"])
     session["mites"] = preview["mites"]  # the detections of the label page, for the "not a mite" marks
     return {"session_id": session_id, **preview}
 
@@ -887,7 +830,7 @@ def live_preview(session_id: str):
 @app.post("/api/live/{session_id}/start")
 def start_live(session_id: str, request: LabelsRequest):
     live_session(session_id)
-    return live_call(pipeline.start_live, session_id, request.labels)
+    return answer(pipeline.start_live, session_id, request.labels)
 
 
 @app.post("/api/live/{session_id}/find-mites")
@@ -895,14 +838,14 @@ def find_live_mites(session_id: str):
     """Light the plates between two recordings and detect the mites not followed
     yet; the frame is the session's file ADD_PREVIEW_NAME."""
     live_session(session_id)
-    return live_call(pipeline.live_find_mites, session_id)
+    return answer(pipeline.live_find_mites, session_id)
 
 
 @app.post("/api/live/{session_id}/add-mites")
 def add_live_mites(session_id: str, request: AddMitesRequest):
     """Follow the mites chosen of those found from the next recording on."""
     live_session(session_id)
-    return live_call(pipeline.live_add_mites, session_id, request.boxes)
+    return answer(pipeline.live_add_mites, session_id, request.boxes)
 
 
 @app.post("/api/live/{session_id}/calibration")
@@ -921,32 +864,32 @@ def control_live(session_id: str, action: str):
     live_session(session_id)
     calls = {"pause": pipeline.pause_live, "resume": pipeline.resume_live, "stop": pipeline.stop_live}
     if action == "close":
-        live_call(pipeline.close_live, session_id)
+        answer(pipeline.close_live, session_id)
         return {"closed": session_id}
     if action not in calls:
         raise HTTPException(status_code=404, detail=f"Unknown action {action}.")
-    return live_call(calls[action], session_id)
+    return answer(calls[action], session_id)
 
 
 @app.get("/api/live/{session_id}/status")
 def live_status(session_id: str):
     """How capture and analysis are going: polled by the page about twice a second."""
-    return live_call(pipeline.live_status, session_id)
+    return answer(pipeline.live_status, session_id)
 
 
 @app.get("/api/live/{session_id}/results")
 def live_results(session_id: str):
     """The results so far, as a folder run returns them, with their version."""
-    answer = live_call(pipeline.live_results, session_id)
-    if answer["results"] is not None:
-        answer = {**answer, "results": for_pages(session_id, answer["results"])}
-    return as_it_is(answer)
+    live = answer(pipeline.live_results, session_id)
+    if live["results"] is not None:
+        live = {**live, "results": for_pages(session_id, live["results"])}
+    return as_it_is(live)
 
 
 @app.get("/api/live/{session_id}/frame.jpg")
 def live_frame(session_id: str, w: int = 960):
     """The newest camera frame, for the live feed."""
-    data = live_call(pipeline.live_frame, session_id, w)
+    data = answer(pipeline.live_frame, session_id, w)
     if data is None:
         raise HTTPException(status_code=404, detail="No frame yet.")
     return Response(content=data, media_type="image/jpeg", headers={"Cache-Control": "no-store"})
@@ -995,19 +938,15 @@ class OverlapLabel(BaseModel):
 def truth_overlap(request: OverlapRequest):
     """The mite-recordings whose score lies where the two labels overlap. Slow
     the first time a dataset meets the metric: every frame is decoded."""
-    try:
+    with refused():
         return as_it_is(pipeline.truth_overlap(request.datasets, request.low, request.high, request.beyond))
-    except (FileNotFoundError, ValueError) as error:
-        raise HTTPException(status_code=400, detail=str(error))
 
 
 @app.get("/api/overlap/clip/{dataset_id}/{mite}/{recording}")
 def overlap_clip(dataset_id: str, mite: str, recording: int):
     """Frames of one mite during one recording, cut close around it, cached on first request."""
-    try:
+    with refused():
         return pipeline.overlap_clip(dataset_id, mite, recording)
-    except (FileNotFoundError, ValueError) as error:
-        raise HTTPException(status_code=400, detail=str(error))
 
 
 @app.get("/api/overlap/file/{name:path}")
@@ -1022,11 +961,8 @@ def overlap_file(name: str):
 @app.post("/api/overlap/label")
 def set_overlap_label(request: OverlapLabel):
     """Change one mite's label in one recording, saved at once."""
-    try:
-        with truth_lock:
-            return pipeline.set_overlap_label(request.dataset, request.mite, request.recording, request.state)
-    except (FileNotFoundError, ValueError) as error:
-        raise HTTPException(status_code=400, detail=str(error))
+    with truth_lock, refused():
+        return pipeline.set_overlap_label(request.dataset, request.mite, request.recording, request.state)
 
 
 # --- the recordings kept -------------------------------------------------------------
@@ -1043,10 +979,8 @@ def list_recordings():
 @app.get("/api/recordings/{name}/results/{filename}")
 def recording_results(name: str, filename: str):
     """A file of the last analysis of a recording, e.g. its results.xlsx."""
-    try:
+    with refused(404):
         return FileResponse(pipeline.recording_results_file(name, filename), filename=f"{name}_{filename}")
-    except (FileNotFoundError, ValueError) as error:
-        raise HTTPException(status_code=404, detail=str(error))
 
 
 @app.post("/api/page/{page_id}/alive")

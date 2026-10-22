@@ -26,6 +26,7 @@ import cv2
 import numpy as np
 
 from classes import analyzer, frame_source, mite, mite_look, motion_analysis, plate_stabilizer, rect, workers
+from classes.files import try_json, write_json
 
 # Whatever could change a score, were it changed.
 _SCORING = (analyzer, plate_stabilizer, mite_look, motion_analysis, frame_source, mite, rect, workers)
@@ -60,10 +61,7 @@ class KeptScores:
         """Record on `mites` the scores kept under `key`, recording by recording,
         as scoring them would have; False, and nothing recorded, when there are
         none under that key for that many mites and recordings."""
-        try:
-            kept = json.loads(self.path.read_text(encoding="utf-8"))
-        except (OSError, ValueError):
-            return False
+        kept = try_json(self.path)
         if not isinstance(kept, dict) or kept.get("key") != key:
             return False
         scores, brightness, activity = kept.get("scores"), kept.get("brightness"), kept.get("activity")
@@ -90,8 +88,6 @@ class KeptScores:
                 "activity": [list(m.activity) for m in mites], "blobs": list(blobs)}
         try:
             self.path.parent.mkdir(parents=True, exist_ok=True)
-            partial = self.path.with_name(self.path.name + ".part")
-            partial.write_text(json.dumps(kept), encoding="utf-8")  # floats are written so that they read back the same
-            partial.replace(self.path)
+            write_json(self.path, kept)  # floats are written so that they read back the same
         except (OSError, TypeError, ValueError):
             pass

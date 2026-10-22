@@ -69,8 +69,7 @@ class SessionLabels {
         mite.rejected = !rejected;
         if (!shown()) return;
         changed();
-        $("run-status").className = "hint error";
-        $("run-status").textContent = `Could not save that detection: ${error.message}`;
+        Hint.error($("run-status"), `Could not save that detection: ${error.message}`);
       }
     });
   }

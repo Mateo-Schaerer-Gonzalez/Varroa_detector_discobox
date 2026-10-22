@@ -18,8 +18,9 @@ import pipeline
 import reference
 from classes.frame_source import Frame, Recording, RoiSource, open_source
 from classes.live.recorder import Recorder
+from classes.files import remove_tree
 from classes.roi_recordings import (FIRST_FRAME_NAME, INDEX_NAME, PARTS_DIRNAME, ROI_DIRNAME, ROI_MARGIN,
-                                    RoiRecordings, RoiVideo, RoiWriter, remove_tree, roi_rect)
+                                    RoiRecordings, RoiVideo, RoiWriter, roi_rect)
 
 START = datetime(2025, 9, 4, 9, 28, 17)
 WIDTH, HEIGHT = 300, 200

@@ -81,8 +81,7 @@ class OverviewPage extends ResultsPage {
 
     this.timeChart($("chart-group-alive"), {
       yLabel: "Survival rate (%)",
-      yMin: 0, yMax: 100,
-      yFormat: (v) => `${Math.round(v)}`,
+      ...Charts.PERCENT_AXIS,
       series: results.survival.groups.map(({ group, alive, alive_ci, n_mites: n }) => ({
         name: `${group} (${n})`,
         values: alive,
@@ -121,7 +120,7 @@ class OverviewPage extends ResultsPage {
 
     const nMovingShown = (zone) => zone.n_moving[ctx.shown];
     // A zone whose mites a live run added later is not on the map before then: nothing to open.
-    ctx.zonesWithMites().filter((zone) => ctx.shown >= this.zoneClock(zone).start).forEach((zone) => {
+    ctx.zonesWithMites().filter((zone) => ctx.shown >= this.clockOf(zone).start).forEach((zone) => {
       const color = groupColor(zone.label || "unlabeled", groups);
       const link = document.createElement("a");
       link.className = "zone result";
@@ -149,7 +148,7 @@ class OverviewPage extends ResultsPage {
     });
 
     // A dot per mite: moving or still in the recording shown; none before a live run added it.
-    results.mites.filter((mite) => ctx.shown >= this.ownTimes(mite).start).forEach((mite) => {
+    results.mites.filter((mite) => ctx.shown >= this.clockOf(mite).start).forEach((mite) => {
       const dot = document.createElement("span");
       dot.className = `mite-dot ${mite.censored[ctx.shown] ? "rejected" : this.movingShown(mite) ? "moving" : "still"}`;
       dot.style.left = percent(mite.x, results.image.width);
@@ -180,7 +179,7 @@ class OverviewPage extends ResultsPage {
       const plot = document.createElement("div");
       plot.className = "zone-card-plot";
       // on the zone's own clock: from when its first mites were added, for one added during a live run
-      const { times, start } = this.zoneClock(zone);
+      const { times, start } = this.clockOf(zone);
       const domain = this.timeDomain();
       Charts.spark(plot, { values: zone.moving.slice(start), color, step: false, x: times,
         xDomain: start && domain ? [0, domain[1] - this.results.times[start]] : domain });

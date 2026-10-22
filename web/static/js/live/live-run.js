@@ -112,8 +112,7 @@ class LiveRun {
 
   async connect() {
     const status = $("live-open-status");
-    status.className = "hint";
-    status.innerHTML = `<span class="spinner"></span> Connecting to the camera and switching the LEDs on…`;
+    Hint.busy(status, `Connecting to the camera and switching the LEDs on…`);
     // The camera found when the page opened saves looking for it again.
     const cameras = this.options ? this.options.cameras : [];
     const body = {
@@ -130,8 +129,7 @@ class LiveRun {
       status.textContent = LiveRun.connectedText(opened);
       if (liveSetup.optionsChanged) await liveSetup.saveOptions().catch(() => {});
     } catch (error) {
-      status.className = "hint error";
-      status.textContent = error.message;
+      Hint.error(status, error.message);
     }
   }
 
@@ -158,12 +156,10 @@ class LiveRun {
       $("live-save").checked = status.save_frames;
       if (status.state !== "ready") await this.loadPreview();
       await this.fetchResults();
-      $("live-open-status").className = "hint";
-      $("live-open-status").textContent = `Reconnected to the test run ${status.run_name}.`;
+      Hint.note($("live-open-status"), `Reconnected to the test run ${status.run_name}.`);
       if (this.started) router.go("#/live/results");
     } catch (error) {
-      $("live-open-status").className = "hint error";
-      $("live-open-status").textContent = error.message;
+      Hint.error($("live-open-status"), error.message);
     }
   }
 
@@ -180,8 +176,7 @@ class LiveRun {
     if (this.running && !confirm("A test run is being recorded. Stop it and go back?\n\n"
       + "The recording being captured ends with the frames already in; it is analysed and the results are written.")) return;
     if (this.running) {
-      $("live-open-status").className = "hint";
-      $("live-open-status").innerHTML = `<span class="spinner"></span> Stopping the test run…`;
+      Hint.busy($("live-open-status"), `Stopping the test run…`);
       if (this.onResultsPage) $("live-error").textContent = "Stopping the test run…";
     }
     await this.close();
@@ -235,8 +230,7 @@ class LiveRun {
     const status = $("run-status");
     labelPage.editor.close();
     $("zones-per-plate").disabled = true;
-    status.className = "hint";
-    status.innerHTML = `<span class="spinner"></span> Finding the mites in the new zones…`;
+    Hint.busy(status, `Finding the mites in the new zones…`);
     try {
       const preview = await post(`/api/session/${id}/zones`, { zones_per_plate: zones });
       if (this.id !== id) return;  // disconnected meanwhile
@@ -244,8 +238,7 @@ class LiveRun {
       this.takePreview(preview);
     } catch (error) {
       if (this.id !== id) return;
-      status.className = "hint error";
-      status.textContent = error.message;
+      Hint.error(status, error.message);
       if (location.hash.startsWith("#/live/label")) labelPage.draw();  // the zones as they still are
     }
   }
@@ -253,15 +246,13 @@ class LiveRun {
   async labelPlates() {
     if (this.started) { router.go("#/live/results"); return; }
     const status = $("live-open-status");
-    status.className = "hint";
-    status.innerHTML = `<span class="spinner"></span> Finding the mites on the newest frame…`;
+    Hint.busy(status, `Finding the mites on the newest frame…`);
     try {
       await this.loadPreview();
       status.textContent = "";
       router.go("#/live/label");
     } catch (error) {
-      status.className = "hint error";
-      status.textContent = error.message;
+      Hint.error(status, error.message);
     }
   }
 
@@ -285,16 +276,14 @@ class LiveRun {
     if (this.started) { router.go("#/live/results"); return; }
     const status = $("run-status");
     $("run-btn").disabled = true;
-    status.className = "hint";
-    status.innerHTML = `<span class="spinner"></span> Starting the test run…`;
+    Hint.busy(status, `Starting the test run…`);
     try {
       await liveSetup.saveOptions();  // the name typed last, if the server does not have it yet
       this.status = await post(`/api/live/${this.id}/start`, { labels: this.workspace.collectLabels() });
       status.textContent = "The test run is going; the labels can still change and the results follow them.";
       router.go("#/live/results");
     } catch (error) {
-      status.className = "hint error";
-      status.textContent = error.message;
+      Hint.error(status, error.message);
     } finally {
       this.drawRunButton();
     }

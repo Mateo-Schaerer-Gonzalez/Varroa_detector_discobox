@@ -18,9 +18,9 @@ class ZonePage extends ResultsPage {
     const neverMoved = zone.n_never_moved;
     const survival = results.survival.zones[zone.id] || { n_mites: 0, n_left_out: 0 };
     // A zone whose mites were all added during a live run runs on its own clock, from then.
-    const clock = this.zoneClock(zone);
+    const clock = this.clockOf(zone);
     // its mite-recordings: those its mites were followed in, each from when it was added
-    const mineRecordings = mites.reduce((sum, mite) => sum + this.ownTimes(mite).times.length, 0);
+    const mineRecordings = mites.reduce((sum, mite) => sum + this.clockOf(mite).times.length, 0);
     // Step through the zones with mites; an empty zone, opened from the plate map, among all.
     const siblings = zone.n_mites ? ctx.zonesWithMites() : results.zones;
     const body = this.body;
@@ -82,7 +82,7 @@ class ZonePage extends ResultsPage {
   // The zone's crop with some margin, each mite marked, playing the recording shown;
   // before a live run added the zone's first mites, nothing: it is not followed yet.
   drawCrop(zone, color, mites) {
-    const { start } = this.zoneClock(zone);
+    const { start } = this.clockOf(zone);
     if (ctx.shown < start) {
       $("zone-crop").innerHTML = `<div class="truth-unfollowed"><span class="status gone"><span aria-hidden="true">–</span> not added yet</span></div>`;
       $("zone-crop").nextElementSibling.textContent = `This zone's mites were added at ${minutes(this.results.times[start])}: there is nothing of it to show before. Choose a later recording.`;
@@ -101,10 +101,9 @@ class ZonePage extends ResultsPage {
 
   drawMoving(zone, group, color, mites, spansZones) {
     const groupCurve = this.results.groups.find((g) => g.group === group);
-    this.clockChart($("chart-zone-moving"), this.zoneClock(zone), {
+    this.clockChart($("chart-zone-moving"), this.clockOf(zone), {
       yLabel: "Mites moving (%)",
-      yMin: 0, yMax: 100,
-      yFormat: (v) => `${Math.round(v)}`,
+      ...Charts.PERCENT_AXIS,
       series: [
         { name: `Zone ${zone.id}`, values: zone.moving.map((v) => (v == null ? null : v * 100)), color },
         ...(groupCurve && spansZones
@@ -126,12 +125,11 @@ class ZonePage extends ResultsPage {
     const alive = survival.zones[zone.id];
     const groupAlive = survival.groups.find((g) => g.group === group);
     // On the zone's own clock the server reads both curves there (alive.start, group_alive).
-    const clock = this.zoneClock(zone);
+    const clock = this.clockOf(zone);
     const own = Boolean(clock.start);
     this.clockChart($("chart-zone-alive"), clock, {
       yLabel: "Survival rate (%)",
-      yMin: 0, yMax: 100,
-      yFormat: (v) => `${Math.round(v)}`,
+      ...Charts.PERCENT_AXIS,
       series: [
         { name: `Zone ${zone.id}`, values: alive.alive, band: alive.alive_ci, color, step: true, markers: false, own },
         ...(groupAlive && spansZones
@@ -151,7 +149,7 @@ class ZonePage extends ResultsPage {
     const { times } = this.results;
     const rowY = (index) => mites.length - 1 - index;
     const domain = this.timeDomain();
-    const shift = times[this.zoneClock(zone).start] - times[0];  // a zone on its own clock ends that much sooner
+    const shift = times[this.clockOf(zone).start] - times[0];  // a zone on its own clock ends that much sooner
     const lines = [];
     const points = [];
     const notes = [];
@@ -163,7 +161,7 @@ class ZonePage extends ResultsPage {
         return;
       }
       // each mite on its own timer: from 0, where it was added during a live run
-      const own = this.ownTimes(mite);
+      const own = this.clockOf(mite);
       lines.push({ points: [[times[0], y], [time, y]], color, width: 2 });
       mite.moving.forEach((moving, recording) => {
         if (moving && recording >= own.start) points.push({ x: own.times[recording - own.start], y, color: token("--moving"), shape: "circle", r: 3.25 });
@@ -197,7 +195,7 @@ class ZonePage extends ResultsPage {
   }
 
   drawScores(zone, mites) {
-    this.clockChart($("chart-zone-scores"), this.zoneClock(zone), {
+    this.clockChart($("chart-zone-scores"), this.clockOf(zone), {
       yLabel: "Motion score",
       noDirectLabels: true,
       threshold: { value: this.results.threshold, label: "threshold" },
@@ -227,7 +225,7 @@ class ZonePage extends ResultsPage {
         <td>${this.callBadge(mite, ctx.shown)}</td>
         <td class="num">${this.lastMovementText(mite)}</td>
         <td class="${this.inStudy(mite) ? "" : "muted"}">${this.survivalText(mite)}</td>
-        <td class="num">${mite.n_moving}/${this.ownTimes(mite).times.length}</td>
+        <td class="num">${mite.n_moving}/${this.clockOf(mite).times.length}</td>
         <td class="num">${score(mite.mean_score)}</td>
         <td class="num">${score(mite.max_score)}</td>
       </tr>`).join("")}</tbody>`;

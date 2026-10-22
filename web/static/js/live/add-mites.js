@@ -71,8 +71,7 @@ class AddMites {
       live.status = await post(`/api/live/${live.id}/add-mites`, { boxes });
       added = true;
     } catch (error) {
-      status.className = "hint error";
-      status.textContent = error.message;
+      Hint.error(status, error.message);
     } finally {
       this.busy = false;  // before the panel is drawn again, or it shows the search still going on
     }

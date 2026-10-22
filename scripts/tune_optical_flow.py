@@ -110,12 +110,7 @@ def load_observations(pads, shake=0.0, seed=0, stabilize=None):
         if not recordings_dir.is_dir():
             print(f"  skipping {dataset['name']}: its recordings are gone")
             continue
-        n_recordings = len(dataset["times"])
-        labelled = {}
-        for mite in dataset["mites"]:
-            states = calibration.per_recording(dataset["truth"].get(mite["id"]), n_recordings)
-            if not calibration.is_rejected(states):
-                labelled[mite["id"]] = (mite, states)
+        labelled = {mite["id"]: (mite, states) for mite, states in pipeline._mite_states(dataset)}
         if not labelled:
             continue
 

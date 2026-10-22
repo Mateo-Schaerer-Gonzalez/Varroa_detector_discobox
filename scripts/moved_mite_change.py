@@ -53,7 +53,8 @@ from scipy.optimize import linear_sum_assignment
 from scipy.stats import rankdata
 
 import pipeline
-from classes import calibration, leg_tracker, outline_change as outline_module, plate_stabilizer, recording_change
+import script_data
+from classes import leg_tracker, outline_change as outline_module, plate_stabilizer, recording_change
 from classes.app_config import get_default_config
 from classes.leg_tracker import LegTracker
 from classes.outline_change import centre, darkness, outline, outline_change
@@ -81,13 +82,10 @@ def load_run(cache=CACHE):
     (minutes), moving, labelled (mites, recordings), shapes (each mite's
     patch, (height, width)), path (the patches, (mites, recordings, frames,
     side, side) float32 grey, each in the top left corner of its square)}."""
-    saved = {summary["id"]: pipeline._read_dataset(summary["id"]) for summary in pipeline.list_calibration_datasets()}
-    dataset = saved[max(saved, key=lambda key: len(saved[key]["times"]))]
+    dataset = script_data.longest_dataset()
     n_recordings = len(dataset["times"])
-    states = {mite["id"]: calibration.per_recording(dataset["truth"].get(mite["id"]), n_recordings)
-              for mite in dataset["mites"]}
-    kept = [mite["id"] for mite in dataset["mites"] if not calibration.is_rejected(states[mite["id"]])]
-    states = np.array([states[mite_id] for mite_id in kept], dtype=object)
+    kept_mites, moving, labelled = script_data.labels_of(dataset)
+    kept = [mite["id"] for mite in kept_mites]
     stabilize = get_default_config().mite.stabilize_plate
     names = [recording["name"] for recording in dataset["recordings"]]
     version = hashlib.sha1(json.dumps([inspect.getsource(plate_stabilizer), PAD, bool(stabilize), names,
@@ -116,7 +114,6 @@ def load_run(cache=CACHE):
         del patches
         part.replace(path)
         shapes_path.write_text(json.dumps([list(map(int, shape)) for shape in shapes]))
-    moving, labelled = states == calibration.MOVING, (states == calibration.MOVING) | (states == calibration.STILL)
     return {"name": dataset["name"], "ids": kept, "times": np.array(dataset["times"], dtype=float),
             "moving": moving, "labelled": labelled, "shapes": json.loads(shapes_path.read_text()), "path": str(path)}
 

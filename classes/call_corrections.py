@@ -24,10 +24,12 @@ A call the user looked at and set, the detector's or not, can be kept as checked
 (classes/review_band.py).
 """
 
-import json
 from pathlib import Path
 
 import numpy as np
+
+from classes import positions
+from classes.files import try_json, write_json
 
 MOVING = "moving"
 STILL = "still"
@@ -41,7 +43,7 @@ class CallCorrections:
     FILENAME = "corrections.json"
     KEY = "recording"  # what the corrections are saved under in the file
 
-    def __init__(self, data_dir, tolerance=10.0):
+    def __init__(self, data_dir, tolerance=positions.TOLERANCE):
         self.path = Path(data_dir) / self.FILENAME
         self.key = self.KEY
         self.tolerance = tolerance
@@ -50,10 +52,7 @@ class CallCorrections:
 
     def _read(self):
         """Everything saved; nothing from a missing or damaged file."""
-        try:
-            saved = json.loads(self.path.read_text(encoding="utf-8"))
-        except (OSError, ValueError):
-            return {}
+        saved = try_json(self.path, {})
         return saved if isinstance(saved, dict) else {}
 
     def entries(self):
@@ -82,13 +81,11 @@ class CallCorrections:
                            if entry["moving"] or entry["gone"] or entry["gone_from"] is not None or entry["checked"]]
         if not saved[self.key]:
             del saved[self.key]
-        self.path.write_text(json.dumps(saved), encoding="utf-8")
+        write_json(self.path, saved)
 
     def _nearest(self, entries, x, y):
         """The entry of the mite at (x, y): the nearest within the tolerance, or None."""
-        near = [(np.hypot(entry["x"] - x, entry["y"] - y), index) for index, entry in enumerate(entries)]
-        near = [(distance, index) for distance, index in near if distance <= self.tolerance]
-        return entries[min(near)[1]] if near else None
+        return positions.nearest(entries, x, y, self.tolerance)
 
     # --- changes
 

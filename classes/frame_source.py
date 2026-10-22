@@ -24,7 +24,6 @@ from datetime import datetime
 from functools import partial
 from pathlib import Path
 
-import cv2
 import numpy as np
 
 from classes.data_loader import DataLoader
@@ -101,7 +100,25 @@ def recordings(events):
         yield current
 
 
-class FolderSource:
+class _SavedSource:
+    """The recordings saved in a folder, read by `loader` (a DataLoader or a
+    RoiRecordings), in name order."""
+
+    FIRST = "first"  # for events(): decode only the first frame of the stream
+
+    def __init__(self, data_dir, loader, names=None):
+        """`names`: only the recordings of these names, e.g. those of a live run
+        complete so far; every recording without."""
+        self.data_dir = Path(data_dir)
+        self.loader = loader
+        self.names = None if names is None else set(names)
+
+    def recordings(self):
+        return [Recording.from_folder(self.loader, name) for name in self.loader.recording_names
+                if self.names is None or name in self.names]
+
+
+class FolderSource(_SavedSource):
     """The recordings of a session folder, in name order, each frame decoded in
     grey (cv2.IMREAD_GRAYSCALE, files sorted by name).
 
@@ -110,18 +127,8 @@ class FolderSource:
     work and the next one are.
     """
 
-    FIRST = "first"  # for events(): decode only the first frame of the stream
-
     def __init__(self, data_dir, names=None):
-        """`names`: only the recordings of these names, e.g. those of a live run
-        complete so far; every recording without."""
-        self.data_dir = Path(data_dir)
-        self.loader = DataLoader(self.data_dir)
-        self.names = None if names is None else set(names)
-
-    def recordings(self):
-        return [Recording.from_folder(self.loader, d.name) for d in self.loader.recording_dirs
-                if self.names is None or d.name in self.names]
+        super().__init__(data_dir, DataLoader(data_dir), names)
 
     def events(self, decode=True):
         """The stream of Frames and RecordingEnds. With `decode` False the Frames
@@ -141,8 +148,8 @@ class FolderSource:
             return
         first = decode == self.FIRST
         for recording in recordings:
-            for index, path in enumerate(self._frame_paths(recording)):
-                yield Frame(recording, index, path.name, self._read(path) if first else None)
+            for index, path in enumerate(self.loader.frame_paths(recording.name)):
+                yield Frame(recording, index, path.name, DataLoader.read_image(path) if first else None)
                 first = False
             yield RecordingEnd(recording)
 
@@ -151,29 +158,16 @@ class FolderSource:
         them: [[recording, [[file, size, time written], ...]], ...], in the
         order events() gives them."""
         return [[recording.name, [[path.name, (stat := path.stat()).st_size, stat.st_mtime_ns]
-                                  for path in self._frame_paths(recording)]]
+                                  for path in self.loader.frame_paths(recording.name)]]
                 for recording in self.recordings()]
-
-    def _frame_paths(self, recording):
-        paths = sorted((self.data_dir / recording.name).glob("*.bmp"))
-        if not paths:
-            raise FileNotFoundError(f"No .bmp images found in {self.data_dir / recording.name}")
-        return paths
 
     def _load(self, recording, readers):
         """A recording's frame files and their images, decoded side by side."""
-        paths = self._frame_paths(recording)
-        return paths, list(readers.map(self._read, paths))
-
-    @staticmethod
-    def _read(path):
-        image = cv2.imread(str(path), cv2.IMREAD_GRAYSCALE)
-        if image is None:
-            raise ValueError(f"Could not read the image {path}")
-        return image
+        paths = self.loader.frame_paths(recording.name)
+        return paths, list(readers.map(DataLoader.read_image, paths))
 
 
-class RoiSource:
+class RoiSource(_SavedSource):
     """The recordings of a session saved as ROIs (classes/roi_recordings.py), as
     FolderSource gives those of a folder: each frame whole, black away from the
     mites, but for the first, which was saved whole. The scores, read only
@@ -185,12 +179,8 @@ class RoiSource:
     whole frames (`blobs()`): there is nothing to find them on again.
     """
 
-    FIRST = FolderSource.FIRST
-
     def __init__(self, data_dir, names=None):
-        self.data_dir = Path(data_dir)
-        self.loader = RoiRecordings(self.data_dir)
-        self.names = None if names is None else set(names)
+        super().__init__(data_dir, RoiRecordings(data_dir), names)
 
     @property
     def boxes(self):
@@ -207,10 +197,6 @@ class RoiSource:
 
     def blobs(self):
         return self.loader.blobs()
-
-    def recordings(self):
-        return [Recording(name=name, start=self.loader.get_start_time(name), fps=self.loader.get_fps(name))
-                for name in self.loader.recording_names if self.names is None or name in self.names]
 
     def events(self, decode=True):
         """As FolderSource.events()."""

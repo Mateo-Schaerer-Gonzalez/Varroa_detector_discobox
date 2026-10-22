@@ -21,7 +21,8 @@ from pathlib import Path
 from classes.data_loader import DataLoader
 from classes.frame_source import Frame, FolderSource
 from classes.motion_analysis import MotionAnalysis
-from classes.roi_recordings import RoiRecordings, RoiVideo, RoiWriter, is_roi_session, remove_tree
+from classes.files import remove_tree
+from classes.roi_recordings import RoiRecordings, RoiVideo, RoiWriter, is_roi_session
 
 _logger = logging.getLogger(__name__)
 

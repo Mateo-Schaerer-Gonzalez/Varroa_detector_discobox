@@ -38,17 +38,16 @@ reads either kind.
 """
 
 import json
-import os
 import shutil
-import stat
 import tempfile
-import time
 from pathlib import Path
 
 import cv2
 import numpy as np
 
+from classes import settings_file
 from classes.data_loader import DataLoader
+from classes.files import remove_tree, replace, write_image_whole, write_json
 from classes.workers import side_by_side
 
 ROI_DIRNAME = "rois"
@@ -117,41 +116,6 @@ def placed_rect(box, size, width, height):
     left = min(max(0, (x1 + x2) // 2 - w // 2), width - w)
     top = min(max(0, (y1 + y2) // 2 - h // 2), height - h)
     return [left, top, left + w, top + h]
-
-
-def remove_tree(path, ignore_errors=False):
-    """shutil.rmtree(), read-only files and folders too (OneDrive marks folders
-    so); nothing when `path` is not there. With `ignore_errors`, what cannot
-    be removed even so (a file a reader has open, on Windows) stays."""
-    def again(remove, failed, _error):
-        try:
-            os.chmod(failed, stat.S_IWRITE)
-            remove(failed)
-        except OSError:
-            if not ignore_errors:
-                raise
-
-    if Path(path).exists():
-        shutil.rmtree(path, onexc=again)
-
-
-def _replace(partial, path):
-    """os.replace(), again for a moment while Windows refuses it: a reader has
-    the file open."""
-    for attempt in range(40):
-        try:
-            os.replace(partial, path)
-            return
-        except PermissionError:
-            if attempt == 39:
-                raise
-            time.sleep(0.05)
-
-
-def _write_json(path, data):
-    partial = path.with_name(path.name + ".part")
-    partial.write_text(json.dumps(data), encoding="utf-8")
-    _replace(partial, path)
 
 
 class RoiVideo:
@@ -239,10 +203,7 @@ class RoiWriter:
         each recording gives where every mite is in it (place())."""
         height, width = first_image.shape[:2]
         self.rois_dir.mkdir(parents=True, exist_ok=True)
-        partial = self.data_dir / f"partial_{FIRST_FRAME_NAME}"
-        if not cv2.imwrite(str(partial), first_image):
-            raise OSError(f"Could not write {partial}")
-        _replace(partial, self.data_dir / FIRST_FRAME_NAME)
+        write_image_whole(self.data_dir / FIRST_FRAME_NAME, first_image)
         self.index = {
             "version": VERSION,
             "image": [int(width), int(height)],
@@ -255,7 +216,7 @@ class RoiWriter:
             self.index["follow"] = True
         self._boxes = None
         self._add_mites(boxes)
-        _write_json(self.rois_dir / INDEX_NAME, self.index)
+        write_json(self.rois_dir / INDEX_NAME, self.index)
 
     def _add_mites(self, boxes, start=0):
         width, height = self.index["image"]
@@ -308,12 +269,12 @@ class RoiWriter:
             writer.release()
         folder = self._part_dir(recording.name)
         shutil.rmtree(folder, ignore_errors=True)
-        _replace(self._part_dir(recording.name, writing=True), folder)
+        replace(self._part_dir(recording.name, writing=True), folder)
         entry = {"name": recording.name, "fps": recording.fps, "frames": self._frames, "blobs": blobs}
         if self._boxes is not None:
             entry["boxes"] = self._boxes
         self.index["recordings"].append(entry)
-        _write_json(self.rois_dir / INDEX_NAME, self.index)
+        write_json(self.rois_dir / INDEX_NAME, self.index)
         self._recording, self._writers, self._frames = None, [], 0
 
     def abandon(self):
@@ -357,8 +318,7 @@ class RoiRecordings:
         self.data_dir = Path(data_dir)
         self.rois_dir = self.data_dir / ROI_DIRNAME
         self.index = json.loads((self.rois_dir / INDEX_NAME).read_text(encoding="utf-8"))
-        settings_path = self.data_dir / ".settings.txt"
-        self.settings = DataLoader._parse_settings_file(settings_path) if settings_path.exists() else {}
+        self.settings = settings_file.of_folder(self.data_dir)
         self._recordings = {recording["name"]: number for number, recording in enumerate(self.index["recordings"])}
 
     # What DataLoader gives too.
@@ -533,10 +493,10 @@ class RoiRecordings:
             # `stitched` recordings are read, which they hold as before.
             for number in range(len(self.index["mites"])):
                 if (work / _video_name(number)).exists():
-                    _replace(work / _video_name(number), self.rois_dir / _video_name(number))
+                    replace(work / _video_name(number), self.rois_dir / _video_name(number))
             remove_tree(work, ignore_errors=True)
             self.index["stitched"] = len(recordings)
-            _write_json(self.rois_dir / INDEX_NAME, self.index)
+            write_json(self.rois_dir / INDEX_NAME, self.index)
         for recording in recordings:  # a part a reader still has open goes at the next stitch
             remove_tree(self.rois_dir / PARTS_DIRNAME / recording["name"], ignore_errors=True)
         parts = self.rois_dir / PARTS_DIRNAME

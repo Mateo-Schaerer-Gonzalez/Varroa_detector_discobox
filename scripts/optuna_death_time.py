@@ -50,7 +50,8 @@ import optuna
 import pandas as pd
 
 import pipeline
-from classes import calibration, death_calibration, plate_stabilizer
+import script_data
+from classes import death_calibration, plate_stabilizer
 from classes.analyzer import Analyzer
 from classes.app_config import get_default_config
 from classes.data_loader import DataLoader
@@ -117,12 +118,9 @@ def load_dataset(summary, cache_dir, stabilize, jobs):
         print(f"  skipping {dataset['name']}: its recordings are gone")
         return None
     n_recordings = len(dataset["times"])
-    states = {mite["id"]: calibration.per_recording(dataset["truth"].get(mite["id"]), n_recordings)
-              for mite in dataset["mites"]}
-    mites = [mite for mite in dataset["mites"] if not calibration.is_rejected(states[mite["id"]])]
+    mites, moving, labelled = script_data.labels_of(dataset)
     if not mites:
         return None
-    states = np.array([states[mite["id"]] for mite in mites], dtype=object)
 
     boxes = list(pipeline.mite_boxes(mites).values())
     # The region holds every detection, as a calibration reads it.
@@ -158,8 +156,7 @@ def load_dataset(summary, cache_dir, stabilize, jobs):
         print(f"  {dataset['name']}: patches cut in {time.time() - started:.0f} s")
     print(f"  {dataset['name']}: {len(mites)} mites, {n_recordings} recordings")
     return {"name": dataset["name"], "mites": [mite["id"] for mite in mites], "path": str(path), "sizes": sizes,
-            "moving": states == calibration.MOVING,
-            "labelled": (states == calibration.MOVING) | (states == calibration.STILL)}
+            "moving": moving, "labelled": labelled}
 
 
 # ---- scoring, in worker processes that map the patches once ----

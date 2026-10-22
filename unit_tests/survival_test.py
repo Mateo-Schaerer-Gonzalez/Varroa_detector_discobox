@@ -107,7 +107,7 @@ def test_the_share_alive_is_the_kaplan_meier_estimate_inside_its_interval():
         movings = [[rng.random() < 0.6 for _ in times] for _ in range(rng.randint(1, 12))]
         alive = survival.alive_percent(movings)
         ci = survival.alive_ci(movings)
-        estimate = stats.ecdf(survival.censored([survival.survival(moving) for moving in movings])).sf.evaluate(times)
+        estimate = stats.ecdf(survival.censored([survival.survival(moving) for moving in movings])).sf.evaluate(survival.clock)
         assert alive == pytest.approx(list(100 * estimate))
         for low, value, high in zip(ci["low"], alive, ci["high"]):
             assert 0 <= low <= value + 1e-9 and value - 1e-9 <= high <= 100

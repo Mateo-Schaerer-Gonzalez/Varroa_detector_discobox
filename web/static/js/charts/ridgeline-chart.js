@@ -15,12 +15,6 @@
 class RidgelineChart {
   static SAMPLES = 160;  // points along x at which each density is drawn
 
-  static show(container, options) {
-    const render = (target, opts) => new RidgelineChart(target, opts).draw();
-    container.chartRedraw = (target, adjust) => render(target, adjust(options));
-    ChartKit.keepLive(container, render, options);
-  }
-
   // Silverman's rule of thumb, no less than `floor`.
   static kernelBandwidth(values, floor) {
     const { quantile } = ChartKit;

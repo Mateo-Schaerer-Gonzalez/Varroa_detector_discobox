@@ -18,7 +18,6 @@ measured is kept beside them, so only the first run is slow (about a minute).
 
     python scripts/outline_variability.py     # measures, prints a summary
 """
-import hashlib
 import inspect
 import json
 import os
@@ -31,6 +30,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import numpy as np
 
 import alive_dead_features as adf
+import script_data
 import metric_agreement as ma
 from classes import death_calibration
 from classes.analyzer import Analyzer
@@ -92,16 +92,14 @@ def measure(run, cache=adf.CACHE, jobs=None):
     Kept in `cache`."""
     params = ma.metric_params()[METRIC]
     source = inspect.getsource(Analyzer) + inspect.getsource(_measure_mite) + json.dumps(params, sort_keys=True) + run.path
-    path = Path(cache) / f"outline_variability-{hashlib.sha1(source.encode('utf-8')).hexdigest()[:12]}.npz"
-    if path.is_file():
-        kept = np.load(path)
-        return {name: kept[name] for name in kept.files}
-    work = [(run.path, mite, *run.sizes[mite], params) for mite in range(len(run.mites))]
-    with ProcessPoolExecutor(jobs or os.cpu_count()) as pool:
-        rows = list(pool.map(_measure_mite, work))
-    out = {name: np.array([row[index] for row in rows]) for index, name in enumerate(("profiles", "by_distance", "lamp"))}
-    np.savez(path, **out)
-    return out
+
+    def make():
+        work = [(run.path, mite, *run.sizes[mite], params) for mite in range(len(run.mites))]
+        with ProcessPoolExecutor(jobs or os.cpu_count()) as pool:
+            rows = list(pool.map(_measure_mite, work))
+        return {name: np.array([row[index] for row in rows]) for index, name in enumerate(("profiles", "by_distance", "lamp"))}
+
+    return script_data.kept_arrays(cache, "outline_variability", source, make)
 
 
 # ---- what a profile says ----
@@ -272,17 +270,15 @@ def disturbed(run, shake=0.0, flicker=0.0, cache=adf.CACHE, jobs=None, seed=0):
     chosen = sample(run, seed=seed)
     source = (inspect.getsource(Analyzer) + inspect.getsource(_disturb_mite) + inspect.getsource(shaken) + inspect.getsource(sample)
               + json.dumps([scores, shake, flicker, seed], sort_keys=True) + run.path)
-    path = Path(cache) / f"outline_variability_disturbed-{hashlib.sha1(source.encode('utf-8')).hexdigest()[:12]}.npz"
-    if path.is_file():
-        kept = np.load(path)
-        return {name: kept[name] for name in kept.files}
-    work = [(run.path, mite, *run.sizes[mite], np.flatnonzero(chosen[mite]), shake, flicker, [seed, mite], scores)
-            for mite in range(len(run.mites))]
-    with ProcessPoolExecutor(jobs or os.cpu_count()) as pool:
-        rows = list(pool.map(_disturb_mite, work))
-    out = {name: np.concatenate([row[name] for row in rows]) for name in rows[0]}
-    np.savez(path, **out)
-    return out
+
+    def make():
+        work = [(run.path, mite, *run.sizes[mite], np.flatnonzero(chosen[mite]), shake, flicker, [seed, mite], scores)
+                for mite in range(len(run.mites))]
+        with ProcessPoolExecutor(jobs or os.cpu_count()) as pool:
+            rows = list(pool.map(_disturb_mite, work))
+        return {name: np.concatenate([row[name] for row in rows]) for name in rows[0]}
+
+    return script_data.kept_arrays(cache, "outline_variability_disturbed", source, make)
 
 
 def main():

@@ -13,7 +13,6 @@ are kept beside them, so only the first run is slow (about a minute).
 
     python scripts/metric_agreement.py     # scores, prints how far they agree
 """
-import hashlib
 import inspect
 import json
 import os
@@ -30,6 +29,7 @@ from scipy.spatial.distance import squareform
 from scipy.stats import rankdata
 
 import alive_dead_features as adf
+import script_data
 import leg_tracks
 import pipeline
 from classes import death_calibration
@@ -94,16 +94,14 @@ def scores(run, cache=adf.CACHE, jobs=None, legs=True):
     with `legs`, under LEGS, the leg tracker's movement. Kept in `cache`."""
     params = metric_params()
     source = inspect.getsource(Analyzer) + inspect.getsource(_score_mite) + json.dumps(params, sort_keys=True) + run.path
-    path = Path(cache) / f"metric_agreement-{hashlib.sha1(source.encode('utf-8')).hexdigest()[:12]}.npz"
-    if path.is_file():
-        kept = np.load(path)
-        table = {name: kept[name] for name in kept.files}
-    else:
+
+    def make():
         work = [(run.path, mite, *run.sizes[mite], params) for mite in range(len(run.mites))]
         with ProcessPoolExecutor(jobs or os.cpu_count()) as pool:
             rows = list(pool.map(_score_mite, work))
-        table = {metric: np.array([row[metric] for row in rows]) for metric in params}
-        np.savez(path, **table)
+        return {metric: np.array([row[metric] for row in rows]) for metric in params}
+
+    table = script_data.kept_arrays(cache, "metric_agreement", source, make)
     if legs:
         per = leg_tracks.frames_per_recording(run)
         table[LEGS] = np.array([LegTracker.movement(found, per) for found in leg_tracks.follow_run(run, cache)])

@@ -57,15 +57,13 @@ class DatasetLibrary {
   open(id) {
     return cal.openWithTruthSaved($("pool-status"), async () => {
       const status = $("pool-status");
-      status.className = "hint";
-      status.innerHTML = `<span class="spinner"></span> Opening…`;
+      Hint.busy(status, `Opening…`);
       try {
         const data = await post(`/api/calibration/datasets/${encodeURIComponent(id)}/open`, {});
         status.textContent = "";
         cal.start(data);
       } catch (error) {
-        status.className = "hint error";
-        status.textContent = error.message;
+        Hint.error(status, error.message);
       }
     });
   }
@@ -82,8 +80,7 @@ class DatasetLibrary {
       status.textContent = "";
       this.refresh();
     } catch (error) {
-      status.className = "hint error";
-      status.textContent = error.message;
+      Hint.error(status, error.message);
     }
   }
 
@@ -92,8 +89,7 @@ class DatasetLibrary {
     return cal.openWithTruthSaved($("pool-status"), async () => {
       const ids = [...document.querySelectorAll(".pool-check:checked")].map((c) => c.value);
       const status = $("pool-status");
-      status.className = "hint";
-      status.innerHTML = `<span class="spinner"></span> Comparing…`;
+      Hint.busy(status, `Comparing…`);
       try {
         const { session_id: sessionId } = await post("/api/calibration/pooled", {});
         Object.assign(cal, {
@@ -106,8 +102,7 @@ class DatasetLibrary {
         status.textContent = "";
         router.go("#/cal/report");
       } catch (error) {
-        status.className = "hint error";
-        status.textContent = error.message;
+        Hint.error(status, error.message);
       }
     });
   }

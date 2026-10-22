@@ -7,7 +7,6 @@ are kept beside them, so only the first run is slow (about 2 minutes).
 
     python scripts/leg_tracks.py     # follows the legs, prints a summary
 """
-import hashlib
 import inspect
 import os
 import sys
@@ -19,6 +18,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import numpy as np
 
 import alive_dead_features as adf
+import script_data
 from classes import leg_tracker
 from classes.leg_tracker import LegTracker, Tracks
 from optuna_death_time import MAX_PAD
@@ -39,15 +39,15 @@ def follow_run(run, cache=adf.CACHE, jobs=None, **settings):
     """Per mite, its Tracks over all the frames of the run (recordings x
     frames, in order). `settings` are LegTracker's. Kept in `cache`."""
     source = inspect.getsource(leg_tracker) + run.path + repr(sorted(settings.items()))
-    path = Path(cache) / f"leg_tracks-{hashlib.sha1(source.encode('utf-8')).hexdigest()[:12]}.npz"
-    if path.is_file():
-        kept = np.load(path)
-        return [Tracks(*(kept[f"{mite}/{field}"] for field in FIELDS)) for mite in range(len(run.mites))]
-    work = [(run.path, mite, *run.sizes[mite], settings) for mite in range(len(run.mites))]
-    with ProcessPoolExecutor(jobs or os.cpu_count()) as pool:
-        tracks = list(pool.map(_follow, work))
-    np.savez(path, **{f"{mite}/{field}": getattr(found, field) for mite, found in enumerate(tracks) for field in FIELDS})
-    return tracks
+
+    def make():
+        work = [(run.path, mite, *run.sizes[mite], settings) for mite in range(len(run.mites))]
+        with ProcessPoolExecutor(jobs or os.cpu_count()) as pool:
+            tracks = list(pool.map(_follow, work))
+        return {f"{mite}/{field}": getattr(found, field) for mite, found in enumerate(tracks) for field in FIELDS}
+
+    kept = script_data.kept_arrays(cache, "leg_tracks", source, make)
+    return [Tracks(*(kept[f"{mite}/{field}"] for field in FIELDS)) for mite in range(len(run.mites))]
 
 
 def frames_per_recording(run):

@@ -85,14 +85,12 @@ class FolderPicker {
 
   async handleFolder(getFolder) {
     const status = this.element("open-status");
-    status.className = "hint";
-    status.textContent = "";
+    Hint.note(status);
     try {
       await this.upload(await getFolder());
     } catch (error) {
       this.element("upload-progress").hidden = true;
-      status.className = "hint error";
-      status.textContent = error.message;
+      Hint.error(status, error.message);
     }
   }
 

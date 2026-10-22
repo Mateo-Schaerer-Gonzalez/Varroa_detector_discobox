@@ -1,6 +1,6 @@
 from typing import Optional
 
-from classes.rect import TextZone
+from classes.rect import Rect, TextZone
 from classes.app_config import AppConfig, get_default_config
 import cv2
 import numpy as np
@@ -118,6 +118,14 @@ def mites_in_reading_order(mites):
     return sort_reading_order(list(mites), line)
 
 
+def mite_ids(mites, zone_id, before=0):
+    """[(mite, its id)] of `mites` of zone `zone_id`, numbered on after the zone's
+    `before` mites in reading order (mites_in_reading_order()): "<zone id>.<n>".
+    The one rule for ids, of the mites found on the first frame and of those a
+    live run adds later."""
+    return [(mite, f"{zone_id}.{before + number}") for number, mite in enumerate(mites_in_reading_order(mites), start=1)]
+
+
 class ZoneManager:
     def __init__(self, zones, excluded_types=None):
         self.zones = zones
@@ -162,6 +170,11 @@ class ZoneManager:
 
     def add_zone(self, zone):
         self.zones.append(zone)
+
+    @property
+    def mites(self):
+        """Every mite of every zone, zone by zone."""
+        return [mite for zone in self.zones for mite in zone.mites]
 
     @property
     def exclusion_zones(self):
@@ -261,10 +274,16 @@ class ZoneManager:
         line, so a mite is found on the plate from its id. The mites of a zone
         stay in the order they were detected in."""
         for zone in self.zones:
-            if zone.id is None or not zone.mites:
+            if zone.id is None:
                 continue
-            for number, mite in enumerate(mites_in_reading_order(zone.mites), start=1):
-                mite.text = f"{zone.id}.{number}"
+            for mite, text in mite_ids(zone.mites, zone.id):
+                mite.text = text
+
+    def zone_of(self, box):
+        """The zone with an id (one the user labels) that holds all of `box` (a
+        Mite, or (x1, y1, x2, y2)); None when none does."""
+        rect = box if hasattr(box, "x1") else Rect(*box)
+        return next((zone for zone in self.zones if zone.id is not None and rect in zone), None)
 
 
     def remove_mites(self, rejected):
@@ -291,8 +310,7 @@ class ZoneManager:
         for zone in self.zones:
             for mite in zone.mites:
                 mite_id = mite.text
-                x = (mite.x1 + mite.x2) / 2
-                y = (mite.y1 + mite.y2) / 2
+                x, y = mite.home
                 for time, motion_score, moving, brightness in zip(times, mite.motion_scores, mite.moving, mite.brightness):
                     rows.append(
                         {

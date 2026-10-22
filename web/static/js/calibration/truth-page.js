@@ -120,12 +120,7 @@ class TruthPage {
 
   // A picture of the clip's cut of the recording, with the ring round the mite.
   picture(clip, mite, src) {
-    const svg = PlateView.crop(clip.x, clip.y, clip.width, clip.height, src, clip);
-    const image = svg.querySelector("image");
-    image.setAttribute("x", clip.x);
-    image.setAttribute("y", clip.y);
-    svg.appendChild(PlateView.svgEl("circle", { cx: mite.x, cy: mite.y, r: Math.max(TruthPage.RING, mite.r * 2.5), class: "truth-ring" }));
-    return svg;
+    return PlateView.clipPicture(clip, src, mite, TruthPage.RING, "truth-ring");
   }
 
   // The recording's frames, looped, and beside them where its pixels change.
@@ -308,8 +303,7 @@ class TruthPage {
 
   // A change the server refused, or could not be reached for.
   showError(error) {
-    $("evaluate-status").className = "hint error";
-    $("evaluate-status").textContent = `Could not change the ground truth: ${error.message}`;
+    Hint.error($("evaluate-status"), `Could not change the ground truth: ${error.message}`);
   }
 
   onKey(event) {

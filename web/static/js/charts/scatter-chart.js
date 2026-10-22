@@ -19,12 +19,6 @@
  *   legend      [{ name, color, shape }] (shape "line" for a line key)
  */
 class ScatterChart {
-  static show(container, options) {
-    const render = (target, opts) => new ScatterChart(target, opts).draw();
-    container.chartRedraw = (target, adjust) => render(target, adjust(options));
-    ChartKit.keepLive(container, render, options);
-  }
-
   constructor(container, options) {
     this.container = container;
     this.options = options;

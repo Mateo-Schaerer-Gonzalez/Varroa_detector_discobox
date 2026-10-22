@@ -114,8 +114,7 @@ class ResultsPage {
     } catch (error) {
       const status = this.body.querySelector(".clip-status");
       if (status) {
-        status.className = "hint clip-status error";
-        status.textContent = `Could not change the call: ${error.message}`;
+        Hint.error(status, `Could not change the call: ${error.message}`, "clip-status");
       }
       return false;
     }
@@ -218,17 +217,14 @@ class ResultsPage {
   // The times of the recordings on the mite's own timer, from the one it was
   // added in on (the server's own_times), and that first recording; every
   // recording and 0 for a mite there from the start.
-  ownTimes(mite) {
-    return mite.own_times ? { times: mite.own_times, start: mite.start } : { times: this.results.times, start: 0 };
+  // The same for a zone (the server's zone.own_times): a zone whose mites were all
+  // added during a live run runs on its own clock from the recording its first
+  // ones were added in.
+  clockOf(item) {
+    return item.own_times ? { times: item.own_times, start: item.start } : { times: this.results.times, start: 0 };
   }
 
-  // The same for a zone: a zone whose mites were all added during a live run runs
-  // on its own clock from the recording its first ones were added in.
-  zoneClock(zone) {
-    return zone.own_times ? { times: zone.own_times, start: zone.start } : { times: this.results.times, start: 0 };
-  }
-
-  // timeChart() on a clock ({times, start}, ownTimes() or zoneClock()): only the
+  // timeChart() on a clock ({times, start}, clockOf()): only the
   // recordings from `start` on, at their own times. A series' values (and band and
   // point colours) are per recording of the run, cut here, or with `own` already on
   // the clock. tooltipExtra and clicks get the run's recording index.
@@ -305,8 +301,7 @@ class ResultsPage {
         // Unless another folder or page is shown by now.
         if (ctx.results === results && /^#\/(live\/)?(results|zone|mite)/.test(location.hash)) resultsView.draw();
       } catch (error) {
-        status.className = "hint error death-status";
-        status.textContent = error.message;
+        Hint.error(status, error.message, "death-status");
       }
     }));
   }
@@ -341,8 +336,7 @@ class ResultsPage {
   // Until it plays, `wrap` shows the first frame dimmed.
   async playClip(url, wrap, status, place) {
     wrap.classList.add("loading");
-    status.className = "hint clip-status";
-    status.innerHTML = `<span class="spinner"></span> Loading the recording at ${this.shownTime()}…`;
+    Hint.busy(status, `Loading the recording at ${this.shownTime()}…`, "clip-status");
     try {
       // The frames of a recording never change, so they need no cache-buster.
       const clip = await player.load(url, this.frameUrl());
@@ -353,8 +347,7 @@ class ResultsPage {
       player.start(clip, place(clip));
     } catch (error) {
       wrap.classList.remove("loading");
-      status.className = "hint clip-status error";
-      status.textContent = `${error.message} Showing the first frame.`;
+      Hint.error(status, `${error.message} Showing the first frame.`, "clip-status");
     }
   }
 
@@ -365,10 +358,10 @@ class ResultsPage {
   }
 
   showFirstFrame(status) {
-    status.className = "hint clip-status";
-    status.textContent = this.previewFor() === this.results.preview
+    Hint.note(status, this.previewFor() === this.results.preview
       ? "Only the mites' surroundings are saved of these recordings, so this is the first frame. Open a mite to play its recording."
-      : "Only the mites' surroundings are saved of these recordings, so this is the frame the mites added last before this recording were found on. Open a mite to play its recording.";
+      : "Only the mites' surroundings are saved of these recordings, so this is the frame the mites added last before this recording were found on. Open a mite to play its recording.",
+    "clip-status");
   }
 
   // The clip a mite's close-up plays: its zone's, or its own where only the mites' surroundings are saved.

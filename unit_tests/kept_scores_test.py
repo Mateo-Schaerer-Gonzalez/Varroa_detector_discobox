@@ -11,6 +11,7 @@ import pytest
 import pipeline
 import reference
 from classes.app_config import get_default_config
+from classes.data_loader import DataLoader
 from classes.frame_source import FolderSource
 from classes.kept_scores import KeptScores
 from classes.mite import Mite
@@ -145,8 +146,8 @@ def test_a_folders_frames_are_listed_with_what_tells_them_apart(tmp_path):
 def decoded(monkeypatch):
     """Counts the frames decoded."""
     count = []
-    read = FolderSource._read
-    monkeypatch.setattr(FolderSource, "_read", staticmethod(lambda path: count.append(path) or read(path)))
+    read = DataLoader.read_image
+    monkeypatch.setattr(DataLoader, "read_image", staticmethod(lambda path: count.append(path) or read(path)))
     return count
 
 

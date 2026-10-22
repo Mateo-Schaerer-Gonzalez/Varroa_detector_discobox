@@ -10,7 +10,8 @@ the survival the labels show against the survival the detector's calls show.
 
 import numpy as np
 
-from classes.survival import kaplan_meier
+from classes import positions
+from classes.survival import death_after, kaplan_meier, own_time, since_start
 
 MOVING = "moving"
 STILL = "still"
@@ -77,6 +78,11 @@ def apply_changes(truth, changes, n_recordings):
     return states
 
 
+def call(moving):
+    """MOVING for a call of moving (True), else STILL."""
+    return MOVING if moving else STILL
+
+
 def is_rejected(states):
     """True when the user marked this detection as not being a mite.
 
@@ -85,7 +91,7 @@ def is_rejected(states):
     return states == NOT_A_MITE or (isinstance(states, list) and NOT_A_MITE in states)
 
 
-def match_ground_truth(mites, saved, n_recordings, tolerance=10.0):
+def match_ground_truth(mites, saved, n_recordings, tolerance=positions.TOLERANCE):
     """Give each detected mite the saved statuses of the nearest saved position.
 
     Ground truth is stored by position, not by mite id, so it survives a change in
@@ -94,22 +100,11 @@ def match_ground_truth(mites, saved, n_recordings, tolerance=10.0):
     closest mite within `tolerance` pixels. Returns {mite id: [status per
     recording]}, where a status is "moving", "still", "not_a_mite" or None.
     """
-    pairs = []
-    for mite in mites:
-        for index, entry in enumerate(saved):
-            distance = np.hypot(mite["x"] - entry["x"], mite["y"] - entry["y"])
-            if distance <= tolerance:
-                pairs.append((distance, mite["id"], index))
-
-    truth, used_mites, used_saved = {}, set(), set()
-    for _distance, mite_id, index in sorted(pairs):
-        if mite_id in used_mites or index in used_saved:
-            continue
+    truth = {}
+    for mite_id, index in positions.closest_pairs(mites, saved, tolerance).items():
         states = per_recording(saved[index].get("truth"), n_recordings)
         if any(states):
             truth[mite_id] = states
-        used_mites.add(mite_id)
-        used_saved.add(index)
     return truth
 
 
@@ -238,14 +233,13 @@ def mite_survival(rows, times, is_moving):
     `rows` have "recording"; `is_moving(row)` says whether the mite moved in it,
     by the labels or as called by the detector."""
     rows = sorted(rows, key=lambda row: row["recording"])
-    moved = [index for index, row in enumerate(rows) if is_moving(row)]
-    if not moved:
+    death = death_after([is_moving(row) for row in rows])
+    if not death:
         return None
-    zero = times[rows[0].get("start", 0)] - times[0]
-    after = rows[moved[-1] + 1:]
-    if after:
-        return times[after[0]["recording"]] - zero, True
-    return times[rows[-1]["recording"]] - zero, False
+    start = rows[0].get("start", 0)
+    if death < len(rows):
+        return own_time(times, start, rows[death]["recording"]), True
+    return own_time(times, start, rows[-1]["recording"]), False
 
 
 def _rows_by_mite(rows):
@@ -272,9 +266,7 @@ def death_recording(rows, is_moving):
     one after its last movement, by the rule of mite_survival(). 0 for a mite
     that never moved, dead from the first one on; the number of its recordings
     for one still moving in the last, so not dead within them."""
-    rows = sorted(rows, key=lambda row: row["recording"])
-    moved = [index for index, row in enumerate(rows) if is_moving(row)]
-    return moved[-1] + 1 if moved else 0
+    return death_after([is_moving(row) for row in sorted(rows, key=lambda row: row["recording"])])
 
 
 def death_errors(rows, thresholds, calls=None):
@@ -323,7 +315,7 @@ def survival_curves(rows, times, thresholds, calls=None):
         survivals = [mite_survival(mite_rows, times, is_moving) for mite_rows in by_mite.values()]
         study = [survival for survival in survivals if survival is not None]
         curves[name] = {
-            **kaplan_meier(study, times),
+            **kaplan_meier(study, since_start(times, 0)),
             "n_mites": len(study),
             "n_left_out": len(survivals) - len(study),
             "n_dead": sum(1 for _time, dead in study if dead),

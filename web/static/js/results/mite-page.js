@@ -18,7 +18,7 @@ class MitePage extends ResultsPage {
     const nCorrected = mite.corrected.filter(Boolean).length;
     // Every mite runs on its own timer: a mite a live run added later from the
     // recording it was added in, which is its 0; the recordings before are not its.
-    const own = this.ownTimes(mite);
+    const own = this.clockOf(mite);
     const nNotYet = own.start;
     const mine = (i) => i >= nNotYet;
     const nAside = mite.censored.filter((gone, i) => gone && mine(i) && this.setAside(mite, i)).length;
@@ -95,7 +95,7 @@ class MitePage extends ResultsPage {
   // it was added (a mite there from the start: the run's times).
   drawScoreChart(mite, review) {
     const { results } = this;
-    const clock = this.ownTimes(mite);
+    const clock = this.clockOf(mite);
     this.clockChart($("chart-mite"), clock, {
       xLabel: clock.start ? "Time since the mite was added (min)" : undefined,
       yLabel: "Motion score",

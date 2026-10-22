@@ -12,8 +12,7 @@ class AnalysisMode {
   }
 
   async openFolder(dataDir) {
-    $("open-status").className = "hint";
-    $("open-status").textContent = "Opening…";
+    Hint.note($("open-status"), "Opening…");
     try {
       const opened = await post("/api/session", { data_dir: dataDir });
       opened.zones.forEach((zone) => { zone.label = zone.label || ""; });
@@ -24,8 +23,7 @@ class AnalysisMode {
       router.go("#/label");
       labelReader.read(this.workspace);
     } catch (error) {
-      $("open-status").className = "hint error";
-      $("open-status").textContent = error.message;
+      Hint.error($("open-status"), error.message);
     }
   }
 

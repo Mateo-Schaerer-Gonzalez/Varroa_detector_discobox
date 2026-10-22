@@ -115,8 +115,7 @@ class LastRecording {
   // first frame of the dataset stays.
   async play(dataset, last, svgs) {
     const status = $("last-status");
-    status.className = "hint clip-status";
-    status.innerHTML = `<span class="spinner"></span> Loading the last recording…`;
+    Hint.busy(status, `Loading the last recording…`, "clip-status");
     try {
       // The frames of a recording never change, so they need no cache-buster.
       const clip = await player.load(`/api/calibration/${cal.id}/plate-clip/${encodeURIComponent(dataset.id)}/${last.recording}`,
@@ -127,8 +126,7 @@ class LastRecording {
       player.playing = true;
       player.start(clip, (src) => shows.forEach((show) => show(src)));
     } catch (error) {
-      status.className = "hint clip-status error";
-      status.textContent = `${error.message} Showing the first frame.`;
+      Hint.error(status, `${error.message} Showing the first frame.`, "clip-status");
     }
   }
 }

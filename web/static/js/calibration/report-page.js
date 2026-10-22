@@ -222,8 +222,7 @@ class ReportPage {
       const chosen = [...document.querySelectorAll(".dataset-check:checked")].map((c) => c.value);
       if (!chosen.length) {
         check.checked = true;
-        $("dataset-status").className = "hint error";
-        $("dataset-status").textContent = "Keep at least one dataset.";
+        Hint.error($("dataset-status"), "Keep at least one dataset.");
         return;
       }
       change(chosen);
@@ -421,8 +420,7 @@ class ReportPage {
     $("checks-apply").addEventListener("click", () => {
       const value = Number($("checks-allowed").value);
       if (!($("checks-allowed").value !== "" && value >= 0 && value <= 100)) {
-        $("checks-status").className = "hint error";
-        $("checks-status").textContent = "Enter a number of checks per mite, 0 or more.";
+        Hint.error($("checks-status"), "Enter a number of checks per mite, 0 or more.");
         return;
       }
       const before = cal.checksAllowed;
@@ -436,8 +434,7 @@ class ReportPage {
     const value = Number($("threshold-input").value);
     const status = $("save-status");
     if (!(value > 0)) {
-      status.className = "hint error";
-      status.textContent = "Enter a positive number.";
+      Hint.error(status, "Enter a positive number.");
       return;
     }
     // The band to check by eye goes with the threshold when ticked.
@@ -445,8 +442,7 @@ class ReportPage {
     if ($("band-save")?.checked) {
       reviewBand = [Number($("band-low").value), Number($("band-high").value)];
       if (!(reviewBand[0] > 0 && reviewBand[1] > reviewBand[0])) {
-        status.className = "hint error";
-        status.textContent = "Enter both edges of the band, the lower one first, or untick it.";
+        Hint.error(status, "Enter both edges of the band, the lower one first, or untick it.");
         return;
       }
     }
@@ -462,12 +458,10 @@ class ReportPage {
       // Evaluate again, so "in use" is what was just saved.
       cal.takeReport(await cal.requestReport());
       this.draw();
-      $("save-status").className = "hint";
-      $("save-status").textContent = `Saved ${scoreText(saved.metric, saved.params, saved)} with threshold ${thr(saved.threshold)}${
-        saved.review_band ? ` and the band ${thr(saved.review_band[0])} to ${thr(saved.review_band[1])} to check by eye` : ""} to config.yaml. Analyses started from now on use them.`;
+      Hint.note($("save-status"), `Saved ${scoreText(saved.metric, saved.params, saved)} with threshold ${thr(saved.threshold)}${
+        saved.review_band ? ` and the band ${thr(saved.review_band[0])} to ${thr(saved.review_band[1])} to check by eye` : ""} to config.yaml. Analyses started from now on use them.`);
     } catch (error) {
-      status.className = "hint error";
-      status.textContent = error.message;
+      Hint.error(status, error.message);
     }
   }
 

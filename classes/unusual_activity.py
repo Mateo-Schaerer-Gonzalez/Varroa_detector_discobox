@@ -94,7 +94,7 @@ class UnusualActivity:
         for zone in analysis.zone_manager.zones:
             for mite in analysis.zone_mites(zone):
                 zone_of[id(mite)] = zone.id
-        mites = [{"id": mite.text, "x": (mite.x1 + mite.x2) / 2, "y": (mite.y1 + mite.y2) / 2,
+        mites = [{"id": mite.text, "x": mite.home[0], "y": mite.home[1],
                   "zone": zone_of.get(id(mite)), "activity": list(getattr(mite, "activity", [])),
                   "start": mite.start, "track": [None if box is None else [(box[0] + box[2]) / 2, (box[1] + box[3]) / 2]
                                                  for box in analysis.boxes_of(mite)]}

@@ -21,9 +21,8 @@ position, as the ground truth is saved, so they survive a change of detector
 settings that renumbers the mites. PokeSurvival draws the two curves.
 """
 
-import numpy as np
-
-from classes.survival import SurvivalAnalysis, kaplan_meier
+from classes import positions
+from classes.survival import death_after, kaplan_meier, own_time, since_start
 
 MOVED = "moved"      # the mite moved when poked: alive up to then
 UNMOVED = "unmoved"  # it did not: dead from then on
@@ -31,7 +30,7 @@ POKE_STATES = (MOVED, UNMOVED)
 
 
 class PokeTest:
-    def __init__(self, mites, n_recordings, saved=None, tolerance=10.0):
+    def __init__(self, mites, n_recordings, saved=None, tolerance=positions.TOLERANCE):
         """`mites`: [{id, zone_id, x, y[, start]}, ...]; `saved`: the rounds by position,
         as saved() gives them. A saved poke belongs to the nearest mite within
         `tolerance` pixels; those away from every mite, e.g. of detections
@@ -50,15 +49,10 @@ class PokeTest:
         """({mite id: state}, the entries of no mite): each entry to the closest
         mite within `tolerance` pixels, a mite and an entry used once."""
         entries = [entry for entry in entries if entry.get("state") in POKE_STATES]
-        pairs = sorted(
-            (float(np.hypot(mite["x"] - entry["x"], mite["y"] - entry["y"])), mite["id"], index)
-            for mite in self.mites for index, entry in enumerate(entries))
-        states, used = {}, set()
-        for distance, mite_id, index in pairs:
-            if distance <= tolerance and mite_id not in states and index not in used:
-                states[mite_id] = entries[index]["state"]
-                used.add(index)
-        return states, [entry for index, entry in enumerate(entries) if index not in used]
+        paired = positions.closest_pairs(self.mites, entries, tolerance)
+        used = set(paired.values())
+        return ({mite_id: entries[index]["state"] for mite_id, index in paired.items()},
+                [entry for index, entry in enumerate(entries) if index not in used])
 
     def _find(self, after):
         return next((poke_round for poke_round in self.rounds if poke_round["after"] == after), None)
@@ -194,7 +188,7 @@ class PokeSurvival:
                 start = mite.get("start", 0)
 
                 def death(calls):
-                    return max(SurvivalAnalysis.last_movement(calls) + 1, start)
+                    return max(death_after(calls), start)
 
                 rows.append({"n_recordings": len(self.times), **({"start": start} if start else {}),
                              "death": death(self.moving[mite["id"]]),
@@ -233,21 +227,21 @@ class PokeSurvival:
         final_poke = any(n in (mite["dead_from"], mite["alive_until"]) for mite in poked)
         grid = list(times) + ([times[-1] + (times[-1] - times[-2] if n > 1 else 1.0)] if final_poke else [])
 
-        def zero(mite):  # a mite added later counts its time from its start
-            return grid[mite.get("start", 0)] - grid[0]
+        def at(mite, recording):  # a mite added later counts its time from its start
+            return own_time(grid, mite.get("start", 0), recording)
 
         def by_poke(mite):
             if mite["dead_from"] is not None:
-                return grid[mite["dead_from"]] - zero(mite), True
-            return grid[mite["alive_until"]] - zero(mite), False
+                return at(mite, mite["dead_from"]), True
+            return at(mite, mite["alive_until"]), False
 
         def by_calls(mite, death):
             if death < mite["n_recordings"]:
-                return grid[death] - zero(mite), True
-            return grid[mite["n_recordings"] - 1] - zero(mite), False
+                return at(mite, death), True
+            return at(mite, mite["n_recordings"] - 1), False
 
         def curve(survivals, until):
-            described = kaplan_meier(survivals, grid)
+            described = kaplan_meier(survivals, since_start(grid, 0))
             return {**{key: values[:until] + [None] * (len(grid) - until) for key, values in described.items()},
                     "n_mites": len(survivals), "n_dead": sum(1 for _time, dead in survivals if dead)}
 

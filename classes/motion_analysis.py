@@ -33,7 +33,7 @@ import numpy as np
 from classes.analyzer import Analyzer
 from classes.frame_source import Frame, frame_times, recordings
 from classes.mite import Mite
-from classes.zones import mites_in_reading_order
+from classes.zones import mite_ids
 
 DETECTION_LOCK = threading.Lock()
 # Pixels: a blob nearer than this to a mite's centre leaves its box where it is;
@@ -158,7 +158,7 @@ class MotionAnalysis:
                                  key=lambda item: item[0])
             boxes = [box for start, box in zip(self.starts, boxes) if start == 0]
         self.masked = detect_mites(self.zone_manager, frame.image, self.analyzer, boxes)
-        self.mites = [mite for zone in self.zone_manager.zones for mite in zone.mites]
+        self.mites = self.zone_manager.mites
         self._zone_mites = {id(zone): list(zone.mites) for zone in self.zone_manager.zones}
         self._zone_of = {id(mite): zone for zone in self.zone_manager.zones for mite in zone.mites}
 
@@ -220,22 +220,19 @@ class MotionAnalysis:
         added = [mite for mite in (self._add(box, number) for box in boxes) if mite is not None]
         for zone in self.zone_manager.zones:
             new = [mite for mite in added if self._zone_of[id(mite)] is zone]
-            before = len(self._zone_mites[id(zone)]) - len(new) if new else 0
-            for offset, mite in enumerate(mites_in_reading_order(new), start=1):
-                mite.text = f"{zone.id}.{before + offset}"
+            for mite, text in mite_ids(new, zone.id, len(self._zone_mites.get(id(zone), [])) - len(new)):
+                mite.text = text
 
     def _add(self, box, number):
         """A mite added when recording `number` begins, after the mites of its
         zone (numbered by _add_all()); None when it is in no zone."""
         with DETECTION_LOCK:
             mite = Mite(*box, config=self.analyzer.config)
-        zone = next((zone for zone in self.zone_manager.zones if zone.id is not None and mite in zone), None)
+        zone = self.zone_manager.zone_of(mite)
         if zone is None:
             return None
         mite.start = number
-        in_zone = self._zone_mites.setdefault(id(zone), [])
-        mite.text = f"{zone.id}.{len(in_zone) + 1}"
-        in_zone.append(mite)
+        self._zone_mites.setdefault(id(zone), []).append(mite)
         zone.add_mite(mite)
         self._zone_of[id(mite)] = zone
         self.mites.append(mite)

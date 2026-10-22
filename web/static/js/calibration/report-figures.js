@@ -93,8 +93,7 @@ class ReportFigures {
     Charts.line(container, {
       x: times,
       yLabel: "Survival rate (%)",
-      yMin: 0, yMax: 100,
-      yFormat: (v) => `${Math.round(v)}`,
+      ...Charts.PERCENT_AXIS,
       noDirectLabels: true,
       series: this.survivalSeries(curves, marks),
       tooltipExtra: () => this.survivalNote(curves, marks),
@@ -129,8 +128,7 @@ class ReportFigures {
         x: r.times,
         height: 190,
         yLabel: "Survival rate (%)",
-        yMin: 0, yMax: 100,
-        yFormat: (v) => `${Math.round(v)}`,
+        ...Charts.PERCENT_AXIS,
         series: this.survivalSeries(curves, marks, { legend: false }),
         tooltipExtra: () => this.survivalNote(curves, marks),
       });
@@ -344,8 +342,7 @@ class ReportFigures {
     Charts.line(container, {
       x: curves.times,
       yLabel: "Survival rate (%)",
-      yMin: 0, yMax: 100,
-      yFormat: (v) => `${Math.round(v)}`,
+      ...Charts.PERCENT_AXIS,
       noDirectLabels: true,
       series: [
         { name: `detector, in use ${thr(r.threshold)}`, values: curves.detector.alive, color: token("--series-1"), dashed: true, step: true, markers: false },

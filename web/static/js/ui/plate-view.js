@@ -71,6 +71,18 @@ class PlateView {
     return Math.max(10, (zone.x2 - zone.x1) / 28);
   }
 
+  // A mite's clip (the server's {x, y, width, height}) as a picture of its cut of
+  // the recording `src`, with a ring of the class `ringClass` round `mite` ({x, y,
+  // r}), `ring` pixels across at least.
+  static clipPicture(clip, src, mite, ring, ringClass) {
+    const svg = PlateView.crop(clip.x, clip.y, clip.width, clip.height, src, clip);
+    const image = svg.querySelector("image");
+    image.setAttribute("x", clip.x);
+    image.setAttribute("y", clip.y);
+    svg.appendChild(PlateView.svgEl("circle", { cx: mite.x, cy: mite.y, r: Math.max(ring, mite.r * 2.5), class: ringClass }));
+    return svg;
+  }
+
   static svgEl(name, attrs) {
     const node = document.createElementNS(PlateView.SVG, name);
     Object.entries(attrs).forEach(([k, v]) => node.setAttribute(k, v));
