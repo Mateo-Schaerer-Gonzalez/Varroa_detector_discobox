@@ -51,6 +51,11 @@ class ResultGroups:
         """The recording the mite's follow-up starts in: 0 but for a mite added later."""
         return self._started.get(mite["id"], 0)
 
+    def zone_start(self, zone_id):
+        """The recording a zone's follow-up starts in, its own 0: that of its
+        first mites, so 0 but for a zone whose mites a live run all added later."""
+        return min((self.start(mite) for mite in self.mites_in([zone_id])), default=0)
+
     def censored(self, mite):
         """Per recording, whether the user marked the mite gone in it, e.g. fallen
         off (classes/call_corrections.py)."""

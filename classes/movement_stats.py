@@ -95,7 +95,10 @@ class MovementReport:
             zones        + n_moving (mites moving per recording), n_seen (mites there
                            per recording, not gone), with mites a live run added later
                            n_followed (per recording, the mites added by then: those
-                           of them not seen are gone), n_moving_observations,
+                           of them not seen are gone); for a zone whose mites were all
+                           added later, start (the recording its first ones were added
+                           in) and own_times (each recording's time from then on, its
+                           own clock), n_moving_observations,
                            n_never_moved, overall_mean_score and rests (see zone_rests());
                            None for a zone without mites
             group_rows   [{group, zones (ids), n_mites, moving_scores}] for the groups
@@ -145,6 +148,10 @@ class MovementReport:
         followed = {}
         if self.groups.any_added:
             followed["n_followed"] = [sum(1 for mite in mites if self.groups.start(mite) <= recording) for recording in range(len(self.times))]
+        start = self.groups.zone_start(zone["id"])
+        if start:
+            zero = self.times[start]
+            followed.update({"start": start, "own_times": [round(time - zero, 2) for time in self.times[start:]]})
         return {
             "n_moving": [sum(1 for mite in mites if mite["moving"][recording]) for recording in range(len(self.times))],
             "n_seen": [sum(1 for gone in censored if not gone[recording]) for recording in range(len(self.times))],

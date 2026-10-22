@@ -432,7 +432,12 @@ beside them, the LT50s and the log-rank tests (and the calibration's survival)
 are in time since each mite was first followed: every mite runs on its own
 timer. Its lifeline starts at 0, its page shows only its own recordings, timed
 from when it was added (its score chart, its table, its last movement), and says
-"died 20 min after it was added (at 80 min of the run)". Before it was added,
+"died 20 min after it was added (at 80 min of the run)". A zone whose mites
+were all added during the run does the same: it is not on the plate map (nor
+in the playback) before its first mites were added, its page shows nothing
+for those recordings, and its charts, its survival rate (with its group's beside
+it, read on the same clock) and its card under *Movement per zone* start at 0
+when they were added. Before it was added,
 and once it counts as dead, its recordings say *not added yet* / *dead, not
 followed* (in the playback too, where its square is black: nothing was saved)
 and cannot be set by hand. The same holds on the calibration pages: on the

@@ -95,32 +95,22 @@ class MitePage extends ResultsPage {
   // it was added (a mite there from the start: the run's times).
   drawScoreChart(mite, review) {
     const { results } = this;
-    const { times: x, start } = this.ownTimes(mite);
-    const mine = (values) => values.slice(start);
-    const domain = this.timeDomain();
-    Charts.line($("chart-mite"), {
-      x,
-      xDomain: domain && [0, domain[1] - results.times[start]],
-      xLabel: start ? "Time since the mite was added (min)" : undefined,
-      enterFrom: resultsView.enterFrom == null ? null : Math.max(0, resultsView.enterFrom - start),
-      selected: ctx.shown >= start ? ctx.shown - start : null,
-      onXClick: (index) => resultsView.showRecording(index + start),
+    const clock = this.ownTimes(mite);
+    this.clockChart($("chart-mite"), clock, {
+      xLabel: clock.start ? "Time since the mite was added (min)" : undefined,
       yLabel: "Motion score",
       noDirectLabels: true,
       threshold: { value: results.threshold, label: "threshold" },
       range: review.review,
       series: [{
         name: `Mite ${mite.id}`,
-        values: mine(mite.scores),
+        values: mite.scores,
         color: token("--ink"),
         width: 1.5,
-        pointColors: mine(mite.moving.map((moving, i) => token(mite.censored[i] ? "--muted" : moving ? "--moving" : "--still"))),
+        pointColors: mite.moving.map((moving, i) => token(mite.censored[i] ? "--muted" : moving ? "--moving" : "--still")),
       }],
-      tooltipExtra: (k) => {
-        const i = k + start;
-        return `<div class="tip-note">${this.unfollowed(mite, i) || (mite.censored[i] ? "gone" : mite.moving[i] ? "moving" : "still")}${
-          mite.corrected[i] ? ", corrected by hand" : mite.to_check.includes(i) ? ", to check" : ""}${start ? ` · at ${minutes(results.times[i])} of the run` : ""}</div>`;
-      },
+      tooltipExtra: (i) => `<div class="tip-note">${this.unfollowed(mite, i) || (mite.censored[i] ? "gone" : mite.moving[i] ? "moving" : "still")}${
+        mite.corrected[i] ? ", corrected by hand" : mite.to_check.includes(i) ? ", to check" : ""}${clock.start ? ` · at ${minutes(results.times[i])} of the run` : ""}</div>`,
     });
   }
 

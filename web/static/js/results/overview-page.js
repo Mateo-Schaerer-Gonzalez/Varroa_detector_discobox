@@ -120,7 +120,8 @@ class OverviewPage extends ResultsPage {
     });
 
     const nMovingShown = (zone) => zone.n_moving[ctx.shown];
-    ctx.zonesWithMites().forEach((zone) => {
+    // A zone whose mites a live run added later is not on the map before then: nothing to open.
+    ctx.zonesWithMites().filter((zone) => ctx.shown >= this.zoneClock(zone).start).forEach((zone) => {
       const color = groupColor(zone.label || "unlabeled", groups);
       const link = document.createElement("a");
       link.className = "zone result";
@@ -147,8 +148,8 @@ class OverviewPage extends ResultsPage {
       plate.append(link, text);
     });
 
-    // A dot per mite: moving or still in the recording shown.
-    results.mites.forEach((mite) => {
+    // A dot per mite: moving or still in the recording shown; none before a live run added it.
+    results.mites.filter((mite) => ctx.shown >= this.ownTimes(mite).start).forEach((mite) => {
       const dot = document.createElement("span");
       dot.className = `mite-dot ${mite.censored[ctx.shown] ? "rejected" : this.movingShown(mite) ? "moving" : "still"}`;
       dot.style.left = percent(mite.x, results.image.width);
@@ -178,7 +179,11 @@ class OverviewPage extends ResultsPage {
       <div class="zone-card-group">${Markup.groupTag(zone.label || "unlabeled", color)}</div>`;
       const plot = document.createElement("div");
       plot.className = "zone-card-plot";
-      Charts.spark(plot, { values: zone.moving, color, step: false, x: this.results.times, xDomain: this.timeDomain() });
+      // on the zone's own clock: from when its first mites were added, for one added during a live run
+      const { times, start } = this.zoneClock(zone);
+      const domain = this.timeDomain();
+      Charts.spark(plot, { values: zone.moving.slice(start), color, step: false, x: times,
+        xDomain: start && domain ? [0, domain[1] - this.results.times[start]] : domain });
       card.appendChild(plot);
       container.appendChild(card);
     });

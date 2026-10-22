@@ -222,6 +222,36 @@ class ResultsPage {
     return mite.own_times ? { times: mite.own_times, start: mite.start } : { times: this.results.times, start: 0 };
   }
 
+  // The same for a zone: a zone whose mites were all added during a live run runs
+  // on its own clock from the recording its first ones were added in.
+  zoneClock(zone) {
+    return zone.own_times ? { times: zone.own_times, start: zone.start } : { times: this.results.times, start: 0 };
+  }
+
+  // timeChart() on a clock ({times, start}, ownTimes() or zoneClock()): only the
+  // recordings from `start` on, at their own times. A series' values (and band and
+  // point colours) are per recording of the run, cut here, or with `own` already on
+  // the clock. tooltipExtra and clicks get the run's recording index.
+  clockChart(container, { times, start }, options) {
+    if (!start) { this.timeChart(container, options); return; }
+    const cut = (values) => values && values.slice(start);
+    const domain = this.timeDomain();
+    const series = options.series.map((s) => (s.own ? s : {
+      ...s, values: cut(s.values), pointColors: cut(s.pointColors), band: s.band && { low: cut(s.band.low), high: cut(s.band.high) },
+    }));
+    Charts.line(container, {
+      ...options,
+      x: times,
+      series,
+      xDomain: domain && [0, domain[1] - this.results.times[start]],
+      xLabel: options.xLabel || "Time since its first mites were added (min)",
+      enterFrom: resultsView.enterFrom == null ? null : Math.max(0, resultsView.enterFrom - start),
+      selected: ctx.shown >= start ? ctx.shown - start : null,
+      onXClick: (index) => resultsView.showRecording(index + start),
+      tooltipExtra: options.tooltipExtra && ((index) => options.tooltipExtra(index + start)),
+    });
+  }
+
   // Under the survival numbers, when a live run added mites: whose clock they are on.
   addedNote() {
     return this.results.started && Object.keys(this.results.started).length

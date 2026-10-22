@@ -230,6 +230,11 @@ class PlaybackPage extends ResultsPage {
       card.dataset.state = state;
       card.querySelector(".playback-call").textContent = text;
     });
+    // A zone whose mites a live run all added later is not there before then.
+    document.querySelectorAll("#playback-grid .playback-zone").forEach((section) => {
+      const zone = ctx.zone(Number(section.dataset.zone));
+      section.hidden = Boolean(zone) && recording < this.zoneClock(zone).start;
+    });
   }
 
   // The next frame after its delay, waiting for its recording when it has not come yet.

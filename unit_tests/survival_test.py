@@ -262,7 +262,8 @@ def test_a_mite_added_later_counts_its_life_from_when_it_was_added():
     results["times"], results["censored"], results["started"] = [0, 10, 20, 30], {"0": [0]}, {"0": 1}
     report = SurvivalReport(results, 5).describe()
     assert report["mites"]["0"] == {"in_study": True, "time": 10, "dead": True, "lost": False, "added": 10, "at": 20}
-    assert report["zones"][1]["alive"] == [100.0, 0.0, 0.0, 0.0] and report["zones"][1]["n_alive"] == [1, 0, 0, 0]
+    # its zone holds only it, so runs on its own clock too: from 10 min on
+    assert report["zones"][1]["alive"] == [100.0, 0.0, 0.0] and report["zones"][1]["n_alive"] == [1, 0, 0]
 
 
 def test_the_count_of_mites_alive_is_the_same_on_both_clocks_without_mites_added_later():
@@ -289,3 +290,26 @@ def test_each_mites_lifeline():
     assert mites["0"] == {"in_study": False, "time": None, "dead": None, "lost": False}  # NEVER
     assert mites["1"] == {"in_study": True, "time": 10, "dead": True, "lost": False}  # FIRST_ONLY: dies at 10
     assert mites["2"] == {"in_study": True, "time": 20, "dead": False, "lost": False}  # ALWAYS: censored at the end
+
+
+def test_a_zone_whose_mites_were_all_added_later_runs_on_its_own_clock():
+    # zone 1's only mite added at 10 min, dead 10 min later; zone 2's mite there from the start, in the same group
+    results = results_with({(1, "venom"): [[False, True, False, False]], (2, "venom"): [[True, True, True, False]]})
+    results["times"], results["censored"], results["started"] = [0, 10, 20, 30], {"0": [0]}, {"0": 1}
+    zones = SurvivalReport(results, 5).describe()["zones"]
+    # from its start on only, read on its own clock: 0, 10 and 20 min after it was added
+    assert zones[1]["start"] == 1 and zones[1]["alive"] == [100.0, 0.0, 0.0] and zones[1]["n_alive"] == [1, 0, 0]
+    assert len(zones[1]["alive_ci"]["low"]) == 3
+    # its group beside it, read at the same times: zone 2's mite died at 30 min
+    assert zones[1]["group_alive"] == [100.0, 50.0, 50.0]
+    assert "start" not in zones[2] and len(zones[2]["alive"]) == 4
+
+
+def test_a_zone_on_its_own_clock_has_its_own_times():
+    from classes.movement_stats import MovementReport
+    results = results_with({(1, "venom"): [[False, True, False, False]], (2, "venom"): [[True, True, True, False]]})
+    results["times"], results["censored"], results["started"] = [0, 10, 20, 30], {"0": [0]}, {"0": 1}
+    for mite in results["mites"]:
+        mite["scores"] = [1.0] * 4
+    zones = {zone["id"]: zone for zone in MovementReport(results).describe()["zones"]}
+    assert (zones[1]["start"], zones[1]["own_times"]) == (1, [0, 10, 20]) and "start" not in zones[2]

@@ -151,32 +151,42 @@ class SurvivalAnalysis:
                 counts[recording] += 1
         return counts
 
-    def alive_numbers(self, movings):
+    def alive_numbers(self, movings, at=None):
         """How many of the mites are alive at each recording's time on the clock
         of survival(), as alive_percent() counts them: alive_counts() when every
         mite was there from the first recording, but a mite added later counts
-        from its own start, as if it had been there from the first."""
+        from its own start, as if it had been there from the first. `at`: other
+        times on that clock to count them at (own_clock())."""
         survivals = [self.survival(moving) for moving in movings]
-        return [sum(1 for time, dead in survivals if (time > at if dead else time >= at)) for at in self.times]
+        return [sum(1 for time, dead in survivals if (time > when if dead else time >= when))
+                for when in (self.times if at is None else at)]
 
-    def alive_percent(self, movings):
+    def own_clock(self, start):
+        """The times of the recordings from `start` on, on the clock of
+        survival() with `start` as its 0: where a zone whose mites were all
+        added at `start` has its survival read."""
+        return [self.times[recording] - self.times[start] + self.times[0] for recording in range(start, len(self.times))]
+
+    def alive_percent(self, movings, at=None):
         """The share of the mites alive in each recording, in percent; None
         throughout without mites. With a mite gone before the last recording it
         is the Kaplan-Meier estimate, which takes that mite out of the count
-        from then on instead of counting it as dead."""
+        from then on instead of counting it as dead. `at`: other times to read
+        it at, on the clock of survival() (own_clock())."""
+        times = self.times if at is None else at
         if not movings:
-            return [None] * len(self.times)
-        if any(self.followed(moving) < len(self.times) - 1 or start_of(moving) for moving in movings):
-            return kaplan_meier([self.survival(moving) for moving in movings], self.times)["alive"]
+            return [None] * len(times)
+        if at is not None or any(self.followed(moving) < len(self.times) - 1 or start_of(moving) for moving in movings):
+            return kaplan_meier([self.survival(moving) for moving in movings], times)["alive"]
         return [100 * count / len(movings) for count in self.alive_counts(movings)]
 
-    def alive_ci(self, movings, confidence=0.95):
-        """The confidence interval of alive_percent() in each recording, in percent,
-        as {low, high}. With the mites censored only at the end, alive_percent()
-        is the Kaplan-Meier estimate; the interval is scipy's, by Greenwood's
-        formula on the log-log scale (see kaplan_meier()). None throughout
-        without mites."""
-        curve = kaplan_meier([self.survival(moving) for moving in movings], self.times, confidence)
+    def alive_ci(self, movings, confidence=0.95, at=None):
+        """The confidence interval of alive_percent() in each recording (or at
+        `at`), in percent, as {low, high}. With the mites censored only at the
+        end, alive_percent() is the Kaplan-Meier estimate; the interval is
+        scipy's, by Greenwood's formula on the log-log scale (see
+        kaplan_meier()). None throughout without mites."""
+        curve = kaplan_meier([self.survival(moving) for moving in movings], self.times if at is None else at, confidence)
         return {"low": curve["low"], "high": curve["high"]}
 
     def lt50(self, movings):
@@ -310,21 +320,29 @@ class SurvivalReport:
                             interval (see alive_ci()), of its n_mites in the study;
                             n_left_out were never seen moving
             zones           {zone id: {alive, alive_ci, n_alive, n_mites, n_left_out}}: the
-                            same per zone, and how many are alive (alive_numbers())
+                            same per zone, and how many are alive (alive_numbers()); a
+                            zone whose mites were all added later is on its own clock:
+                            "start", the recording its first ones were added in, those
+                            numbers from there on only, read at own_clock(start), and
+                            "group_alive", its group's survival rate read there too
             mites           {mite id: {in_study, time, dead, lost[, added, at]}}: each
                             mite's lifeline, see lifeline()
             n_left_out      the mites never seen moving, left out
             log_rank        the groups against the negative controls, see log_rank()
         """
         analysis = self.analysis
+        group_of = {zone["id"]: [z["id"] for z in group_zones] for _group, group_zones in self.groups.rows() for zone in group_zones}
         zones = {}
         for zone in self.groups.zones:
             movings = self.movings([zone["id"]])
+            start = self.groups.zone_start(zone["id"])
+            at = analysis.own_clock(start) if start else None
             zones[zone["id"]] = {
-                "alive": analysis.alive_percent(movings),
-                "alive_ci": analysis.alive_ci(movings),
-                "n_alive": analysis.alive_numbers(movings),
+                "alive": analysis.alive_percent(movings, at),
+                "alive_ci": analysis.alive_ci(movings, at=at),
+                "n_alive": analysis.alive_numbers(movings, at),
                 **self.counts([zone["id"]]),
+                **({"start": start, "group_alive": analysis.alive_percent(self.movings(group_of[zone["id"]]), at)} if start else {}),
             }
         groups = []
         for group, group_zones in self.groups.rows():
