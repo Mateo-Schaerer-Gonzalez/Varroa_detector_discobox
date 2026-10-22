@@ -99,3 +99,17 @@ def test_from_the_recording_mites_were_added_in_the_plate_is_drawn_from_the_fram
     assert previews == [first, first, "preview_from_2.jpg", "preview_from_2.jpg", "preview_from_4.jpg"]
     assert (out_dir / "preview_from_4.jpg").read_bytes() == b"jpeg 4" and not (out_dir / "preview_from_9.jpg").exists()
     assert pipeline._added_previews(tmp_path / "folder", out_dir, 3) == [first] * 3  # no mites added
+
+
+def test_the_results_of_a_run_that_added_mites_draw_each_recording_on_the_frame_they_were_found_on(tmp_path):
+    from types import SimpleNamespace
+    data_dir, out_dir = tmp_path / "run", tmp_path / "results"
+    (data_dir / pipeline.ADDED_FRAMES_DIRNAME).mkdir(parents=True)
+    (data_dir / pipeline.ADDED_FRAMES_DIRNAME / "from_1.jpg").write_bytes(b"first")
+    run = SimpleNamespace(frames="rois", data_dir=data_dir, n_recordings=3)
+    previews = pipeline._added_previews(run.data_dir, out_dir, run.n_recordings, again=False)
+    assert previews == [pipeline.PREVIEW_NAME, "preview_from_1.jpg", "preview_from_1.jpg"]
+    # in the run's own results, a copy already there stays
+    (out_dir / "preview_from_1.jpg").write_bytes(b"kept")
+    pipeline._added_previews(run.data_dir, out_dir, run.n_recordings, again=False)
+    assert (out_dir / "preview_from_1.jpg").read_bytes() == b"kept"

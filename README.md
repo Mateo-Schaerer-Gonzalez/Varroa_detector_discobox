@@ -472,7 +472,7 @@ Only what the analysis reads of the recordings is saved, to `recordings/<run nam
 |---|---|
 | `first_frame.png` | The first frame of the first recording, whole: the mites are found and the zones labelled on it |
 | `rois/mite_000.mkv` ... | Per mite, its surroundings (its box and 32 px round it, at least 40 px round its centre) in every frame of every recording it was followed in, one recording after the other: one lossless (FFV1) grey video, its region moving with the mite |
-| `added_frames/from_<n>.jpg` | The lit frame mites were added on, `n` the recording they were added in: the ground-truth and poke-test pages draw the plate from that recording on with it, so a mite has no ring before it is there |
+| `added_frames/from_<n>.jpg` | The lit frame mites were added on, `n` the recording they were added in: the result pages (plate map, zone and mite crops), the ground-truth and the poke-test pages draw the plate from that recording on with it, so the mites added are seen where they are drawn, and a mite has no ring before it is there |
 | `rois/index.json` | Where each mite was found (and from which recording, for one added), and per recording its name, frame rate, number of frames, where each mite was in it (none once it counted as dead) and the blobs found on its whole first and last frame (fly-offs, see below) |
 
 While the run goes on, each recording is saved as its own short videos in

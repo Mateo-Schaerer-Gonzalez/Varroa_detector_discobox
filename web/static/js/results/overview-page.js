@@ -113,7 +113,7 @@ class OverviewPage extends ResultsPage {
   drawPlate(groups) {
     const { results } = this;
     const plate = $("result-plate");
-    const place = PlateView.overlay(plate, ctx.fileUrl(results.preview), results.image);
+    const place = PlateView.overlay(plate, ctx.fileUrl(this.previewFor()), results.image);
 
     results.zones.filter((zone) => !zone.n_mites).forEach((zone) => {
       plate.appendChild(PlateView.emptyZone(place, zone, `Zone ${zone.id}: no mites detected`));

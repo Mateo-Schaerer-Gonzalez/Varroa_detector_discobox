@@ -538,7 +538,7 @@ def _detect_and_score(data_dir, coords_file, labels=None, reject=True, score=Tru
             if kept is not None:
                 kept.keep(key, analysis.mites, analysis.blobs)
     _arrange(analysis, data_dir, labels, reject)
-    return _run_view(analysis, "rois" if rois else "whole")
+    return _run_view(analysis, "rois" if rois else "whole", data_dir)
 
 
 def _arrange(analysis, data_dir, labels, reject):
@@ -567,11 +567,14 @@ def _activity_reach(mite):
     return float(mite.radius) + Analyzer.roi_padding(mite.metric, params)
 
 
-def _run_view(analysis, frames):
+def _run_view(analysis, frames, data_dir=None):
     """`frames`: what was saved of the recordings, for the pages: "whole"
-    frames, or the mites' "rois" alone (classes/roi_recordings.py)."""
+    frames, or the mites' "rois" alone (classes/roi_recordings.py); `data_dir`
+    the recordings' folder, where a live run keeps the frames mites were added
+    on (_added_previews())."""
     return SimpleNamespace(
         frames=frames,
+        data_dir=data_dir,
         zone_manager=analysis.zone_manager,
         analyzer=analysis.analyzer,
         first_frame=analysis.first_frame,
@@ -887,6 +890,12 @@ def _results(run, out_dir, labels, write_files=True, corrections=None, normalize
         }
     )
     results.update(changes)
+    if run.frames == "rois" and getattr(run, "data_dir", None) is not None:
+        # The plate as it was in each recording, so a mite added during the run is
+        # drawn where it can be seen: only a live run that added mites has them.
+        previews = _added_previews(run.data_dir, out_dir, run.n_recordings, again=False)
+        if any(name != PREVIEW_NAME for name in previews):
+            results["previews"] = previews
     if getattr(run, "activity", None) is not None:
         results["activity"] = run.activity.describe()
     if normalizer is not None:
@@ -1022,12 +1031,14 @@ def _calibration_session(data_dir, coords_file, out_dir, names=None):
     return stored
 
 
-def _added_previews(data_dir, out_dir, n_recordings):
-    """The picture of the plate for each recording, for the calibration pages to
-    draw the mites on: the first frame (PREVIEW_NAME), or from a recording a live
-    run added mites in, the frame they were found on (live_add_mites()), copied
-    to `out_dir` as preview_from_<recording>.jpg. So a mite has no ring before
-    it is there to see."""
+def _added_previews(data_dir, out_dir, n_recordings, again=True):
+    """The picture of the plate for each recording, for the calibration and
+    result pages to draw the mites on: the first frame (PREVIEW_NAME), or from a
+    recording a live run added mites in, the frame they were found on
+    (live_add_mites()), copied to `out_dir` as preview_from_<recording>.jpg. So a
+    mite is drawn where it can be seen. Without `again`, a copy already there
+    stays: `out_dir` is the run's own (its results), where it can only be this
+    run's, and a frame is final once its recording is analysed."""
     previews = [PREVIEW_NAME] * n_recordings
     folder = Path(data_dir) / ADDED_FRAMES_DIRNAME
     added = sorted((int(path.stem.split("_")[1]), path) for path in folder.glob("from_*.jpg")
@@ -1036,7 +1047,9 @@ def _added_previews(data_dir, out_dir, n_recordings):
         if start >= n_recordings:
             continue
         name = f"preview_from_{start}.jpg"
-        shutil.copyfile(path, Path(out_dir) / name)  # anew: `out_dir` may have shown another dataset
+        if again or not (Path(out_dir) / name).is_file():  # anew: `out_dir` may have shown another dataset
+            Path(out_dir).mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(path, Path(out_dir) / name)
         previews[start:] = [name] * (n_recordings - start)
     return previews
 
@@ -3235,7 +3248,7 @@ def _publish_live(run, write_files):
     going = write_files and run.session.state != "finished"
     _arrange(run.analysis, run.run_dir, labels, True)
     # The scores are normalised over a whole run, so not while it goes on.
-    results = _results(_run_view(run.analysis, _live_frames(run)), run.out_dir, labels, False,
+    results = _results(_run_view(run.analysis, _live_frames(run), run.run_dir), run.out_dir, labels, False,
                        corrections=CallCorrections(run.run_dir), normalizer=ScoreNormalizer())
     if write_files:
         if not run.preview_written:  # the first frame, which the pages draw on: it never changes
@@ -3477,7 +3490,7 @@ def _write_live_files(run):
     files are written."""
     run.files_due = None  # a recording from now on is in the next write
     with run.session.lock:
-        view = _run_view(run.analysis, _live_frames(run))
+        view = _run_view(run.analysis, _live_frames(run), run.run_dir)
         mite_data, _changes = _mite_table(view, CallCorrections(run.run_dir), ScoreNormalizer())
         annotated = _annotated(view)
     _write_files(annotated, run.out_dir, mite_data)

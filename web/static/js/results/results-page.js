@@ -366,7 +366,9 @@ class ResultsPage {
 
   showFirstFrame(status) {
     status.className = "hint clip-status";
-    status.textContent = "Only the mites' surroundings are saved of these recordings, so this is the first frame. Open a mite to play its recording.";
+    status.textContent = this.previewFor() === this.results.preview
+      ? "Only the mites' surroundings are saved of these recordings, so this is the first frame. Open a mite to play its recording."
+      : "Only the mites' surroundings are saved of these recordings, so this is the frame the mites added last before this recording were found on. Open a mite to play its recording.";
   }
 
   // The clip a mite's close-up plays: its zone's, or its own where only the mites' surroundings are saved.
@@ -382,9 +384,17 @@ class ResultsPage {
     return (name) => `/api/session/${sessionId}/file/${name}`;
   }
 
-  // A crop of the first frame.
+  // The picture of the plate for a recording: the first frame, or once a live run
+  // added mites, the frame they were found on (the server's results.previews), so
+  // they are drawn where they can be seen.
+  previewFor(recording = ctx.shown) {
+    const { previews, preview } = this.results;
+    return previews?.[Math.min(Math.max(recording, 0), previews.length - 1)] || preview;
+  }
+
+  // A crop of that picture for the recording shown.
   crop(x, y, w, h) {
-    return PlateView.crop(x, y, w, h, ctx.fileUrl(this.results.preview), this.results.image);
+    return PlateView.crop(x, y, w, h, ctx.fileUrl(this.previewFor()), this.results.image);
   }
 
   // ● and ○ per recording, – where the mite is gone, the one on screen underlined,
