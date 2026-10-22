@@ -37,7 +37,7 @@ def camera(small_session, monkeypatch):
 
 def test_a_live_run_saves_a_folder_folder_mode_reads_the_same(tmp_path, recordings_root, camera, capsys):
     out = tmp_path / "live_out"
-    assert main.main([*camera(), "--fps", "30", "--run-name", "cli run", "--out-dir", str(out)]) == 0
+    assert main.main([*camera(), "--run-name", "cli run", "--out-dir", str(out)]) == 0
     printed = capsys.readouterr().out
     assert "Test run cli run: Folder camera (small_session)" in printed
     assert "3/3" in printed and "30 mites across 3 recordings" in printed

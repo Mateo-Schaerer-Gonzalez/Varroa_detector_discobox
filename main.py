@@ -9,7 +9,7 @@ Live, from the Discobox camera -- a test run with the settings of settings.txt
 (the ones the web page saves), analysed as each recording is captured:
 
     python main.py --list-cameras
-    python main.py --live [--camera-id ID] [--fps 30] [--dead-after MIN] [--run-name NAME] [--no-save-frames]
+    python main.py --live [--camera-id ID] [--dead-after MIN] [--run-name NAME] [--no-save-frames]
 
 The results go to results/<folder name>/ unless another folder is given. The
 recordings of a live run are saved to recordings/<run name>/, a folder the first
@@ -42,7 +42,6 @@ def parse_args(argv):
     live.add_argument("--list-cameras", action="store_true", help="list the cameras Vimba X sees and exit")
     live.add_argument("--live", action="store_true", help="run a Discobox test run from the camera")
     live.add_argument("--camera-id", help="the camera to use (default: the only one connected)")
-    live.add_argument("--fps", type=int, help="frames per second (default: settings.txt)")
     live.add_argument("--dead-after", type=int, metavar="MIN",
                       help="minutes a mite must be still to count as dead (default: settings.txt)")
     live.add_argument("--run-name", help="the test run's name (default test_run_<date>)")
@@ -87,7 +86,7 @@ def analyse_folder(args):
 
 def _settings_given(args):
     """The test-run settings given on the command line, over settings.txt."""
-    given = {"fps": args.fps, "death_minutes": args.dead_after}
+    given = {"death_minutes": args.dead_after}
     return {name: value for name, value in given.items() if value is not None} or None
 
 

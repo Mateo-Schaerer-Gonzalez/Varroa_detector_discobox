@@ -374,9 +374,13 @@ is analysed as soon as it is in, and the usual result pages fill in as the run g
    The run's name, whether its recordings are saved and every setting can
    still be changed after connecting, until the test run starts. The test run's settings are the
    Discobox app's (time between recordings, fan and LED durations and
-   intensities, frames per recording, frames per second), but the length of
-   the run is set as the *experiment duration, at most*, rather than a number
-   of recordings. *Dead when still for* is how long a mite must go without
+   intensities), but the length of the run is set as the *experiment
+   duration, at most*, rather than a number of recordings. Every recording is
+   3 s at 30 fps (90 frames), fixed rather than a setting: a threshold only
+   fits recordings as long and as fast as those it was calibrated on, and a
+   longer recording tells a moving mite from a still one far better than a
+   faster one (`notebooks/poke_run_followed.ipynb`, section 9). A
+   `settings.txt` with other values is read as these. *Dead when still for* is how long a mite must go without
    moving to count as dead; a run cannot start without it. It is added to the
    end of the run, so a mite still at the end of the experiment can be told
    from a dead one, and the *Mites alive* charts use it. The run ends sooner,
@@ -498,7 +502,7 @@ A live test run, with the settings in `settings.txt`; Ctrl+C stops it cleanly:
 ```
 python main.py --list-cameras
 python main.py --live                       # the only camera connected
-python main.py --live --camera-id DEV_000F31 --fps 30 --run-name hive3 --labels labels.json
+python main.py --live --camera-id DEV_000F31 --run-name hive3 --labels labels.json
 python main.py --live --no-save-frames      # long runs: analyse, save nothing
 python main.py --live --dead-after 240      # dead when still for 240 min, over settings.txt
 ```

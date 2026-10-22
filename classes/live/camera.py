@@ -261,11 +261,6 @@ class Camera:
         finally:
             self._ready.set()
 
-    def set_fps(self, fps):
-        """Change the frame rate while streaming, as the Discobox settings window does."""
-        self.fps = fps
-        self._commands.put(lambda cam, camera_utils: camera_utils.set_feature(cam, "AcquisitionFrameRateAbs", fps))
-
     def stop(self, timeout=10):
         """Stop streaming and close the camera; returns once it is closed."""
         self._stop.set()

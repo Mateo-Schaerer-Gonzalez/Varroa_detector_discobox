@@ -282,6 +282,19 @@ def test_settings_read_the_discobox_file_format(tmp_path):
     assert Settings.from_file(tmp_path / "older.txt") == Settings(run_minutes=10, death_minutes=5)
 
 
+def test_every_recording_is_three_seconds_at_30_fps(tmp_path):
+    # a file of another frame rate or length is read as the fixed one
+    (tmp_path / "settings.txt").write_text("recording_timeout=5\nframe_count=10\nfps=10\n")
+    settings = Settings.from_file(tmp_path / "settings.txt")
+    assert (settings.frame_count, settings.fps, settings.recording_seconds) == (90, 30, 3.0)
+    # the fixed values pass (a saved file's as_dict() holds them), others are refused
+    assert Settings.from_dict(settings.as_dict()) == settings
+    with pytest.raises(ValueError, match="90 frames at 30 fps"):
+        Settings.from_dict({"fps": 10})
+    with pytest.raises(ValueError, match="90 frames at 30 fps"):
+        Settings.from_dict({"frame_count": 30})
+
+
 def test_the_run_lasts_the_experiment_and_the_time_to_count_a_mite_dead():
     settings = Settings(run_minutes=25, recording_timeout=5)
     assert settings.recording_count == 6  # at 0, 5, ... 25 min
@@ -297,10 +310,10 @@ def test_a_run_needs_a_time_to_count_a_mite_dead():
 
 
 def test_settings_keep_to_the_discobox_ranges():
-    with pytest.raises(ValueError, match="between 1 and 33"):
-        Settings.from_dict({"fps": 40})
+    with pytest.raises(ValueError, match="between 0 and 3600"):
+        Settings.from_dict({"vent_time": 4000})
     with pytest.raises(ValueError, match="whole number"):
-        Settings.from_dict({"frame_count": 2.5})
+        Settings.from_dict({"led1_time": 2.5})
     with pytest.raises(ValueError, match="longer than"):
         Settings.from_dict({"vent_time": 90, "recording_timeout": 1}).check_cycle()
 

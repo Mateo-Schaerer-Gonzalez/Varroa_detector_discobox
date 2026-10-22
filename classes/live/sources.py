@@ -256,10 +256,6 @@ class CameraSource(LiveSource):
             self.test_run.resume()
             self.state = "running"
 
-    def set_fps(self, fps):
-        self.settings.fps = fps
-        self.camera.set_fps(fps)
-
     def stop(self):
         """Stop the run, or close the feed if no run was started. Returns at once;
         the stream ends once every frame is in."""

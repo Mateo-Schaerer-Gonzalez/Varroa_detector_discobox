@@ -88,9 +88,6 @@ class FolderCamera(LiveSource):
             self._unpaused.set()
             self.state = "running"
 
-    def set_fps(self, fps):
-        self.settings.fps = fps
-
     def stop(self):
         self._stop.set()
         self._unpaused.set()

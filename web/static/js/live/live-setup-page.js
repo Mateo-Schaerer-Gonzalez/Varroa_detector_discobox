@@ -5,7 +5,7 @@
 // comes from the server (Settings.plan in classes/live/settings.py).
 
 class LiveSetupPage {
-  static FIELDS = ["run_minutes", "death_minutes", "follow_px", "recording_timeout", "vent_time", "led1_time", "led2_time", "frame_count", "fps"];
+  static FIELDS = ["run_minutes", "death_minutes", "follow_px", "recording_timeout", "vent_time", "led1_time", "led2_time"];
   static DEVICES = [["vent", "Fan"], ["led1", "LED 1"], ["led2", "LED 2"]];
 
   constructor() {

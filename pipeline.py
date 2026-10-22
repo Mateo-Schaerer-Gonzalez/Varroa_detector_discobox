@@ -44,7 +44,7 @@ can never reach into the analysis internals.
     save_movement_score(...)   write a metric, its parameters and its threshold into config.yaml
 
     live_options()             the cameras, serial ports and saved test-run settings
-    save_live_settings(...)    change the test-run settings (and the camera's frame rate)
+    save_live_settings(...)    change the test-run settings
     live_plan(...)             how long a test run with some settings takes, and its recordings
     open_live(...)             open the camera for a live run
     set_live_options(...)      rename a live run not started yet, or choose whether it is saved
@@ -124,7 +124,7 @@ from classes.live.lights import DEVICES, open_lights, serial_ports
 from classes.live.progress import RunProgress, ZoneProgress
 from classes.live.recorder import Recorder
 from classes.live.session import LiveSession
-from classes.live.settings import RANGES as SETTING_RANGES, Settings
+from classes.live.settings import FIXED as FIXED_SETTINGS, RANGES as SETTING_RANGES, Settings
 from classes.live.sources import CameraSource
 from classes.mite import Mite
 from classes.motion_analysis import DETECTION_LOCK, MotionAnalysis, detect_mites
@@ -3009,17 +3009,14 @@ def _run_dir_for(run_name, recordings_root):
 def save_live_settings(values, live_id=None, settings_path=LIVE_SETTINGS_FILE):
     """Change the saved test-run settings (only the names in `values`), checked
     against their ranges; with an open live run not started yet, it uses them
-    too, and the camera takes the new frame rate at once."""
+    too."""
     settings = Settings.from_dict({**Settings.from_file(settings_path).as_dict(), **values})
     run = _live.get(live_id) if live_id else None
     if run is not None and run.session.state != "ready":
         raise ValueError("The settings cannot change while the test run is going on.")
     settings.save(settings_path)
     if run is not None:
-        fps_changed = settings.fps != run.source.settings.fps
         run.source.settings = settings
-        if fps_changed:
-            run.source.set_fps(settings.fps)
         if settings.zones_per_plate != run.layout.zones_per_plate:
             _set_live_layout(run, ZoneLayout(settings.zones_per_plate))
     return settings.as_dict()
@@ -3045,7 +3042,7 @@ def open_live(live_id, out_dir, run_name, camera_id=None, serial_port="auto", sa
     unless that one is running.
 
     The test run's settings are those saved in `settings_path`, with `settings`
-    (name -> value, e.g. {"fps": 30}) overriding them for this run only. Its
+    (name -> value, e.g. {"death_minutes": 240}) overriding them for this run only. Its
     zones per plate are among them."""
     with _live_lock:
         for other_id, other in list(_live.items()):
@@ -3746,7 +3743,7 @@ def describe_recording(data_dir, results_root=RESULTS_ROOT):
     started = DataLoader.parse_start_time(first)
     # as the Discobox app saved them; None for a folder without .settings.txt
     # the zones per plate are the analysis's, told apart below
-    settings = {name: loader.settings[name] for name in ("recording_count", *SETTING_RANGES)
+    settings = {name: loader.settings[name] for name in ("recording_count", *SETTING_RANGES, *FIXED_SETTINGS)
                 if name in loader.settings and name != ZoneLayout.SETTING} or None
     return {
         "name": data_dir.name,
