@@ -71,6 +71,18 @@ if [ ! -f config.yaml ] && [ -d .git ] && command -v git >/dev/null; then
     done
 fi
 
+# Launchers made by an older install_linux.sh point at the old icon.svg: point
+# them at icon.png, without rerunning the install. GNOME launches a desktop
+# launcher only while it is marked trusted, so mark it again after the edit.
+for launcher in ~/.local/share/applications/varroa-discobox.desktop \
+                "$(xdg-user-dir DESKTOP 2>/dev/null || echo ~/Desktop)/varroa-discobox.desktop"; do
+    if [ -f "$launcher" ] && grep -q '/web/static/icon\.svg$' "$launcher"; then
+        sed -i 's#/web/static/icon\.svg$#/web/static/icon.png#' "$launcher"
+        chmod +x "$launcher"
+        gio set "$launcher" metadata::trusted true 2>/dev/null || true
+    fi
+done
+
 # 1 if a live test run is going on the running server.
 live_running() {
     exec 3<>/dev/tcp/127.0.0.1/$PORT || return
