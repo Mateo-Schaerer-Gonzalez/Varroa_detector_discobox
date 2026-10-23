@@ -135,9 +135,14 @@ schedule and the live session; those libraries are imported only for a live run.
 picker), which ignores a config file's own `mite.metric`, takes the threshold and parameters
 from `config.default.yaml` where `config.yaml` has none, and forces `stabilize_plate` on.
 `outline_variability` scores the vector sum round the mite of the variance on its outline
-(the one-sided part, grey levels squared); its `relative` (default 0, the user's choice)
-divides by the mean variance to that power. The thresholds in config (1.638 default) were
-calibrated on 10-frame, 10-fps recordings and don't fit 3 s / 30 fps ones: the next
+(the one-sided part), divided by the recording's noise floor (`Analyzer.plate_noise()`:
+median variance over the frames of the patch's outer 6 px of plate, where it is 0 the score is left undivided and flagged with a `NoNoiseWarning`, which
+`pytest.ini` makes an error, so synthetic test frames get fake plate noise; the user's
+choice of 2026-10-23, in the metric rather than a switchable normaliser, so the score is in
+multiples of the noise, not grey levels squared); its `relative` (default 0, the user's
+choice) divides by the mean variance to that power. The default threshold 0.472 is the old
+1.638 over sample_data's median floor (3.47) and makes the same calls there; it and 1.638
+were calibrated on 10-frame, 10-fps recordings and don't fit 3 s / 30 fps ones: the next
 ground-truth run at 3 s / 30 fps sets the threshold.
 
 The stabilizer (`classes/scoring/plate_stabilizer.py`) moves each mite's patch back by its own
@@ -252,7 +257,9 @@ The temporary label-overlap check page was deleted on 2026-10-22 at the user's r
 
 - **The long run** is `recordings/test_run_2026-09-08_Mathis_last_dsRNA` (295 recordings of
   10 frames, 59 mites, 49 h). Its saved labels (re-saved 2026-10-09) agree with
-  `outline_variability >= 0.31` in all but 2 of 17,314 recordings, so any moving-against-still
+  `outline_variability >= 0.31` (grey levels squared, before the score was divided by the noise
+  floor; 0.135 now, its median floor being 2.3, which changes 13 of 17,700 calls) in all but 2
+  of 17,314 recordings, so any moving-against-still
   AUC or death error there is perfect for the score in use by construction. Judge a new
   measure on what it sees in recordings the score calls still, or against the label-free
   `adf.last_change`, not by agreement with these labels. It is unknown whether the user

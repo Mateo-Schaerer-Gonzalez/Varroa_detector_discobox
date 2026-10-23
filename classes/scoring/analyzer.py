@@ -1,4 +1,5 @@
 import inspect
+import warnings
 from functools import lru_cache
 from typing import Optional
 import cv2
@@ -8,6 +9,11 @@ from classes.scoring.plate_stabilizer import PlateStabilizer
 from classes.scoring.mite_look import MiteLook
 from classes.scoring.workers import side_by_side
 import numpy as np
+
+
+class NoNoiseWarning(UserWarning):
+    """A recording whose plate does not vary at all: its score cannot be put in
+    multiples of the noise floor and is not on the threshold's scale."""
 
 
 @lru_cache(maxsize=None)
@@ -406,15 +412,25 @@ class Analyzer:
         for each of 64 directions from the mite's centre
         (outline_variability_profile()). Each value is a vector that points in
         its direction, and the score is the length of their sum, divided by
-        the number of directions so that it stays in grey levels squared. A
-        leg that moves varies the outline on its side, and all of that adds
-        up. What varies the same all the way round (the camera's noise) or on
-        two opposite sides cancels.
+        the number of directions. A leg that moves varies the outline on its
+        side, and all of that adds up. What varies the same all the way round
+        (the camera's noise) or on two opposite sides cancels.
+
+        The score is in multiples of the recording's noise floor: the profile
+        is divided by the variance of the bare plate round the mite in the
+        same frames (plate_noise()). Where that is 0 (frames without noise, or
+        a black plate) the score is left undivided and a NoNoiseWarning says
+        so: it is then not on the threshold's scale. Noise cancels round the outline only on
+        average; what is left of it grows with the noise, and the noise with
+        the light, so in grey levels squared a still mite in a bright patch
+        or a noisy recording scores higher than one in a dark patch or a quiet
+        recording.
 
         `relative` takes the score relative to how much the outline varies: it
         is divided by the outline's mean variance to that power. At 1 it is
         the share of the variance that lies on one side, 0 to 1: how clustered
-        the variance is, however little of it there is.
+        the variance is, however little of it there is (the noise floor then
+        divides out).
 
         `width` is how far the outline reaches on each side of the body's
         edge, in pixels.
@@ -425,9 +441,17 @@ class Analyzer:
 
         notebooks/outline_variability.ipynb shows what it sees."""
         profile = Analyzer.outline_variability_profile(roi, width, pad)
-        mean = float(profile.mean())
-        if mean < 1e-6:                        # frames that are all the same: nothing varies
+        if float(profile.mean()) < 1e-6:      # frames that are all the same: nothing varies
             return 0.0
+        noise = Analyzer.plate_noise(roi)
+        if noise > 0:
+            profile = profile / noise
+        else:
+            warnings.warn("The plate round a mite does not vary over the frames (no camera noise, or a "
+                          "black plate): its outline_variability is in grey levels squared, not in "
+                          "multiples of the noise floor, and the threshold does not fit it.",
+                          NoNoiseWarning, stacklevel=2)
+        mean = float(profile.mean())
         direction = np.exp(2j * np.pi * np.arange(len(profile)) / len(profile))
         one_sided = float(np.abs((profile * direction).mean()))
         return one_sided / mean ** relative
@@ -452,6 +476,35 @@ class Analyzer:
         return (variance * on_outline).sum(axis=1) / on_outline.sum(axis=1)
 
     @staticmethod
+    def plate_noise(roi):
+        """The noise floor of a recording at a mite: the variance over the
+        frames of the bare plate in the patch's outermost pixels, in grey
+        levels squared, the lamp's flicker taken out as for the outline
+        (_lit()). The median over those pixels, so a neighbour walking
+        into a corner of the patch does not count. 0 for frames without
+        noise, or a black plate."""
+        lit = Analyzer._lit(Analyzer.grey(roi))
+        if lit is None:
+            return 0.0
+        frames, _light, edge = lit
+        return float(np.median(frames[:, edge].var(axis=0)))
+
+    @staticmethod
+    def _lit(gray):
+        """(lit, light, edge), or None where the plate is black: the frames
+        brought to the light the plate has in the mean of the frames, read off
+        the patch's outermost pixels (`edge`, the plate, never the mite), so a
+        lamp that flickers changes nothing; `light` is that plate's grey level."""
+        height, width = gray.shape[1:]
+        edge = np.ones((height, width), dtype=bool)
+        edge[6:-6, 6:-6] = False
+        plate = np.median(gray[:, edge], axis=1)
+        if plate.min() <= 0:
+            return None
+        light = float(plate.mean())
+        return (gray * (light / plate)[:, None, None]).astype(np.float32), light, edge
+
+    @staticmethod
     def _outline_rays(roi, pad=16):
         """The mite unrolled around its centre: (variance, edge, ray_step,
         centre), or None for a patch without a mite. `variance` (64, points)
@@ -469,13 +522,10 @@ class Analyzer:
         and the two pixels around it."""
         gray = Analyzer.grey(roi)
         height, width = gray.shape[1:]
-        edge = np.ones((height, width), dtype=bool)
-        edge[6:-6, 6:-6] = False               # the outermost pixels: the plate, never the mite
-        plate = np.median(gray[:, edge], axis=1)
-        if plate.min() <= 0:
+        lit = Analyzer._lit(gray)
+        if lit is None:
             return None
-        light = float(plate.mean())
-        lit = (gray * (light / plate)[:, None, None]).astype(np.float32)  # a lamp that flickers changes nothing
+        lit, light, _edge = lit
         dark = np.clip(1 - lit / light, 0, None)
         still = dark.mean(axis=0)
 

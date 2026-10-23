@@ -9,7 +9,10 @@ channel instead of three, and preview.jpg became a grey JPEG; every call,
 count and figure stayed. Made again when the stabilizer began to follow each
 mite's own centre (2026-10-16): scores moved by 0.005 in the median and 0.99
 at most, no call changed, and the plate drift (activity movers) moved by
-hundredths of a pixel. It writes the reference of the OpenCV it runs with
+hundredths of a pixel. Made again when outline_variability was divided by
+each recording's noise floor (Analyzer.plate_noise(), 2026-10-23): every score
+changed scale, the default threshold went from 1.638 to 0.472 (1.638 over
+sample_data's median floor), and no call, count or survival changed. It writes the reference of the OpenCV it runs with
 (reference.py: one for OpenCV 4, one for 5), so run it in both Pythons; the
 OpenCV 5 one was first made from commit 76dba5e. Run this again only to accept a deliberate change to
 what folder mode produces, and say why in the commit.
@@ -22,6 +25,10 @@ from pathlib import Path
 sys.path[:0] = [str(Path(__file__).resolve().parent.parent), str(Path(__file__).resolve().parent)]
 
 import reference  # noqa: E402
+from pipeline import run_results  # noqa: E402
+
+# without calls to check by eye, as every test runs (conftest.py's no_review_band)
+run_results.review_calls = lambda *args: None
 
 
 def main():

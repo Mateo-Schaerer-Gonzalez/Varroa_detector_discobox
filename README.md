@@ -293,7 +293,15 @@ is kept with the scores, so a run read back from them has it too.
 
 **Scores on one scale per mite.** A still mite does not score 0: camera noise
 gives it a floor, which differs from mite to mite, so one threshold sits inside
-the noise of some. Two normalisations put the scores of a finished run on one
+the noise of some. The score in use, `outline_variability`, is therefore given
+in multiples of each recording's own noise floor: the variance on the mite's
+outline is divided by the variance over the frames of the bare plate at the
+patch's edge in the same recording (`Analyzer.plate_noise()`; where that is 0,
+which only frames without noise or a black plate give, the score is left
+undivided and a `NoNoiseWarning` flags it: it is then off the threshold's scale). That needs no other recording, so it holds
+in a live run too. On sample_data the floor is 3.1 to 3.8 grey levels squared;
+the default threshold (0.472) was the old 1.638 divided by its median, and
+makes the same calls there. Two further normalisations put the scores of a finished run on one
 scale (`classes/scoring/score_normalizer.py`); both keep the scores on about the scale
 they had. `normalize_brightness: true` scales each score to the run's typical
 brightness, as camera noise grows with the light on the mite's patch.
