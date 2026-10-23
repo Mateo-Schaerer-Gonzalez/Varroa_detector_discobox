@@ -10,10 +10,10 @@ dead one. It ends sooner once every mite of every zone is dead
 (pipeline/live/live_capture.py, classes/live/progress.py); `death_minutes` must
 not be 0 for that. Between two
 recordings a mite is followed at most `follow_px` pixels (0: not at all; see
-classes/motion_analysis.py). Each recording is a burst of FRAME_COUNT frames
+classes/scoring/motion_analysis.py). Each recording is a burst of FRAME_COUNT frames
 at FPS, with the fan (`vent`) and the two LEDs switched on at their intensity
 (0-255) for their duration in seconds, ending with the burst. `zones_per_plate`
-is how many zones each plate is cut into for the analysis (classes/zone_layout.py).
+is how many zones each plate is cut into for the analysis (classes/plate/zone_layout.py).
 
 The burst is fixed, not a setting: 3 s at 30 fps. A score's threshold only fits
 recordings of the length and frame rate it was calibrated on, and a longer

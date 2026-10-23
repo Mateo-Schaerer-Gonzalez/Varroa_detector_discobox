@@ -10,7 +10,7 @@ a set of numbers of three kinds (features()):
     within       what happens over the frames of the recording: the movement
                  score in use, and how the pixels' noise is ordered in time
     between      what changed since the recording before: the whole image
-                 (classes/recording_change.py), the position, the direction
+                 (classes/scoring/recording_change.py), the position, the direction
 
 and the notebooks ask of each how well it separates the recordings in which a
 mite is alive from those in which it is dead (groups(), separation()).
@@ -34,9 +34,9 @@ import numpy as np
 from scipy.ndimage import median_filter
 from scipy.optimize import nnls
 
-from classes.analyzer import Analyzer
+from classes.scoring.analyzer import Analyzer
 from classes.app_config import get_default_config
-from classes.recording_change import RecordingChange, noise_floor
+from classes.scoring.recording_change import RecordingChange, noise_floor
 import script_data
 from optuna_death_time import MAX_PAD, load_dataset
 
@@ -155,7 +155,7 @@ def within_features(patches, images):
                         and of the second half of the frames, smoothed
         one_pattern     the share of the variation that one single pattern of
                         change explains: high when the pixels change together
-        noise_floor     classes/recording_change.py: what image_change would be
+        noise_floor     classes/scoring/recording_change.py: what image_change would be
                         between two recordings of a mite that did nothing
     """
     mite = get_default_config().mite
@@ -199,7 +199,7 @@ def between_features(images, silhouettes):
     fraction of a pixel elsewhere in each recording; every mite moves with it,
     so the median over the mites is taken out of each difference.
 
-        image_change   classes/recording_change.py: the mean difference of the
+        image_change   classes/scoring/recording_change.py: the mean difference of the
                        two images, in grey levels
         moved_by       how far the mite's centre moved, in pixels
         turned_by      how far its long axis turned, in radians

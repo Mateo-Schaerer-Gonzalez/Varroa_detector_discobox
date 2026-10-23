@@ -2,7 +2,7 @@
 
 import numpy as np
 
-from classes.benchmark import Benchmark
+from classes.scoring.benchmark import Benchmark
 
 
 def frames_with_mites(moving_shift):

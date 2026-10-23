@@ -7,12 +7,12 @@ import logging
 import time
 from pathlib import Path
 
-from classes.files import write_jpeg
+from classes.storage.files import write_jpeg
 from classes.live.lights import DEVICES
 from classes.live.progress import RunProgress
-from classes.motion_analysis import DETECTION_LOCK
-from classes.rect import Rect
-from classes.zones import mite_ids
+from classes.scoring.motion_analysis import DETECTION_LOCK
+from classes.plate.rect import Rect
+from classes.plate.zones import mite_ids
 from pipeline import paths, plate_labels, plate_zones, preview_images
 from pipeline.live import live_runs
 

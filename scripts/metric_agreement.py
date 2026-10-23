@@ -2,8 +2,8 @@
 notebooks/metric_agreement.ipynb.
 
 Every mite of the longest labelled run in recordings/ gets, per recording,
-the score of every metric of classes/analyzer.py, with config.yaml's parameters,
-and the leg movement of classes/leg_tracker.py (scores()). The notebook then
+the score of every metric of classes/scoring/analyzer.py, with config.yaml's parameters,
+and the leg movement of classes/scoring/leg_tracker.py (scores()). The notebook then
 asks whether they call the same recordings moving (calls(), kappa(), votes())
 and whether they put the mites in the same order (rank_correlation(),
 concordance(), per_mite()).
@@ -33,11 +33,11 @@ import script_data
 import leg_tracks
 import pipeline
 from pipeline.calibration import dataset_library
-from classes import death_calibration
-from classes.analyzer import Analyzer
+from classes.ground_truth import death_calibration
+from classes.scoring.analyzer import Analyzer
 from classes.app_config import TEMPLATE_CONFIG_PATH, get_default_config
-from classes.death_calibration import LabelledRun
-from classes.leg_tracker import LegTracker
+from classes.ground_truth.death_calibration import LabelledRun
+from classes.scoring.leg_tracker import LegTracker
 from optuna_death_time import MAX_PAD, load_dataset
 
 LEGS = "leg_tracker"  # not a metric of the app: the largest swing of a followed leg, in pixels
@@ -62,7 +62,7 @@ def other_runs(run, cache=adf.CACHE, jobs=None):
 
 def metric_params():
     """Every metric of the app with the parameters it would be scored with:
-    config.yaml's, the defaults in classes/analyzer.py for those left out."""
+    config.yaml's, the defaults in classes/scoring/analyzer.py for those left out."""
     mite = get_default_config().mite
     return {metric: Analyzer.check_metric_params(metric, mite.params_for(metric)) for metric in Analyzer.metric_names()}
 
@@ -217,7 +217,7 @@ def concordance(values):
 def deaths(run, called):
     """Per mite, the recording it dies at by `called` (mites, recordings): the
     one after its last movement, 0 for a mite that never moves, counted in
-    its labelled recordings as classes/death_calibration.py counts."""
+    its labelled recordings as classes/ground_truth/death_calibration.py counts."""
     return LabelledRun(np.zeros(called.shape), run.moving, run.labelled).deaths(called)
 
 

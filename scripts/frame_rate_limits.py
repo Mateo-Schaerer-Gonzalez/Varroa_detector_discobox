@@ -167,7 +167,7 @@ def measure(data_dir, fps, frame_count, recordings=2, back_to_back=False):
     from classes.live.session import LiveSession
     from classes.live.settings import Settings
     from classes.live.sources import CameraSource
-    from classes.motion_analysis import MotionAnalysis
+    from classes.scoring.motion_analysis import MotionAnalysis
 
     images = load_images(data_dir)
     run_dir = Path(tempfile.mkdtemp(prefix="zzfr"))

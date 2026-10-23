@@ -17,7 +17,7 @@ For every mite of a dataset and every recording this writes:
     scores      outline_variability (the score in use) of the box as found
                 ("fixed") and as followed ("follow"), with the stabilizer
                 ("stab", as the app scores) and without ("raw")
-    outline     classes/outline_change.py's change from the recording before,
+    outline     classes/scoring/outline_change.py's change from the recording before,
                 fixed and followed: the between-recordings measure
     light       the plate's light round the mite (median of the patch's rim)
                 and how much the frames' mean varies within the recording
@@ -46,13 +46,13 @@ import numpy as np
 
 import pipeline
 from pipeline.calibration import dataset_library, movement_score, poke_test, score_cache
-from classes import calibration
-from classes.analyzer import Analyzer
+from classes.ground_truth import calibration
+from classes.scoring.analyzer import Analyzer
 from classes.app_config import METRIC
-from classes.motion_analysis import FOLLOW_MIN_SHIFT
-from classes.outline_change import PAD as OUTLINE_PAD, OutlineChange
-from classes.plate_stabilizer import PlateStabilizer, _RIM
-from classes.roi_recordings import open_recordings
+from classes.scoring.motion_analysis import FOLLOW_MIN_SHIFT
+from classes.scoring.outline_change import PAD as OUTLINE_PAD, OutlineChange
+from classes.scoring.plate_stabilizer import PlateStabilizer, _RIM
+from classes.storage.roi_recordings import open_recordings
 
 DATASETS = ("GT_oct_2", "Ground_truth_oct_26_final")  # calibrate, test
 FOLLOW_PX = 50       # classes/live/settings.py's default follow_px

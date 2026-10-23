@@ -6,7 +6,7 @@ import json
 import pytest
 
 import folder_camera
-from classes.data_loader import DataLoader
+from classes.storage.data_loader import DataLoader
 import pipeline
 from pipeline.live import live_runs
 import reference

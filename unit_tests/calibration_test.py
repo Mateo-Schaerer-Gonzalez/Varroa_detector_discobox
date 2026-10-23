@@ -3,7 +3,7 @@ import numpy as np
 import pytest
 
 from classes import app_config
-from classes.calibration import (
+from classes.ground_truth.calibration import (
     apply_changes,
     auc,
     best_threshold,
@@ -309,6 +309,6 @@ def test_save_movement_score_sets_the_normalisations(tmp_path):
 
 
 def test_a_live_runs_mite_is_followed_from_its_start_until_it_counted_dead():
-    from classes.calibration import followed
+    from classes.ground_truth.calibration import followed
     assert [followed({"start": 1, "stop": 3}, r) for r in range(4)] == [False, True, True, False]
     assert all(followed({}, r) for r in range(4))

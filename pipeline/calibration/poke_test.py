@@ -1,5 +1,5 @@
 """The poke test: mites poked by hand between two recordings. One that moves is
-alive up to then, one that does not is dead from then on (classes/poke_test.py).
+alive up to then, one that does not is dead from then on (classes/ground_truth/poke_test.py).
 The rounds are saved by mite position next to the recordings, like the ground
 truth, and every change at once: the file is small. The test report draws the
 survival they show with the detector's laid over it.
@@ -7,8 +7,8 @@ survival they show with the detector's laid over it.
 
 from pathlib import Path
 
-from classes.poke_test import PokeSurvival, PokeTest
-from classes.files import read_json, write_json
+from classes.ground_truth.poke_test import PokeSurvival, PokeTest
+from classes.storage.files import read_json, write_json
 from pipeline import ground_truth, paths, refusals
 from pipeline.calibration import report_rows, session_file, truth_entry
 

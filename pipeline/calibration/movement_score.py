@@ -2,7 +2,7 @@
 the ones a calibration can choose from, and saving a new one.
 """
 
-from classes.analyzer import Analyzer
+from classes.scoring.analyzer import Analyzer
 from classes import app_config
 from classes.app_config import get_default_config, save_motion_threshold
 
@@ -65,7 +65,7 @@ def save_movement_score(metric, params, threshold, stabilize=None, normalize_bri
     on or off too, and with `normalize_brightness` and `normalize_floor` the
     normalisations of a folder's scores (each left as it is when None). With
     `review_band` ([low, high], holding the threshold), the band whose calls are
-    checked by eye is saved with them (classes/review_band.py); without it, the
+    checked by eye is saved with them (classes/results/review_band.py); without it, the
     metric's band stays as it is, and is not used while the threshold is
     outside it."""
     metric, params = resolve_metric(metric, params)

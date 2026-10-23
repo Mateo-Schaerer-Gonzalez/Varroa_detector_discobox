@@ -10,11 +10,11 @@ from pathlib import Path
 import cv2
 import numpy as np
 
-from classes.analyzer import Analyzer
+from classes.scoring.analyzer import Analyzer
 from classes.app_config import get_default_config
-from classes.files import read_json, write_image, write_jpeg, write_json
-from classes.outline_view import OutlineView
-from classes.roi_recordings import RoiRecordings, open_recordings
+from classes.storage.files import read_json, write_image, write_jpeg, write_json
+from classes.scoring.outline_view import OutlineView
+from classes.storage.roi_recordings import RoiRecordings, open_recordings
 from pipeline import paths, plate_zones, refusals, scoring
 
 

@@ -11,8 +11,8 @@ import pipeline
 from pipeline import plate_zones
 from pipeline.live import live_runs
 from classes.live.settings import Settings
-from classes.upload_plan import UploadPlan
-from classes.zone_layout import ZoneLayout
+from classes.storage.upload_plan import UploadPlan
+from classes.plate.zone_layout import ZoneLayout
 
 ROOT = Path(pipeline.__file__).resolve().parent.parent
 

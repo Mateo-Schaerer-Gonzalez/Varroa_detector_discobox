@@ -1,7 +1,7 @@
 """From frames to a run: find the mites on the first frame, score every
 recording, and the table of their scores and calls.
 
-The analysis core (classes/motion_analysis.py) does the work; folder runs, live
+The analysis core (classes/scoring/motion_analysis.py) does the work; folder runs, live
 runs and calibrations all go through detect_and_score() or arrange(), so the
 same frames and marks give the same results everywhere.
 """
@@ -10,14 +10,14 @@ from types import SimpleNamespace
 
 import numpy as np
 
-from classes.analyzer import Analyzer
-from classes import plate_stabilizer
-from classes.follow_up import FollowUp
-from classes.frame_source import RoiSource, open_source
-from classes.kept_scores import KeptScores
-from classes.motion_analysis import MotionAnalysis
-from classes.score_normalizer import ScoreNormalizer
-from classes.unusual_activity import UnusualActivity
+from classes.scoring.analyzer import Analyzer
+from classes.scoring import plate_stabilizer
+from classes.scoring.follow_up import FollowUp
+from classes.storage.frame_source import RoiSource, open_source
+from classes.storage.kept_scores import KeptScores
+from classes.scoring.motion_analysis import MotionAnalysis
+from classes.scoring.score_normalizer import ScoreNormalizer
+from classes.scoring.unusual_activity import UnusualActivity
 from pipeline import ground_truth, plate_zones
 
 
@@ -31,11 +31,11 @@ def detect_and_score(data_dir, coords_file, labels=None, reject=True, score=True
     """Find the mites and, with `score`, decode every recording and score their motion.
 
     The expensive part shared by an analysis run and a calibration: the analysis
-    core (classes/motion_analysis.py) fed from the folder, one recording at a time.
+    core (classes/scoring/motion_analysis.py) fed from the folder, one recording at a time.
     With `reject`, detections marked "not a mite" in the session's ground truth
     are dropped, so they appear nowhere in the results. With `kept_in`, a folder,
     the scores are kept there, and read back instead of worked out when these
-    very frames were scored there before, by this code (classes/kept_scores.py).
+    very frames were scored there before, by this code (classes/storage/kept_scores.py).
     With `names`, only the recordings of those names (FolderSource). A session
     saved as the mites' ROIs has its mites and blobs saved with them (RoiSource).
     """
@@ -71,7 +71,7 @@ def detect_and_score(data_dir, coords_file, labels=None, reject=True, score=True
 def arrange(analysis, data_dir, labels, reject):
     """Name the zones by `labels` and, with `reject`, leave out the detections
     marked "not a mite" in the ground truth saved for `data_dir`, and the mites
-    that flew off (classes/unusual_activity.py: their activity is worked out
+    that flew off (classes/scoring/unusual_activity.py: their activity is worked out
     here, on every detection). Folder and live runs both go through here, so the
     same marks give the same results."""
     truth = ground_truth.load_ground_truth(data_dir) if reject else []
@@ -89,7 +89,7 @@ def arrange(analysis, data_dir, labels, reject):
 
 def _activity_reach(mite):
     """Pixels from a mite's centre to the edge of its scored patch: a mite walking
-    closer disturbs its recording (classes/unusual_activity.py)."""
+    closer disturbs its recording (classes/scoring/unusual_activity.py)."""
     return float(mite.radius) + metric_pad(mite)
 
 
@@ -103,7 +103,7 @@ def run_view(analysis, frames, data_dir=None):
     it: its zones and mites, analyzer, first frame (whole and masked), number of
     recordings, unusual activity and recording times. `frames`: what was saved
     of the recordings, for the pages: "whole" frames, or the mites' "rois" alone
-    (classes/roi_recordings.py), or "none"; `data_dir` the recordings' folder,
+    (classes/storage/roi_recordings.py), or "none"; `data_dir` the recordings' folder,
     where a live run keeps the frames mites were added on
     (preview_images.added_previews())."""
     return SimpleNamespace(

@@ -1,5 +1,5 @@
 """Alive or dead, and the log-rank test against the negative controls
-(classes/survival.py), as the result pages show them."""
+(classes/results/survival.py), as the result pages show them."""
 
 import math
 import random
@@ -9,8 +9,8 @@ from scipy import stats
 
 import pipeline
 from classes.live.progress import ZoneProgress
-from classes.result_groups import Calls
-from classes.survival import SurvivalAnalysis, SurvivalReport
+from classes.results.result_groups import Calls
+from classes.results.survival import SurvivalAnalysis, SurvivalReport
 
 TIMES = [0, 10, 20]
 NEVER = [False, False, False]
@@ -306,7 +306,7 @@ def test_a_zone_whose_mites_were_all_added_later_runs_on_its_own_clock():
 
 
 def test_a_zone_on_its_own_clock_has_its_own_times():
-    from classes.movement_stats import MovementReport
+    from classes.results.movement_stats import MovementReport
     results = results_with({(1, "venom"): [[False, True, False, False]], (2, "venom"): [[True, True, True, False]]})
     results["times"], results["censored"], results["started"] = [0, 10, 20, 30], {"0": [0]}, {"0": 1}
     for mite in results["mites"]:

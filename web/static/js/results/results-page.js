@@ -2,8 +2,8 @@
 // clip, the time axis of a live run, the time to count a mite as dead, and the
 // banner when the labels changed since the run. The numbers come from the server
 // with the results: per mite, per zone, per group (group_rows) and the survival
-// numbers (results.survival), worked out in classes/movement_stats.py and
-// classes/survival.py.
+// numbers (results.survival), worked out in classes/results/movement_stats.py and
+// classes/results/survival.py.
 
 class ResultsPage {
   static MOVING_NOTE = "A mite counts as moving in a recording when its motion score in that recording reaches the threshold, unless its call there was corrected by hand.";
@@ -35,7 +35,7 @@ class ResultsPage {
   // What a mite is in a recording, set by hand on its page: "moving" or "still"
   // (its call), "gone" (not there in this recording, e.g. fallen off: censored) or
   // "gone_from" (the recording from which it is gone for good). A click on the
-  // mite steps through them in this order, the server's (classes/call_corrections.py).
+  // mite steps through them in this order, the server's (classes/results/call_corrections.py).
   static STATES = ["moving", "still", "gone", "gone_from"];
   static STATE_NAMES = { moving: "moving", still: "still", gone: "gone in this recording", gone_from: "gone from this recording on" };
 
@@ -45,7 +45,7 @@ class ResultsPage {
   }
 
   // Whether the mite's recording is set aside because another mite walked by
-  // (results.disturbed, classes/unusual_activity.py).
+  // (results.disturbed, classes/scoring/unusual_activity.py).
   setAside(mite, recording) {
     return (this.results.disturbed?.[mite.id] || []).includes(recording);
   }
@@ -54,7 +54,7 @@ class ResultsPage {
   // detector's; "gone" where the user marked the mite gone, "set aside" where
   // something disturbed it (see the unusual activity on the overview).
   // A live run follows a mite only from when it was added, and until it counts as
-  // dead (classes/follow_up.py): "not added yet" before, "dead, not followed"
+  // dead (classes/scoring/follow_up.py): "not added yet" before, "dead, not followed"
   // after, null while it is followed.
   unfollowed(mite, recording) {
     const started = this.results.started?.[mite.id];
@@ -91,7 +91,7 @@ class ResultsPage {
   }
 
   // Change by hand what a mite is in a recording, to `state` or, without one, to
-  // its next state (classes/call_corrections.py): the server saves it and sends
+  // its next state (classes/results/call_corrections.py): the server saves it and sends
   // the results again, every number following the change. With `checked`, the
   // call is kept as checked by eye, also when it is the detector's (ReviewCheck).
   async correctCall(mite, recording = ctx.shown, state = null, checked = false) {
@@ -309,7 +309,7 @@ class ResultsPage {
   // --- scores on one scale per mite
 
   // The scores of a folder's analysis are put on one scale for every mite when
-  // config.yaml says so (classes/score_normalizer.py), as saved with the threshold
+  // config.yaml says so (classes/scoring/score_normalizer.py), as saved with the threshold
   // from the calibration report: "· scores normalised by …" for a page's heading,
   // "" when they are as scored.
   normalizedNote() {
@@ -430,7 +430,7 @@ class ResultsPage {
   }
 
   // On the mite's page: over each mite marked in `svg`, a crop of the zone `zoneId`,
-  // what the score sees of it in the recording shown (classes/outline_view.py), in
+  // what the score sees of it in the recording shown (classes/scoring/outline_view.py), in
   // place of its ring: a dot in each direction round its outline, the darker the more the
   // outline varies there, and an arrow toward the side the variance lies on, as
   // long as that side is marked; green for a mite called moving, orange for one

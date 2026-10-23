@@ -4,9 +4,9 @@ recordings/, and once copied, their frames shrunk to the mites' surroundings.
 
 from pathlib import Path
 
-from classes.roi_conversion import RoiConversion
-from classes.roi_recordings import RoiRecordings, is_roi_session
-from classes.upload_plan import UploadPlan
+from classes.storage.roi_conversion import RoiConversion
+from classes.storage.roi_recordings import RoiRecordings, is_roi_session
+from classes.storage.upload_plan import UploadPlan
 from pipeline import paths, plate_zones
 
 
@@ -14,7 +14,7 @@ def plan_upload(name, files, uploads_root=paths.RECORDINGS_ROOT):
     """Which files of the folder `name` dropped into the page to copy, of `files`
     ([{path, size}], every file in it): {name (of the folder they go to in
     `uploads_root`), data_dir (that folder), missing ([{path (as dropped),
-    target (in that folder)}])}. See classes/upload_plan.py."""
+    target (in that folder)}])}. See classes/storage/upload_plan.py."""
     plan = UploadPlan(name, files)
     folder = Path(uploads_root) / plan.name
 
@@ -30,7 +30,7 @@ def plan_upload(name, files, uploads_root=paths.RECORDINGS_ROOT):
 def finish_upload(name, uploads_root=paths.RECORDINGS_ROOT):
     """Once every file of a dropped folder is in: its recordings of whole frames
     are shrunk to what a live run saves, the mites' surroundings
-    (classes/roi_conversion.py), so they take a thirtieth of the space and give
+    (classes/storage/roi_conversion.py), so they take a thirtieth of the space and give
     the same results. {data_dir, converted (recordings)}."""
     UploadPlan.check_part(name)
     folder = Path(uploads_root) / name
@@ -41,7 +41,7 @@ def finish_upload(name, uploads_root=paths.RECORDINGS_ROOT):
 
 def convert_folder(folder, results_root=paths.RESULTS_ROOT):
     """Shrink the recordings of whole frames in `folder` to the mites'
-    surroundings (classes/roi_conversion.py). Returns how many were."""
+    surroundings (classes/storage/roi_conversion.py). Returns how many were."""
     folder = Path(folder)
     converted = RoiConversion(folder, plate_zones.zones_of(folder)).run()
     if converted:

@@ -8,10 +8,10 @@ class ReportFigures {
   // The error map of a recording no labelled mite of the dataset has.
   static NO_MITES = { mites: [], counts: { correct: 0, "missed-positive": 0, "missed-negative": 0 } };
 
-  // The Discobox's original software, which the test report compares with (classes/benchmark.py).
+  // The Discobox's original software, which the test report compares with (classes/scoring/benchmark.py).
   static BENCHMARK = "benchmark (Abilium)";
 
-  // The outline change between recordings (classes/outline_change.py).
+  // The outline change between recordings (classes/scoring/outline_change.py).
   static OUTLINE = "outline change";
 
   // Where a row comes from: the recording folder and, when known, the recording in it.
@@ -287,7 +287,7 @@ class ReportFigures {
     return [cal.mapDataset, cal.datasetId].find((id) => ids.includes(id)) || ids[0];
   }
 
-  // One dot per mite, of the kind the server gave it (classes/error_map.py): right
+  // One dot per mite, of the kind the server gave it (classes/results/error_map.py): right
   // in every recording shown, or its more frequent error.
   drawOutcomeMap(r, datasetId, recordingValue) {
     const container = $("outcome-map");
@@ -330,7 +330,7 @@ class ReportFigures {
     ]);
   }
 
-  // --- the poke test (test report; the server's r.poke, classes/poke_test.py)
+  // --- the poke test (test report; the server's r.poke, classes/ground_truth/poke_test.py)
 
   // The Kaplan-Meier curve of the poked mites by the pokes (black, with its
   // confidence band) against the detector's on the same mites. The last time
@@ -357,7 +357,7 @@ class ReportFigures {
 
   // Every mite seen moving by the ground truth, in the order it has them die, coloured
   // by its outline change from each recording to the next, with the survival over it
-  // (the server's r.between_recordings, classes/outline_change.py).
+  // (the server's r.between_recordings, classes/scoring/outline_change.py).
   drawBetween(container, r) {
     const { thr } = ReportPage;
     const between = r.between_recordings;

@@ -13,10 +13,10 @@ from pipeline.calibration import suggested_band
 import reference
 from classes import app_config
 from classes.app_config import MiteConfig, get_default_config
-from classes.call_corrections import CallCorrections
-from classes.movement_stats import MovementReport
-from classes.review_band import ReviewBand
-from classes.zones import MITE_SCORE_COLUMNS
+from classes.results.call_corrections import CallCorrections
+from classes.results.movement_stats import MovementReport
+from classes.results.review_band import ReviewBand
+from classes.plate.zones import MITE_SCORE_COLUMNS
 
 THRESHOLD = 3.5
 BAND = ReviewBand(2.5, 4.5)

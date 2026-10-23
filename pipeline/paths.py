@@ -18,9 +18,9 @@ import shutil
 from datetime import datetime
 from pathlib import Path
 
-import reporting
-from classes import settings_file
-from classes.files import remove_tree
+from classes.results import reporting
+from classes.storage import settings_file
+from classes.storage.files import remove_tree
 
 
 # With two zones per plate these are labels_2.json and controls_2.json: a zone id

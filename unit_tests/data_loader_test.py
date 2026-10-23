@@ -2,7 +2,7 @@ import cv2
 import numpy as np
 import pytest
 
-from classes.data_loader import DataLoader
+from classes.storage.data_loader import DataLoader
 
 SETTINGS_TEXT = (
     "recording_count=12\n"

@@ -1,4 +1,4 @@
-"""Work shared out among threads, and a load started ahead (classes/workers.py):
+"""Work shared out among threads, and a load started ahead (classes/scoring/workers.py):
 the results are what doing it one after the other gives, in that order."""
 
 import threading
@@ -6,8 +6,8 @@ import time
 
 import pytest
 
-from classes import workers
-from classes.workers import one_ahead, side_by_side
+from classes.scoring import workers
+from classes.scoring.workers import one_ahead, side_by_side
 
 
 @pytest.fixture

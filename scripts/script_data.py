@@ -17,7 +17,7 @@ import numpy as np  # noqa: E402
 import pipeline  # noqa: E402
 from pipeline import ground_truth  # noqa: E402
 from pipeline.calibration import dataset_library  # noqa: E402
-from classes import calibration  # noqa: E402
+from classes.ground_truth import calibration  # noqa: E402
 
 
 def longest_dataset():

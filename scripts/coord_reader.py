@@ -7,7 +7,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import cv2
 
-from classes.zones import Zone
+from classes.plate.zones import Zone
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 coord_path = SCRIPT_DIR / "coords_yolo_2.txt"

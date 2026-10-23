@@ -1,7 +1,7 @@
 import numpy as np
 import pytest
 
-from classes.leg_tracker import LegTracker, synthetic_mite
+from classes.scoring.leg_tracker import LegTracker, synthetic_mite
 
 
 def _frames(legs_per_frame, **kwargs):

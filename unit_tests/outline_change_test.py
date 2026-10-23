@@ -4,8 +4,8 @@ alone, what a moved leg changes, and the calls and the figure made of it."""
 import numpy as np
 import pytest
 
-from classes.leg_tracker import synthetic_mite
-from classes.outline_change import LIMIT, OutlineChange, outline, outline_change
+from classes.scoring.leg_tracker import synthetic_mite
+from classes.scoring.outline_change import LIMIT, OutlineChange, outline, outline_change
 
 LEGS = [(-150, 3), (-120, 3.5), (-60, 3.5), (-30, 3), (150, 2), (30, 2)]
 MOVED_LEG = [(-150, 3), (-100, 3.5), (-60, 3.5), (-30, 3), (150, 2), (30, 2)]

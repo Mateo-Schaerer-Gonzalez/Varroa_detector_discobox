@@ -16,17 +16,17 @@ from pathlib import Path
 
 import numpy as np
 
-from classes.analyzer import Analyzer
-from classes import benchmark as benchmark_module
-from classes.benchmark import Benchmark
-from classes import plate_stabilizer
-from classes.plate_stabilizer import PlateStabilizer
-from classes.data_loader import DataLoader
-from classes.files import read_json, write_json
-from classes import outline_change as outline_change_module
-from classes.outline_change import OutlineChange
-from classes.roi_recordings import is_roi_session, open_recordings
-from classes.workers import one_ahead, side_by_side
+from classes.scoring.analyzer import Analyzer
+from classes.scoring import benchmark as benchmark_module
+from classes.scoring.benchmark import Benchmark
+from classes.scoring import plate_stabilizer
+from classes.scoring.plate_stabilizer import PlateStabilizer
+from classes.storage.data_loader import DataLoader
+from classes.storage.files import read_json, write_json
+from classes.scoring import outline_change as outline_change_module
+from classes.scoring.outline_change import OutlineChange
+from classes.storage.roi_recordings import is_roi_session, open_recordings
+from classes.scoring.workers import one_ahead, side_by_side
 from pipeline import clips, ground_truth, paths, refusals, scoring
 
 
@@ -204,7 +204,7 @@ def dataset_scores(key, dataset, metric, params, stabilize=False):
 
 
 def _benchmark_mites(dataset, recordings_dir):
-    """Whether the benchmark (classes/benchmark.py) calls each mite of a dataset
+    """Whether the benchmark (classes/scoring/benchmark.py) calls each mite of a dataset
     moving in each recording: mite id to one True or False per recording. Slow:
     every frame is decoded and denoised, in the part of the image holding mites."""
     _check_there(dataset, recordings_dir, "the benchmark cannot be run on them")

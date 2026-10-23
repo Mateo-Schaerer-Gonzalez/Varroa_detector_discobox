@@ -1,7 +1,7 @@
 import pytest
 
 from classes.app_config import AppConfig, MiteConfig, TextZoneStyle, get_default_config
-from classes.mite import Mite
+from classes.plate.mite import Mite
 
 
 class FakeConfig:

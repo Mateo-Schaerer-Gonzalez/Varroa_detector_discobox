@@ -3,7 +3,7 @@
 The changes made on the page wait here, one draft per calibration session (keyed
 by its folder), until they are saved: the page saves them as soon as they are
 made, and a click need not wait for the disk. What the page shows is always what
-saving them will store (see classes/truth_draft.py). Every view carries a
+saving them will store (see classes/ground_truth/truth_draft.py). Every view carries a
 version, higher for every view made, so the page can tell which reply is the
 latest.
 """
@@ -11,9 +11,9 @@ latest.
 import itertools
 import threading
 
-from classes import calibration
-from classes import positions
-from classes.truth_draft import TruthDraft
+from classes.ground_truth import calibration
+from classes.plate import positions
+from classes.ground_truth.truth_draft import TruthDraft
 from pipeline import ground_truth, paths, refusals
 from pipeline.calibration import session_file
 

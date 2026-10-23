@@ -3,7 +3,7 @@ a circle per zone, filled by the share of its mites that are dead, and the time
 to the next recording.
 
 The mites of a zone that count are those in the study (seen moving at least
-once, classes/survival.py). A zone is done once each of them is dead, or no
+once, classes/results/survival.py). A zone is done once each of them is dead, or no
 longer known of (marked gone from a recording on); a zone with none in the study
 yet does not count. The run is over once every zone that counts is done, and at
 least one does: the live run then stops (pipeline/live/live_capture.py). Every mite counting as
@@ -11,8 +11,8 @@ dead, in the study or not (one never seen moving is dead once still for the
 death time from its start), is no longer followed from the next recording on.
 """
 
-from classes.result_groups import ResultGroups
-from classes.survival import SurvivalAnalysis
+from classes.results.result_groups import ResultGroups
+from classes.results.survival import SurvivalAnalysis
 
 
 class ZoneProgress:

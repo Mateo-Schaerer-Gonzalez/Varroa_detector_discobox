@@ -3,7 +3,7 @@ curves of the poked mites by the pokes and by the detector."""
 
 import pytest
 
-from classes.poke_test import PokeSurvival, PokeTest
+from classes.ground_truth.poke_test import PokeSurvival, PokeTest
 
 TIMES = [0.0, 10.0, 20.0, 30.0]
 

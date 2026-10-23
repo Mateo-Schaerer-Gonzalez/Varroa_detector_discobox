@@ -1,11 +1,11 @@
 import cv2
 import numpy as np
 
-from classes.analyzer import Analyzer
+from classes.scoring.analyzer import Analyzer
 from classes.app_config import get_default_config
-from classes.mite import Mite
-from classes import plate_stabilizer
-from classes.plate_stabilizer import PlateStabilizer
+from classes.plate.mite import Mite
+from classes.scoring import plate_stabilizer
+from classes.scoring.plate_stabilizer import PlateStabilizer
 
 SIZE = 120
 # Dark blobs on a light plate, like mites; (x1, y1, x2, y2) boxes around them.

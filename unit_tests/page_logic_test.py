@@ -7,12 +7,12 @@ import json
 import pytest
 
 import pipeline
-import reporting
-from classes.calibration import outcome_rates
-from classes.error_map import ErrorMap
+from classes.results import reporting
+from classes.ground_truth.calibration import outcome_rates
+from classes.results.error_map import ErrorMap
 from classes.live.progress import RunProgress
-from classes.recording_info import RecordingInfo
-from classes.upload_plan import UploadPlan
+from classes.storage.recording_info import RecordingInfo
+from classes.storage.upload_plan import UploadPlan
 
 
 def row(mite, recording, outcome, dataset="d"):

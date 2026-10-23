@@ -64,7 +64,7 @@ To analyse a folder, in *Analysis*:
    With *Read the names from the plates* ticked (a setting, off until you tick
    it and saved as `label_reader.enabled` in `config.yaml`), the names written
    by hand beside the plates with no name yet are read by Google Gemini and
-   filled in, to be checked (`classes/label_reader.py`). It sends a picture of
+   filled in, to be checked (`classes/plate/label_reader.py`). It sends a picture of
    each label area to Google, so it takes the internet and a free API key from
    aistudio.google.com/apikey: put it in a file `.env` in the app's folder as
    `GEMINI_API_KEY=...` (the file is this machine's own, not in git) and start
@@ -188,7 +188,7 @@ or *not poked*, and click each mite, or a zone's number for the zone's mites not
 poked yet. Poke between two recordings, not during one: a poked mite moves, and
 the detector would count it. During a live test run, enter it from the live
 panel as you go (see *Live from the Discobox*). Every click is saved by mite position to
-`poke_test.json` next to the recordings (`classes/poke_test.py`). The *Test*
+`poke_test.json` next to the recordings (`classes/ground_truth/poke_test.py`). The *Test*
 report then draws the Kaplan-Meier survival of the poked mites by the pokes, a
 mite dying at the first poke it did not answer and one that answered every poke
 being right-censored at its last, with the detector's laid over it on the same
@@ -200,7 +200,7 @@ the pokes' at a poke. The recording needs at least one mite labelled moving or
 still, as every report does.
 
 **Outline change between recordings.** The *Test* report also compares each
-mite's outline from one recording to the next (`classes/outline_change.py`), a
+mite's outline from one recording to the next (`classes/scoring/outline_change.py`), a
 change that opening the box to poke the mites does not fake: the outline is read
 from the mean of a recording's frames as rays from the mite's centre, without its
 size or a shift of the whole mite, and two recordings are compared at the turn
@@ -236,7 +236,7 @@ again opens that copy.
 
 `config.yaml` holds the metric in use and, under `metric_params`, the
 parameters of each metric (`{topN_variability: {n: 10}}`); one left out uses the
-default in `classes/analyzer.py`. It belongs to the machine and is not in git,
+default in `classes/scoring/analyzer.py`. It belongs to the machine and is not in git,
 so updating never changes the metric saved there. A new copy of the app makes it
 from `config.default.yaml`; change the defaults for everyone there.
 
@@ -244,7 +244,7 @@ from `config.default.yaml`; change the defaults for everyone there.
 still mite look like it moves, with any metric. With `stabilize_plate: true`
 (the default) each mite's shift in each frame is measured, how far the centre
 of the darkness of its body moved from the first frame, and its patch is cut
-shifted back by it before it is scored (`classes/plate_stabilizer.py`). A glued
+shifted back by it before it is scored (`classes/scoring/plate_stabilizer.py`). A glued
 mite moves with what it is glued to, so this also follows plates that shake
 apart. A moving mite's legs pull its centre by about a tenth of a pixel, which
 changes 8 of the 17 829 calls of the ground truth (all near the threshold);
@@ -271,7 +271,7 @@ it on or off with *Score again*; saving a threshold saves it with the metric.
 and without stabilization; `python scripts/centre_stabilization.py` compares
 ways of stabilizing (the table `notebooks/centre_stabilization.ipynb` reads).
 
-**Unusual activity.** A mite can come unglued (`classes/unusual_activity.py`).
+**Unusual activity.** A mite can come unglued (`classes/scoring/unusual_activity.py`).
 One that walks off, a *fly-off*, is found when its place is empty in 3
 recordings in a row: no blob there on the first or last frame, and its image
 faded to less than half its first contrast. It is left out of the analysis, as
@@ -294,7 +294,7 @@ is kept with the scores, so a run read back from them has it too.
 **Scores on one scale per mite.** A still mite does not score 0: camera noise
 gives it a floor, which differs from mite to mite, so one threshold sits inside
 the noise of some. Two normalisations put the scores of a finished run on one
-scale (`classes/score_normalizer.py`); both keep the scores on about the scale
+scale (`classes/scoring/score_normalizer.py`); both keep the scores on about the scale
 they had. `normalize_brightness: true` scales each score to the run's typical
 brightness, as camera noise grows with the light on the mite's patch.
 `normalize_floor: true` moves each mite's own floor, the median of its scores
@@ -466,7 +466,7 @@ go back to the same labels. They need the recordings saved: without them there i
 no clip to judge.
 
 Only what the analysis reads of the recordings is saved, to `recordings/<run name>/`
-(classes/roi_recordings.py):
+(classes/storage/roi_recordings.py):
 
 | File | What |
 |---|---|
@@ -492,7 +492,7 @@ plate map and the zones show the first frame, and a fly-off is seen leaving its
 place, not its walk across the plate. The mites are those found when the run started and added during it; the
 detector's settings changed later find no others there. Untick *Save the
 recordings* for long runs; the results are the same, but there is then no clip
-to play and nothing to open again. Folders of BMPs opened by path, from the Discobox app or from runs before this, are read as before; folders dropped onto the page are shrunk (classes/roi_conversion.py).
+to play and nothing to open again. Folders of BMPs opened by path, from the Discobox app or from runs before this, are read as before; folders dropped onto the page are shrunk (classes/storage/roi_conversion.py).
 
 *Stop* ends the recording being captured with the frames already in, analyses it
 and writes the results; so does Ctrl+C on the server. Closing the page does not
@@ -560,18 +560,22 @@ Each analysis writes to `results/<recording>/`:
 Dependencies point one way: `web/` → `pipeline/` → `classes/`.
 
 ```
-classes/      detection, zones, motion scoring, plotting; the analysis core
-              (motion_analysis.py) and where its frames come from
-              (frame_source.py)
-classes/live/ the camera, fan and LEDs, test run and live session
-classes/discobox/  camera_utils.py from the Discobox app, unchanged
-pipeline/     the only package the interface may call: one small module per job
-              (its __init__.py lists them), calibration/ and live/ for those pages
-reporting.py  score table -> Excel + figures
-main.py       command-line entry point
-web/          FastAPI server: server.py, one router per page area in routes/
-web/static/  the page (no framework, no build step)
-unit_tests/   includes test_layering.py, which enforces the boundary above
+web/static/            the page: one class per file in js/<area>/, one stylesheet per part in css/
+                       (no framework, no build step)
+web/                   FastAPI server: server.py puts it together, one router per part of the page
+                       in routes/
+pipeline/              the only package the interface may call: one small module per job (its
+                       __init__.py lists them), calibration/ and live/ for those pages
+classes/               the analysis, by what it works on (classes/__init__.py lists the packages):
+  scoring/             finding the mites and scoring them; motion_analysis.py is the core
+  plate/               zones, mites and their ids, the names beside the plates
+  storage/             recordings (whole frames or ROIs: frame_source.py) and the app's files
+  results/             the workbook and figures (reporting.py), survival, corrections
+  ground_truth/        calibration against the user's labels, the poke test
+  live/                the camera, fan and LEDs, test run and live session
+  discobox/            camera_utils.py from the Discobox app, unchanged
+main.py                command-line entry point
+unit_tests/            includes test_layering.py, which enforces the boundary above
 ```
 
 Folder and live runs go through one analysis core, `MotionAnalysis`: it finds the
@@ -600,7 +604,7 @@ half: two zones per plate. *Zones per plate* (1 or 2) chooses between the two fi
 on the label page, for a folder and for a live run until it starts. The
 choice is saved with the recordings, as the `zones_per_plate` line of their
 `.settings.txt`, so every later analysis and calibration of them uses the same
-zones (`classes/zone_layout.py`). A zone id is another plate in the other layout,
+zones (`classes/plate/zone_layout.py`). A zone id is another plate in the other layout,
 so the labels and negative controls of two zones per plate are kept apart, in
 `labels_2.json` and `controls_2.json`.
 

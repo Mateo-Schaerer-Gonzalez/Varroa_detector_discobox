@@ -2,7 +2,7 @@ import numpy as np
 import pytest
 
 from classes.app_config import RectStyle
-from classes.rect import Rect
+from classes.plate.rect import Rect
 
 
 class FakeConfig:

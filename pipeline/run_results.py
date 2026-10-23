@@ -3,13 +3,13 @@ by hand, the calls to check by eye, and the settings saved with the recordings
 that change the numbers shown (death time, mites to check).
 """
 
-import reporting
+from classes.results import reporting
 from classes.app_config import get_default_config
-from classes import settings_file
+from classes.storage import settings_file
 from classes.live.settings import RANGES as SETTING_RANGES
-from classes.movement_stats import MovementReport
-from classes.review_band import ReviewBand
-from classes.survival import SurvivalReport
+from classes.results.movement_stats import MovementReport
+from classes.results.review_band import ReviewBand
+from classes.results.survival import SurvivalReport
 from pipeline import output_files, paths, plate_zones, preview_images, refusals, scoring
 
 
@@ -142,7 +142,7 @@ def describe_movement(results):
     """`results` (as run_analysis() returns them) with the numbers the result
     pages show about how the mites move: per mite, per zone (their rests between
     movements too), and the groups in the order the pages list them, each with
-    the box of its moving mites' scores (see classes/movement_stats.py)."""
+    the box of its moving mites' scores (see classes/results/movement_stats.py)."""
     return {**results, **MovementReport(results).describe()}
 
 
@@ -151,6 +151,6 @@ def describe_survival(results, death_minutes=0, controls=()):
     result pages, with `death_minutes` the time a mite must be still to count as
     dead and `controls` the zones ticked as negative controls: the mites alive
     over time per group and per zone, and every group, its zones pooled, against
-    the controls by the log-rank test (see classes/survival.py). They change with
+    the controls by the log-rank test (see classes/results/survival.py). They change with
     those two, with no need to run the analysis again."""
     return SurvivalReport(results, death_minutes, controls).describe()

@@ -8,11 +8,11 @@ from pathlib import Path
 
 import pipeline
 from pipeline.live import live_setup
-from classes.call_corrections import CallCorrections
-from classes.frame_source import Frame, FolderSource, RecordingEnd
+from classes.results.call_corrections import CallCorrections
+from classes.storage.frame_source import Frame, FolderSource, RecordingEnd
 from classes.live.lights import NoLights
 from classes.live.sources import LiveSource
-from classes.zone_layout import ZoneLayout
+from classes.plate.zone_layout import ZoneLayout
 
 
 DEAD_AFTER = 10000  # minutes

@@ -1,5 +1,5 @@
 // The ground truth of the dataset on the ground-truth page, as the server's draft
-// describes it (classes/truth_draft.py): every mite's statuses, what is done, and
+// describes it (classes/ground_truth/truth_draft.py): every mite's statuses, what is done, and
 // how many mites have changes not saved yet. A click or a fill button goes to the
 // server, one after another, and the page shows the view it sends back; each view
 // has a version, so a late reply never replaces a newer one. Every change is saved
@@ -56,7 +56,7 @@ class GroundTruth {
 
   // Why there is nothing to label of a live run's mite in a recording: "not added
   // yet" before it was added, "dead, not followed" once it counted as dead; null
-  // where it was followed (the server's: view.followed, classes/truth_draft.py).
+  // where it was followed (the server's: view.followed, classes/ground_truth/truth_draft.py).
   unfollowed(mite, recording) {
     const there = this.view.followed?.[mite.id];
     if (!there || there[recording]) return null;

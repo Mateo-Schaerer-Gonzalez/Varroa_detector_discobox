@@ -27,8 +27,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import numpy as np
 
 import pipeline
-from classes import calibration
-from classes.analyzer import Analyzer
+from classes.ground_truth import calibration
+from classes.scoring.analyzer import Analyzer
 from classes.app_config import get_default_config
 from tune_optical_flow import load_observations
 

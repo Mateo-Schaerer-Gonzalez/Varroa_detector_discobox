@@ -1,6 +1,6 @@
 // The survival of every group, its zones pooled, against the zones ticked as
 // negative controls, pooled: the log-rank tests the server worked out
-// (results.survival.log_rank, see classes/survival.py).
+// (results.survival.log_rank, see classes/results/survival.py).
 
 class SurvivalTable {
   constructor(page, groups) {

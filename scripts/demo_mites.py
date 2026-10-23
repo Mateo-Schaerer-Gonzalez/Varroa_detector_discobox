@@ -7,7 +7,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import cv2
 import numpy as np
 
-from classes.mite import Mite
+from classes.plate.mite import Mite
 
 OUTPUT_PATH = Path(__file__).resolve().parent / "demo_mites_output.png"
 

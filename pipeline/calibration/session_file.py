@@ -6,9 +6,9 @@ folder.
 
 from pathlib import Path
 
-from classes.files import read_json, write_json
-from classes.frame_source import open_source
-from classes.mite import Mite
+from classes.storage.files import read_json, write_json
+from classes.storage.frame_source import open_source
+from classes.plate.mite import Mite
 from pipeline import paths, plate_labels, plate_zones, preview_images, scoring
 
 

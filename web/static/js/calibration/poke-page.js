@@ -3,7 +3,7 @@
 // above the plate, in the round chosen beside it: it moved (alive up to then),
 // it did not (dead from then on), or it was not poked; a click on a zone's
 // number gives it to the zone's mites not poked yet. Every change is saved at
-// once, and what it does is the server's (classes/poke_test.py).
+// once, and what it does is the server's (classes/ground_truth/poke_test.py).
 
 class PokePage {
   static NAMES = { moved: "moved", unmoved: "did not move", unset: "not poked" };

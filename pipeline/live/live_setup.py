@@ -8,15 +8,15 @@ from pathlib import Path
 
 import cv2
 
-from classes.analyzer import Analyzer
+from classes.scoring.analyzer import Analyzer
 from classes.live import camera as live_camera
 from classes.live.lights import DEVICES, open_lights
 from classes.live.session import LiveSession
 from classes.live.settings import Settings
 from classes.live.sources import CameraSource
-from classes.motion_analysis import MotionAnalysis, detect_mites
-from classes.roi_recordings import open_recordings
-from classes.zone_layout import ZoneLayout
+from classes.scoring.motion_analysis import MotionAnalysis, detect_mites
+from classes.storage.roi_recordings import open_recordings
+from classes.plate.zone_layout import ZoneLayout
 from pipeline import folder_analysis, output_files, paths, plate_labels, preview_images
 from pipeline.live import live_capture, live_runs, live_settings
 

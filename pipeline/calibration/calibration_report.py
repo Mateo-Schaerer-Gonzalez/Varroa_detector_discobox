@@ -7,15 +7,15 @@ from types import SimpleNamespace
 
 import numpy as np
 
-import reporting
-from classes import calibration
-from classes import death_calibration
-from classes.analyzer import Analyzer
-from classes.benchmark import Benchmark
+from classes.results import reporting
+from classes.ground_truth import calibration
+from classes.ground_truth import death_calibration
+from classes.scoring.analyzer import Analyzer
+from classes.scoring.benchmark import Benchmark
 from classes.app_config import get_default_config
-from classes.error_map import ErrorMap
-from classes.outline_change import OutlineChange
-from classes.score_normalizer import ScoreNormalizer
+from classes.results.error_map import ErrorMap
+from classes.scoring.outline_change import OutlineChange
+from classes.scoring.score_normalizer import ScoreNormalizer
 from pipeline import output_files, paths
 from pipeline.calibration import dataset_library, movement_score, poke_test, report_rows, score_cache, suggested_band
 
@@ -68,12 +68,12 @@ def evaluate_calibration(out_dir, datasets, metric=None, params=None, recordings
     has the report first (results_file() waits for the workbook).
 
     With `benchmark`, the same observations are also called by the Discobox's
-    original software (classes/benchmark.py): its confusion counts, with
+    original software (classes/scoring/benchmark.py): its confusion counts, with
     precision, recall and F1 as for the detector, come as "benchmark", and its
     survival curve and its death errors join the others. Slow the first time a dataset meets it.
 
     With `between`, each mite's outline is also compared from each recording to
-    the next (classes/outline_change.py): a change that opening the box to poke
+    the next (classes/scoring/outline_change.py): a change that opening the box to poke
     the mites does not fake. Each observation then has its "outline_change" and
     "outline_call", the outline's calls join the others' survival curves and
     death errors (as "outline"), and the poked mites' ("others" of "poke"); and

@@ -9,8 +9,8 @@ import cv2
 
 from classes import app_config
 from classes.app_config import get_default_config
-from classes.files import read_json, try_json, write_json
-from classes.label_reader import LabelReader
+from classes.storage.files import read_json, try_json, write_json
+from classes.plate.label_reader import LabelReader
 from pipeline import paths, plate_zones
 
 
@@ -28,7 +28,7 @@ def save_labels(data_dir, labels):
 
 def label_reading():
     """Whether the names written beside the plates can be read (it takes a Google
-    Gemini API key, see classes/label_reader.py), and whether the label page
+    Gemini API key, see classes/plate/label_reader.py), and whether the label page
     does so: its box, off until ticked (save_label_reading)."""
     return {"available": LabelReader.saved_key() is not None, "enabled": bool(get_default_config().label_reader.enabled)}
 

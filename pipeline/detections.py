@@ -2,8 +2,8 @@
 
 from pathlib import Path
 
-from classes import calibration
-from classes import positions
+from classes.ground_truth import calibration
+from classes.plate import positions
 from pipeline import ground_truth, paths, refusals
 
 

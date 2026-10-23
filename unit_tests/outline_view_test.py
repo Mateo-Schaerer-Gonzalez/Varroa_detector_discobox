@@ -1,9 +1,9 @@
-"""What the result pages draw over a mite (classes/outline_view.py): the dots
+"""What the result pages draw over a mite (classes/scoring/outline_view.py): the dots
 round its outline and the arrow toward the side its outline changes on."""
 
 import numpy as np
 
-from classes.outline_view import OutlineView
+from classes.scoring.outline_view import OutlineView
 from detector_test import _mite_frames
 
 LEG = [0, 3, 0, 3, 0, 3]  # a leg on the mite's left, out in every other frame

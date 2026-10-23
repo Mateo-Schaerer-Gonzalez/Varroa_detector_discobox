@@ -1,6 +1,6 @@
 """The scores of a run are kept with its results, and read back only for the
 very frames, mites, metric and code they were worked out with
-(classes/kept_scores.py)."""
+(classes/storage/kept_scores.py)."""
 
 import json
 import os
@@ -11,10 +11,10 @@ import pytest
 import pipeline
 import reference
 from classes.app_config import get_default_config
-from classes.data_loader import DataLoader
-from classes.frame_source import FolderSource
-from classes.kept_scores import KeptScores
-from classes.mite import Mite
+from classes.storage.data_loader import DataLoader
+from classes.storage.frame_source import FolderSource
+from classes.storage.kept_scores import KeptScores
+from classes.plate.mite import Mite
 
 FRAMES = [["2025-09-04-09-28-17_fps-30", [["a.bmp", 100, 1], ["b.bmp", 100, 2]]]]
 FIRST = np.arange(48, dtype=np.uint8).reshape(4, 4, 3)

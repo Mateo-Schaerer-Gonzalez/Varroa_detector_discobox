@@ -20,7 +20,7 @@ files (workbook, figures) are written too. Once the run is over,
 import logging
 import threading
 
-from classes.frame_source import Frame, RecordingEnd
+from classes.storage.frame_source import Frame, RecordingEnd
 
 _logger = logging.getLogger(__name__)
 

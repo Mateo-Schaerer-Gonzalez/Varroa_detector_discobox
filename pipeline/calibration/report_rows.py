@@ -4,10 +4,10 @@ of each dataset, and what the report shows of each dataset and zone.
 
 import numpy as np
 
-from classes import calibration
-from classes.benchmark import Benchmark
-from classes.outline_change import OutlineChange
-from classes.zones import UNLABELED
+from classes.ground_truth import calibration
+from classes.scoring.benchmark import Benchmark
+from classes.scoring.outline_change import OutlineChange
+from classes.plate.zones import UNLABELED
 from pipeline import ground_truth
 from pipeline.calibration import score_cache
 

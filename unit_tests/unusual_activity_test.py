@@ -2,8 +2,8 @@ import cv2
 import numpy as np
 import pandas as pd
 
-from classes.mite_look import MiteLook
-from classes.unusual_activity import ABSENT_RUN, TURN_LIMIT, UnusualActivity
+from classes.scoring.mite_look import MiteLook
+from classes.scoring.unusual_activity import ABSENT_RUN, TURN_LIMIT, UnusualActivity
 
 TIMES = [10.0 * i for i in range(12)]
 # Three mites in a row, 60 px apart, and one further off in another zone.

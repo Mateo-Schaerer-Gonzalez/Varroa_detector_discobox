@@ -1,20 +1,20 @@
 """The plates and their zones, and the mites in them as the pages know them.
 
 A recording's zones are those of the layout saved with it (one zone per plate,
-coords_pixel.txt, or two, coords_pixel_2.txt; classes/zone_layout.py).
+coords_pixel.txt, or two, coords_pixel_2.txt; classes/plate/zone_layout.py).
 """
 
 from pathlib import Path
 
-from classes.zone_layout import ZoneLayout
-from classes.zones import ZoneManager
+from classes.plate.zone_layout import ZoneLayout
+from classes.plate.zones import ZoneManager
 
 
 # Zone type ids as they appear in the coordinates file.
 ZONE_TYPES = {"0": "label", "1": "mite"}
 EXCLUDED_TYPES = ["label"]
 
-# One zone per plate. Which file a recording uses is saved with it (classes/zone_layout.py).
+# One zone per plate. Which file a recording uses is saved with it (classes/plate/zone_layout.py).
 DEFAULT_COORDS_FILE = "coords_pixel.txt"
 
 

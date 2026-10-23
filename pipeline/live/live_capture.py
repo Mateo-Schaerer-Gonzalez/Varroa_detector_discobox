@@ -7,12 +7,12 @@ import logging
 import time
 from datetime import datetime
 
-from classes.call_corrections import CallCorrections
-from classes.files import write_json
+from classes.results.call_corrections import CallCorrections
+from classes.storage.files import write_json
 from classes.live.progress import ZoneProgress
 from classes.live.recorder import Recorder
-from classes.roi_recordings import RoiVideo
-from classes.score_normalizer import ScoreNormalizer
+from classes.storage.roi_recordings import RoiVideo
+from classes.scoring.score_normalizer import ScoreNormalizer
 from pipeline import output_files, paths, plate_labels, preview_images, run_results, scoring
 from pipeline.live import live_runs
 

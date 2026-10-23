@@ -9,8 +9,8 @@ import pytest
 import pipeline
 import reference
 from classes.app_config import get_default_config
-from classes.score_normalizer import ScoreNormalizer
-from classes.zones import MITE_SCORE_COLUMNS
+from classes.scoring.score_normalizer import ScoreNormalizer
+from classes.plate.zones import MITE_SCORE_COLUMNS
 
 TIMES = [0.0, 5.0, 10.0, 15.0, 20.0]
 THRESHOLD = 2.6

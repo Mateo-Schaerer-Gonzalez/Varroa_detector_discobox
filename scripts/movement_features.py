@@ -14,7 +14,7 @@ Per mite and recording (cut as the app cuts it, stabilized):
 
     outline_variability, outline_movement, topN_variability, mean_diff,
     max_diff, vector_variance, topN_temporal_range, optical_flow
-                    the metrics of classes/analyzer.py, with config.yaml's
+                    the metrics of classes/scoring/analyzer.py, with config.yaml's
                     parameters (outline_variability is the score in use)
     step            how much a step (a change that stays) explains of the
                     outline pixels' change, the 3 best, in noise variances
@@ -49,11 +49,11 @@ import numpy as np
 
 import pipeline
 from pipeline.calibration import dataset_library, movement_score, poke_test
-from classes import calibration
-from classes.analyzer import Analyzer
-from classes.benchmark import Benchmark
-from classes.plate_stabilizer import PlateStabilizer
-from classes.roi_recordings import open_recordings
+from classes.ground_truth import calibration
+from classes.scoring.analyzer import Analyzer
+from classes.scoring.benchmark import Benchmark
+from classes.scoring.plate_stabilizer import PlateStabilizer
+from classes.storage.roi_recordings import open_recordings
 from poke_run_followed import followed_boxes, index_order
 
 SESSIONS = ("GT_oct_2", "ground_truth_60min", "ground_truth_90min", "sample_data", "Ground_truth_oct_26_final")

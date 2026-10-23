@@ -1,7 +1,7 @@
 """Where on a mite do the pixels change? The measurements behind
 notebooks/outline_variability.ipynb.
 
-The outline_variability metric of classes/analyzer.py unrolls a mite around its
+The outline_variability metric of classes/scoring/analyzer.py unrolls a mite around its
 centre and takes the variance of its pixels over the frames along its outline.
 Every mite of the longest labelled run in recordings/ gets that profile
 for each recording (measure()): one variance for each of 64 directions. From it
@@ -32,9 +32,9 @@ import numpy as np
 import alive_dead_features as adf
 import script_data
 import metric_agreement as ma
-from classes import death_calibration
-from classes.analyzer import Analyzer
-from classes.death_calibration import LabelledRun
+from classes.ground_truth import death_calibration
+from classes.scoring.analyzer import Analyzer
+from classes.ground_truth.death_calibration import LabelledRun
 from optuna_death_time import MAX_PAD
 from tune_optical_flow import shaken
 
@@ -183,7 +183,7 @@ def judged(values, run, still_called=0.001):
                       moving
         death_error   the mean distance in recordings between a mite's death by
                       the score and by the labels, at the threshold that makes
-                      it smallest (classes/death_calibration.py), and
+                      it smallest (classes/ground_truth/death_calibration.py), and
         threshold     that threshold
         later, earlier  the mites the score has die later, earlier than the
                       labels at that threshold

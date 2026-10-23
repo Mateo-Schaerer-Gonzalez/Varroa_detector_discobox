@@ -21,11 +21,11 @@ import numpy as np
 
 import pipeline
 from pipeline.calibration import dataset_library, movement_score
-from classes import calibration
-from classes.analyzer import Analyzer
+from classes.ground_truth import calibration
+from classes.scoring.analyzer import Analyzer
 from classes.app_config import METRIC
-from classes.plate_stabilizer import PlateStabilizer
-from classes.roi_recordings import open_recordings
+from classes.scoring.plate_stabilizer import PlateStabilizer
+from classes.storage.roi_recordings import open_recordings
 from poke_run_followed import followed_boxes, index_order
 
 SESSIONS = ("ground_truth_60min", "ground_truth_90min", "sample_data")

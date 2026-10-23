@@ -1,7 +1,7 @@
 // A drop zone, its "Choose folder" button and its typed-path box: in the
 // analysis and in calibration. A dropped or chosen folder is copied to the
 // server first; `open` is then called with the server-side folder. Which files
-// are copied, and where to, is the server's choice (classes/upload_plan.py).
+// are copied, and where to, is the server's choice (classes/storage/upload_plan.py).
 
 class FolderPicker {
   // Dropping a folder anywhere else on the page should not navigate away to it.

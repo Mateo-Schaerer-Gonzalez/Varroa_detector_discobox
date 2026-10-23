@@ -2,8 +2,8 @@ import numpy as np
 import pytest
 
 from classes.app_config import TextZoneStyle
-from classes.mite import Mite
-from classes.zones import Zone, ZoneManager
+from classes.plate.mite import Mite
+from classes.plate.zones import Zone, ZoneManager
 
 
 class FakeConfig:

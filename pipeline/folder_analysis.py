@@ -6,11 +6,11 @@ folder is kept, so a correction gives new results without decoding again.
 import threading
 from pathlib import Path
 
-from classes.analyzer import Analyzer
-from classes.call_corrections import CallCorrections
-from classes.motion_analysis import detect_mites
-from classes.roi_recordings import open_recordings
-from classes.zone_layout import ZoneLayout
+from classes.scoring.analyzer import Analyzer
+from classes.results.call_corrections import CallCorrections
+from classes.scoring.motion_analysis import detect_mites
+from classes.storage.roi_recordings import open_recordings
+from classes.plate.zone_layout import ZoneLayout
 from pipeline import ground_truth, output_files, paths, plate_labels, plate_zones, preview_images, run_results, scoring
 
 
@@ -100,7 +100,7 @@ def run_analysis(data_dir, out_dir, labels=None, coords_file=None,
     from all of its frames. Returns the output filenames, a summary, and the
     per-zone and per-mite results the UI browses.
 
-    The scores are kept in `out_dir` (classes/kept_scores.py): a run of the same
+    The scores are kept in `out_dir` (classes/storage/kept_scores.py): a run of the same
     recordings, by the same code and settings, reads them back and is done in a
     moment. With `files_later`, the workbook and the figures are written just
     after the results are handed over, as after a correction, so a page need not
@@ -129,9 +129,9 @@ def correct_call(out_dir, mite_id, recording, state=None, checked=False):
     no correction any more), "gone" (the mite is not there in this recording,
     e.g. it fell off) or "gone_from" (nor in any later one); without `state`,
     the next of these. A mite gone is censored there. The change is saved next
-    to the recordings (see classes/call_corrections.py), so later runs keep it.
+    to the recordings (see classes/results/call_corrections.py), so later runs keep it.
     With `checked`, a call is kept as checked by eye, also when it is the
-    detector's: the answer to a close call (classes/review_band.py).
+    detector's: the answer to a close call (classes/results/review_band.py).
     Returns the results as run_analysis() does, every number following the
     change. The workbook and the figures are written again a moment later, once
     the corrections pause (finish_files() waits for them)."""

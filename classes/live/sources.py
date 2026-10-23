@@ -1,6 +1,6 @@
 """The live frame source: the camera during a Discobox test run.
 
-It gives what FolderSource gives (classes/frame_source.py), a stream of Frames
+It gives what FolderSource gives (classes/storage/frame_source.py), a stream of Frames
 and RecordingEnds, so the analysis reads both the same way. It also keeps the
 newest frame for the live feed, whether or not it belongs to a recording, and says
 how acquisition is going (status()).
@@ -27,7 +27,7 @@ import time
 from collections import deque
 from dataclasses import dataclass, field
 
-from classes.frame_source import Frame, Recording, RecordingEnd
+from classes.storage.frame_source import Frame, Recording, RecordingEnd
 from classes.live.camera import QUEUE_SIZE, Camera
 from classes.live.schedule import TestRun
 

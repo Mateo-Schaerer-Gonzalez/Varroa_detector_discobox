@@ -2,7 +2,7 @@
 // check (results.review_mites, saved with the recordings, set here), and the server
 // fits the narrowest band around the threshold that asks about that many: a score
 // in it is too close to trust, and it lists, per mite, the ones its time of death
-// depends on, the latest first (results.review, mite.to_check; classes/review_band.py).
+// depends on, the latest first (results.review, mite.to_check; classes/results/review_band.py).
 // The overview lists the mites to check and sets their number; a mite's page asks about the recording shown,
 // keeps the answer (the buttons, or M and S) and goes on to the next close call, of
 // this mite or of the next one, whose clip is fetched ahead. A bar says how far

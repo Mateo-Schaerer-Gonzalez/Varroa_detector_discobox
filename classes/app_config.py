@@ -18,7 +18,7 @@ DEFAULT_CONFIG_PATH = Path(os.environ.get("DISCOBOX_CONFIG") or TEMPLATE_CONFIG_
 # own `mite.metric` is not read, and one without a threshold or parameters for
 # this score (made before it was the one) takes config.default.yaml's.
 # The frames always follow a shaking plate before they are scored
-# (classes/plate_stabilizer.py): a file's own `mite.stabilize_plate` is not read either.
+# (classes/scoring/plate_stabilizer.py): a file's own `mite.stabilize_plate` is not read either.
 METRIC = "outline_variability"
 
 
@@ -101,16 +101,16 @@ class MiteConfig:
     # After loading it is the threshold of `metric`.
     motion_threshold: Optional[float] = None
     # Take a shaking plate out of the frames before scoring (see
-    # classes/plate_stabilizer.py). It works with every metric.
+    # classes/scoring/plate_stabilizer.py). It works with every metric.
     stabilize_plate: bool = False
     # Put the scores of a finished run on one scale for every mite (see
-    # classes/score_normalizer.py): scaled to the run's typical brightness, and
+    # classes/scoring/score_normalizer.py): scaled to the run's typical brightness, and
     # each mite's own floor moved to the common one.
     normalize_brightness: bool = False
     normalize_floor: bool = False
     # metric name -> [low, high] on that metric's scale: the shape of the band
     # around its threshold whose scores are checked by eye (see
-    # classes/review_band.py), e.g. {"topN_variability": [2.7, 3.9]}. A metric
+    # classes/results/review_band.py), e.g. {"topN_variability": [2.7, 3.9]}. A metric
     # left out has a band as far below the threshold as above it.
     metric_review_bands: dict = field(default_factory=dict)
     # How many mites the result pages ask to check by eye, unless a run has its own number.

@@ -5,8 +5,8 @@ a mite. The analysis reads the "not a mite" marks, the calibration everything.
 
 from pathlib import Path
 
-from classes import calibration
-from classes.files import read_json, write_json
+from classes.ground_truth import calibration
+from classes.storage.files import read_json, write_json
 from pipeline import paths
 
 

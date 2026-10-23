@@ -4,21 +4,21 @@ mite:
   # Per metric, the movement threshold on that metric's scale; the one of `metric`
   # is used, so changing `metric` also changes the threshold.
   metric_thresholds: {max_diff: 14.0, mean_diff: 1.727, vector_diff: 117.7, vector_variance: 229.9, variability: 3.476, topN_variability: 3.476, optical_flow: 0.1004, topN_temporal_range: 28.4, topN_vector_temporal_range: 38.5, topN_binary_flux: 0.02296, outline_movement: 0.266, outline_variability: 1.638}
-  # Per metric, parameters that override the defaults in classes/analyzer.py.
+  # Per metric, parameters that override the defaults in classes/scoring/analyzer.py.
   # Chosen and saved from the calibration report, or edited here.
   metric_params: {max_diff: {}, mean_diff: {}, vector_diff: {}, vector_variance: {}, variability: {}, topN_variability: {n: 759}, optical_flow: {window: 5, n: 50, step: 13, winsize: 23, levels: 2, iterations: 2, poly_n: 7, poly_sigma: 1.5, pad: 12}, topN_temporal_range: {n: 10}, topN_vector_temporal_range: {n: 1}, topN_binary_flux: {threshold: 98, n: 260}, outline_movement: {n: 4, pad: 16}, outline_variability: {relative: 0.0, width: 1.5, pad: 16}}
   # Follow the plate when it shakes: each frame is shifted back by the plate's
   # movement before any metric scores it. Changes nothing on a still plate.
   stabilize_plate: true
   # Put the scores of a finished run on one scale for every mite, in the Analysis
-  # window (classes/score_normalizer.py): scaled to the run's typical brightness,
+  # window (classes/scoring/score_normalizer.py): scaled to the run's typical brightness,
   # and each mite's own floor (the median of its scores) moved to the common one.
   # Tried and saved with the threshold on the calibration report.
   normalize_brightness: false
   normalize_floor: false
   # Per metric, [low, high] on its scale: the shape of the band around its
   # threshold whose scores are too close to call. The result pages widen or
-  # narrow it to ask about review_mites mites (classes/review_band.py), keeping
+  # narrow it to ask about review_mites mites (classes/results/review_band.py), keeping
   # how far below the threshold it reaches against above it. Saved by the
   # calibration report; a metric left out has a band as far either way.
   metric_review_bands: {}
@@ -73,7 +73,7 @@ detector:
   min_inertia_ratio: 0.45
 
 # The names written beside the plates are read by Google Gemini and filled in on
-# the label page (classes/label_reader.py). It needs the internet and a free API
+# the label page (classes/plate/label_reader.py). It needs the internet and a free API
 # key, as GEMINI_API_KEY=... in the file .env in this folder.
 label_reader:
   enabled: false                 # the label page's box "Read the names from the plates"; ticking it saves it here

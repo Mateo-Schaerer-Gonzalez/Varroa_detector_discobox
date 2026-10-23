@@ -8,10 +8,10 @@ import pytest
 
 import pipeline
 import reference
-from classes.call_corrections import CallCorrections
-from classes.movement_stats import MovementReport, MovementStats
-from classes.survival import SurvivalAnalysis, SurvivalReport
-from classes.zones import MITE_SCORE_COLUMNS
+from classes.results.call_corrections import CallCorrections
+from classes.results.movement_stats import MovementReport, MovementStats
+from classes.results.survival import SurvivalAnalysis, SurvivalReport
+from classes.plate.zones import MITE_SCORE_COLUMNS
 
 
 def mite_data():

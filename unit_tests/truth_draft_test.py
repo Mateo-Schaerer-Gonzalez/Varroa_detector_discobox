@@ -1,4 +1,4 @@
-"""The ground truth being entered on the ground-truth page (classes/truth_draft.py
+"""The ground truth being entered on the ground-truth page (classes/ground_truth/truth_draft.py
 and pipeline's truth_view / edit_truth / save_truth): what a click or a fill
 button does, and saving it on top of what another window saved."""
 
@@ -6,7 +6,7 @@ import pytest
 
 import pipeline
 from calibration_library_test import make_session
-from classes.truth_draft import TruthDraft
+from classes.ground_truth.truth_draft import TruthDraft
 
 MITES = [{"id": "0", "zone_id": 1}, {"id": "1", "zone_id": 1}, {"id": "2", "zone_id": 2}]
 ZONES = [{"id": 0}, {"id": 1}, {"id": 2}]

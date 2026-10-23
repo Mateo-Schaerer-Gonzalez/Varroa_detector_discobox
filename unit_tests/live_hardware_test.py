@@ -13,7 +13,7 @@ import pytest
 
 import pipeline
 from pipeline.live import live_runs, live_setup
-from classes.frame_source import Frame, RecordingEnd
+from classes.storage.frame_source import Frame, RecordingEnd
 from classes.live import camera as live_camera
 from classes.live.camera import FrameHandler, choose_camera, configure
 from classes.live.lights import COMMANDS, Lights, NoLights, packet

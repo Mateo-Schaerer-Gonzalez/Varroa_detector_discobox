@@ -1,4 +1,4 @@
-"""Sessions saved as the mites' ROIs (classes/roi_recordings.py): what is written
+"""Sessions saved as the mites' ROIs (classes/storage/roi_recordings.py): what is written
 reads back exactly, before and after the recordings are stitched into each
 mite's video, whatever stops a stitch half way; and the pages get only the
 clips that were saved."""
@@ -17,10 +17,10 @@ import folder_camera
 import pipeline
 from pipeline.live import live_runs
 import reference
-from classes.frame_source import Frame, Recording, RoiSource, open_source
+from classes.storage.frame_source import Frame, Recording, RoiSource, open_source
 from classes.live.recorder import Recorder
-from classes.files import remove_tree
-from classes.roi_recordings import (FIRST_FRAME_NAME, INDEX_NAME, PARTS_DIRNAME, ROI_DIRNAME, ROI_MARGIN,
+from classes.storage.files import remove_tree
+from classes.storage.roi_recordings import (FIRST_FRAME_NAME, INDEX_NAME, PARTS_DIRNAME, ROI_DIRNAME, ROI_MARGIN,
                                     RoiRecordings, RoiVideo, RoiWriter, roi_rect)
 
 START = datetime(2025, 9, 4, 9, 28, 17)

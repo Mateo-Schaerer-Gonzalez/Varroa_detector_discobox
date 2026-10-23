@@ -41,11 +41,11 @@ import numpy as np
 import pipeline
 from pipeline import ground_truth
 from pipeline.calibration import dataset_library, score_cache
-from classes import calibration
-from classes.analyzer import Analyzer
+from classes.ground_truth import calibration
+from classes.scoring.analyzer import Analyzer
 from classes.app_config import get_default_config
-from classes.data_loader import DataLoader
-from classes.plate_stabilizer import PlateStabilizer
+from classes.storage.data_loader import DataLoader
+from classes.scoring.plate_stabilizer import PlateStabilizer
 
 METRIC = "optical_flow"
 

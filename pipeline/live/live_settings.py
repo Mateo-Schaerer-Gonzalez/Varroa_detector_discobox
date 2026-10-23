@@ -8,8 +8,8 @@ from datetime import date
 from classes.live import camera as live_camera
 from classes.live.lights import serial_ports
 from classes.live.settings import RANGES as SETTING_RANGES, Settings
-from classes.motion_analysis import MotionAnalysis
-from classes.zone_layout import ZoneLayout
+from classes.scoring.motion_analysis import MotionAnalysis
+from classes.plate.zone_layout import ZoneLayout
 from pipeline import paths
 from pipeline.live import live_runs
 

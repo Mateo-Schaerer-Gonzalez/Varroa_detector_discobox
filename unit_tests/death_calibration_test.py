@@ -4,8 +4,8 @@ mite's death, counted as the calibration report counts it."""
 import numpy as np
 import pytest
 
-from classes import calibration, death_calibration
-from classes.death_calibration import LabelledRun
+from classes.ground_truth import calibration, death_calibration
+from classes.ground_truth.death_calibration import LabelledRun
 
 M, S = calibration.MOVING, calibration.STILL
 

@@ -1,14 +1,14 @@
 """Bayesian search (Optuna, TPE) of the whole movement setup against the saved
 ground truth, by where it puts each mite's death: the metric, its parameters,
 the normalisations of the scores, the threshold, and a band around it to check
-by eye (classes/death_calibration.py).
+by eye (classes/ground_truth/death_calibration.py).
 
 The mites of every dataset in recordings/ are split in two, dataset by
 dataset: the train mites choose everything, the test mites only judge it.
 
     per trial    every mite is scored in every recording with the trial's
                  parameters, as a calibration scores it; the scores go through
-                 each of the four normalisations (classes/score_normalizer.py);
+                 each of the four normalisations (classes/scoring/score_normalizer.py);
                  for each, the threshold with the smallest mean death error on
                  the train mites is taken. The trial's value is the smallest of
                  the four errors, in recordings.
@@ -52,13 +52,14 @@ import pandas as pd
 import pipeline
 from pipeline.calibration import dataset_library
 import script_data
-from classes import death_calibration, plate_stabilizer
-from classes.analyzer import Analyzer
+from classes.ground_truth import death_calibration
+from classes.scoring import plate_stabilizer
+from classes.scoring.analyzer import Analyzer
 from classes.app_config import get_default_config
-from classes.data_loader import DataLoader
-from classes.death_calibration import LabelledRun
-from classes.plate_stabilizer import PlateStabilizer
-from classes.score_normalizer import ScoreNormalizer
+from classes.storage.data_loader import DataLoader
+from classes.ground_truth.death_calibration import LabelledRun
+from classes.scoring.plate_stabilizer import PlateStabilizer
+from classes.scoring.score_normalizer import ScoreNormalizer
 from optuna_metrics import DEFAULT_TRIALS, SPACES, TRIALS, _top_n, start_params
 from tune_optical_flow import POLY_SIGMA
 

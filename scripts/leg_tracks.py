@@ -1,5 +1,5 @@
 """The legs of every mite of the longest labelled run, found in every frame and
-followed through the run (classes/leg_tracker.py): what is behind
+followed through the run (classes/scoring/leg_tracker.py): what is behind
 notebooks/leg_tracking.ipynb.
 
 The patches are those scripts/optuna_death_time.py cuts and keeps; the tracks
@@ -19,8 +19,8 @@ import numpy as np
 
 import alive_dead_features as adf
 import script_data
-from classes import leg_tracker
-from classes.leg_tracker import LegTracker, Tracks
+from classes.scoring import leg_tracker
+from classes.scoring.leg_tracker import LegTracker, Tracks
 from optuna_death_time import MAX_PAD
 
 FIELDS = ("xy", "tip", "length", "mass", "centre", "axis", "count")

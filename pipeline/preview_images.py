@@ -7,7 +7,7 @@ from pathlib import Path
 
 import cv2
 
-from classes.files import write_image_whole
+from classes.storage.files import write_image_whole
 from pipeline import paths
 
 

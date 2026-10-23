@@ -17,7 +17,7 @@ ROOT = Path(__file__).resolve().parent.parent
 
 # The analysis libraries. If the web layer imports one of these, it has started
 # doing analysis itself instead of calling pipeline.
-ANALYSIS_MODULES = {"cv2", "numpy", "pandas", "matplotlib", "classes", "reporting"}
+ANALYSIS_MODULES = {"cv2", "numpy", "pandas", "matplotlib", "classes"}
 
 # The web libraries. If the analysis imports one of these, it has grown an
 # opinion about HTTP and can no longer run from the command line.
@@ -48,7 +48,7 @@ def test_web_layer_does_no_analysis():
 
 @pytest.mark.parametrize(
     "path",
-    [*(ROOT / "pipeline").rglob("*.py"), ROOT / "reporting.py", ROOT / "main.py", *(ROOT / "classes").rglob("*.py")],
+    [*(ROOT / "pipeline").rglob("*.py"), ROOT / "main.py", *(ROOT / "classes").rglob("*.py")],
     ids=lambda p: p.relative_to(ROOT).as_posix(),
 )
 def test_analysis_knows_nothing_about_http(path):

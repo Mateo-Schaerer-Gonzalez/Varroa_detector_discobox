@@ -9,7 +9,7 @@ is saved, never the scores, so old recordings can be used to judge new metrics.
 from pathlib import Path
 
 from classes.app_config import get_default_config
-from classes.roi_recordings import open_recordings
+from classes.storage.roi_recordings import open_recordings
 from pipeline import clips, paths, preview_images, refusals
 from pipeline.calibration import dataset_library, session_file, truth_entry
 

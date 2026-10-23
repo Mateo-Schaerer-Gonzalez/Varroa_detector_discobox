@@ -1,6 +1,6 @@
 """Saves the recordings of a live run: only what the analysis reads of them, each
 mite's surroundings (its ROI), as one continuous lossless video per mite, and
-the first frame whole (classes/roi_recordings.py). In a thread of its own, so
+the first frame whole (classes/storage/roi_recordings.py). In a thread of its own, so
 saving never holds up the camera. Only the frames of the recordings (the bursts)
 are saved, never the live feed in between. The run folder is then a session like
 any other: folder mode reads it back and gets the live run's results exactly.
@@ -22,8 +22,8 @@ import logging
 import queue
 import threading
 
-from classes.frame_source import Frame
-from classes.roi_recordings import RoiRecordings, RoiWriter
+from classes.storage.frame_source import Frame
+from classes.storage.roi_recordings import RoiRecordings, RoiWriter
 
 _logger = logging.getLogger(__name__)
 

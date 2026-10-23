@@ -4,7 +4,7 @@
 // moving, still, not a mite or not at all, and a label goes on to the next
 // recording; D marks the mite dead from the recording on screen on. ← → move
 // between recordings, ↑ ↓ between mites, P plays or pauses. What a label does,
-// and every count, is the server's (GroundTruth, classes/truth_draft.py). Opened
+// and every count, is the server's (GroundTruth, classes/ground_truth/truth_draft.py). Opened
 // from the calibration report's wrong calls, a note above asks about the one
 // shown, and a label goes on to the next wrong call instead (WrongCalls).
 

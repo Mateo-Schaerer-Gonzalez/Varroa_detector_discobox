@@ -40,8 +40,8 @@ import numpy as np
 import optuna
 
 import pipeline
-from classes import calibration
-from classes.analyzer import Analyzer
+from classes.ground_truth import calibration
+from classes.scoring.analyzer import Analyzer
 from classes.app_config import get_default_config
 from tune_optical_flow import POLY_SIGMA, evaluate, load_observations
 

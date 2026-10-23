@@ -13,10 +13,11 @@ import yaml
 import pipeline
 from pipeline import plate_labels
 import reference
-from classes import app_config, label_reader
+from classes import app_config
+from classes.plate import label_reader
 from classes.app_config import LabelReaderConfig
-from classes.label_reader import LabelReader, LabelReadError
-from classes.rect import TextZone
+from classes.plate.label_reader import LabelReader, LabelReadError
+from classes.plate.rect import TextZone
 
 
 def answer(names):

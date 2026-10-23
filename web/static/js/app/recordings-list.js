@@ -2,7 +2,7 @@
 // into the page. They are listed on the first page of each mode (Live, Analysis,
 // Calibration) with when and how they were recorded, to analyse or calibrate on
 // again: opening one goes through the analysis or calibration. What is said about
-// each is the server's (pipeline.describe_recording, classes/recording_info.py).
+// each is the server's (pipeline.describe_recording, classes/storage/recording_info.py).
 
 class RecordingsList {
   static date(iso) {

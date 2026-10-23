@@ -1,7 +1,7 @@
 """The files of a run's results: the workbook, the figures and the annotated
-first frame (reporting.py). They take longer to write than the results to work
+first frame (classes/results/reporting.py). They take longer to write than the results to work
 out, so after a correction they are written in the background a moment later
-(classes/deferred_files.py); a download waits for them.
+(classes/storage/deferred_files.py); a download waits for them.
 """
 
 import threading
@@ -9,13 +9,13 @@ from pathlib import Path
 
 import cv2
 
-import reporting
-from classes.deferred_files import DeferredFiles
+from classes.results import reporting
+from classes.storage.deferred_files import DeferredFiles
 from pipeline import paths, scoring
 
 
 # The files a page need not wait for, written in the background once things are
-# quiet (classes/deferred_files.py): the workbook and the figures after a page's
+# quiet (classes/storage/deferred_files.py): the workbook and the figures after a page's
 # run and after every call corrected by hand, and a calibration report's workbook.
 files_later = DeferredFiles()
 

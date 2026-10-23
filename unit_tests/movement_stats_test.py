@@ -1,11 +1,11 @@
-"""The movement numbers of the result pages (classes/movement_stats.py), and the
+"""The movement numbers of the result pages (classes/results/movement_stats.py), and the
 run plan of the live page (Settings.plan)."""
 
 import pytest
 
 import pipeline
 from classes.live.settings import Settings
-from classes.movement_stats import MovementReport, MovementStats
+from classes.results.movement_stats import MovementReport, MovementStats
 
 TIMES = [0, 1, 2, 3, 4, 5, 6]
 

@@ -3,7 +3,7 @@ of a key runs, and finish() waits for it."""
 
 import threading
 
-from classes.deferred_files import DeferredFiles
+from classes.storage.deferred_files import DeferredFiles
 
 
 def test_only_the_latest_job_of_a_key_is_run_and_finish_waits_for_it():

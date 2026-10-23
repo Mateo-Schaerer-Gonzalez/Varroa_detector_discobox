@@ -18,7 +18,7 @@ import folder_camera
 import pipeline
 from pipeline.live import live_runs
 import reference
-import reporting
+from classes.results import reporting
 
 
 @pytest.fixture

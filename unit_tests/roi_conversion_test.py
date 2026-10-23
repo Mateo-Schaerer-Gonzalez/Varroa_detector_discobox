@@ -1,5 +1,5 @@
 """A folder of whole frames dropped into the page is shrunk to the mites'
-surroundings (classes/roi_conversion.py): the results stay those of the whole
+surroundings (classes/storage/roi_conversion.py): the results stay those of the whole
 frames, a conversion cut short carries on, and nothing is lost where there are
 no mites to keep."""
 
@@ -13,8 +13,8 @@ import pytest
 import pipeline
 from pipeline.calibration import dataset_library, score_cache
 import reference
-from classes.data_loader import DataLoader
-from classes.roi_recordings import FIRST_FRAME_NAME, RoiRecordings, is_roi_session
+from classes.storage.data_loader import DataLoader
+from classes.storage.roi_recordings import FIRST_FRAME_NAME, RoiRecordings, is_roi_session
 
 
 linked_copy = reference.linked_copy

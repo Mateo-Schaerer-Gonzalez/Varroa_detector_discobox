@@ -521,7 +521,7 @@ class ReportPage {
   }
 
   // The survival of the mites poked by hand, by the pokes and by the detector at
-  // the threshold in use (the server's r.poke, classes/poke_test.py): a mite that
+  // the threshold in use (the server's r.poke, classes/ground_truth/poke_test.py): a mite that
   // moved when poked was alive up to then, one that did not is dead from then on.
   pokeReport(r, number) {
     const { pooled } = ReportPage;
@@ -542,7 +542,7 @@ class ReportPage {
   }
 
   // Every mite's outline change from one recording to the next, a change opening the
-  // box does not fake (the server's r.between_recordings, classes/outline_change.py).
+  // box does not fake (the server's r.between_recordings, classes/scoring/outline_change.py).
   betweenReport(r) {
     const between = r.between_recordings;
     const { thr } = ReportPage;

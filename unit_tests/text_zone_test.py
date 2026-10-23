@@ -2,7 +2,7 @@ import numpy as np
 import pytest
 
 from classes.app_config import TextZoneStyle
-from classes.rect import TextZone
+from classes.plate.rect import TextZone
 
 
 class FakeConfig:

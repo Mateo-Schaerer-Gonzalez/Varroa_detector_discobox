@@ -64,6 +64,16 @@ keeps it. Imports inside the package point one way with no circle (enforced by
 most) and add a module rather than grow one. Module state (the last runs, the truth drafts,
 the open live runs) sits at the top of its module, each in one module only.
 
+**`classes/`** is grouped by what it works on (2026-10-22, the user's choice, accepting one
+re-score of every kept score and dataset cache): `scoring/` (detection, metrics, stabilizer,
+`motion_analysis.py`), `plate/` (zones, mites, ids, label reader), `storage/` (frame sources,
+ROI recordings, the app's files), `results/` (`reporting.py`, moved from the root; survival,
+corrections, review band), `ground_truth/` (`calibration.py`, death calibration, truth draft,
+poke test), `live/`, `discobox/`; `app_config.py` stays at the top. Each package's
+`__init__.py` lists its modules with a line each; put a new module in the package it works on.
+Moving them changed only import lines: every raw score and brightness came out identical as
+`float.hex()` on sample_data and the long run (35,400 values).
+
 **The server** (`web/`, split 2026-10-22): `server.py` puts the app together (still
 `uvicorn web.server:app`) and lists the modules; `routes/` holds one FastAPI router per part
 of the page (recordings, analysis, playback, calibration, live), each with its request
@@ -82,17 +92,17 @@ wired up in `js/main.js`. The styles are in `web/static/css/`, one file per part
 one `style.css` on 2026-10-22), linked by `index.html` in an order the cascade depends on
 (`narrow-screens.css` overrides those before it).
 
-**One analysis core for folder and live runs.** `classes/motion_analysis.py`
+**One analysis core for folder and live runs.** `classes/scoring/motion_analysis.py`
 (`MotionAnalysis`) detects mites on the first frame, then scores each recording from all its
 frames as it arrives, from a frame source it doesn't distinguish
-(`classes/frame_source.py`, `classes/live/sources.py`): `FolderSource` (BMP folders),
-`RoiSource` (a live run's saved per-mite FFV1 ROI videos, `classes/roi_recordings.py`) or
+(`classes/storage/frame_source.py`, `classes/live/sources.py`): `FolderSource` (BMP folders),
+`RoiSource` (a live run's saved per-mite FFV1 ROI videos, `classes/storage/roi_recordings.py`) or
 `CameraSource`. Analysing a saved live run must give exactly the scores the live run gave.
 A live run also follows its mites (each recording's first frame moves each box to its blob,
 `Settings.follow_px`), takes mites added mid-run (`add_mites`) and stops following mites
 counted dead (`stop`); the ROI index records each recording's boxes so a replay follows them
 the same way. A `Mite`'s own box stays where it was found (its key); recordings it was not
-followed in hold None (`classes/follow_up.py` turns them into censored/still rows).
+followed in hold None (`classes/scoring/follow_up.py` turns them into censored/still rows).
 
 The user's choices for live runs (2026-10-20), not to be undone:
 - **Following** is live only (folder mode keeps fixed boxes, so references don't change):
@@ -120,7 +130,7 @@ The user's choices for live runs (2026-10-20), not to be undone:
 schedule and the live session; those libraries are imported only for a live run.
 `classes/discobox/camera_utils.py` is copied unchanged from the Discobox app.
 
-**Scoring.** `classes/analyzer.py` holds the metrics; the only one in use is fixed in
+**Scoring.** `classes/scoring/analyzer.py` holds the metrics; the only one in use is fixed in
 `classes/app_config.py` (`METRIC = "outline_variability"`, the user's choice: no metric
 picker), which ignores a config file's own `mite.metric`, takes the threshold and parameters
 from `config.default.yaml` where `config.yaml` has none, and forces `stabilize_plate` on.
@@ -130,7 +140,7 @@ divides by the mean variance to that power. The thresholds in config (1.638 defa
 calibrated on 10-frame, 10-fps recordings and don't fit 3 s / 30 fps ones: the next
 ground-truth run at 3 s / 30 fps sets the threshold.
 
-The stabilizer (`classes/plate_stabilizer.py`) moves each mite's patch back by its own
+The stabilizer (`classes/scoring/plate_stabilizer.py`) moves each mite's patch back by its own
 centre's shift within the recording, capped at `MARGIN` minus the Lanczos reach (12 px); a
 mite whose centre is lost takes the median of the others'. That is the user's choice of
 2026-10-16. Before, every mite took the plate's median ECC shift, which
@@ -146,7 +156,7 @@ Frames are greyscale everywhere: `Frame.image` is (H, W) uint8 and metrics compu
 (`Analyzer.grey()`); the user rejected keeping 3-channel scoring for bit-identical scores
 ("change computation to work with greyscale"). It changed 0 of 17,700 calls on the long run
 and scores 30% faster. Don't reintroduce 3-channel frames; new code taking frames must
-accept (H, W). `cv2.setNumThreads(1)` (`classes/workers.py`) is set because the work is
+accept (H, W). `cv2.setNumThreads(1)` (`classes/scoring/workers.py`) is set because the work is
 parallel already. The frame-rate and memory limits are measured by
 `scripts/frame_rate_limits.py` (`notebooks/frame_rate_limits.ipynb`).
 
@@ -159,7 +169,7 @@ stops scoring like the live one.
 
 **Caches keyed on source code.** Calibration score caches (`pipeline/calibration/score_cache.py`, `_metric_version`) hash
 the source of `Analyzer` and `plate_stabilizer`; kept analysis scores
-(`results/<name>/kept/`, `classes/kept_scores.py` `_SCORING`) hash the scoring modules. Any
+(`results/<name>/kept/`, `classes/storage/kept_scores.py` `_SCORING`) hash the scoring modules. Any
 edit to those files, even a comment, makes every dataset score again from its frames. Tell
 the user before editing them (the next calibration report re-scores every dataset, slower on
 the Discobox). After such an edit, prove scores are unchanged against the committed code:
@@ -205,21 +215,21 @@ sample_data takes 17.5 MB as ROIs against 574 MB as BMP): `first_frame.png`,
 `rois/parts/<recording>/` and are stitched on at the end. The ROI is the box ± 32 px, at
 least ± 40 round the centre, with even sizes (the FFV1 writer crops odd ones). Old BMP
 folders stay readable; dropped/uploaded BMP folders are converted on upload
-(`classes/roi_conversion.py`); folders opened by typed path are only converted when
+(`classes/storage/roi_conversion.py`); folders opened by typed path are only converted when
 calibrated. Zone, plate and fly-off clips don't exist for ROI sessions; mite clips and the
 still frame do. Results say `frames: "rois" | "whole" | "none"`. The sibling worktree
 `Varroa_detector_discobox_video` (branch `video-storage`) is an older, different attempt.
 
 **Zones and IDs.** `coords_pixel.txt` (one zone per plate) and `coords_pixel_2.txt` (two)
 list `type x1 y1 x2 y2` (type 1 plate, 0 masked label area); the choice is saved per
-recording as `zones_per_plate` in `.settings.txt` (`classes/zone_layout.py`). Plates are
+recording as `zones_per_plate` in `.settings.txt` (`classes/plate/zone_layout.py`). Plates are
 numbered 0-14 in reading order; mite `13.4` is the fourth mite of plate 13. Ids come only
 from `zones.mite_ids()` (first-frame mites and mites added mid-run alike), the zone of a box
 only from `ZoneManager.zone_of()`.
 
 **One place for each job.** Use these instead of writing another copy:
-`classes/files.py` (JSON read/write, write-then-rename, images, `remove_tree`),
-`classes/settings_file.py` (`.settings.txt`), `classes/positions.py` (matching saved
+`classes/storage/files.py` (JSON read/write, write-then-rename, images, `remove_tree`),
+`classes/storage/settings_file.py` (`.settings.txt`), `classes/plate/positions.py` (matching saved
 entries to mites within 10 px), `survival.own_time`/`since_start`/`death_after` (a mite's
 own clock and the death rule), `Mite.home` (a mite's centre), `ZoneManager.mites`. In
 `pipeline/`: `clips.kept_clip` (anything cut from frames into `clips/`),
@@ -319,5 +329,5 @@ desktop icon points at it.
   `JUPYTER_PATH=<dir>`, run `nbclient.NotebookClient(nb, kernel_name=<name>,
   resources={"metadata": {"path": notebooks_dir}})`, and save with the kernelspec set back
   to `python3`. A notebook importing `pipeline` needs `%matplotlib inline` after its imports
-  (`reporting.py` selects Agg). A script started from stdin can't start a ProcessPool on
+  (`classes/results/reporting.py` selects Agg). A script started from stdin can't start a ProcessPool on
   Windows: run a file.

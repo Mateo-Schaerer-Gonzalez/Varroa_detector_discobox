@@ -10,7 +10,7 @@ read from its saved ROI video, shaken (or not), and scored with the score in use
                   16 October 2026; ecc_shifts() below)
     plate_centre  moved back by the median over all mites of their centres' shifts
     own_centre    moved back by the mite's own centre's shift
-                  (classes/plate_stabilizer.py, what the app does since)
+                  (classes/scoring/plate_stabilizer.py, what the app does since)
     own_ecc       moved back by the mite's own phase correlation + ECC shift
 
 The shakes are synthetic, made as a camera would see them (tune_optical_flow.shaken()):
@@ -45,11 +45,11 @@ import pandas as pd
 import pipeline
 from pipeline import ground_truth
 from pipeline.calibration import dataset_library
-from classes import calibration
-from classes.analyzer import Analyzer
+from classes.ground_truth import calibration
+from classes.scoring.analyzer import Analyzer
 from classes.app_config import METRIC, get_default_config
-from classes.plate_stabilizer import PlateStabilizer, _gray, _patches
-from classes.roi_recordings import RoiRecordings
+from classes.scoring.plate_stabilizer import PlateStabilizer, _gray, _patches
+from classes.storage.roi_recordings import RoiRecordings
 
 METHODS = ("none", "plate_ecc", "plate_centre", "own_centre", "own_ecc")
 # (name, kind, px): kind "rigid" shakes every mite alike, "plate" each plate on its own.

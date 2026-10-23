@@ -11,17 +11,17 @@ legs (a turn of 37 degrees halves the legs the tracker finds). ANY_ANGLE moves
 by any amount and angle, interpolated: what a real move costs at most. Four measures then compare
 each recording with the next (measure_mite()):
 
-    image_change    classes/recording_change.py as it is: the mean difference
+    image_change    classes/scoring/recording_change.py as it is: the mean difference
                     of the two images, the plate's shift (the median over the
                     mites) taken out
     aligned_change  the same difference after each mite is laid on itself:
                     its own shift and turn found (a turn every COARSE degrees,
                     then ECC), the comparison kept to the mite and a little
                     around it
-    outline_change  classes/outline_change.py: the outline as rays from its centre, its shape
+    outline_change  classes/scoring/outline_change.py: the outline as rays from its centre, its shape
                     only (no size, no shift), compared at the turn that fits
                     best: no image is warped
-    leg_shift       the legs (classes/leg_tracker.py) found in each recording,
+    leg_shift       the legs (classes/scoring/leg_tracker.py) found in each recording,
                     their places turned into the body's own frame, paired with
                     those of the recording before: how far the pairs are apart
                     (largest and median), nan without a leg in either
@@ -55,11 +55,11 @@ from scipy.stats import rankdata
 import pipeline
 from pipeline.calibration import score_cache
 import script_data
-from classes import leg_tracker, outline_change as outline_module, plate_stabilizer, recording_change
+from classes.scoring import leg_tracker, outline_change as outline_module, plate_stabilizer, recording_change
 from classes.app_config import get_default_config
-from classes.leg_tracker import LegTracker
-from classes.outline_change import centre, darkness, outline, outline_change
-from classes.recording_change import RecordingChange
+from classes.scoring.leg_tracker import LegTracker
+from classes.scoring.outline_change import centre, darkness, outline, outline_change
+from classes.scoring.recording_change import RecordingChange
 
 CACHE = Path(tempfile.gettempdir()) / "varroa_death_time_patches"
 PAD = 16             # pixels kept around each mite's box

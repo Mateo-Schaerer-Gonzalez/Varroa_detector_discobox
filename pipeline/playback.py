@@ -7,8 +7,8 @@ from pathlib import Path
 import numpy as np
 
 from classes.app_config import get_default_config
-from classes.files import write_jpeg
-from classes.roi_recordings import RoiRecordings, open_recordings
+from classes.storage.files import write_jpeg
+from classes.storage.roi_recordings import RoiRecordings, open_recordings
 from pipeline import clips, paths
 
 

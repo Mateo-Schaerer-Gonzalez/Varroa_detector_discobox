@@ -1,4 +1,4 @@
-"""A live run follows its mites (classes/motion_analysis.py): each moves to its blob
+"""A live run follows its mites (classes/scoring/motion_analysis.py): each moves to its blob
 from recording to recording, mites can be added while it goes on, and a mite
 counted dead is no longer scored nor saved. Analysing the saved run again must
 give exactly what the live run gave."""
@@ -14,11 +14,11 @@ import pipeline
 from pipeline import plate_zones
 from pipeline.live import live_runs
 import reference
-from classes.analyzer import Analyzer
-from classes.follow_up import FollowUp
-from classes.frame_source import Frame, Recording, RecordingEnd
-from classes.motion_analysis import MotionAnalysis
-from classes.roi_recordings import ROI_MARGIN, CENTRE_REACH, placed_rect, roi_size
+from classes.scoring.analyzer import Analyzer
+from classes.scoring.follow_up import FollowUp
+from classes.storage.frame_source import Frame, Recording, RecordingEnd
+from classes.scoring.motion_analysis import MotionAnalysis
+from classes.storage.roi_recordings import ROI_MARGIN, CENTRE_REACH, placed_rect, roi_size
 
 
 class Blobs(Analyzer):

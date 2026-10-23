@@ -1,5 +1,5 @@
 // On the results overview, two sections drawn from results.activity (worked out
-// in classes/unusual_activity.py): the plate's shake, and the unusual activity.
+// in classes/scoring/unusual_activity.py): the plate's shake, and the unusual activity.
 //
 // Plate shake: the median shake of the mites per recording, to spot a recording
 // or a stretch of time in which the plate shook, and the mites that drifted
@@ -161,7 +161,7 @@ class ActivitySection {
   }
 
   // One mite's square: its path and, behind it, its outline in the first recording
-  // (classes/outline_view.py; null until the server sends it, or where it has none),
+  // (classes/scoring/outline_view.py; null until the server sends it, or where it has none),
   // both at the mite's scale (its outline reaching 40% of the square), so the path
   // reads against the size of the mite; the path starts on the mite's centre, the
   // middle of the square. `zoomed`, or without an outline, the square holds 99% of

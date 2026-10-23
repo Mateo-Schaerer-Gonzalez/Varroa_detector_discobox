@@ -7,14 +7,14 @@ import logging
 from datetime import datetime, timedelta
 from pathlib import Path
 
-import reporting
-from classes import calibration
-from classes.data_loader import DataLoader
-from classes.files import try_json
+from classes.results import reporting
+from classes.ground_truth import calibration
+from classes.storage.data_loader import DataLoader
+from classes.storage.files import try_json
 from classes.live.settings import FIXED as FIXED_SETTINGS, RANGES as SETTING_RANGES
-from classes.recording_info import RecordingInfo
-from classes.roi_recordings import open_recordings
-from classes.zone_layout import ZoneLayout
+from classes.storage.recording_info import RecordingInfo
+from classes.storage.roi_recordings import open_recordings
+from classes.plate.zone_layout import ZoneLayout
 from pipeline import ground_truth, output_files, paths, plate_zones
 from pipeline.live import live_runs
 

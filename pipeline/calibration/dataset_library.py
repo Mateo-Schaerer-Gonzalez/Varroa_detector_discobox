@@ -20,10 +20,10 @@ import threading
 from datetime import datetime
 from pathlib import Path
 
-from classes import calibration
-from classes.data_loader import DataLoader
-from classes.files import remove_tree
-from classes.roi_recordings import ROI_DIRNAME, is_roi_session, open_recordings
+from classes.ground_truth import calibration
+from classes.storage.data_loader import DataLoader
+from classes.storage.files import remove_tree
+from classes.storage.roi_recordings import ROI_DIRNAME, is_roi_session, open_recordings
 from pipeline import clips, ground_truth, paths, plate_zones, preview_images, refusals, uploads
 from pipeline.calibration import session_file, truth_entry
 

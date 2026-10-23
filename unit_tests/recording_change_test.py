@@ -2,8 +2,8 @@ import cv2
 import numpy as np
 import pytest
 
-from classes import recording_change
-from classes.recording_change import RecordingChange
+from classes.scoring import recording_change
+from classes.scoring.recording_change import RecordingChange
 
 
 def mite_image(dx=0.0, dy=0.0, size=40, blob=((20, 20), 5)):

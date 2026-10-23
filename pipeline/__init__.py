@@ -45,7 +45,7 @@ call; scripts may also import a module for its helpers.
 """
 
 # raised by read_labels() without a key or the internet, which the server answers apart
-from classes.label_reader import LabelReadError
+from classes.plate.label_reader import LabelReadError
 from pipeline.paths import (
     LABELS_FILENAME, CONTROLS_FILENAME, GROUND_TRUTH_FILENAME, POKE_FILENAME, SETTINGS_FILENAME, PREVIEW_NAME,
     CALIBRATION_SESSION_NAME, RECORDINGS_ROOT, RESULTS_ROOT, SCRIPTS_OUTPUT, CALIBRATION_REPORT_NAME,

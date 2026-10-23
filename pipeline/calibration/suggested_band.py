@@ -1,11 +1,11 @@
 """The band around a suggested threshold whose calls are checked by eye: the
 one a calibration report suggests (death_calibration.best_band(), the labels
 standing in for the eye), and its shape kept in config.yaml for the result pages
-(classes/review_band.py), which widen or narrow it to the mites to check.
+(classes/results/review_band.py), which widen or narrow it to the mites to check.
 """
 
 from classes import app_config
-from classes import death_calibration
+from classes.ground_truth import death_calibration
 
 
 # Checks by eye per mite the band suggested with a threshold may ask for, unless the report is asked for another number.
@@ -54,7 +54,7 @@ def keep_shape(band, suggested, threshold):
     """Keep the shape of the band a calibration report suggests (around the
     `suggested` threshold) in config.yaml, moved to hold the `threshold` in use:
     the result pages widen or narrow it to the mites to check
-    (classes/review_band.py), so only how far it reaches below the threshold
+    (classes/results/review_band.py), so only how far it reaches below the threshold
     against above counts. Nothing when the report suggests no band. Returns
     [low, high] as saved, or None."""
     if not band["high"] > band["low"]:

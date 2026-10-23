@@ -4,8 +4,8 @@ import cv2
 import numpy as np
 import pytest
 
-from classes.data_loader import DataLoader
-from classes.frame_source import Frame, FolderSource, Recording, RecordingEnd, frame_times, recordings
+from classes.storage.data_loader import DataLoader
+from classes.storage.frame_source import Frame, FolderSource, Recording, RecordingEnd, frame_times, recordings
 
 START = datetime(2025, 9, 4, 9, 28, 17)
 
