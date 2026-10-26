@@ -11,7 +11,7 @@ clearly still, and one inside it is a close call.
 The band is not set by hand: the user says how many mites to check by eye, and
 the band is the narrowest around the threshold that asks about that many
 (fitted()). It keeps the shape of the band in config.yaml
-(mite.metric_review_bands, saved from the calibration report): as far below
+(mite.metric_review_bands, when one is set there): as far below
 the threshold against above it as that one; without one, as far either way.
 
 Not every close call matters: only those after the mite's last settled movement

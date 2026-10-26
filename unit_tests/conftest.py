@@ -17,18 +17,14 @@ shutil.copyfile(Path(__file__).resolve().parent.parent / "config.default.yaml", 
 
 import pipeline  # noqa: E402
 from pipeline import output_files, run_results  # noqa: E402
-from pipeline.calibration import suggested_band  # noqa: E402
 
 
 @pytest.fixture(autouse=True)
 def no_review_band(monkeypatch):
     """Every run in a test is without calls to check by eye: they add to the
-    results, which the references were made without. Nor does a calibration
-    report keep its band's shape in the tests' config.yaml, which would change
-    what the next test reads. A test of these takes them back (see
-    review_band_test.py)."""
+    results, which the references were made without. A test of them takes them
+    back (see review_band_test.py)."""
     monkeypatch.setattr(run_results, "review_calls", lambda *args: None)
-    monkeypatch.setattr(suggested_band, "keep_shape", lambda *args: None)
 
 
 @pytest.fixture(autouse=True)

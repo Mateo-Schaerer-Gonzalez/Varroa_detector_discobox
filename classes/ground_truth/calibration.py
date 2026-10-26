@@ -155,7 +155,29 @@ def best_threshold(scores, moving):
     scores = np.asarray(scores, dtype=float)
     fpr, tpr, thresholds = roc_curve(scores, moving)
     best = int(np.argmax(tpr[1:] - fpr[1:])) + 1  # skip the infinite threshold
-    lowest_moving = thresholds[best]
+    return _into_gap(scores, thresholds[best])
+
+
+def best_f1_threshold(scores, moving):
+    """The threshold with the largest F1 of the calls moving (2 TP / (2 TP + FP
+    + FN)), which the calibration report suggests. Unlike best_threshold() it
+    weighs a wrong call the same whichever way it goes, however many more still
+    labels there are than moving ones, and gives nothing for still called still.
+    Of thresholds that do as well, the highest; placed halfway into the gap
+    below the lowest score called moving, as best_threshold() does."""
+    scores = np.asarray(scores, dtype=float)
+    moving = np.asarray(moving, dtype=bool)
+    fpr, tpr, thresholds = roc_curve(scores, moving)
+    tp = np.rint(tpr[1:] * moving.sum())  # skip the infinite threshold
+    fp = np.rint(fpr[1:] * (~moving).sum())
+    f1 = 2 * tp / (2 * tp + fp + (moving.sum() - tp))
+    return _into_gap(scores, thresholds[int(np.argmax(f1)) + 1])
+
+
+def _into_gap(scores, lowest_moving):
+    """A threshold that calls `lowest_moving` and every score above it moving:
+    halfway into the gap down to the next score, as far as possible from the
+    observations on either side."""
     below = scores[scores < lowest_moving]
     return float((lowest_moving + below.max()) / 2) if below.size else float(lowest_moving)
 

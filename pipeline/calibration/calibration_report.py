@@ -9,7 +9,6 @@ import numpy as np
 
 from classes.results import reporting
 from classes.ground_truth import calibration
-from classes.ground_truth import death_calibration
 from classes.scoring.analyzer import Analyzer
 from classes.scoring.benchmark import Benchmark
 from classes.app_config import get_default_config
@@ -17,12 +16,12 @@ from classes.results.error_map import ErrorMap
 from classes.scoring.outline_change import OutlineChange
 from classes.scoring.score_normalizer import ScoreNormalizer
 from pipeline import output_files, paths
-from pipeline.calibration import dataset_library, movement_score, poke_test, report_rows, score_cache, suggested_band
+from pipeline.calibration import dataset_library, movement_score, poke_test, report_rows, score_cache
 
 
 def evaluate_calibration(out_dir, datasets, metric=None, params=None, recordings_root=paths.RECORDINGS_ROOT,
                          stabilize=None, benchmark=False, normalize_brightness=None, normalize_floor=None,
-                         checks_per_mite=None, between=False):
+                         between=False):
     """Score the saved mites with a metric and compare the scores with the
     movement the user saw, pooled over the saved datasets whose ids are in
     `datasets`.
@@ -47,20 +46,15 @@ def evaluate_calibration(out_dir, datasets, metric=None, params=None, recordings
 
     Returns the confusion counts at the threshold in use and, when there are
     both moving and still labels, the ROC curve and the suggested threshold with
-    its confusion counts: the one that puts the mites' deaths closest to where
-    the labels put them (death_calibration.best_threshold()), as in a long run
-    the one that best tells moving from still recording by recording puts many
-    deaths late. Also the fraction of mites moving per recording and the
-    Kaplan-Meier survival curves (of the mites seen moving at least once) by the
-    labels and by the detector; how far the detector puts each mite's death from
-    where the labels put it, in recordings ("death_error", see
-    calibration.death_errors()) and, with a suggested threshold, that error by
-    threshold around the two ("death_curve", see death_calibration.death_curve())
-    and the band around it to check by eye, for `checks_per_mite` checks per
-    mite at most (suggested_band.REVIEW_CHECKS unless given; "review_band", see
-    suggested_band.for_threshold(); its shape is kept in config.yaml at once
-    when the report scores as the analyses do, see suggested_band.keep_shape());
-    every observation with its outcome; and, where a poke test was entered, the
+    its confusion counts: the one with the largest F1 of the calls moving,
+    recording by recording (calibration.best_f1_threshold()). The close calls
+    it gets wrong are the ones the result pages ask to check by eye
+    (classes/results/review_band.py). Also the fraction of mites moving per
+    recording and the Kaplan-Meier survival curves (of the mites seen moving at
+    least once) by the labels and by the detector; how far the detector puts
+    each mite's death from where the labels put it, in recordings, at each
+    threshold ("death_error", see calibration.death_errors()), reported but not
+    chosen on; every observation with its outcome; and, where a poke test was entered, the
     survival of the poked mites by the pokes and by the detector at the
     threshold in use ("poke", see poke_test.poke_survival()).
     Everything is also written to calibration.xlsx in `out_dir`, a moment later:
@@ -86,23 +80,17 @@ def evaluate_calibration(out_dir, datasets, metric=None, params=None, recordings
         raise ValueError("Choose at least one dataset.")
     loaded = [dataset_library.read_dataset(key, recordings_root) for key in ids]
     how = _how_to_score(metric, params, stabilize, normalize_brightness, normalize_floor)
-    checks_per_mite = suggested_band.checks_allowed(checks_per_mite)
     times = report_rows.pooled_times(loaded)
     pooled = _pooled(ids, loaded, how, benchmark, between)
     if not pooled.rows:
         raise ValueError("Mark at least one mite moving or still first.")
 
     current = how.in_use["threshold"]
+    scores = np.array([row["score"] for row in pooled.rows])
     is_moving = np.array([row["movement"] == calibration.MOVING for row in pooled.rows], dtype=bool)
-    runs = death_calibration.runs_of_rows(pooled.rows)
-    suggested = death_calibration.best_threshold(runs)[0] if calibration.has_both_classes(is_moving) else None
+    suggested = calibration.best_f1_threshold(scores, is_moving) if calibration.has_both_classes(is_moving) else None
     _add_outcomes(pooled.rows, current, suggested)
-    result = _report(how, pooled, times, runs, suggested, checks_per_mite, benchmark, between)
-
-    if result["threshold_fits"] and result["review_band"] is not None:
-        kept = suggested_band.keep_shape(result["review_band"], suggested, current)
-        if kept is not None:
-            how.in_use["review_band"] = kept
+    result = _report(how, pooled, times, suggested, benchmark, between)
     # each outcome as a fraction of its row, for the confusion matrices and the ROC curve
     result["rates"] = {key: None if result[key] is None else calibration.outcome_rates(result[key])
                        for key in ("current", "best")}
@@ -191,7 +179,7 @@ def _add_outcomes(rows, current, suggested):
             row["outcome_suggested"] = calibration.outcome(is_moving, row["score"], suggested)
 
 
-def _report(how, pooled, times, runs, suggested, checks_per_mite, benchmark, between):
+def _report(how, pooled, times, suggested, benchmark, between):
     """The report of the observations `pooled`, scored as `how` says, against the
     threshold in use and the `suggested` one (None without both labels)."""
     rows = pooled.rows
@@ -245,15 +233,11 @@ def _report(how, pooled, times, runs, suggested, checks_per_mite, benchmark, bet
         "moving_over_time": over_time(rows),
         # the survival curves by the labels and by the detector, see calibration.survival_curves()
         "survival": survival(rows),
-        # how far the detector, and the benchmark, put each mite's death from the labels', in recordings
+        # how far the detector, and the benchmark, put each mite's death from the labels', in recordings:
+        # reported, not what the suggestion is chosen on
         "death_error": {name: {key: value if value is None or isinstance(value, int) else round(value, 3)
                                for key, value in errors.items()}
                         for name, errors in calibration.death_errors(rows, thresholds, calls).items()},
-        # the death error by threshold, around the one in use and the suggested one: what the suggestion is chosen on
-        "death_curve": death_calibration.death_curve(runs, [current, suggested]) if suggested is not None else None,
-        # the band around the suggested threshold to check by eye, and what the checks buy
-        "review_band": (suggested_band.for_threshold(runs, suggested, checks_per_mite)
-                        if suggested is not None else None),
         "groups": [
             {
                 "group": group,

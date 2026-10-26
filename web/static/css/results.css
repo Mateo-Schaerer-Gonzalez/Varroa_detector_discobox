@@ -24,6 +24,7 @@
   border-top: 1px solid var(--rule-strong); border-bottom: 1px solid var(--rule);
   margin-bottom: 32px;
 }
+.stats-5 { grid-template-columns: repeat(5, minmax(0, 1fr)); }
 .stat { padding: 12px 16px 12px 0; }
 .stat + .stat { padding-left: 16px; border-left: 1px solid var(--rule); }
 .stat-label { font-size: 12px; color: var(--muted); }

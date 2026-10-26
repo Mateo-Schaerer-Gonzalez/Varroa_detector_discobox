@@ -186,9 +186,19 @@ of one dataset differ slightly between this Windows laptop and the Discobox's Li
 the same code (2026-10-08: 56% of values, 0.009 median, 0.23 at most; likely the OpenCV
 build).
 
+**Calibration** suggests the threshold with the largest F1 of the calls moving
+(`calibration.best_f1_threshold()`), the user's choice of 2026-10-26 ("as we are flagging the
+ones close to threshold anyways"; Youden's J was tried first, then F1 chosen), replacing the
+threshold with the smallest death-time error and the review band chosen on it
+(`suggested_band.py` deleted). The report still gives the death error ("recordings off"),
+accuracy, moving called still and still called moving for both thresholds.
+`classes/ground_truth/death_calibration.py` stays only for the scripts' searches, and
+`calibration.best_threshold()` (Youden's J) for theirs.
+
 **Configuration.** `config.yaml` is per machine and not in git; it is created from
-`config.default.yaml` (in git, the defaults for everyone), and the calibration and results
-pages write thresholds and review bands into it. `DISCOBOX_CONFIG` overrides its path.
+`config.default.yaml` (in git, the defaults for everyone), and the calibration page writes
+thresholds into it; saving a threshold also saves its band, the one in use scaled by the new
+threshold over the old (`app_config._band_moved()`, the user's request of 2026-10-26). `DISCOBOX_CONFIG` overrides its path.
 `DISCOBOX_AUTO_STOP=1` (set by the start scripts) stops the server once the last tab closes.
 
 **Storage.** `recordings/<name>/` holds each session: frames (or `first_frame.png` +

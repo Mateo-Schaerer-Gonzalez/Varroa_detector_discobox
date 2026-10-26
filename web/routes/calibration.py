@@ -48,8 +48,6 @@ class EvaluateRequest(BaseModel):
     normalize_floor: Optional[bool] = None
     # also call every observation with the Discobox's original software
     benchmark: bool = False
-    # checks by eye per mite the suggested band may ask for; by default pipeline.REVIEW_CHECKS
-    checks_per_mite: Optional[float] = None
     # also compare each mite's outline from one recording to the next (the test report)
     between: bool = False
 
@@ -227,7 +225,6 @@ def evaluate_calibration(session_id: str, request: EvaluateRequest):
                                                       stabilize=request.stabilize, benchmark=request.benchmark,
                                                       normalize_brightness=request.normalize_brightness,
                                                       normalize_floor=request.normalize_floor,
-                                                      checks_per_mite=request.checks_per_mite,
                                                       between=request.between))
 
 

@@ -516,36 +516,28 @@ def test_reopening_a_dataset_reads_the_ground_truth_next_to_the_recordings(tmp_p
     assert view["truth"] == {"0": ["still", "moving"], "1": ["moving", "moving"]}
 
 
-def test_the_report_suggests_the_threshold_and_the_band_that_put_the_deaths_right(tmp_path, recordings, scorer):
+def test_the_report_suggests_the_threshold_with_the_best_f1_and_reports_the_death_error(tmp_path, recordings, scorer):
     # mite 0: a weak last movement (3) and, later, a still recording scoring 4; mite 1 is clear
     data_dir, out_dir = make_session(tmp_path, "a", 2, times=(0.0, 5.0, 10.0, 15.0, 20.0, 25.0))
     scorer.scores = {"a": {"0": [9, 3, 1, 4, 1, 1], "1": [9, 1, 1, 1, 1, 1]}}
     pipeline.save_ground_truth(out_dir, {"0": ["moving", "moving", "still", "still", "still", "still"],
                                          "1": ["moving"] + ["still"] * 5})
     ids = [pipeline.dataset_id(data_dir)]
-    result = pipeline.evaluate_calibration(tmp_path / "report", ids, recordings_root=recordings, checks_per_mite=1)
+    result = pipeline.evaluate_calibration(tmp_path / "report", ids, recordings_root=recordings)
 
-    # no threshold tells the 3 from the 4: one mite's death is off whatever it is
-    suggested = result["suggested_threshold"]
-    assert result["death_error"]["suggested"]["mae"] > 0
-    curve = result["death_curve"]
-    assert suggested in curve["thresholds"] and min(curve["mae"]) == result["death_error"]["suggested"]["mae"]
-
-    # the band holds both, and with its two close calls checked the deaths are right
-    band = result["review_band"]
-    assert band["checks_allowed"] == 1 and band["low"] <= 3 < 4 < band["high"] and band["low"] <= suggested <= band["high"]
-    assert (band["mae"], band["checks_per_mite"], band["exact"]) == (0, 1, 1)
-    assert band["frontier"][0]["checks_per_mite"] == 0 and band["frontier"][-1]["mae"] == 0
+    # calling the 3 moving and the 4 with it (F1 6/7) beats leaving both still (4/5): halfway from 3 down to 1
+    assert result["suggested_threshold"] == 2.0
+    best = result["best"]
+    assert (best["moving_called_still"], best["still_called_moving"], best["accuracy"]) == (0, 1, pytest.approx(11 / 12))
+    assert best["f1"] == pytest.approx(6 / 7)
+    # the 4 puts mite 0's death two recordings late: reported, not chosen on
+    death = result["death_error"]["suggested"]
+    assert (death["mae"], death["n_late"], death["n_exact"]) == (1.0, 1, 1)
+    assert "death_curve" not in result and "review_band" not in result
     json.dumps(result, allow_nan=False)  # what the server's JSON needs
     # the workbook is written a moment after the report is handed over: this waits for it
     sheets = pd.read_excel(pipeline.results_file(tmp_path / "report", result["excel"]), sheet_name=None)
-    assert {"death_by_threshold", "review_band"} <= set(sheets)
-
-    # without checks allowed there is no band: the threshold alone
-    none = pipeline.evaluate_calibration(tmp_path / "report", ids, recordings_root=recordings, checks_per_mite=0)["review_band"]
-    assert none["low"] == none["high"] == suggested and none["checks_per_mite"] == 0
-    with pytest.raises(ValueError):
-        pipeline.evaluate_calibration(tmp_path / "report", ids, recordings_root=recordings, checks_per_mite=-1)
+    assert list(sheets["summary"]["death_mae"]) == [result["death_error"]["current"]["mae"], 1.0]
 
 
 def test_the_poke_test_is_saved_next_to_the_recordings_and_reported(tmp_path, recordings, scorer):

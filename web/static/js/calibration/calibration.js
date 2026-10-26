@@ -26,7 +26,6 @@ class Calibration {
     this.stamp = 0;               // cache-buster for files that change between evaluations
     this.scores = null;           // the movement scores the server offers, and the one in config.yaml
     this.metric = null;           // the movement score to report with, { name, params }; null: config.yaml's
-    this.checksAllowed = null;    // checks by eye per mite the suggested band may ask for; null: the server's
     this.mapDataset = null;       // the dataset the error map of a pooled report shows
     this.lastDataset = null;      // the dataset whose last recording a pooled test report plays
     this.liveId = null;           // the live test run whose recordings are open, growing with it; null for a folder
@@ -285,7 +284,6 @@ class Calibration {
         benchmark: this.mode === "test",
         // and each mite's outline from one recording to the next, slow the first time too
         between: this.mode === "test",
-        checks_per_mite: this.checksAllowed,
       }),
       this.fetchDatasets().catch(() => this.datasets),
       this.fetchScores().catch(() => this.scores),

@@ -212,8 +212,9 @@ def save_motion_threshold(value: float, config_path: Optional[str | Path] = None
     of the config file and reload it.
 
     Only that one line is rewritten, so the comments and layout of the file are
-    kept. Every AppConfig built afterwards, including the shared default one,
-    sees the new value.
+    kept, and the metric's band in use moves with the threshold
+    (_band_moved()). Every AppConfig built afterwards, including the shared
+    default one, sees the new value.
     """
     path = _config_file(config_path)
     text = path.read_text(encoding="utf-8")
@@ -222,9 +223,33 @@ def save_motion_threshold(value: float, config_path: Optional[str | Path] = None
     metric = (yaml.safe_load(text) or {}).get("mite", {}).get("metric")
     if not metric:
         raise ValueError(f"No mite.metric line found in {path}")
-    path.write_text(_set_metric_entry(text, "metric_thresholds", metric, value, path), encoding="utf-8")
+    band = _band_moved(text, metric, value)
+    text = _set_metric_entry(text, "metric_thresholds", metric, value, path)
+    if band is not None:
+        text = _set_metric_entry(text, "metric_review_bands", metric, band, path)
+    path.write_text(text, encoding="utf-8")
     _forget_loaded_config()
     return value
+
+
+def _band_moved(text, metric, threshold):
+    """The band of `metric` in the config `text`, moved to hold its new
+    `threshold`: [low, high] scaled by the new threshold over the old one, which
+    keeps how far it reaches below the threshold against above it, all the
+    result pages take of it (classes/results/review_band.py). None without a band in
+    use: none saved, or one the old threshold had left already."""
+    mite = (yaml.safe_load(text) or {}).get("mite", {})
+    old = (mite.get("metric_thresholds") or {}).get(metric, mite.get("motion_threshold"))
+    band = (mite.get("metric_review_bands") or {}).get(metric)
+    try:
+        old, (low, high) = float(old), (float(edge) for edge in band)
+    except (TypeError, ValueError):
+        return None
+    if not (old > 0 and low < high and low <= old <= high):
+        return None
+    scale = threshold / old
+    low, high = min(round(low * scale, 3), threshold), max(round(high * scale, 3), threshold)
+    return [low, high] if low < high else None
 
 
 def save_review_band(low: Optional[float], high: Optional[float],
@@ -305,7 +330,8 @@ def save_movement_score(metric: str, params: dict, threshold: float,
     `normalize_floor`, the normalisations the scores went through. With
     `review_band` ([low, high], holding the threshold), the band around the
     threshold whose calls are checked by eye is saved for the metric too;
-    without it, the metric's band stays as it is.
+    without it, the metric's band in use moves with the threshold
+    (_band_moved()).
     """
     path = _config_file(config_path)
     text = path.read_text(encoding="utf-8")
@@ -320,6 +346,7 @@ def save_movement_score(metric: str, params: dict, threshold: float,
     match = _METRIC_LINE.search(text)
     if not match:
         raise ValueError(f"No mite.metric line found in {path}")
+    original = text
     text = text[:match.start(2)] + f'"{metric}"' + text[match.end(2):]
     text = _set_metric_entry(text, "metric_params", metric, dict(params), path)
     text = _set_metric_entry(text, "metric_thresholds", metric, threshold, path)
@@ -328,6 +355,8 @@ def save_movement_score(metric: str, params: dict, threshold: float,
     flags = {key: bool(value) for key, value in flags.items() if value is not None}
     for key, value in flags.items():
         text = _set_flag(text, key, value, path)
+    if review_band is None:
+        review_band = _band_moved(original, metric, threshold)
     if review_band is not None:
         text = _set_metric_entry(text, "metric_review_bands", metric, review_band, path)
 

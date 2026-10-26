@@ -1,13 +1,17 @@
 """The movement threshold, and a band around it to check by eye, chosen by where
-they put each mite's death.
+they put each mite's death: for the scripts' searches (scripts/optuna_death_time.py,
+scripts/metric_agreement.py, scripts/outline_variability.py) only. The calibration
+report no longer chooses on the death error (the user's choice of 2026-10-26): it
+suggests the threshold with the largest F1 recording by recording
+(calibration.best_f1_threshold()), as the close calls are checked by eye on the
+result pages anyway, and only reports the death error (calibration.death_errors()).
 
 A mite dies at the recording after its last movement (classes/results/survival.py), so
 in a long run one still recording called moving, hours after the death, moves
 the death there. The threshold that best tells moving from still recording by
-recording (calibration.best_threshold()) allows a few of those in a hundred and
-so puts many deaths late; the one here, which the calibration report suggests,
-is the one with the smallest mean distance, in recordings, between the death by
-the detector and the death by the labels.
+recording allows a few of those in a hundred and so puts many deaths late; the
+one here is the one with the smallest mean distance, in recordings, between the
+death by the detector and the death by the labels.
 
 The scores close to the threshold are the ones it gets wrong. With a band
 around it, a score at or above the band is moving, one below it still, and one

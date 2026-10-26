@@ -35,7 +35,6 @@ call; scripts may also import a module for its helpers.
     pipeline/calibration/report_rows.py              the rows a calibration report is made of
     pipeline/calibration/movement_score.py           the metric, parameters and threshold in use
     pipeline/calibration/calibration_report.py       the calibration report
-    pipeline/calibration/suggested_band.py           the band of calls to check by eye a report suggests
     pipeline/live/live_runs.py                       the live runs open, and what their parts share
     pipeline/live/live_settings.py                   a test run's settings, and what the live page offers
     pipeline/live/live_setup.py                      opening a live run: camera, name, labels, lights; closing it
@@ -82,7 +81,6 @@ from pipeline.calibration.dataset_library import (
 from pipeline.calibration.score_cache import mite_boxes
 from pipeline.calibration.movement_score import movement_scores, save_threshold, save_movement_score
 from pipeline.calibration.calibration_report import evaluate_calibration
-from pipeline.calibration.suggested_band import REVIEW_CHECKS
 from pipeline.live.live_runs import CameraError, LiveRunNotOpen, live_status, live_results, live_running
 from pipeline.live.live_settings import (
     LIVE_SETTINGS_FILE, live_options, print_cameras, default_run_name, save_live_settings, live_plan,

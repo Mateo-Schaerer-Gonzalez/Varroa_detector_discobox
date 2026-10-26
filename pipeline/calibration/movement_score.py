@@ -66,8 +66,8 @@ def save_movement_score(metric, params, threshold, stabilize=None, normalize_bri
     normalisations of a folder's scores (each left as it is when None). With
     `review_band` ([low, high], holding the threshold), the band whose calls are
     checked by eye is saved with them (classes/results/review_band.py); without it, the
-    metric's band stays as it is, and is not used while the threshold is
-    outside it."""
+    metric's band in use moves with the threshold, keeping its shape, and is
+    in the answer as "review_band"."""
     metric, params = resolve_metric(metric, params)
     if not float(threshold) > 0:
         raise ValueError("The threshold must be positive.")

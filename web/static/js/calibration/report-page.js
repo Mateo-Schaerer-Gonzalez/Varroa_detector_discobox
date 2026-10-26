@@ -44,20 +44,6 @@ class ReportPage {
       + (how.normalize_brightness ? ", brightness normalised" : "") + (how.normalize_floor ? ", per-mite floor" : "");
   }
 
-  static DEATH_ERROR_CAPTION =
-    `A mite dies at the recording after its last movement. For each threshold, how far the detector's calls put the labelled mites' deaths from where the labels put them:
-    the mean distance, in recordings. The suggested threshold is where it is lowest; among thresholds that do as well, the middle of the widest stretch.
-    The curve is cut where the error passes three times the worst of the thresholds marked. Hover it for the numbers.`;
-  static DEATH_SIDES_CAPTION =
-    `Why the error rises on both sides. Below the suggested threshold, still recordings are called moving: one of them long after a death moves the death there, so mites die too late.
-    Above it, weak last movements are called still, so mites die too early. Hover for the numbers.`;
-
-  static CHECKS_CAPTION =
-    `A score close to the threshold is a close call. With a band around the suggested threshold, the close calls a mite's time of death depends on are checked by eye
-    on the result pages: those after its last score above the band, from the last one back to the first that shows it moving. Each point is the band with the smallest
-    death error for its number of checks, from the threshold alone (no checks) on; the band marked is the best within the checks allowed.
-    The labels stand in for the eye here, so this is the most the checks can do. Hover a point for its band.`;
-
   // How far a threshold ("current" or "suggested") puts the deaths from the labels', e.g. "3.49 rec."
   static deathText(r, key) {
     const error = r.death_error?.[key]?.mae;
@@ -265,9 +251,16 @@ class ReportPage {
 
   // --- calibrate: pick a threshold and save it
 
+  // A stat tile for one kind of wrong call, e.g. still called moving: the count at
+  // the suggested threshold, its share of its row and the count in use.
+  wrongStat(title, r, truth, other) {
+    const { called } = ReportPage;
+    return Markup.stat(title, `${called(r.best, truth, other)}`,
+      `${pct(called(r.rates.best, truth, other))} of ${r.best[`n_${truth}`]} ${truth} · in use: ${called(r.current, truth, other)}`);
+  }
+
   calibrateReport(r) {
-    const { thr, oneClassNote, survivalCaption, rocCaption, scoreText, deathText, CONFUSION_CAPTION, STRIP_CAPTION,
-      DEATH_ERROR_CAPTION, DEATH_SIDES_CAPTION, CHECKS_CAPTION } = ReportPage;
+    const { thr, oneClassNote, survivalCaption, rocCaption, scoreText, deathText, CONFUSION_CAPTION, STRIP_CAPTION } = ReportPage;
     const { stat, figure, section } = Markup;
     if (r.suggested_threshold == null) {
       return `<div class="banner">${oneClassNote(r)}</div>
@@ -275,7 +268,7 @@ class ReportPage {
         ${stat("Called right", pct(r.current.accuracy), `threshold in use ${thr(r.threshold)}`)}
         ${this.outcomeStat("Moving called moving", r.current, r.rates.current, "moving", "still")}
         ${this.outcomeStat("Still called still", r.current, r.rates.current, "still", "moving")}
-        ${stat("AUC", "–", "needs moving and still labels")}
+        ${stat("Death time off by", deathText(r, "current"), "mean, in recordings")}
       </div>
       <div class="grid-2">
         ${figure("confusion", 1, "Confusion matrix at the threshold in use", CONFUSION_CAPTION)}
@@ -286,14 +279,16 @@ class ReportPage {
     const same = Math.abs(r.suggested_threshold - r.threshold) < 0.005;
     const shown = cal.shownThreshold === "current" ? "current" : "best";
     return `
-    <div class="stats">
-      ${stat("Suggested threshold", thr(r.suggested_threshold), same ? "the one in use" : `in use: ${thr(r.threshold)}`)}
+    <div class="stats stats-5">
+      ${stat("Suggested threshold", thr(r.suggested_threshold), `F1 ${r.best.f1.toFixed(3)} · ${same ? "the one in use" : `in use: ${thr(r.threshold)}`}`)}
+      ${stat("Called right", pct(r.best.accuracy), `${r.best.n_wrong} wrong · in use: ${pct(r.current.accuracy)}`)}
+      ${this.wrongStat("Moving called still", r, "moving", "still")}
+      ${this.wrongStat("Still called moving", r, "still", "moving")}
       ${stat("Death time off by", deathText(r, "suggested"), `mean, in recordings · in use: ${deathText(r, "current")}`)}
-      ${this.outcomeStat("Moving called moving", r.best, r.rates.best, "moving", "still", r.current)}
-      ${this.outcomeStat("Still called still", r.best, r.rates.best, "still", "moving", r.current)}
     </div>
-    <p class="caption">Key figures at the suggested threshold; "in use" is the threshold in config.yaml. The suggestion is the threshold that puts the
-      mites' deaths closest to where the labels put them (Fig. 2), not the one calling the most mite-recordings right.</p>
+    <p class="caption">Key figures at the suggested threshold; "in use" is the threshold in config.yaml. The suggestion is the threshold with the
+      largest F1 of the calls moving, mite-recording by mite-recording: 2 × moving called moving over 2 × moving called moving + moving called still
+      + still called moving. The death time is reported, not chosen on.</p>
 
     <div class="grid-2">
       <figure class="fig">
@@ -312,12 +307,13 @@ class ReportPage {
           <input id="threshold-input" type="number" step="0.01" min="0" value="${thr(r.suggested_threshold)}">
           <button type="button" id="save-threshold">Save to config.yaml</button>
         </div>
-        ${this.bandToSave(r)}
         <p id="save-status" class="hint">Saves the movement score <code>${esc(scoreText(r.metric, r.metric_params, r))}</code> along with the threshold.</p>
-        <p class="hint">The suggestion puts the mites' deaths closest to where the labels put them: a mite dies at the recording after its last movement,
-          and the suggestion has the smallest mean distance, in recordings, between that death by the detector and by the labels (<i>death error</i> below).
-          Among the thresholds that do as well, it is the middle of the widest stretch. It can call fewer mite-recordings right than a lower threshold would:
-          in a long run, one still recording called moving long after a death moves the death there. Every analysis started after saving uses the new value.
+        <p class="hint">The suggestion has the largest F1: it weighs a moving recording called still the same as a still one called moving, however many
+          more still labels there are; among thresholds that make the same calls, it lies halfway into the gap between the scores on either side.
+          A mite dies at the recording after its last movement, so a still recording called moving long after a death moves the death there
+          (<i>death error</i>, the mean distance in recordings between the death by the detector and by the labels): the close calls that can do that are
+          asked to be checked by eye on the result pages. Saving moves the band to check by eye in config.yaml with the threshold, keeping how far it
+          reaches below it against above. Every analysis started after saving uses the new value.
           Check it with <b>Test the threshold</b> on a <em>different</em> recording: on this one it looks better than it will be.</p>
         ${this.comparisonTable(r)}`)}
     </div>
@@ -325,52 +321,13 @@ class ReportPage {
     ${this.wrongCalls.html()}
 
     <div class="grid-2">
-      ${figure("chart-death-error", 2, "Death-time error by threshold", DEATH_ERROR_CAPTION)}
-      ${figure("chart-death-sides", 3, "Deaths too late and too early", DEATH_SIDES_CAPTION)}
+      ${figure("chart-survival", 2, "Survival rate: ground truth and the detector", survivalCaption(r, ReportPage.thresholdMarks(r)))}
+      ${figure("chart-strip", 3, "Motion score distribution", STRIP_CAPTION)}
     </div>
 
     <div class="grid-2">
-      ${figure("chart-checks", 4, "What the checks by eye buy", CHECKS_CAPTION, "", `
-        <label class="death-field">Checks allowed per mite
-          <input type="number" class="number-input" id="checks-allowed" min="0" max="100" step="0.05" value="${r.review_band.checks_allowed}"></label>
-        <button type="button" id="checks-apply" class="small secondary">Suggest again</button>
-        <span id="checks-status" class="hint"></span>`)}
-      ${figure("chart-survival", 5, "Survival rate: ground truth and the detector", survivalCaption(r, ReportPage.thresholdMarks(r)))}
-    </div>
-
-    ${figure("chart-strip", 6, "Motion score distribution", `${STRIP_CAPTION}${this.bandHolds(r) ? " The scores between the two outer lines are the suggested band's close calls." : ""}`)}
-
-    <div class="grid-2">
-      ${figure("chart-roc", 7, "ROC curve", `${rocCaption(r)} It tells moving from still recording by recording; the suggestion is not chosen on it,
-        so it need not sit at the curve's corner.`)}
+      ${figure("chart-roc", 4, "ROC curve", rocCaption(r))}
     </div>`;
-  }
-
-  // The report suggests a band that does better than the suggested threshold alone.
-  bandHolds(r) {
-    return !!r.review_band && r.review_band.high > r.review_band.low;
-  }
-
-  // The band to check by eye, saved with the threshold when ticked.
-  bandToSave(r) {
-    const { thr, deathText } = ReportPage;
-    const band = r.review_band;
-    const inUse = r.in_use.review_band;
-    const now = inUse ? `The shape in use: ${thr(inUse[0])} to ${thr(inUse[1])}.` : "No shape is in use: the result pages' band reaches as far below the threshold as above it.";
-    if (!this.bandHolds(r)) {
-      return `<p class="hint">No band does better than the threshold alone within ${+band.checks_allowed.toFixed(2)} checks by eye per mite (Fig. 4), so none is saved with it. ${now}</p>`;
-    }
-    return `<div class="row save-threshold save-band">
-        <label><input type="checkbox" id="band-save" checked> Check by eye scores from</label>
-        <input id="band-low" type="number" step="0.01" min="0" value="${thr(band.low)}" aria-label="Lower edge of the band">
-        <span>to</span>
-        <input id="band-high" type="number" step="0.01" min="0" value="${thr(band.high)}" aria-label="Upper edge of the band">
-      </div>
-      <p class="hint">Saved with the threshold when ticked. The result pages widen or narrow the band to ask about as many mites as are to be checked there,
-        keeping how far it reaches below the threshold against above it; ${r.threshold_fits
-          ? "that shape was kept in config.yaml when this report was made, around the threshold in use."
-          : "this report scores otherwise than the analyses, so its shape is kept only when saved with the threshold."}
-        With them checked, the deaths are off by ${band.mae.toFixed(2)} rec. instead of ${deathText(r, "suggested")}, for ${band.checks_per_mite.toFixed(2)} checks per mite (Fig. 4). ${now}</p>`;
   }
 
   comparisonTable(r) {
@@ -379,11 +336,12 @@ class ReportPage {
     const rows = [["in use", r.threshold, r.current, "current"], ...(r.best ? [["suggested", r.suggested_threshold, r.best, "suggested"]] : [])];
     const deathError = (key) => ReportPage.deathText(r, key);
     return `<div class="table-wrap"><table>
-    <thead><tr><th>Threshold</th><th class="num">Value</th><th class="num" title="Mean distance, in recordings, between each mite's death by the detector and by the labels">Death error</th>
-      <th class="num">Called right</th><th class="num">Moving called still</th><th class="num">Still called moving</th></tr></thead>
+    <thead><tr><th>Threshold</th><th class="num">Value</th><th class="num">F1</th><th class="num">Called right</th>
+      <th class="num">Moving called still</th><th class="num">Still called moving</th>
+      <th class="num" title="Mean distance, in recordings, between each mite's death by the detector and by the labels">Death error</th></tr></thead>
     <tbody>${rows.map(([name, value, c, key]) => `<tr>
-      <td>${name}</td><td class="num">${thr(value)}</td><td class="num">${deathError(key)}</td><td class="num">${pct(c.accuracy)}</td>
-      <td class="num">${c.moving_called_still}</td><td class="num">${c.still_called_moving}</td></tr>`).join("")}</tbody>
+      <td>${name}</td><td class="num">${thr(value)}</td><td class="num">${c.f1 == null ? "–" : c.f1.toFixed(3)}</td><td class="num">${pct(c.accuracy)}</td>
+      <td class="num">${c.moving_called_still}</td><td class="num">${c.still_called_moving}</td><td class="num">${deathError(key)}</td></tr>`).join("")}</tbody>
   </table></div>`;
   }
 
@@ -407,26 +365,9 @@ class ReportPage {
       $("confusion").innerHTML = matrix(button.dataset.shown);
       wrong(button.dataset.shown);
     }));
-    figures.drawDeathError($("chart-death-error"), r, marks);
-    figures.drawDeathSides($("chart-death-sides"), r, marks);
-    figures.drawChecks($("chart-checks"), r);
     figures.drawRoc($("chart-roc"), r, marks);
-    const band = r.review_band;
-    figures.drawStrip($("chart-strip"), r, this.bandHolds(r)
-      ? [...marks, ...[["band from", band.low], ["band to", band.high]].filter(([, value]) => Math.abs(value - r.suggested_threshold) > 0.005)
-        .map(([name, value]) => ({ name, value }))]
-      : marks);
+    figures.drawStrip($("chart-strip"), r, marks);
     $("save-threshold").addEventListener("click", () => this.saveThreshold());
-    $("checks-apply").addEventListener("click", () => {
-      const value = Number($("checks-allowed").value);
-      if (!($("checks-allowed").value !== "" && value >= 0 && value <= 100)) {
-        Hint.error($("checks-status"), "Enter a number of checks per mite, 0 or more.");
-        return;
-      }
-      const before = cal.checksAllowed;
-      cal.checksAllowed = value;
-      cal.reportAgain("checks-status", () => { cal.checksAllowed = before; }, "Looking for the band…");
-    });
   }
 
   async saveThreshold() {
@@ -437,29 +378,20 @@ class ReportPage {
       Hint.error(status, "Enter a positive number.");
       return;
     }
-    // The band to check by eye goes with the threshold when ticked.
-    let reviewBand = null;
-    if ($("band-save")?.checked) {
-      reviewBand = [Number($("band-low").value), Number($("band-high").value)];
-      if (!(reviewBand[0] > 0 && reviewBand[1] > reviewBand[0])) {
-        Hint.error(status, "Enter both edges of the band, the lower one first, or untick it.");
-        return;
-      }
-    }
     try {
       // The threshold only fits the scores it was chosen on, so the movement score
       // of this report is saved with it.
       const r = cal.report;
       const saved = await post("/api/movement-score", {
         metric: r.metric, params: r.metric_params, threshold: value, stabilize: r.stabilize_plate,
-        normalize_brightness: r.normalize_brightness, normalize_floor: r.normalize_floor, review_band: reviewBand,
+        normalize_brightness: r.normalize_brightness, normalize_floor: r.normalize_floor,
       });
       if (cal.data) cal.data.threshold = saved.threshold;
       // Evaluate again, so "in use" is what was just saved.
       cal.takeReport(await cal.requestReport());
       this.draw();
       Hint.note($("save-status"), `Saved ${scoreText(saved.metric, saved.params, saved)} with threshold ${thr(saved.threshold)}${
-        saved.review_band ? ` and the band ${thr(saved.review_band[0])} to ${thr(saved.review_band[1])} to check by eye` : ""} to config.yaml. Analyses started from now on use them.`);
+        saved.review_band ? ` and its band to check by eye, ${thr(saved.review_band[0])} to ${thr(saved.review_band[1])},` : ""} to config.yaml. Analyses started from now on use them.`);
     } catch (error) {
       Hint.error(status, error.message);
     }

@@ -9,7 +9,6 @@ import yaml
 
 import pipeline
 from pipeline import run_results
-from pipeline.calibration import suggested_band
 import reference
 from classes import app_config
 from classes.app_config import MiteConfig, get_default_config
@@ -20,9 +19,8 @@ from classes.plate.zones import MITE_SCORE_COLUMNS
 
 THRESHOLD = 3.5
 BAND = ReviewBand(2.5, 4.5)
-# as pipeline has them, before conftest.py keeps the other tests' runs and reports from them
+# as pipeline has them, before conftest.py keeps the other tests' runs from them
 REVIEW = run_results.review_calls
-KEEP_BAND_SHAPE = suggested_band.keep_shape
 
 
 def calls(scores):
@@ -142,9 +140,29 @@ def test_the_band_is_saved_with_the_threshold_from_the_calibration_report(tmp_pa
             app_config.save_movement_score("variability", {}, 3.6, path, review_band=band)
     assert yaml.safe_load(path.read_text())["mite"] == mite
 
-    # without a band the one saved stays, used again once the threshold is back in it
-    assert "review_band" not in app_config.save_movement_score("variability", {}, 9.0, path)
-    assert yaml.safe_load(path.read_text())["mite"]["metric_review_bands"] == {"variability": [3.1, 4.25]}
+    # without a band the one in use moves with the threshold, scaled: as far below it against above
+    assert app_config.save_movement_score("variability", {}, 8.4, path)["review_band"] == [6.2, 8.5]
+    assert yaml.safe_load(path.read_text())["mite"]["metric_review_bands"] == {"variability": [6.2, 8.5]}
+
+
+def test_saving_the_threshold_alone_moves_its_band_with_it(tmp_path):
+    path = tmp_path / "config.yaml"
+    path.write_text('mite:\n  radius: 8\n  metric: "variability"\n  metric_thresholds: {variability: 4.0}\n'
+                    "  metric_review_bands: {variability: [3.0, 5.0], optical_flow: [0.4, 0.6]}\n")
+    assert app_config.save_motion_threshold(2.0, path) == 2.0
+    mite = yaml.safe_load(path.read_text())["mite"]
+    assert mite["metric_thresholds"] == {"variability": 2.0}
+    assert mite["metric_review_bands"] == {"variability": [1.5, 2.5], "optical_flow": [0.4, 0.6]}
+
+    # a band the threshold had left already is not in use, and is not moved
+    path.write_text('mite:\n  radius: 8\n  metric: "variability"\n  metric_thresholds: {variability: 4.0}\n'
+                    "  metric_review_bands: {variability: [5.0, 6.0]}\n")
+    app_config.save_motion_threshold(2.0, path)
+    assert yaml.safe_load(path.read_text())["mite"]["metric_review_bands"] == {"variability": [5.0, 6.0]}
+    # nor is there one to move without a band
+    path.write_text('mite:\n  radius: 8\n  metric: "variability"\n  metric_thresholds: {variability: 4.0}\n')
+    app_config.save_motion_threshold(2.0, path)
+    assert "metric_review_bands" not in path.read_text()
 
 
 def test_a_band_must_hold_the_threshold(tmp_path):
@@ -254,14 +272,3 @@ def test_a_run_has_its_own_number_of_mites_to_check(tmp_path):
     assert (tmp_path / pipeline.SETTINGS_FILENAME).read_text(encoding="utf-8") == "fps=10\n"
 
 
-def test_a_report_keeps_the_shape_of_its_band_around_the_threshold_in_use(tmp_path, monkeypatch):
-    path = tmp_path / "config.yaml"
-    path.write_text('mite:\n  radius: 8\n  metric: "variability"\n  metric_thresholds: {variability: 3.5}\n')
-    monkeypatch.setattr(app_config, "DEFAULT_CONFIG_PATH", path)
-    try:
-        assert KEEP_BAND_SHAPE({"low": 3.0, "high": 4.5}, 4.0, 3.5) == [2.5, 4.0]
-        assert yaml.safe_load(path.read_text())["mite"]["metric_review_bands"] == {"variability": [2.5, 4.0]}
-        assert KEEP_BAND_SHAPE({"low": 4.0, "high": 4.0}, 4.0, 3.5) is None  # no band suggested: the shape stays
-        assert yaml.safe_load(path.read_text())["mite"]["metric_review_bands"] == {"variability": [2.5, 4.0]}
-    finally:
-        app_config._forget_loaded_config()  # the next test reads the tests' config.yaml again
