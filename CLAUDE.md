@@ -191,7 +191,9 @@ build).
 ones close to threshold anyways"; Youden's J was tried first, then F1 chosen), replacing the
 threshold with the smallest death-time error and the review band chosen on it
 (`suggested_band.py` deleted). The report still gives the death error ("recordings off"),
-accuracy, moving called still and still called moving for both thresholds.
+accuracy, moving called still and still called moving for both thresholds. Both report
+tabs draw a precision-recall curve with average precision, not the ROC curve and AUC (the
+user's choice of 2026-10-26, "more informative"); `roc_curve`/`auc` stay for the scripts.
 `classes/ground_truth/death_calibration.py` stays only for the scripts' searches, and
 `calibration.best_threshold()` (Youden's J) for theirs.
 

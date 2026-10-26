@@ -45,7 +45,8 @@ def evaluate_calibration(out_dir, datasets, metric=None, params=None, recordings
     for the fraction moving over time.
 
     Returns the confusion counts at the threshold in use and, when there are
-    both moving and still labels, the ROC curve and the suggested threshold with
+    both moving and still labels, the precision-recall curve with its average
+    precision ("precision_recall", "average_precision") and the suggested threshold with
     its confusion counts: the one with the largest F1 of the calls moving,
     recording by recording (calibration.best_f1_threshold()). The close calls
     it gets wrong are the ones the result pages ask to check by eye
@@ -91,7 +92,7 @@ def evaluate_calibration(out_dir, datasets, metric=None, params=None, recordings
     suggested = calibration.best_f1_threshold(scores, is_moving) if calibration.has_both_classes(is_moving) else None
     _add_outcomes(pooled.rows, current, suggested)
     result = _report(how, pooled, times, suggested, benchmark, between)
-    # each outcome as a fraction of its row, for the confusion matrices and the ROC curve
+    # each outcome as a fraction of its row, for the confusion matrices
     result["rates"] = {key: None if result[key] is None else calibration.outcome_rates(result[key])
                        for key in ("current", "best")}
     Path(out_dir).mkdir(parents=True, exist_ok=True)
@@ -215,8 +216,8 @@ def _report(how, pooled, times, suggested, benchmark, between):
         "times": times,
         "threshold": current,
         "suggested_threshold": None if suggested is None else round(suggested, 3),
-        "auc": calibration.auc(scores, is_moving) if both else None,
-        "roc": _roc(scores, is_moving) if both else None,
+        "average_precision": calibration.average_precision(scores, is_moving) if both else None,
+        "precision_recall": _precision_recall(scores, is_moving) if both else None,
         "n_mites": report_rows.n_mites(rows),
         "n_moving": int(is_moving.sum()),
         "n_still": int((~is_moving).sum()),
@@ -259,14 +260,17 @@ def _report(how, pooled, times, suggested, benchmark, between):
     }
 
 
-def _roc(scores, is_moving):
-    """The ROC curve of `scores` against the labels, for the report."""
-    fpr, tpr, roc_thresholds = calibration.roc_curve(scores, is_moving)
+def _precision_recall(scores, is_moving):
+    """The precision-recall curve of `scores` against the labels, for the report,
+    with the precision of calling everything moving ("chance": the share of
+    moving labels)."""
+    recall, precision, f1, thresholds = calibration.precision_recall_curve(scores, is_moving)
     return {
-        "fpr": report_rows.rounded(fpr),
-        "tpr": report_rows.rounded(tpr),
-        # the first point is at an infinite threshold, which JSON cannot hold
-        "thresholds": [None if np.isinf(t) else round(float(t), 3) for t in roc_thresholds],
+        "recall": report_rows.rounded(recall),
+        "precision": report_rows.rounded(precision),
+        "f1": report_rows.rounded(f1),
+        "thresholds": report_rows.rounded(thresholds, 3),
+        "chance": round(float(is_moving.mean()), 4),
     }
 
 

@@ -23,12 +23,12 @@ class ReportPage {
     return c[`${truth}_called_${call}`];
   }
 
-  static aucText(r) {
-    return r.auc == null ? "–" : r.auc.toFixed(3);
+  static averagePrecisionText(r) {
+    return r.average_precision == null ? "–" : r.average_precision.toFixed(3);
   }
 
   static oneClassNote(r) {
-    return `All ${r.n_moving + r.n_still} labels are ${r.n_moving ? "moving" : "still"}, so there is no ROC curve and no threshold to suggest: that needs both moving and still labels.`;
+    return `All ${r.n_moving + r.n_still} labels are ${r.n_moving ? "moving" : "still"}, so there is no precision-recall curve and no threshold to suggest: that needs both moving and still labels.`;
   }
 
   static pooled(r) {
@@ -50,8 +50,12 @@ class ReportPage {
     return error == null ? "–" : `${(+error).toFixed(2)} rec.`;
   }
 
-  static rocCaption(r) {
-    return `Every possible threshold, from the highest (bottom left) to the lowest (top right). AUC ${ReportPage.aucText(r)}. Hover the curve for the threshold at each step.`;
+  static precisionRecallCaption(r) {
+    return `Every possible threshold, from the highest (left) to the lowest (right): the share of the mite-recordings labelled moving that are called moving
+    (recall) against the share of the calls moving that are labelled moving (precision). Average precision ${ReportPage.averagePrecisionText(r)}, 1 when every
+    moving label scores above every still one. The grey dashed line is the precision of calling everything moving, the share of moving labels
+    (${pct(r.precision_recall.chance)}): what scores that tell nothing give. The coloured dashed curve joins the points with the F1 of the best threshold marked;
+    no threshold reaches beyond it on the side away from the corner. Hover the curve for the threshold, its recall, precision and F1.`;
   }
 
   // Who is left out of a survival curve, by the labels and by the detector's calls.
@@ -73,7 +77,7 @@ class ReportPage {
 
   // The number of the figure of the outline change between recordings, after the poke test's.
   static betweenNumber(r) {
-    return r.roc ? 9 : 7;
+    return r.precision_recall ? 9 : 7;
   }
 
   // Pooled datasets need not cover every recording, e.g. recordings of different
@@ -138,7 +142,7 @@ class ReportPage {
         the number is the group's mites in the study by the ground truth. Groups are the plate labels.${poolNote(r)}</p>`) : ""}
     ${section("Files", `<ul class="files">
       <li><a href="${cal.fileUrl(r.excel)}" download>${esc(r.excel)}</a>
-        <span class="muted">every labelled mite-recording with its score and outcome, the fraction moving per recording, the ROC curve and the summary</span></li></ul>`)}`;
+        <span class="muted">every labelled mite-recording with its score and outcome, the fraction moving per recording, the precision-recall curve and the summary</span></li></ul>`)}`;
 
     $("report-refresh")?.addEventListener("click", () => cal.evaluate());
     this.wireDatasetPicker();
@@ -260,7 +264,7 @@ class ReportPage {
   }
 
   calibrateReport(r) {
-    const { thr, oneClassNote, survivalCaption, rocCaption, scoreText, deathText, CONFUSION_CAPTION, STRIP_CAPTION } = ReportPage;
+    const { thr, oneClassNote, survivalCaption, precisionRecallCaption, scoreText, deathText, CONFUSION_CAPTION, STRIP_CAPTION } = ReportPage;
     const { stat, figure, section } = Markup;
     if (r.suggested_threshold == null) {
       return `<div class="banner">${oneClassNote(r)}</div>
@@ -326,7 +330,7 @@ class ReportPage {
     </div>
 
     <div class="grid-2">
-      ${figure("chart-roc", 4, "ROC curve", rocCaption(r))}
+      ${figure("chart-pr", 4, "Precision-recall curve", precisionRecallCaption(r))}
     </div>`;
   }
 
@@ -365,7 +369,7 @@ class ReportPage {
       $("confusion").innerHTML = matrix(button.dataset.shown);
       wrong(button.dataset.shown);
     }));
-    figures.drawRoc($("chart-roc"), r, marks);
+    figures.drawPrecisionRecall($("chart-pr"), r, marks);
     figures.drawStrip($("chart-strip"), r, marks);
     $("save-threshold").addEventListener("click", () => this.saveThreshold());
   }
@@ -400,7 +404,7 @@ class ReportPage {
   // --- test: how good is the threshold in use, and where does it go wrong
 
   testReport(r) {
-    const { thr, aucText, oneClassNote, survivalCaption, rocCaption, pooled, CONFUSION_CAPTION, STRIP_CAPTION } = ReportPage;
+    const { thr, averagePrecisionText, oneClassNote, survivalCaption, precisionRecallCaption, pooled, CONFUSION_CAPTION, STRIP_CAPTION } = ReportPage;
     const { stat, figure, section } = Markup;
     const c = r.current;
     return `
@@ -408,7 +412,8 @@ class ReportPage {
       ${stat("Called right", pct(c.accuracy), `${c.n_wrong} wrong · threshold ${thr(r.threshold)}`)}
       ${this.outcomeStat("Moving called moving", c, r.rates.current, "moving", "still")}
       ${this.outcomeStat("Still called still", c, r.rates.current, "still", "moving")}
-      ${stat("AUC", aucText(r), r.auc == null ? "needs moving and still labels" : "1 = perfect separation, 0.5 = chance")}
+      ${stat("Average precision", averagePrecisionText(r), r.average_precision == null ? "needs moving and still labels"
+        : `1 = perfect separation, ${pct(r.precision_recall.chance)} = chance`)}
     </div>
 
     <div class="grid-2">
@@ -437,17 +442,18 @@ class ReportPage {
           a mite called wrong at least once is coloured by its more frequent error. Hover a mite for its recordings, select it to see it.
           ${pooled(r) ? "One recording folder at a time: choose it above." : ""}</figcaption>
       </figure>
-      ${r.roc ? figure("chart-roc", 4, "ROC curve", rocCaption(r)) : section("ROC curve", `<p class="hint">${oneClassNote(r)}</p>`)}
+      ${r.precision_recall ? figure("chart-pr", 4, "Precision-recall curve", precisionRecallCaption(r))
+        : section("Precision-recall curve", `<p class="hint">${oneClassNote(r)}</p>`)}
     </div>
 
-    ${r.roc ? figure("chart-strip", 5, "Motion score distribution", STRIP_CAPTION) : ""}
+    ${r.precision_recall ? figure("chart-strip", 5, "Motion score distribution", STRIP_CAPTION) : ""}
 
-    ${section("The last recording", `<div id="last-recording" data-number="${r.roc ? 6 : 4}">${this.lastRecording.html(r, r.roc ? 6 : 4)}</div>`)}
+    ${section("The last recording", `<div id="last-recording" data-number="${r.precision_recall ? 6 : 4}">${this.lastRecording.html(r, r.precision_recall ? 6 : 4)}</div>`)}
 
     ${section("Per zone", `<div class="table-wrap"><table class="clickable" id="zone-errors"></table></div>
       <p class="caption">Counts are mite-recordings, at the threshold in use. Select a zone to review its labels.</p>`)}
 
-    ${section("Poke test", this.pokeReport(r, r.roc ? 8 : 6))}
+    ${section("Poke test", this.pokeReport(r, r.precision_recall ? 8 : 6))}
 
     ${r.between_recordings ? section("Between recordings", this.betweenReport(r)) : ""}`;
   }
@@ -484,7 +490,7 @@ class ReportPage {
       so a mite pushed or turned when the box is opened does not change; one that moves a leg does. A change above ${thr(between.limit)} px counts,
       and a mite moved in a recording when the change into it and into the one before both count; it dies at the recording after its last movement, as by the detector.
       Over them, on the right-hand axis, the Kaplan–Meier survival rate by the ground truth (black, with its 95% confidence band), which runs along the left edge of the quiet part,
-      and by the outline change (dashed)${r.poke ? `, and by the pokes (purple, on the poked mites only, Fig. ${r.roc ? 8 : 6})` : ""}.
+      and by the outline change (dashed)${r.poke ? `, and by the pokes (purple, on the poked mites only, Fig. ${r.precision_recall ? 8 : 6})` : ""}.
       What is coloured right of the black curve changed after the mite's last labelled movement. Hover a cell for its numbers, click it to see the mite in that recording.`);
   }
 
@@ -536,8 +542,8 @@ class ReportPage {
     $("map-recording").addEventListener("change", drawMap);
     $("map-dataset")?.addEventListener("change", drawMap);
     drawMap();
-    if (r.roc) {
-      figures.drawRoc($("chart-roc"), r, marks);
+    if (r.precision_recall) {
+      figures.drawPrecisionRecall($("chart-pr"), r, marks);
       figures.drawStrip($("chart-strip"), r, marks);
     }
     figures.drawZoneErrors(r);

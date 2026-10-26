@@ -140,9 +140,12 @@ that with the detector:
    right, the moving recordings called still, the still ones called moving, F1
    and the death-time error: the mean distance, in recordings, between each
    mite's death by the detector and by the labels (a mite dies at the recording
-   after its last movement), which is reported but not chosen on. Its confusion matrix switches
+   after its last movement), which is reported but not chosen on. Its
+   precision-recall curve marks both thresholds, with the curve of the points
+   as good by F1 as the better of them. Its confusion matrix switches
    between the suggested threshold and the one in use. *Test* shows the
-   confusion matrix at the threshold in use, the ROC curve with AUC, and where on
+   confusion matrix at the threshold in use, the precision-recall curve with its
+   average precision, and where on
    the plate the errors are. Both show the fraction of mites moving per recording
    by the ground truth against the detector's; *Test* also shows it per group,
    a poke test where one was entered (see *Poke test* below), and the outline

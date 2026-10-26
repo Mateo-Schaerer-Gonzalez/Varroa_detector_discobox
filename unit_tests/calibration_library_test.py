@@ -530,6 +530,9 @@ def test_the_report_suggests_the_threshold_with_the_best_f1_and_reports_the_deat
     best = result["best"]
     assert (best["moving_called_still"], best["still_called_moving"], best["accuracy"]) == (0, 1, pytest.approx(11 / 12))
     assert best["f1"] == pytest.approx(6 / 7)
+    curve = result["precision_recall"]
+    assert max(curve["f1"]) == pytest.approx(6 / 7, abs=1e-4) and curve["chance"] == 0.25
+    assert "roc" not in result and 0 < result["average_precision"] <= 1
     # the 4 puts mite 0's death two recordings late: reported, not chosen on
     death = result["death_error"]["suggested"]
     assert (death["mae"], death["n_late"], death["n_exact"]) == (1.0, 1, 1)
@@ -538,6 +541,7 @@ def test_the_report_suggests_the_threshold_with_the_best_f1_and_reports_the_deat
     # the workbook is written a moment after the report is handed over: this waits for it
     sheets = pd.read_excel(pipeline.results_file(tmp_path / "report", result["excel"]), sheet_name=None)
     assert list(sheets["summary"]["death_mae"]) == [result["death_error"]["current"]["mae"], 1.0]
+    assert list(sheets["precision_recall"]["f1"]) == curve["f1"]
 
 
 def test_the_poke_test_is_saved_next_to_the_recordings_and_reported(tmp_path, recordings, scorer):

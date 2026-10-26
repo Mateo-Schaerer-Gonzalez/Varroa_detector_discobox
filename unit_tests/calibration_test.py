@@ -17,6 +17,9 @@ from classes.ground_truth.calibration import (
     outcome,
     per_recording,
     roc_curve,
+    precision_recall_curve,
+    average_precision,
+    best_f1_threshold,
     survival_curves,
 )
 
@@ -43,6 +46,29 @@ def test_auc_perfect_chance_and_ties():
     assert auc([1, 1], [False, True]) == 0.5
     # 8 of the 9 moving/still pairs are ordered correctly (8 < 12 is the exception)
     assert auc(SCORES, MOVING) == pytest.approx(8 / 9)
+
+
+def test_the_precision_recall_curve_runs_from_the_highest_score_to_everything_called_moving():
+    recall, precision, f1, thresholds = precision_recall_curve(SCORES, MOVING)
+    assert list(thresholds) == [30, 20, 12, 8, 2, 1]
+    assert list(recall) == pytest.approx([1 / 3, 2 / 3, 2 / 3, 1, 1, 1])
+    assert list(precision) == pytest.approx([1, 1, 2 / 3, 3 / 4, 3 / 5, 1 / 2])
+    for at, threshold in enumerate(thresholds):
+        assert f1[at] == pytest.approx(confusion(SCORES, MOVING, threshold)["f1"])
+    with pytest.raises(ValueError):
+        precision_recall_curve([1, 2], [True, True])
+
+
+def test_average_precision_perfect_and_by_the_steps_of_recall():
+    assert average_precision([1, 2, 10, 20], [False, False, True, True]) == 1.0
+    assert average_precision(SCORES, MOVING) == pytest.approx((1 + 1 + 3 / 4) / 3)
+
+
+def test_best_f1_threshold_has_the_largest_f1():
+    threshold = best_f1_threshold(SCORES, MOVING)
+    assert threshold == 5.0  # all three moving and the 12 called moving: F1 6/7, halfway from 8 down to 2
+    best = confusion(SCORES, MOVING, threshold)["f1"]
+    assert all(confusion(SCORES, MOVING, candidate)["f1"] <= best + 1e-9 for candidate in np.linspace(0, 35, 200))
 
 
 def test_best_threshold_sits_in_the_gap_between_the_classes():

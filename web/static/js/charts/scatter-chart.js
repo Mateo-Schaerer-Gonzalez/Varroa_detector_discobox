@@ -8,7 +8,7 @@
  *   lines       [{ points: [[x, y], ...], color, width, dashed }]
  *   refX, refY  [{ value, label }] vertical / horizontal dashed reference lines
  *   xLabel, yLabel, xMin, xMax, yMin, yMax, height
- *   square      height follows the width (up to `height`), for ROC curves
+ *   square      height follows the width (up to `height`), for precision-recall curves
  *   xFormat, yFormat   value -> tick text
  *   yCategories [{ value, label, muted }] named rows instead of numeric y ticks; a
  *               muted one is greyed out, e.g. a row left out of the numbers

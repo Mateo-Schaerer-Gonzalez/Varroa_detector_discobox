@@ -287,7 +287,7 @@ def write_calibration_excel(result, out_dir):
     columns, how far the calls put the mites' deaths from the labels', in
     recordings), the datasets pooled, every labelled (mite,
     recording) observation, the survival curves by the labels and the detector,
-    the fraction moving per recording and, when there is one, the ROC curve; and, with a poke
+    the fraction moving per recording and, when there is one, the precision-recall curve; and, with a poke
     test, the survival of the poked mites by the pokes and by the detector.
     A calibration with the benchmark has it as a row of the summary, a column of
     the observations and a survival curve; one with the outline change between
@@ -303,7 +303,7 @@ def write_calibration_excel(result, out_dir):
         [{"threshold": "in use", **result["current"], **death("current")}]
         + ([{"threshold": "suggested", **result["best"], **death("suggested")}] if result["best"] else [])
     )
-    summary["auc"] = result["auc"]
+    summary["average_precision"] = result["average_precision"]
     summary["metric"] = result["metric"]
     summary["metric_params"] = json.dumps(result.get("metric_params") or {})
     if result.get("benchmark"):
@@ -369,8 +369,10 @@ def write_calibration_excel(result, out_dir):
         observations.to_excel(writer, sheet_name="observations", index=False)
         survival.to_excel(writer, sheet_name="survival", index=False)
         over_time.to_excel(writer, sheet_name="moving_over_time", index=False)
-        if result["roc"]:
-            pd.DataFrame(result["roc"]).to_excel(writer, sheet_name="roc", index=False)
+        if result["precision_recall"]:
+            curve = {key: value for key, value in result["precision_recall"].items() if key != "chance"}
+            pd.DataFrame(curve).rename(columns={"thresholds": "threshold"}).to_excel(
+                writer, sheet_name="precision_recall", index=False)
         if result.get("poke"):
             poke = result["poke"]
             pd.DataFrame({"time": poke["times"], "survival_by_poke": poke["poke"]["alive"], "ci_low": poke["poke"]["low"],

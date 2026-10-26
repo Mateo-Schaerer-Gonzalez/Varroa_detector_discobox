@@ -1,6 +1,6 @@
 // The calibration report's figures: the confusion matrix, the survival rate over
 // time (and per group), the scores against the
-// thresholds, the ROC curve, where on the plate the errors are, the poke test and the outline change between
+// thresholds, the precision-recall curve, where on the plate the errors are, the poke test and the outline change between
 // recordings. Every observation, from whichever dataset,
 // opens its mite in its recording.
 
@@ -157,45 +157,59 @@ class ReportFigures {
     });
   }
 
-  drawRoc(container, r, marks) {
+  // The points with the same F1 as `f1`, from where the precision reaches 100% to where the recall does.
+  static isoF1(f1) {
+    const from = f1 / (2 - f1);
+    return Array.from({ length: 41 }, (_, i) => {
+      const recall = from + (1 - from) * (i / 40);
+      return [recall, (f1 * recall) / (2 * recall - f1)];
+    });
+  }
+
+  // The precision-recall curve (the server's r.precision_recall): every threshold,
+  // the thresholds marked on it, and the points with the F1 of the best of them.
+  drawPrecisionRecall(container, r, marks) {
     const { thr } = ReportPage;
-    const { fpr, tpr, thresholds } = r.roc;
+    const curve = r.precision_recall;
     const percentFormat = (v) => `${Math.round(v * 100)}%`;
+    const tip = (title, recall, precision, f1) => `<div class="tip-title">${title}</div>
+      <div>${percentFormat(recall)} of moving labels called moving (recall)</div>
+      <div>${percentFormat(precision)} of the calls moving labelled moving (precision)</div>
+      <div class="tip-note">F1 ${f1.toFixed(3)}</div>`;
+    const shown = marks.filter((mark) => mark.confusion.precision != null);
+    const best = shown.reduce((a, b) => (b.confusion.f1 > a.confusion.f1 ? b : a), shown[0]);
     Charts.scatter(container, {
       square: true,
       height: 400,
       xMin: 0, xMax: 1, yMin: 0, yMax: 1,
       xFormat: percentFormat,
       yFormat: percentFormat,
-      xLabel: "Still called moving (false positive rate)",
-      yLabel: "Moving called moving",
+      xLabel: "Moving called moving (recall)",
+      yLabel: "Called moving that is moving (precision)",
       lines: [
-        { points: [[0, 0], [1, 1]], color: token("--muted"), width: 1, dashed: true },
-        { points: fpr.map((f, i) => [f, tpr[i]]), color: token("--ink"), width: 2 },
+        { points: [[0, curve.chance], [1, curve.chance]], color: token("--muted"), width: 1, dashed: true },
+        ...(best ? [{ points: ReportFigures.isoF1(best.confusion.f1), color: best.color, width: 1, dashed: true }] : []),
+        { points: curve.recall.map((recall, i) => [recall, curve.precision[i]]), color: token("--ink"), width: 2 },
       ],
       points: [
         // Every step of the curve can be hovered for its threshold.
-        ...fpr.slice(1).map((f, i) => ({
-          x: f, y: tpr[i + 1], r: 3, hidden: true,
-          tip: `<div class="tip-title">threshold ${thr(thresholds[i + 1])}</div>
-          <div>${percentFormat(tpr[i + 1])} of moving labels called moving</div>
-          <div>${percentFormat(f)} of still labels called moving</div>`,
+        ...curve.recall.map((recall, i) => ({
+          x: recall, y: curve.precision[i], r: 3, hidden: true,
+          tip: tip(`threshold ${thr(curve.thresholds[i])}`, recall, curve.precision[i], curve.f1[i]),
         })),
-        ...marks.map((mark, i) => {
+        ...shown.map((mark, i) => {
           const c = mark.confusion;
-          const f = mark.rates.still_called_moving;
           return {
             // the second label goes under its point, so close thresholds stay readable
-            x: f, y: c.sensitivity, r: 6, color: mark.color, label: `${mark.name} ${thr(mark.value)}`, labelDy: i ? 16 : 0,
-            tip: `<div class="tip-title">${mark.name}: ${thr(mark.value)}</div>
-            <div>${percentFormat(c.sensitivity)} of moving labels called moving</div>
-            <div>${percentFormat(f)} of still labels called moving</div>`,
+            x: c.sensitivity, y: c.precision, r: 6, color: mark.color, label: `${mark.name} ${thr(mark.value)}`, labelDy: i ? 16 : 0,
+            tip: tip(`${mark.name}: ${thr(mark.value)}`, c.sensitivity, c.precision, c.f1),
           };
         }),
       ],
       legend: [
-        { name: "ROC", color: token("--ink"), shape: "line" },
-        { name: "chance", color: token("--muted"), dashed: true },
+        { name: "precision-recall", color: token("--ink"), shape: "line" },
+        { name: "chance (everything called moving)", color: token("--muted"), dashed: true },
+        ...(best ? [{ name: `F1 ${best.confusion.f1.toFixed(3)}`, color: best.color, dashed: true }] : []),
         ...marks.map((mark) => ({ name: `${mark.name} threshold`, color: mark.color, shape: "circle" })),
       ],
     });

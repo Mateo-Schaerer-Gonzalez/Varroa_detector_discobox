@@ -145,6 +145,36 @@ def auc(scores, moving):
     return float(((pos > neg) + 0.5 * (pos == neg)).mean())
 
 
+def precision_recall_curve(scores, moving):
+    """Recall, precision and F1 of the calls moving at every distinct threshold,
+    highest first: recall the share of the moving labels called moving,
+    precision the share of the calls moving labelled moving, F1 their harmonic
+    mean (2 TP / (2 TP + FP + FN)). The last point, at the lowest score, calls
+    everything moving: recall 1, precision the share of moving labels.
+
+    Returns (recall, precision, f1, thresholds)."""
+    scores = np.asarray(scores, dtype=float)
+    moving = np.asarray(moving, dtype=bool)
+    if not has_both_classes(moving):
+        raise ValueError("A precision-recall curve needs both moving and still labels.")
+
+    thresholds = np.unique(scores)[::-1]
+
+    def reaching(values):  # how many of `values` reach each threshold
+        return len(values) - np.searchsorted(np.sort(values), thresholds, side="left")
+
+    tp, called = reaching(scores[moving]), reaching(scores)
+    return tp / moving.sum(), tp / called, 2 * tp / (called + moving.sum()), thresholds
+
+
+def average_precision(scores, moving):
+    """The precision averaged over the recall, step by step along
+    precision_recall_curve(): 1 when every moving label scores above every
+    still one, the share of moving labels when the scores tell nothing."""
+    recall, precision, _f1, _thresholds = precision_recall_curve(scores, moving)
+    return float(np.sum(np.diff(np.concatenate([[0.0], recall])) * precision))
+
+
 def best_threshold(scores, moving):
     """The threshold that maximises sensitivity + specificity (Youden's J).
 
@@ -166,12 +196,8 @@ def best_f1_threshold(scores, moving):
     Of thresholds that do as well, the highest; placed halfway into the gap
     below the lowest score called moving, as best_threshold() does."""
     scores = np.asarray(scores, dtype=float)
-    moving = np.asarray(moving, dtype=bool)
-    fpr, tpr, thresholds = roc_curve(scores, moving)
-    tp = np.rint(tpr[1:] * moving.sum())  # skip the infinite threshold
-    fp = np.rint(fpr[1:] * (~moving).sum())
-    f1 = 2 * tp / (2 * tp + fp + (moving.sum() - tp))
-    return _into_gap(scores, thresholds[int(np.argmax(f1)) + 1])
+    _recall, _precision, f1, thresholds = precision_recall_curve(scores, moving)
+    return _into_gap(scores, thresholds[int(np.argmax(f1))])
 
 
 def _into_gap(scores, lowest_moving):
