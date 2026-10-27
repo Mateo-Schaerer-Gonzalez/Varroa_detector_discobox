@@ -205,7 +205,7 @@ def test_the_benchmark_reads_each_mite_box_from_the_frames(tmp_path):
 
 def test_a_report_with_the_benchmark_compares_it_on_the_same_observations(tmp_path, recordings, scorer, monkeypatch):
     data_dir, out_dir = make_session(tmp_path, "a", 2, times=(0.0, 5.0, 10.0))
-    scorer.scores = {"a": {"0": [9, 9, 0.1], "1": [0.1, 0.1, 0.1]}}
+    scorer.scores = {"a": {"0": [9, 9, 0.01], "1": [0.01, 0.01, 0.01]}}
     pipeline.save_ground_truth(out_dir, {"0": ["moving", "moving", "still"], "1": ["still", "still", "still"]})
     runs = []
 
@@ -276,7 +276,7 @@ def test_cached_scores_and_calls_are_made_again_once_the_run_has_recorded_more(t
 
 def test_the_last_recording_leaves_out_what_is_not_a_mite_and_keeps_the_unlabelled(tmp_path, recordings, scorer):
     data_dir, out_dir = make_session(tmp_path, "a", 3)
-    scorer.scores = {"a": {"0": [9, 9], "1": [0.1, 0.1], "2": [9, 9]}}
+    scorer.scores = {"a": {"0": [9, 9], "1": [0.01, 0.01], "2": [9, 9]}}
     pipeline.save_ground_truth(out_dir, {"0": ["moving", None], "1": ["still", "still"], "2": "not_a_mite"})
     result = pipeline.evaluate_calibration(tmp_path / "report", [pipeline.dataset_id(data_dir)], recordings_root=recordings)
     assert [(m["id"], m["call"], m["movement"]) for m in result["datasets"][0]["last_recording"]["mites"]] == [

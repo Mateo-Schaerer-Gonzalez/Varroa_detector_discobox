@@ -291,7 +291,7 @@ def step_score(out):
         numbers[f"{key}_score"] = round(score, 4)
         numbers[f"{key}_noise"] = round(sigma2, 3)
         numbers[f"{key}_mean_a"] = round(float(a.mean()), 3)
-        numbers[f"{key}_fft_h1_check"] = round(float(rows[key]["harmonics"][1] / a.mean() ** params["relative"]), 4)
+        numbers[f"{key}_fft_h1_check"] = round(float(rows[key]["harmonics"][1]), 4)
         numbers[f"{key}_vector_sum_length"] = round(float(rows[key]["harmonics"][1]), 4)
 
     fig = plt.figure(figsize=(15, 4.0))
@@ -323,7 +323,7 @@ def step_score(out):
         ax.set_aspect("equal")
         ax.invert_yaxis()   # y down, as in the image
         ax.set(xlabel="x", ylabel="y (down)",
-               title=f"{'a' if key == 'moving' else 'b'}. {key}: the {K} arrows a_k·e_k / {K} tip to tail, black arrow {abs(rows[key]['walk'][-1]):.3f}\nscore = that / ā^{params['relative']:g} = {abs(rows[key]['walk'][-1]):.3f} / {rows[key]['a'].mean():.2f}^{params['relative']:g} = {rows[key]['score']:.3f}")
+               title=f"{'a' if key == 'moving' else 'b'}. {key}: the {K} arrows a_k·e_k / {K} tip to tail, \nblack arrow {abs(rows[key]['walk'][-1]):.3f} = score {rows[key]['score']:.3f}")
     ax = axes[2]
     h = np.arange(11)
     ax.bar(h - 0.2, rows["moving"]["harmonics"][:11], width=0.4, color=GREEN, label="moving")

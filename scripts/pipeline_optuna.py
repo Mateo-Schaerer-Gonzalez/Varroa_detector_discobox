@@ -75,10 +75,10 @@ PAD, MARGIN, REACH_CAP = 16, 32, 12.0
 SEED = 0
 INTER = {"linear": cv2.INTER_LINEAR, "cubic": cv2.INTER_CUBIC, "lanczos": cv2.INTER_LANCZOS4}
 
-# The app's constants: trial 228 of the first search (2026-10-27), rounded
+# The app's constants: trial 228 of the first search (2026-10-27), rounded, without its relative 0.491 (taken out the same day)
 APP = dict(stab_pad=4, stab_rim=8, stab_share=0.241, stab_grow=4, stab_interp="linear",
            rim=3, body_share=0.355, edge_share=0.226, grow=0, darkest_n=8,
-           angles=128, ray_step=0.5, reach=11.4, width=1.04, ray_interp="linear", relative=0.491)
+           angles=128, ray_step=0.5, reach=11.4, width=1.04, ray_interp="linear", relative=0.0)
 # The app on the morning of 2026-10-27 (body mask and ray edge both at 0.3 of the
 # darkest): trial 0 of the first search, "app now" in its notebook
 EDGE_03 = dict(stab_pad=8, stab_rim=6, stab_share=0.3, stab_grow=2, stab_interp="lanczos",

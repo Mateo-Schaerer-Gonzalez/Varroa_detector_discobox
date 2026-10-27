@@ -45,7 +45,9 @@ OFFSETS = np.arange(-5.0, 7.5, 0.5)               # pixels from the body's edge,
 # The scores disturbed() compares: {name: (metric, parameters that differ from config.yaml's)}.
 DISTURBED = {"variability": ("variability", {}), "vector_variance": ("vector_variance", {}),
              "outline_movement": ("outline_movement", {}), METRIC: (METRIC, {}),
-             f"{METRIC}, relative 1": (METRIC, {"relative": 1.0})}
+             f"{METRIC}, relative 1": (METRIC, {})}
+# The score divided by the outline's mean variance (the metric's `relative` 1, taken out of it on 2026-10-27)
+SHARE = f"{METRIC}, relative 1"
 WHOLE = "the outline's whole variance"            # amount(): not a metric of the app, set beside them in disturbed()
 
 
@@ -130,7 +132,7 @@ def one_sidedness(profiles):
     """How clustered the outline's variance is: the share of it that lies on
     one side, 0 to 1: one_sided() over amount(). 0: the same all the way
     round, or on two opposite sides. 1: all of it in one direction. The
-    metric's score with relative 1."""
+    metric's score over its outline's mean variance (SHARE)."""
     total = amount(profiles)
     return np.where(total >= 1e-6, one_sided(profiles) / np.where(total >= 1e-6, total, 1), 0.0)
 
@@ -247,7 +249,10 @@ def _disturb_mite(job):
         for name, (metric, params) in scores.items():
             edge = MAX_PAD - Analyzer.roi_padding(metric, params)
             box = roi[:, edge:roi.shape[1] - edge, edge:roi.shape[2] - edge]
-            out[name].append(float(Analyzer._motion_score(box, metric, params)))
+            value = float(Analyzer._motion_score(box, metric, params))
+            if name == SHARE and value:
+                value /= float(Analyzer.outline_variability_profile(box, params["width"], params["pad"]).mean()) / (Analyzer.plate_noise(box) or 1)
+            out[name].append(value)
         out.setdefault(WHOLE, []).append(float(Analyzer.outline_variability_profile(roi, scores[METRIC][1]["width"], MAX_PAD).mean()))
     return out
 

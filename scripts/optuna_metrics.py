@@ -66,8 +66,8 @@ def _outline_movement(trial):
 
 
 def _outline_variability(trial):
-    # from the vector sum itself (0) to the share of the variance on one side (1); the plate's light is read off the patch's edge, as above
-    return {"relative": trial.suggest_float("relative", 0.0, 1.0), "width": trial.suggest_float("width", 0.5, 3.0, step=0.5),
+    # the plate's light is read off the patch's edge, as above (its `relative` was taken out of the metric on 2026-10-27)
+    return {"width": trial.suggest_float("width", 0.5, 3.0, step=0.5),
             "pad": trial.suggest_categorical("pad", [12, 16])}
 
 

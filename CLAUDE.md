@@ -140,9 +140,12 @@ has none, and forces `stabilize_plate` on.
 (the one-sided part), divided by the recording's noise floor (`Analyzer.plate_noise()`:
 median variance over the frames of the patch's outer `RIM` px of plate, where it is 0 the score is left undivided and flagged with a `NoNoiseWarning`, which
 `pytest.ini` makes an error, so synthetic test frames get fake plate noise; the user's
-choice of 2026-10-23, in the metric rather than a switchable normaliser); its `relative`
-divides by the profile's mean to that power (0.491, so the score is no longer purely in
-multiples of the noise).
+choice of 2026-10-23, in the metric rather than a switchable normaliser). The score is not
+divided by the profile's mean: the search's `relative` 0.491 (the mean to that power) was
+taken out on 2026-10-27, the user's choice ("just don't divide by a bar"). On the four
+labelled datasets it changed no call (rank correlation ≥ 0.998, d′ within ±0.15), only the
+scale; what it did was pull an unstabilised shake down (`detector_test`'s shake test now
+stabilises first). Don't reintroduce it.
 
 **The constants of the stabilizer and the score were chosen by Optuna** (the user's choice
 of 2026-10-27, against my recommendation): `scripts/pipeline_optuna.py` copies the chain
@@ -151,16 +154,17 @@ on the labelled poke run and three 30-frame datasets, mites split into a tune an
 half (`notebooks/pipeline_optuna.ipynb`). Trial 228, rounded to three decimals: stabilizer
 pad 4, rim 8, body 0.241 of the darkest grown 4 px, bilinear cut; score rim 3, body 0.355
 not grown, edge 0.226, "the darkest" = mean of 8 pixels (`plate_stabilizer.DARKEST_N`),
-128 rays of 11.4 px every 0.5 px, band ±1.04 px, `relative` 0.491. It raised the
+128 rays of 11.4 px every 0.5 px, band ±1.04 px (and `relative` 0.491, taken out since,
+see above; `pipeline_optuna.APP` has it at 0, as the search can still try it). It raised the
 separation (d′ of log scores) on the tune mites by 15 % but not on the test mites (5.45
 against 5.53 for the constants before, 5.34 for the 0.3 edge tried the same day); F0.5 is
 at its ceiling (0.995 against 0.992 on the test half). Before: pad 8, rim 6, body 0.3 of
 the single darkest grown 2 px, edge 0.5 of the mean of the 30 darkest, 64 rays of 13 px,
-band ±1.5, relative 0, Lanczos cut. Rerun the search (`build`, `run`, `export`) when a
-larger 3 s / 30 fps ground truth exists. The default threshold 0.106 is the F0.5 threshold
-of the poke run (3 s / 30 fps) on the new scale; the 30-frame datasets' own are 0.15–0.17.
-Every machine's saved threshold is on the old scale and must be saved again from a
-calibration report.
+band ±1.5, Lanczos cut. Rerun the search (`build`, `run`, `export`) when a
+larger 3 s / 30 fps ground truth exists. The default threshold 0.074 is the F0.5 threshold
+of the poke run (3 s / 30 fps) without `relative` (0.106 with it); the 30-frame datasets'
+own are 0.11–0.13. Every machine's saved threshold is on an old scale and must be saved
+again from a calibration report.
 
 The stabilizer (`classes/scoring/plate_stabilizer.py`) moves each mite's patch back by its own
 centre's shift within the recording (bilinear since 2026-10-27), capped at `MARGIN` minus the Lanczos reach (12 px, kept); a

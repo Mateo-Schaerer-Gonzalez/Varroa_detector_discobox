@@ -298,15 +298,16 @@ patch's edge in the same recording (`Analyzer.plate_noise()`; where that is 0,
 which only frames without noise or a black plate give, the score is left
 undivided and a `NoNoiseWarning` flags it: it is then off the threshold's scale). That needs no other recording, so it holds
 in a live run too. On sample_data the floor is 3.1 to 3.8 grey levels squared.
-The score is also divided by its outline's mean variance to the power 0.491
-(`relative`). That and the other constants of the score and the stabilizer
+The constants of the score and the stabilizer
 (128 rays of 11.4 px, the body's edge at 0.226 of its darkest, a ±1.04 px
 outline band, a bilinear stabilizer, …) were chosen by an Optuna search on the
 labelled recordings on 2026-10-27 (`scripts/pipeline_optuna.py`,
 `notebooks/pipeline_optuna.ipynb`); they are read from `config.default.yaml`
-and the code, never from a machine's `config.yaml`. The default threshold
-(0.106) is the best F0.5 threshold of the poke run (3 s at 30 fps) on that
-scale. A threshold saved before 2026-10-27 is on the old scale: save one again
+and the code, never from a machine's `config.yaml`. The search also divided the score by its outline's mean variance to the
+power 0.491 (`relative`); that was taken out the same day, as it changed no
+call on the labelled recordings. The default threshold
+(0.074) is the best F0.5 threshold of the poke run (3 s at 30 fps) on that
+scale. A threshold saved before then is on another scale: save one again
 from a calibration report. Two further normalisations put the scores of a finished run on one
 scale (`classes/scoring/score_normalizer.py`); both keep the scores on about the scale
 they had. `normalize_brightness: true` scales each score to the run's typical

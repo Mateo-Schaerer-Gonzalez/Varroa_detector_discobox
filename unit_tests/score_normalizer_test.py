@@ -105,7 +105,9 @@ def test_the_analysis_of_a_folder_normalises_as_config_yaml_says(tmp_path, monke
     assert normalised["normalization"] == {"floor": True, "brightness": False}
     assert [mite["scores"] for mite in normalised["mites"]] != [mite["scores"] for mite in results["mites"]]
     threshold = normalised["threshold"]
-    assert all(mite["moving"] == [value >= threshold for value in mite["scores"]] for mite in normalised["mites"])
+    # the scores are rounded to 3 decimals: one just below the threshold can show as it
+    assert all(moving == (value >= threshold) for mite in normalised["mites"]
+               for value, moving in zip(mite["scores"], mite["moving"]) if abs(value - threshold) > 5e-4)
     json.dumps(pipeline.describe_movement(normalised), allow_nan=False)
     measurements = pd.read_excel(out / "results.xlsx", sheet_name="measurements")
     assert {"raw_score", "brightness"} <= set(measurements.columns)

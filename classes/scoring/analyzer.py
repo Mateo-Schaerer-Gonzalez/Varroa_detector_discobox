@@ -14,8 +14,9 @@ import numpy as np
 # The constants of outline_variability, chosen by an Optuna search on the
 # labelled recordings (trial 228 of scripts/pipeline_optuna.py,
 # notebooks/pipeline_optuna.ipynb; the user's choice of 2026-10-27), with its
-# `width` and `relative` in config.default.yaml. Before: rim 6, body 0.3 of the
-# single darkest pixel grown 2 px, edge 0.5, 64 rays of 13 px, width 1.5, relative 0.
+# `width` in config.default.yaml; its `relative` 0.491 was taken out the same day.
+# Before: rim 6, body 0.3 of the single darkest pixel grown 2 px, edge 0.5,
+# 64 rays of 13 px, width 1.5.
 # The patch's outermost pixels, read for the plate's light and the noise floor.
 RIM = 3
 # The body (for the rays' centre): darker than this share of the darkest (the
@@ -421,7 +422,7 @@ class Analyzer:
         return float(np.sort(swing)[-n:].mean())
 
     @staticmethod
-    def _outline_variability(roi, relative=0.491, width=1.04, pad=16):
+    def _outline_variability(roi, width=1.04, pad=16):
         """Vector sum around the mite of the variance of the pixels on its outline: how much of that variance lies on one side.
 
         The variance over the frames is taken around the outline, one value
@@ -442,11 +443,10 @@ class Analyzer:
         or a noisy recording scores higher than one in a dark patch or a quiet
         recording.
 
-        `relative` takes the score relative to how much the outline varies: it
-        is divided by the outline's mean variance to that power. At 1 it is
-        the share of the variance that lies on one side, 0 to 1: how clustered
-        the variance is, however little of it there is (the noise floor then
-        divides out).
+        The search chose to divide the score by the outline's mean variance to
+        the power 0.491 (`relative`); it was taken out on 2026-10-27 (the
+        user's choice): it changed no call on the labelled datasets and only
+        moved the scale.
 
         `width` is how far the outline reaches on each side of the body's
         edge, in pixels.
@@ -467,10 +467,8 @@ class Analyzer:
                           "black plate): its outline_variability is in grey levels squared, not in "
                           "multiples of the noise floor, and the threshold does not fit it.",
                           NoNoiseWarning, stacklevel=2)
-        mean = float(profile.mean())
         direction = np.exp(2j * np.pi * np.arange(len(profile)) / len(profile))
-        one_sided = float(np.abs((profile * direction).mean()))
-        return one_sided / mean ** relative
+        return float(np.abs((profile * direction).mean()))
 
     @staticmethod
     def outline_variability_profile(roi, width=1.04, pad=16):

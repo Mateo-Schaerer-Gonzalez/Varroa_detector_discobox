@@ -17,7 +17,12 @@ again when the constants of the stabilizer and the score were set to those an
 Optuna search chose (scripts/pipeline_optuna.py, trial 228, 2026-10-27: among
 them 128 rays, the body's edge at 0.226 of the darkest, `relative` 0.491, a
 bilinear stabilizer): every score changed, and the default threshold went from
-0.472 to 0.106 (the F0.5 threshold of the poke run). It writes the reference of the OpenCV it runs with
+0.472 to 0.106 (the F0.5 threshold of the poke run). Made again when
+`relative` was taken out (the score no longer divided by the profile's mean,
+the user's choice, 2026-10-27): every score changed scale, the default
+threshold went from 0.106 to 0.074 (the poke run's F0.5 threshold without it),
+and no call changed on the four labelled datasets; on sample_data none changed
+with OpenCV 5 and one of 180 (still to moving, at the threshold) with OpenCV 4. It writes the reference of the OpenCV it runs with
 (reference.py: one for OpenCV 4, one for 5), so run it in both Pythons; the
 OpenCV 5 one was first made from commit 76dba5e. Run this again only to accept a deliberate change to
 what folder mode produces, and say why in the commit.
