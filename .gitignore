@@ -23,5 +23,48 @@ output/
 outputs/
 uploads/
 
-# the report on how the app works (report/REPORT.md); kept out of git for now
-/report/
+# the reports: the four in report/, their scripts and the images they show are in git;
+# drafts, PDFs, the archive and the Fourier/Brownian-motion notes stay on the dev laptop
+/report/*
+!/report/1_user_manual.md
+!/report/2_how_it_works.md
+!/report/3_performance.md
+!/report/visual_how_it_works.md
+!/report/scripts/
+/report/scripts/eval/
+!/report/images/
+/report/images/*
+!/report/images/app_calibration_open.png
+!/report/images/app_labels.png
+!/report/images/app_live_setup.png
+!/report/images/app_playback.png
+!/report/images/app_results_platemap.png
+!/report/images/app_results_shake.png
+!/report/images/app_results_survival.png
+!/report/images/app_results_top.png
+!/report/images/app_zone_top.png
+!/report/images/benchmark_bars.png
+!/report/images/benchmark_shake.png
+!/report/images/body_mask.png
+!/report/images/detector_steps.png
+!/report/images/mite_outline_app.png
+!/report/images/outline_unrolled.png
+!/report/images/outline_vector_sum.png
+!/report/images/score_regions.png
+!/report/images/speed_memory_storage.png
+!/report/images/still_noise_floor.png
+!/report/images/walk_10_survival.png
+!/report/images/walk_1_detection.png
+!/report/images/walk_1_detection_plate.png
+!/report/images/walk_2_frames.png
+!/report/images/walk_3_stabilizer_centre.png
+!/report/images/walk_3_stabilizer_effect.png
+!/report/images/walk_4_lamp_noise.png
+!/report/images/walk_5_rays.png
+!/report/images/walk_6_profile.png
+!/report/images/walk_7_vector_sum.png
+!/report/images/walk_8_threshold.png
+!/report/images/walk_9_calibration.png
+
+# the analysis notebooks: kept on the dev laptop, not on GitHub
+/notebooks/

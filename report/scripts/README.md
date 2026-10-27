@@ -1,0 +1,26 @@
+# The code behind the reports' figures
+
+The reports in `report/` draw their figures with these scripts, kept as they were run
+(23–27 October 2026), with only the repository's path made relative. They read copies of
+the recordings in `%TEMP%\zzrc\perf\<dataset>` (hard links of the frames, see CLAUDE.md),
+never `recordings/` itself, and most take the folder to write to as their argument
+(`report/images`).
+
+| Figure (`report/images/`) | Report | Made by |
+|---|---|---|
+| `walk_*.png` | `visual_how_it_works.md` | `scripts/visual_walkthrough.py` |
+| `app_*.png`, `mite_outline_app.png` | `1_user_manual.md`, `2_how_it_works.md` | `scripts/readme_screenshots.mjs`, then `scripts/readme_images.py` (the 2025 test sessions only) |
+| `detector_steps.png` | `2_how_it_works.md` | `figures2.py` |
+| `outline_unrolled.png`, `outline_vector_sum.png` | `2_how_it_works.md` | `outline_data.py` (the data), then `fig_outline.py` |
+| `body_mask.png` | `2_how_it_works.md` | `stab_data.py` (the data), then `fig_mask.py` |
+| `score_regions.png` | `2_how_it_works.md` | `stab_data.py`, then `fig_stab.py` |
+| `still_noise_floor.png` | `2_how_it_works.md` | `scripts/noise_floor.py` (the table), then `still_floor_fig.py <repo>` |
+| `benchmark_bars.png`, `benchmark_shake.png` | `3_performance.md` | `evaluate.py` (every labelled mite-recording, scored by the app and by the original software, to `eval/`), `bench_fixed.py` (the table, `bench_fixed.json`), then `fig_bench4.py`; the shake is from `scripts/shaky_recordings.py` |
+| `speed_memory_storage.png` | `3_performance.md` | `speed.py app\|original shipped\|1` and `memory.py app\|original` (each adds a line to `speed.jsonl`), then `fig_speed.py` |
+
+`bench_fixed.json` and `speed.jsonl` are the measurements the performance report quotes
+(26 October 2026, on the dev laptop).
+
+The figures in `README.md` (`docs/images/`) are the walkthrough's, the screenshots and the
+performance report's, copied by `scripts/readme_images.py`. `scripts/benchmark_original.py`
+redoes the benchmark with the code as it is and draws its charts into `docs/images/`.

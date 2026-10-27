@@ -54,9 +54,10 @@ so how well each treatment works.
 
 - [How it works](#-how-it-works): the pipeline, step by step, on real mites
 - [How well it works](#-how-well-it-works): the benchmark against the original software
+- [Reports](#-reports): the user manual, how it works, the performance report
 - [Quick start](#-quick-start)
 - [User manual](#-user-manual): [Live](#-live-from-the-discobox) · [Analysis](#-analysing-recordings) · [Calibration](#-calibration)
-- [Architecture](#-architecture) · [Command line](#-command-line) · [Files](#-where-files-go) · [Tests](#-tests)
+- [Architecture](#-architecture) · [Command line](#-command-line) · [Files](#-where-files-go) · [Tests](#-tests) · [References](#-references)
 
 ---
 
@@ -159,8 +160,11 @@ death time. Pooled per treatment, that gives Kaplan–Meier survival curves with
 
 > **Tuned with Optuna.** The constants of the stabilizer and the score (rays, band width, body edge,
 > interpolation, …) were chosen by a 600-trial Optuna search on four labelled datasets, with the mites
-> split into tune and test halves ([`scripts/pipeline_optuna.py`](scripts/pipeline_optuna.py),
-> [`notebooks/pipeline_optuna.ipynb`](notebooks/pipeline_optuna.ipynb)).
+> split into tune and test halves ([`scripts/pipeline_optuna.py`](scripts/pipeline_optuna.py)).
+>
+> Every figure in this section is drawn by [`scripts/visual_walkthrough.py`](scripts/visual_walkthrough.py) with the
+> app's own functions; the full walk-through, with the code of each step, is
+> [How it works, step by step on one mite](report/visual_how_it_works.md).
 
 ---
 
@@ -194,6 +198,22 @@ denoised frames, and it saves each mite as a lossless FFV1 video instead of ever
 
 For a 48 h run with a 3 s recording every 10 minutes, the app spends about **2.5 minutes** analysing in total.
 The original needs about **5.6 hours** on 22 cores.
+
+---
+
+## 📚 Reports
+
+Longer write-ups, in [`report/`](report/):
+
+| Report | What it covers |
+|---|---|
+| [User manual](report/1_user_manual.md) | Using the app: a live test on the Discobox, analysing recordings, calibrating the threshold, the files it writes |
+| [How it works](report/2_how_it_works.md) | What the app computes, with the reasoning: detection, the stabilizer, the motion score, the threshold, survival statistics, calibration |
+| [How it works, step by step on one mite](report/visual_how_it_works.md) | The same pipeline run on real data, with the code of each step and a figure of what it did |
+| [Performance](report/3_performance.md) | The app against the Discobox's original software: calls, time of death, speed, memory, storage (26 October 2026) |
+
+The code behind every figure is in the repository: [`report/scripts/`](report/scripts/) lists which
+script draws which figure.
 
 ---
 
@@ -447,7 +467,7 @@ one card per zone, every motion score by group, the scores of the moving mites a
 the many still recordings do not pull down), and per zone a ridgeline of the rests of a mite: the time
 between two movements with at least one still recording in between.
 
-![Survival by group, movement per zone](docs/images/app_results_survival.png)
+<p align="center"><img src="docs/images/app_results_top.png" width="800" alt="Results overview: counts, the close calls to check by eye, and the plate map with every mite's call"></p>
 
 Click a zone to see its mites, how many moved, how many are alive and their motion scores. Click a mite to
 see its close-up and score in each recording. Every chart has a tooltip, opens what it shows when clicked,
@@ -455,11 +475,12 @@ and downloads as SVG or PNG. The browser's back button works throughout. When co
 *Scores on one scale per mite* below), the scores of a folder are normalised over the run, and the pages'
 headings say by what.
 
-<p align="center"><img src="docs/images/app_zone_top.png" width="800" alt="A zone with its ten mites, each ringed and numbered"></p>
+<p align="center"><img src="docs/images/app_zone_top.png" width="800" alt="A zone with its mites, each ringed and numbered, green when moving and orange when still"></p>
 
-The overview also shows the **plate shake** per recording, to spot a door, fan or knocked bench:
+A mite's page plays its close-up with the outline coloured by change and the arrow of its score, and charts
+its score in every recording:
 
-![Rest between movements and plate shake](docs/images/app_results_shake.png)
+<p align="center"><img src="docs/images/app_mite.png" width="800" alt="A mite's page: close-up with outline and score arrow, score over time, a call per recording"></p>
 
 **4. Playback.** Every mite's whole video, its recordings one after the other, laid out by zone (a box per
 zone, a square per mite in it, the fly-offs at the end of theirs), all on one timer at the top of the page:
@@ -841,6 +862,29 @@ with a stand-in for the camera, and checks that folder mode on the frames it sav
 Rewrite the reference (`python unit_tests/make_reference.py`) only for a deliberate change to what folder mode
 produces. The camera and the fan and LEDs are tested with stand-ins; the first run on the real Discobox is the
 test of the hardware itself.
+
+---
+
+## 📎 References
+
+1. **Abilium GmbH, *varroa-discobox*: the Discobox's control and analysis software.**
+   GitHub, <https://github.com/Abilium-GmbH/varroa-discobox> (analysis as of commit `cbf8c47`).
+   This app builds on it in two ways:
+   - **Camera and hardware.** Much of the code that connects to the Discobox comes from it.
+     [`classes/discobox/camera_utils.py`](classes/discobox/camera_utils.py) is its camera module, copied
+     unchanged; [`classes/live/camera.py`](classes/live/camera.py) finds, opens and sets up the camera
+     (Vimba X, vmbpy) with those functions, as its app does; and [`classes/live/lights.py`](classes/live/lights.py)
+     speaks its Arduino protocol for the fan and LEDs (`src/controller.py`). A test run follows its schedule
+     and settings.
+   - **The benchmark.** Its analysis (`src/processing.py`: denoise, difference to the first frame, threshold
+     25, grow, count the spots) is reimplemented step for step in
+     [`classes/scoring/benchmark.py`](classes/scoring/benchmark.py) and compared with this app in
+     [How well it works](#-how-well-it-works) and the [performance report](report/3_performance.md).
+2. **Allied Vision, *Vimba X SDK* and *vmbpy*,** the camera's driver and Python API, installed as the
+   Discobox's own instructions describe.
+3. Statistics: Kaplan–Meier survival with Greenwood's confidence intervals on the log-log scale, and the
+   log-rank test (`scipy.stats.logrank`); motion-score constants tuned with **Optuna** (Akiba et al.,
+   *Optuna: A Next-generation Hyperparameter Optimization Framework*, KDD 2019).
 
 ---
 

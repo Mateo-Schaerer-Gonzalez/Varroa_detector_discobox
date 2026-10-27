@@ -1,0 +1,2 @@
+{"which": "original", "threads": "shipped", "frame_shape": [1544, 2064], "cpus": 22, "cv2_threads": 22, "30_wall": 24.37136469996767, "30_cpu": 168.2890625, "90_wall": 69.84684224997181, "90_cpu": 459.1875}
+{"which": "original", "threads": "1", "frame_shape": [1544, 2064], "cpus": 22, "cv2_threads": 1, "30_wall": 85.55908139998792, "30_cpu": 79.6171875, "90_wall": 262.984480049985, "90_cpu": 243.796875}

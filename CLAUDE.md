@@ -9,9 +9,17 @@ recordings or live from the Discobox camera. `README.md` documents every user-vi
 behaviour in detail; read the relevant section before changing a feature, and keep it in
 step with the change. Since 2026-10-27 it is also the user's CV showcase (the user's choice): a
 visual "how it works" and benchmark on top, the full manual below with the dense parts in
-`<details>`. Its figures are in `docs/images/` (in git), copied and shrunk from the gitignored
-`report/images/` (`scripts/visual_walkthrough.py` remakes the `walk_*` ones); copy them again
-after regenerating.
+`<details>`. Its figures are in `docs/images/`: `scripts/benchmark_original.py` draws the
+benchmark, `scripts/visual_walkthrough.py` the `walk_*` ones (into `report/images/`), and
+`scripts/readme_images.py` copies those and cuts the screenshots `scripts/readme_screenshots.mjs`
+takes. **App screenshots show only the 2025 test sessions** (sample_data, ground_truth_60min,
+ground_truth_90min), taken from a copy of the app holding only them (the user's rule of
+2026-10-27): the other runs are real experiments and the page (group names, the handwriting on
+the plates, the recordings list) shows what they test. Analysis figures may use any run. The
+four reports in `report/` (manual, how it works, step by step, performance), their scripts
+(`report/scripts/`, with an index of which draws which figure) and the images they show are in
+git; the rest of `report/` (drafts, PDFs, archive, the Fourier/Brownian-motion notes) stays on
+this laptop, as does `notebooks/`. Every figure's code is in the repository (the user's request).
 
 ## Commands
 
