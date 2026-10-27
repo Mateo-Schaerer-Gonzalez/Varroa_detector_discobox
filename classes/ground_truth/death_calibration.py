@@ -2,8 +2,8 @@
 they put each mite's death: for the scripts' searches (scripts/optuna_death_time.py,
 scripts/metric_agreement.py, scripts/outline_variability.py) only. The calibration
 report no longer chooses on the death error (the user's choice of 2026-10-26): it
-suggests the threshold with the largest F1 recording by recording
-(calibration.best_f1_threshold()), as the close calls are checked by eye on the
+suggests the threshold with the largest F0.5 recording by recording
+(calibration.best_f05_threshold()), as the close calls are checked by eye on the
 result pages anyway, and only reports the death error (calibration.death_errors()).
 
 A mite dies at the recording after its last movement (classes/results/survival.py), so

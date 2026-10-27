@@ -157,27 +157,29 @@ class ReportFigures {
     });
   }
 
-  // The points with the same F1 as `f1`, from where the precision reaches 100% to where the recall does.
-  static isoF1(f1) {
-    const from = f1 / (2 - f1);
+  // The points with the same F-score `f` (F-beta, the server's curve.beta), from where the
+  // precision reaches 100% to where the recall does: precision = f·recall / ((1 + beta²)·recall − f·beta²).
+  static isoF(f, beta) {
+    const b2 = beta * beta;
+    const from = (f * b2) / (1 + b2 - f);
     return Array.from({ length: 41 }, (_, i) => {
       const recall = from + (1 - from) * (i / 40);
-      return [recall, (f1 * recall) / (2 * recall - f1)];
+      return [recall, (f * recall) / ((1 + b2) * recall - f * b2)];
     });
   }
 
   // The precision-recall curve (the server's r.precision_recall): every threshold,
-  // the thresholds marked on it, and the points with the F1 of the best of them.
+  // the thresholds marked on it, and the points with the F0.5 of the best of them.
   drawPrecisionRecall(container, r, marks) {
     const { thr } = ReportPage;
     const curve = r.precision_recall;
     const percentFormat = (v) => `${Math.round(v * 100)}%`;
-    const tip = (title, recall, precision, f1) => `<div class="tip-title">${title}</div>
+    const tip = (title, recall, precision, f05) => `<div class="tip-title">${title}</div>
       <div>${percentFormat(recall)} of moving labels called moving (recall)</div>
       <div>${percentFormat(precision)} of the calls moving labelled moving (precision)</div>
-      <div class="tip-note">F1 ${f1.toFixed(3)}</div>`;
+      <div class="tip-note">F0.5 ${f05.toFixed(3)}</div>`;
     const shown = marks.filter((mark) => mark.confusion.precision != null);
-    const best = shown.reduce((a, b) => (b.confusion.f1 > a.confusion.f1 ? b : a), shown[0]);
+    const best = shown.reduce((a, b) => (b.confusion.f05 > a.confusion.f05 ? b : a), shown[0]);
     Charts.scatter(container, {
       square: true,
       height: 400,
@@ -188,28 +190,28 @@ class ReportFigures {
       yLabel: "Called moving that is moving (precision)",
       lines: [
         { points: [[0, curve.chance], [1, curve.chance]], color: token("--muted"), width: 1, dashed: true },
-        ...(best ? [{ points: ReportFigures.isoF1(best.confusion.f1), color: best.color, width: 1, dashed: true }] : []),
+        ...(best ? [{ points: ReportFigures.isoF(best.confusion.f05, curve.beta), color: best.color, width: 1, dashed: true }] : []),
         { points: curve.recall.map((recall, i) => [recall, curve.precision[i]]), color: token("--ink"), width: 2 },
       ],
       points: [
         // Every step of the curve can be hovered for its threshold.
         ...curve.recall.map((recall, i) => ({
           x: recall, y: curve.precision[i], r: 3, hidden: true,
-          tip: tip(`threshold ${thr(curve.thresholds[i])}`, recall, curve.precision[i], curve.f1[i]),
+          tip: tip(`threshold ${thr(curve.thresholds[i])}`, recall, curve.precision[i], curve.f05[i]),
         })),
         ...shown.map((mark, i) => {
           const c = mark.confusion;
           return {
             // the second label goes under its point, so close thresholds stay readable
             x: c.sensitivity, y: c.precision, r: 6, color: mark.color, label: `${mark.name} ${thr(mark.value)}`, labelDy: i ? 16 : 0,
-            tip: tip(`${mark.name}: ${thr(mark.value)}`, c.sensitivity, c.precision, c.f1),
+            tip: tip(`${mark.name}: ${thr(mark.value)}`, c.sensitivity, c.precision, c.f05),
           };
         }),
       ],
       legend: [
         { name: "precision-recall", color: token("--ink"), shape: "line" },
         { name: "chance (everything called moving)", color: token("--muted"), dashed: true },
-        ...(best ? [{ name: `F1 ${best.confusion.f1.toFixed(3)}`, color: best.color, dashed: true }] : []),
+        ...(best ? [{ name: `F0.5 ${best.confusion.f05.toFixed(3)}`, color: best.color, dashed: true }] : []),
         ...marks.map((mark) => ({ name: `${mark.name} threshold`, color: mark.color, shape: "circle" })),
       ],
     });

@@ -18,6 +18,14 @@ STILL = "still"
 NOT_A_MITE = "not_a_mite"  # a detection the user rejected: debris, a shadow, ...
 TRUTH_STATES = (MOVING, STILL, NOT_A_MITE)
 
+# The F-score a calibration report suggests the threshold on (f_score()): F0.5
+# weighs precision twice as much as recall, so a still recording called moving
+# costs four times a moving one called still. In a long run a dead mite is scored
+# hundreds of times, and one still recording called moving brings it back to life;
+# a live mite called still moves again in a later recording
+# (notebooks/shaky_recordings.ipynb).
+F_BETA = 0.5
+
 # The first labels were saved as "alive" / "dead"; they meant moving / still.
 _OLDER_STATES = {"alive": MOVING, "dead": STILL}
 
@@ -146,13 +154,13 @@ def auc(scores, moving):
 
 
 def precision_recall_curve(scores, moving):
-    """Recall, precision and F1 of the calls moving at every distinct threshold,
+    """Recall, precision and F0.5 of the calls moving at every distinct threshold,
     highest first: recall the share of the moving labels called moving,
-    precision the share of the calls moving labelled moving, F1 their harmonic
-    mean (2 TP / (2 TP + FP + FN)). The last point, at the lowest score, calls
-    everything moving: recall 1, precision the share of moving labels.
+    precision the share of the calls moving labelled moving, F0.5 their
+    weighted harmonic mean (f_score()). The last point, at the lowest score,
+    calls everything moving: recall 1, precision the share of moving labels.
 
-    Returns (recall, precision, f1, thresholds)."""
+    Returns (recall, precision, f05, thresholds)."""
     scores = np.asarray(scores, dtype=float)
     moving = np.asarray(moving, dtype=bool)
     if not has_both_classes(moving):
@@ -164,14 +172,24 @@ def precision_recall_curve(scores, moving):
         return len(values) - np.searchsorted(np.sort(values), thresholds, side="left")
 
     tp, called = reaching(scores[moving]), reaching(scores)
-    return tp / moving.sum(), tp / called, 2 * tp / (called + moving.sum()), thresholds
+    return tp / moving.sum(), tp / called, f_score(tp, called - tp, moving.sum() - tp), thresholds
+
+
+def f_score(tp, fp, fn, beta=F_BETA):
+    """The F-score of the calls moving, (1 + beta²) TP / ((1 + beta²) TP +
+    beta² FN + FP), from the counts of moving called moving (TP), still called
+    moving (FP) and moving called still (FN): recall counts beta times as much
+    as precision. At 0.5 (F_BETA) a still recording called moving costs four
+    times a moving one called still; at 1 it is F1. Element-wise on arrays."""
+    weight = 1 + beta * beta
+    return weight * tp / (weight * tp + beta * beta * fn + fp)
 
 
 def average_precision(scores, moving):
     """The precision averaged over the recall, step by step along
     precision_recall_curve(): 1 when every moving label scores above every
     still one, the share of moving labels when the scores tell nothing."""
-    recall, precision, _f1, _thresholds = precision_recall_curve(scores, moving)
+    recall, precision, _f05, _thresholds = precision_recall_curve(scores, moving)
     return float(np.sum(np.diff(np.concatenate([[0.0], recall])) * precision))
 
 
@@ -188,16 +206,19 @@ def best_threshold(scores, moving):
     return _into_gap(scores, thresholds[best])
 
 
-def best_f1_threshold(scores, moving):
-    """The threshold with the largest F1 of the calls moving (2 TP / (2 TP + FP
-    + FN)), which the calibration report suggests. Unlike best_threshold() it
-    weighs a wrong call the same whichever way it goes, however many more still
-    labels there are than moving ones, and gives nothing for still called still.
-    Of thresholds that do as well, the highest; placed halfway into the gap
-    below the lowest score called moving, as best_threshold() does."""
+def best_f05_threshold(scores, moving):
+    """The threshold with the largest F0.5 of the calls moving (f_score()), which
+    the calibration report suggests: a still recording called moving costs four
+    times a moving one called still, however many labels there are of each, and
+    still called still gives nothing. F1, which weighs both alike, put the
+    threshold so low on labels mostly moving from a run's first hours (no dead
+    mites among them) that a long run's dead mites came back to life
+    (notebooks/shaky_recordings.ipynb). Of thresholds that do as well, the
+    highest; placed halfway into the gap below the lowest score called moving,
+    as best_threshold() does."""
     scores = np.asarray(scores, dtype=float)
-    _recall, _precision, f1, thresholds = precision_recall_curve(scores, moving)
-    return _into_gap(scores, thresholds[int(np.argmax(f1))])
+    _recall, _precision, f05, thresholds = precision_recall_curve(scores, moving)
+    return _into_gap(scores, thresholds[int(np.argmax(f05))])
 
 
 def _into_gap(scores, lowest_moving):
@@ -219,8 +240,9 @@ def calls_confusion(called, moving):
     """Counts of the four outcomes of calls (True: called moving) against the
     labels, plus accuracy, sensitivity (moving called moving, the recall),
     specificity (still called still), precision (of the calls moving, the
-    fraction labelled moving) and F1 (the harmonic mean of precision and
-    recall). A ratio with nothing to divide by is None."""
+    fraction labelled moving), F1 (the harmonic mean of precision and recall)
+    and F0.5 (f_score(), what a calibration report chooses on). A ratio with
+    nothing to divide by is None."""
     called = np.asarray(called, dtype=bool)
     moving = np.asarray(moving, dtype=bool)
 
@@ -247,6 +269,7 @@ def calls_confusion(called, moving):
         "specificity": ratio(counts["still_called_still"], n_still),
         "precision": ratio(right, right + counts["still_called_moving"]),
         "f1": ratio(2 * right, 2 * right + wrong),
+        "f05": None if right + wrong == 0 else float(f_score(right, counts["still_called_moving"], counts["moving_called_still"])),
     }
 
 

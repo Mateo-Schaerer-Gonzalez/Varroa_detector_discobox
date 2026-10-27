@@ -370,7 +370,7 @@ def write_calibration_excel(result, out_dir):
         survival.to_excel(writer, sheet_name="survival", index=False)
         over_time.to_excel(writer, sheet_name="moving_over_time", index=False)
         if result["precision_recall"]:
-            curve = {key: value for key, value in result["precision_recall"].items() if key != "chance"}
+            curve = {key: value for key, value in result["precision_recall"].items() if key not in ("chance", "beta")}
             pd.DataFrame(curve).rename(columns={"thresholds": "threshold"}).to_excel(
                 writer, sheet_name="precision_recall", index=False)
         if result.get("poke"):

@@ -47,8 +47,8 @@ def evaluate_calibration(out_dir, datasets, metric=None, params=None, recordings
     Returns the confusion counts at the threshold in use and, when there are
     both moving and still labels, the precision-recall curve with its average
     precision ("precision_recall", "average_precision") and the suggested threshold with
-    its confusion counts: the one with the largest F1 of the calls moving,
-    recording by recording (calibration.best_f1_threshold()). The close calls
+    its confusion counts: the one with the largest F0.5 of the calls moving,
+    recording by recording (calibration.best_f05_threshold()). The close calls
     it gets wrong are the ones the result pages ask to check by eye
     (classes/results/review_band.py). Also the fraction of mites moving per
     recording and the Kaplan-Meier survival curves (of the mites seen moving at
@@ -89,7 +89,7 @@ def evaluate_calibration(out_dir, datasets, metric=None, params=None, recordings
     current = how.in_use["threshold"]
     scores = np.array([row["score"] for row in pooled.rows])
     is_moving = np.array([row["movement"] == calibration.MOVING for row in pooled.rows], dtype=bool)
-    suggested = calibration.best_f1_threshold(scores, is_moving) if calibration.has_both_classes(is_moving) else None
+    suggested = calibration.best_f05_threshold(scores, is_moving) if calibration.has_both_classes(is_moving) else None
     _add_outcomes(pooled.rows, current, suggested)
     result = _report(how, pooled, times, suggested, benchmark, between)
     # each outcome as a fraction of its row, for the confusion matrices
@@ -264,11 +264,13 @@ def _precision_recall(scores, is_moving):
     """The precision-recall curve of `scores` against the labels, for the report,
     with the precision of calling everything moving ("chance": the share of
     moving labels)."""
-    recall, precision, f1, thresholds = calibration.precision_recall_curve(scores, is_moving)
+    recall, precision, f05, thresholds = calibration.precision_recall_curve(scores, is_moving)
     return {
         "recall": report_rows.rounded(recall),
         "precision": report_rows.rounded(precision),
-        "f1": report_rows.rounded(f1),
+        "f05": report_rows.rounded(f05),
+        # the F-score's beta, for the figure's curve of equal F0.5
+        "beta": calibration.F_BETA,
         "thresholds": report_rows.rounded(thresholds, 3),
         "chance": round(float(is_moving.mean()), 4),
     }

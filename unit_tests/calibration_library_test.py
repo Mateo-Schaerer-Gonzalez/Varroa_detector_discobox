@@ -516,7 +516,7 @@ def test_reopening_a_dataset_reads_the_ground_truth_next_to_the_recordings(tmp_p
     assert view["truth"] == {"0": ["still", "moving"], "1": ["moving", "moving"]}
 
 
-def test_the_report_suggests_the_threshold_with_the_best_f1_and_reports_the_death_error(tmp_path, recordings, scorer):
+def test_the_report_suggests_the_threshold_with_the_best_f05_and_reports_the_death_error(tmp_path, recordings, scorer):
     # mite 0: a weak last movement (3) and, later, a still recording scoring 4; mite 1 is clear
     data_dir, out_dir = make_session(tmp_path, "a", 2, times=(0.0, 5.0, 10.0, 15.0, 20.0, 25.0))
     scorer.scores = {"a": {"0": [9, 3, 1, 4, 1, 1], "1": [9, 1, 1, 1, 1, 1]}}
@@ -525,23 +525,24 @@ def test_the_report_suggests_the_threshold_with_the_best_f1_and_reports_the_deat
     ids = [pipeline.dataset_id(data_dir)]
     result = pipeline.evaluate_calibration(tmp_path / "report", ids, recordings_root=recordings)
 
-    # calling the 3 moving and the 4 with it (F1 6/7) beats leaving both still (4/5): halfway from 3 down to 1
-    assert result["suggested_threshold"] == 2.0
+    # leaving the 3 and the 4 still (F0.5 2.5/2.75) beats calling both moving (3.75/4.75), which F1 would
+    # prefer (6/7 against 4/5): halfway from 9 down to 4
+    assert result["suggested_threshold"] == 6.5
     best = result["best"]
-    assert (best["moving_called_still"], best["still_called_moving"], best["accuracy"]) == (0, 1, pytest.approx(11 / 12))
-    assert best["f1"] == pytest.approx(6 / 7)
+    assert (best["moving_called_still"], best["still_called_moving"], best["accuracy"]) == (1, 0, pytest.approx(11 / 12))
+    assert best["f05"] == pytest.approx(10 / 11)
     curve = result["precision_recall"]
-    assert max(curve["f1"]) == pytest.approx(6 / 7, abs=1e-4) and curve["chance"] == 0.25
+    assert max(curve["f05"]) == pytest.approx(10 / 11, abs=1e-4) and curve["chance"] == 0.25 and curve["beta"] == 0.5
     assert "roc" not in result and 0 < result["average_precision"] <= 1
-    # the 4 puts mite 0's death two recordings late: reported, not chosen on
+    # leaving the 3 still puts mite 0's death a recording early: reported, not chosen on
     death = result["death_error"]["suggested"]
-    assert (death["mae"], death["n_late"], death["n_exact"]) == (1.0, 1, 1)
+    assert (death["mae"], death["n_early"], death["n_exact"]) == (0.5, 1, 1)
     assert "death_curve" not in result and "review_band" not in result
     json.dumps(result, allow_nan=False)  # what the server's JSON needs
     # the workbook is written a moment after the report is handed over: this waits for it
     sheets = pd.read_excel(pipeline.results_file(tmp_path / "report", result["excel"]), sheet_name=None)
-    assert list(sheets["summary"]["death_mae"]) == [result["death_error"]["current"]["mae"], 1.0]
-    assert list(sheets["precision_recall"]["f1"]) == curve["f1"]
+    assert list(sheets["summary"]["death_mae"]) == [result["death_error"]["current"]["mae"], 0.5]
+    assert list(sheets["precision_recall"]["f05"]) == curve["f05"]
 
 
 def test_the_poke_test_is_saved_next_to_the_recordings_and_reported(tmp_path, recordings, scorer):

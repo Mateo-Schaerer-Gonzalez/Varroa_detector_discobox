@@ -22,3 +22,6 @@ vimbax.config
 output/
 outputs/
 uploads/
+
+# the report on how the app works (report/REPORT.md); kept out of git for now
+/report/

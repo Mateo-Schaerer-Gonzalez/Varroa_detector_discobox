@@ -19,7 +19,8 @@ from classes.ground_truth.calibration import (
     roc_curve,
     precision_recall_curve,
     average_precision,
-    best_f1_threshold,
+    best_f05_threshold,
+    f_score,
     survival_curves,
 )
 
@@ -49,12 +50,12 @@ def test_auc_perfect_chance_and_ties():
 
 
 def test_the_precision_recall_curve_runs_from_the_highest_score_to_everything_called_moving():
-    recall, precision, f1, thresholds = precision_recall_curve(SCORES, MOVING)
+    recall, precision, f05, thresholds = precision_recall_curve(SCORES, MOVING)
     assert list(thresholds) == [30, 20, 12, 8, 2, 1]
     assert list(recall) == pytest.approx([1 / 3, 2 / 3, 2 / 3, 1, 1, 1])
     assert list(precision) == pytest.approx([1, 1, 2 / 3, 3 / 4, 3 / 5, 1 / 2])
     for at, threshold in enumerate(thresholds):
-        assert f1[at] == pytest.approx(confusion(SCORES, MOVING, threshold)["f1"])
+        assert f05[at] == pytest.approx(confusion(SCORES, MOVING, threshold)["f05"])
     with pytest.raises(ValueError):
         precision_recall_curve([1, 2], [True, True])
 
@@ -64,11 +65,20 @@ def test_average_precision_perfect_and_by_the_steps_of_recall():
     assert average_precision(SCORES, MOVING) == pytest.approx((1 + 1 + 3 / 4) / 3)
 
 
-def test_best_f1_threshold_has_the_largest_f1():
-    threshold = best_f1_threshold(SCORES, MOVING)
-    assert threshold == 5.0  # all three moving and the 12 called moving: F1 6/7, halfway from 8 down to 2
-    best = confusion(SCORES, MOVING, threshold)["f1"]
-    assert all(confusion(SCORES, MOVING, candidate)["f1"] <= best + 1e-9 for candidate in np.linspace(0, 35, 200))
+def test_f_score_weighs_a_still_one_called_moving_four_times_a_moving_one_called_still():
+    assert f_score(2, 1, 0) == pytest.approx(2.5 / 3.5)
+    assert f_score(2, 0, 1) == pytest.approx(2.5 / 2.75)
+    assert f_score(2, 0, 4) == pytest.approx(f_score(2, 1, 0))
+    assert f_score(2, 1, 1, beta=1) == pytest.approx(2 / 3)  # F1
+
+
+def test_best_f05_threshold_has_the_largest_f05():
+    threshold = best_f05_threshold(SCORES, MOVING)
+    # 20 and 30 called moving, the 8 left still (F0.5 2.5/2.75), beats also calling the 8 and 12 (3.75/4.75):
+    # halfway from 20 down to 12. F1 would call them (6/7 against 4/5).
+    assert threshold == 16.0
+    best = confusion(SCORES, MOVING, threshold)["f05"]
+    assert all(confusion(SCORES, MOVING, candidate)["f05"] <= best + 1e-9 for candidate in np.linspace(0, 35, 200))
 
 
 def test_best_threshold_sits_in_the_gap_between_the_classes():
@@ -98,6 +108,7 @@ def test_confusion_gives_precision_recall_and_f1():
     assert result["precision"] == pytest.approx(2 / 3)
     assert result["sensitivity"] == pytest.approx(2 / 3)  # the recall
     assert result["f1"] == pytest.approx(2 / 3)
+    assert result["f05"] == pytest.approx(2 / 3)
     # calls given as such, e.g. the benchmark's, count the same way
     assert calls_confusion(np.array(SCORES) >= 10, MOVING) == {k: v for k, v in result.items() if k != "threshold"}
 
@@ -105,7 +116,7 @@ def test_confusion_gives_precision_recall_and_f1():
 def test_precision_of_no_call_moving_is_unknown():
     result = calls_confusion([False, False], [True, False])
     assert result["precision"] is None
-    assert result["sensitivity"] == 0 and result["f1"] == 0
+    assert result["sensitivity"] == 0 and result["f1"] == 0 and result["f05"] == 0
 
 
 def test_outcome_calls_moving_at_or_above_the_threshold():
