@@ -7,7 +7,11 @@ frame, scores how much each one moves in every recording (a burst of frames), an
 moving/still calls, survival and statistics per plate group. It runs from a folder of
 recordings or live from the Discobox camera. `README.md` documents every user-visible
 behaviour in detail; read the relevant section before changing a feature, and keep it in
-step with the change.
+step with the change. Since 2026-10-27 it is also the user's CV showcase (the user's choice): a
+visual "how it works" and benchmark on top, the full manual below with the dense parts in
+`<details>`. Its figures are in `docs/images/` (in git), copied and shrunk from the gitignored
+`report/images/` (`scripts/visual_walkthrough.py` remakes the `walk_*` ones); copy them again
+after regenerating.
 
 ## Commands
 

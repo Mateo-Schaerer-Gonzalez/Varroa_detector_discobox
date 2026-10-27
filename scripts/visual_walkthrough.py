@@ -263,7 +263,7 @@ def step_score(out):
     loop = np.append(np.arange(K), 0)
     for r, style in ((edge_r, "-"), (edge_r - band, ":"), (edge_r + band, ":")):
         ax.plot(centre[0] + np.cos(angles[loop]) * r[loop], centre[1] + np.sin(angles[loop]) * r[loop], style, color=ORANGE, lw=1.2)
-    extent = [0, along[-1], 63.5, -0.5]
+    extent = [0, along[-1], K - 0.5, -0.5]
     axes[1].imshow(unrolled, cmap="gray", aspect="auto", extent=extent, vmin=0, vmax=255)
     axes[1].plot(edge_r, np.arange(K), color=ORANGE, lw=1.2)
     axes[1].set(xlabel="distance r along the ray (px)", ylabel="ray k (0 = right, clockwise)",
