@@ -3,7 +3,7 @@ import numpy as np
 import pytest
 
 from classes.app_config import AppConfig, DetectorConfig, get_default_config
-from classes.scoring.analyzer import Analyzer, NoNoiseWarning
+from classes.scoring.analyzer import ANGLES, Analyzer, NoNoiseWarning
 from classes.plate.mite import Mite
 from classes.plate.zones import Zone, ZoneManager
 
@@ -340,6 +340,8 @@ class TestOutlineVariability:
 
     @staticmethod
     def _score(frames, **params):
+        if params.get("relative") == 0:   # the score not divided by the profile's mean: below what the parameter check allows
+            return Analyzer._outline_variability(Analyzer.grey(frames).astype(np.float32), **params)
         return Analyzer._motion_score(frames, "outline_variability", params)
 
     @staticmethod
@@ -368,22 +370,27 @@ class TestOutlineVariability:
         assert self._score(self._plate(_mite_frames(self.LEG))) > 0.05
 
     def test_a_leg_that_moves_further_scores_higher(self):
+        short, far = (self._score(self._plate(_mite_frames(legs)), relative=0) for legs in ([3, 4] * 5, [3, 6] * 5))
+        # 5x with the constants before 2026-10-27; 2.5x with the narrower outline band since
+        assert far > 2 * short
+        # divided by the profile's mean to the power `relative` (0.491) the gap narrows, but stays
         short, far = (self._score(self._plate(_mite_frames(legs))) for legs in ([3, 4] * 5, [3, 6] * 5))
-        assert far > 5 * short
+        assert far > 1.4 * short
 
     def test_it_is_the_vector_sum_of_the_profile(self):
         frames = self._noisy(_mite_frames(self.LEG))
         profile = Analyzer.outline_variability_profile(frames)
-        angle = np.arange(64) * 2 * np.pi / 64
+        angle = np.arange(len(profile)) * 2 * np.pi / len(profile)
         length = np.hypot((profile * np.cos(angle)).sum(), (profile * np.sin(angle)).sum())
-        assert self._score(frames) == pytest.approx(length / 64 / Analyzer.plate_noise(frames))
+        assert self._score(frames, relative=0) == pytest.approx(length / len(profile) / Analyzer.plate_noise(frames))
 
     def test_the_variance_is_on_the_side_of_the_leg(self):
         profile = Analyzer.outline_variability_profile(_mite_frames(self.LEG))
-        assert profile.shape == (64,)
-        # the leg sticks out to the left and a little up: direction 35 of 64, clockwise from the right
-        assert 32 <= profile.argmax() <= 38
-        assert profile[27:44].sum() > 0.7 * profile.sum()   # a quarter of the outline
+        assert profile.shape == (ANGLES,)
+        # the leg sticks out to the left and a little up: 197° clockwise from the right
+        assert 180 <= np.degrees(profile.argmax() * 2 * np.pi / ANGLES) <= 214
+        quarter = slice(ANGLES * 27 // 64, ANGLES * 44 // 64)
+        assert profile[quarter].sum() > 0.7 * profile.sum()   # a quarter of the outline
 
     def test_noise_all_round_cancels(self):
         frames = self._noisy(_mite_frames(self.STILL), sd=2.0)
@@ -399,8 +406,8 @@ class TestOutlineVariability:
         assert Analyzer.plate_noise(frames) == 0
         profile = Analyzer.outline_variability_profile(frames)
         with pytest.warns(NoNoiseWarning):
-            score = self._score(frames)
-        assert score == pytest.approx(abs((profile * np.exp(2j * np.pi * np.arange(64) / 64)).mean()))
+            score = self._score(frames, relative=0)
+        assert score == pytest.approx(abs((profile * np.exp(2j * np.pi * np.arange(len(profile)) / len(profile))).mean()))
 
     def test_a_lamp_that_flickers_scores_nothing(self):
         light = [1.0, 0.97, 1.0, 0.97, 1.03, 1.0, 0.98, 1.02, 1.0, 0.99]
@@ -422,8 +429,8 @@ class TestOutlineVariability:
     def test_relative_makes_it_the_share_on_one_side(self):
         frames = self._noisy(_mite_frames(self.LEG))
         mean = Analyzer.outline_variability_profile(frames).mean() / Analyzer.plate_noise(frames)
-        assert self._score(frames, relative=1) == pytest.approx(self._score(frames) / mean)
-        assert self._score(frames, relative=0.5) == pytest.approx(self._score(frames) / mean ** 0.5)
+        assert self._score(frames, relative=1) == pytest.approx(self._score(frames, relative=0) / mean)
+        assert self._score(frames, relative=0.5) == pytest.approx(self._score(frames, relative=0) / mean ** 0.5)
         assert 0.5 < self._score(self._plate(_mite_frames(self.LEG)), relative=1) <= 1   # nothing varies but the leg
 
     def test_the_share_of_a_still_mite_is_close_to_nothing(self):

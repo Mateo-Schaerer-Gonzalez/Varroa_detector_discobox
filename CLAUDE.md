@@ -132,21 +132,38 @@ schedule and the live session; those libraries are imported only for a live run.
 
 **Scoring.** `classes/scoring/analyzer.py` holds the metrics; the only one in use is fixed in
 `classes/app_config.py` (`METRIC = "outline_variability"`, the user's choice: no metric
-picker), which ignores a config file's own `mite.metric`, takes the threshold and parameters
-from `config.default.yaml` where `config.yaml` has none, and forces `stabilize_plate` on.
+picker), which ignores a config file's own `mite.metric`, always takes its parameters from
+`config.default.yaml` (a machine's `config.yaml` ones are ignored: they belong to the
+constants below), takes the threshold from `config.default.yaml` only where `config.yaml`
+has none, and forces `stabilize_plate` on.
 `outline_variability` scores the vector sum round the mite of the variance on its outline
 (the one-sided part), divided by the recording's noise floor (`Analyzer.plate_noise()`:
-median variance over the frames of the patch's outer 6 px of plate, where it is 0 the score is left undivided and flagged with a `NoNoiseWarning`, which
+median variance over the frames of the patch's outer `RIM` px of plate, where it is 0 the score is left undivided and flagged with a `NoNoiseWarning`, which
 `pytest.ini` makes an error, so synthetic test frames get fake plate noise; the user's
-choice of 2026-10-23, in the metric rather than a switchable normaliser, so the score is in
-multiples of the noise, not grey levels squared); its `relative` (default 0, the user's
-choice) divides by the mean variance to that power. The default threshold 0.472 is the old
-1.638 over sample_data's median floor (3.47) and makes the same calls there; it and 1.638
-were calibrated on 10-frame, 10-fps recordings and don't fit 3 s / 30 fps ones: the next
-ground-truth run at 3 s / 30 fps sets the threshold.
+choice of 2026-10-23, in the metric rather than a switchable normaliser); its `relative`
+divides by the profile's mean to that power (0.491, so the score is no longer purely in
+multiples of the noise).
+
+**The constants of the stabilizer and the score were chosen by Optuna** (the user's choice
+of 2026-10-27, against my recommendation): `scripts/pipeline_optuna.py` copies the chain
+with every constant a parameter (identical to the app at its values), searched 600 trials
+on the labelled poke run and three 30-frame datasets, mites split into a tune and a test
+half (`notebooks/pipeline_optuna.ipynb`). Trial 228, rounded to three decimals: stabilizer
+pad 4, rim 8, body 0.241 of the darkest grown 4 px, bilinear cut; score rim 3, body 0.355
+not grown, edge 0.226, "the darkest" = mean of 8 pixels (`plate_stabilizer.DARKEST_N`),
+128 rays of 11.4 px every 0.5 px, band ±1.04 px, `relative` 0.491. It raised the
+separation (d′ of log scores) on the tune mites by 15 % but not on the test mites (5.45
+against 5.53 for the constants before, 5.34 for the 0.3 edge tried the same day); F0.5 is
+at its ceiling (0.995 against 0.992 on the test half). Before: pad 8, rim 6, body 0.3 of
+the single darkest grown 2 px, edge 0.5 of the mean of the 30 darkest, 64 rays of 13 px,
+band ±1.5, relative 0, Lanczos cut. Rerun the search (`build`, `run`, `export`) when a
+larger 3 s / 30 fps ground truth exists. The default threshold 0.106 is the F0.5 threshold
+of the poke run (3 s / 30 fps) on the new scale; the 30-frame datasets' own are 0.15–0.17.
+Every machine's saved threshold is on the old scale and must be saved again from a
+calibration report.
 
 The stabilizer (`classes/scoring/plate_stabilizer.py`) moves each mite's patch back by its own
-centre's shift within the recording, capped at `MARGIN` minus the Lanczos reach (12 px); a
+centre's shift within the recording (bilinear since 2026-10-27), capped at `MARGIN` minus the Lanczos reach (12 px, kept); a
 mite whose centre is lost takes the median of the others'. That is the user's choice of
 2026-10-16. Before, every mite took the plate's median ECC shift, which
 `scripts/centre_stabilization.py` keeps as `ecc_shifts()` (`notebooks/centre_stabilization.ipynb`):
@@ -186,11 +203,16 @@ of one dataset differ slightly between this Windows laptop and the Discobox's Li
 the same code (2026-10-08: 56% of values, 0.009 median, 0.23 at most; likely the OpenCV
 build).
 
-**Calibration** suggests the threshold with the largest F1 of the calls moving
-(`calibration.best_f1_threshold()`), the user's choice of 2026-10-26 ("as we are flagging the
-ones close to threshold anyways"; Youden's J was tried first, then F1 chosen), replacing the
-threshold with the smallest death-time error and the review band chosen on it
-(`suggested_band.py` deleted). The report still gives the death error ("recordings off"),
+**Calibration** suggests the threshold with the largest F0.5 of the calls moving
+(`calibration.best_f05_threshold()`, `F_BETA`: a still recording called moving costs four
+times a moving one called still), the user's choice of 2026-10-26, replacing the threshold
+with the smallest death-time error and the review band chosen on it (`suggested_band.py`
+deleted). The same day Youden's J was tried, then F1 ("as we are flagging the ones close to
+threshold anyways"), then F0.5: on `poke_test_oct` (labels two-thirds moving, first 3.5 h, no
+dead mites) F1 put the threshold at 0.049, and the long run then called 461 still recordings
+moving and put deaths 93 recordings late. F0.5 gives 0.087 there (74, 5.9), and is steadier
+under resampling of the mites (`notebooks/shaky_recordings.ipynb`, which also shows the long
+run's shake is not the cause: the per-mite centre stabilization holds up to 0.24 px). The report still gives the death error ("recordings off"),
 accuracy, moving called still and still called moving for both thresholds. Both report
 tabs draw a precision-recall curve with average precision, not the ROC curve and AUC (the
 user's choice of 2026-10-26, "more informative"); `roc_curve`/`auc` stay for the scripts.

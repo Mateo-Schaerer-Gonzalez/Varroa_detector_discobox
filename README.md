@@ -131,18 +131,21 @@ that with the detector:
    recordings, so they survive a change in detector settings.
 3. **Report**: every labelled (mite, recording) is compared with the
    detector's call there, moving when that recording's score reaches the
-   threshold. *Calibration* suggests the threshold with the largest F1 of the
-   calls moving, mite-recording by mite-recording (2 × moving called moving over
-   2 × moving called moving + moving called still + still called moving), and
-   can save it to `config.yaml`. The close calls it gets wrong are the ones the
+   threshold. *Calibration* suggests the threshold with the largest F0.5 of the
+   calls moving, mite-recording by mite-recording (1.25 × moving called moving
+   over 1.25 × moving called moving + 0.25 × moving called still + still called
+   moving): a still recording called moving costs four times a moving one called
+   still, because one such call can bring a dead mite back to life hours after
+   its death, while a live mite called still moves again later. It can save the
+   threshold to `config.yaml`. The close calls it gets wrong are the ones the
    results page asks to check by eye (see *Close calls to check by eye* below).
    For the suggested threshold and the one in use it reports the share called
-   right, the moving recordings called still, the still ones called moving, F1
+   right, the moving recordings called still, the still ones called moving, F0.5
    and the death-time error: the mean distance, in recordings, between each
    mite's death by the detector and by the labels (a mite dies at the recording
    after its last movement), which is reported but not chosen on. Its
    precision-recall curve marks both thresholds, with the curve of the points
-   as good by F1 as the better of them. Its confusion matrix switches
+   as good by F0.5 as the better of them. Its confusion matrix switches
    between the suggested threshold and the one in use. *Test* shows the
    confusion matrix at the threshold in use, the precision-recall curve with its
    average precision, and where on
@@ -294,9 +297,17 @@ outline is divided by the variance over the frames of the bare plate at the
 patch's edge in the same recording (`Analyzer.plate_noise()`; where that is 0,
 which only frames without noise or a black plate give, the score is left
 undivided and a `NoNoiseWarning` flags it: it is then off the threshold's scale). That needs no other recording, so it holds
-in a live run too. On sample_data the floor is 3.1 to 3.8 grey levels squared;
-the default threshold (0.472) was the old 1.638 divided by its median, and
-makes the same calls there. Two further normalisations put the scores of a finished run on one
+in a live run too. On sample_data the floor is 3.1 to 3.8 grey levels squared.
+The score is also divided by its outline's mean variance to the power 0.491
+(`relative`). That and the other constants of the score and the stabilizer
+(128 rays of 11.4 px, the body's edge at 0.226 of its darkest, a ±1.04 px
+outline band, a bilinear stabilizer, …) were chosen by an Optuna search on the
+labelled recordings on 2026-10-27 (`scripts/pipeline_optuna.py`,
+`notebooks/pipeline_optuna.ipynb`); they are read from `config.default.yaml`
+and the code, never from a machine's `config.yaml`. The default threshold
+(0.106) is the best F0.5 threshold of the poke run (3 s at 30 fps) on that
+scale. A threshold saved before 2026-10-27 is on the old scale: save one again
+from a calibration report. Two further normalisations put the scores of a finished run on one
 scale (`classes/scoring/score_normalizer.py`); both keep the scores on about the scale
 they had. `normalize_brightness: true` scales each score to the run's typical
 brightness, as camera noise grows with the light on the mite's patch.

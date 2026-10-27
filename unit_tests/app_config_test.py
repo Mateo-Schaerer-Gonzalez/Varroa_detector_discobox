@@ -3,7 +3,7 @@ from classes.app_config import AppConfig, get_default_config
 
 
 class TestYamlCaching:
-    def test_repeated_instantiation_reads_file_once(self, monkeypatch):
+    def test_repeated_instantiation_reads_each_file_once(self, monkeypatch):
         app_config_module._load_yaml_cached.cache_clear()
         call_count = 0
         real_open = open
@@ -19,7 +19,7 @@ class TestYamlCaching:
         AppConfig()
         AppConfig()
 
-        assert call_count == 1
+        assert call_count == 2   # the config file and config.default.yaml (the score's parameters), once each
 
 
 class TestDefaultConfig:

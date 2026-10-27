@@ -47,12 +47,14 @@ def _tuplify(data: dict) -> dict:
 
 def _with_the_metric(mite: dict) -> dict:
     """A config file's `mite` section with METRIC as its metric, plate
-    stabilization on, and with
-    config.default.yaml's threshold and parameters for it where it has none."""
+    stabilization on, config.default.yaml's parameters for it (always: they
+    were chosen with the score's constants, scripts/pipeline_optuna.py, and a
+    machine's older ones would not fit them), and config.default.yaml's
+    threshold for it where it has none."""
     mite = {**mite, "metric": METRIC, "stabilize_plate": True}
     for key in ("metric_thresholds", "metric_params"):
         own = dict(mite.get(key) or {})
-        if METRIC in own or not TEMPLATE_CONFIG_PATH.exists():
+        if (METRIC in own and key == "metric_thresholds") or not TEMPLATE_CONFIG_PATH.exists():
             continue
         template = _load_yaml_cached(TEMPLATE_CONFIG_PATH).get("mite", {}).get(key) or {}
         if METRIC in template:

@@ -179,8 +179,6 @@ def test_an_unknown_detection_is_refused(tmp_path):
 def test_the_score_picker_is_told_which_parameters_are_whole_numbers():
     metrics = {metric["name"]: metric for metric in pipeline.movement_scores()["metrics"]}
     assert metrics["topN_variability"]["whole"] == ["n"]
-    # 0.0 arrives in the page as 0: without this it would ask for a whole number
-    assert metrics["outline_variability"]["defaults"]["relative"] == 0
     assert metrics["outline_variability"]["whole"] == ["pad"]
     assert "poly_sigma" not in metrics["optical_flow"]["whole"] and "pad" in metrics["optical_flow"]["whole"]
 

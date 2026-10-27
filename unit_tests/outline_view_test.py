@@ -3,6 +3,7 @@ round its outline and the arrow toward the side its outline changes on."""
 
 import numpy as np
 
+from classes.scoring.analyzer import ANGLES
 from classes.scoring.outline_view import OutlineView
 from detector_test import _mite_frames
 
@@ -12,7 +13,7 @@ LEG = [0, 3, 0, 3, 0, 3]  # a leg on the mite's left, out in every other frame
 def test_the_arrow_points_to_the_side_of_the_leg_that_moves():
     seen = OutlineView.describe(_mite_frames(LEG), x0=100, y0=200)
     assert abs(seen["x"] - 123) < 1.5 and abs(seen["y"] - 223) < 1.5  # the middle of the 46 pixel patch, in the image
-    assert len(seen["dots"]) == 64
+    assert len(seen["dots"]) == ANGLES
     assert seen["share"] > 0.5
     assert seen["arrow"][0] < seen["x"] - 3                             # to the left
     darkest = max(seen["dots"], key=lambda dot: dot[2])

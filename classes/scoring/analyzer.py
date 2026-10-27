@@ -5,10 +5,26 @@ from typing import Optional
 import cv2
 from classes.app_config import AppConfig, get_default_config
 from classes.plate.mite import Mite
-from classes.scoring.plate_stabilizer import PlateStabilizer
+from classes.scoring.plate_stabilizer import DARKEST_N, PlateStabilizer
 from classes.scoring.mite_look import MiteLook
 from classes.scoring.workers import side_by_side
 import numpy as np
+
+
+# The constants of outline_variability, chosen by an Optuna search on the
+# labelled recordings (trial 228 of scripts/pipeline_optuna.py,
+# notebooks/pipeline_optuna.ipynb; the user's choice of 2026-10-27), with its
+# `width` and `relative` in config.default.yaml. Before: rim 6, body 0.3 of the
+# single darkest pixel grown 2 px, edge 0.5, 64 rays of 13 px, width 1.5, relative 0.
+# The patch's outermost pixels, read for the plate's light and the noise floor.
+RIM = 3
+# The body (for the rays' centre): darker than this share of the darkest (the
+# mean of the DARKEST_N darkest pixels), not grown.
+BODY_SHARE = 0.355
+# The body's edge on a ray: where its darkness drops below this share of the darkest.
+EDGE_SHARE = 0.226
+# The rays: how many, the step along them and how far they reach (px).
+ANGLES, RAY_STEP, REACH = 128, 0.5, 11.4
 
 
 class NoNoiseWarning(UserWarning):
@@ -405,11 +421,11 @@ class Analyzer:
         return float(np.sort(swing)[-n:].mean())
 
     @staticmethod
-    def _outline_variability(roi, relative=0.0, width=1.5, pad=16):
+    def _outline_variability(roi, relative=0.491, width=1.04, pad=16):
         """Vector sum around the mite of the variance of the pixels on its outline: how much of that variance lies on one side.
 
         The variance over the frames is taken around the outline, one value
-        for each of 64 directions from the mite's centre
+        for each of ANGLES directions from the mite's centre
         (outline_variability_profile()). Each value is a vector that points in
         its direction, and the score is the length of their sum, divided by
         the number of directions. A leg that moves varies the outline on its
@@ -457,10 +473,10 @@ class Analyzer:
         return one_sided / mean ** relative
 
     @staticmethod
-    def outline_variability_profile(roi, width=1.5, pad=16):
+    def outline_variability_profile(roi, width=1.04, pad=16):
         """Where around the mite its pixels vary over the frames: the variance
-        on the outline in each of 64 directions from the mite's centre, in
-        grey levels squared, (64,). Direction 0 points right in the image and
+        on the outline in each of ANGLES directions from the mite's centre, in
+        grey levels squared, (ANGLES,). Direction 0 points right in the image and
         they go on clockwise. All 0 for a patch without a mite.
 
         On the ray in each direction the body's edge is found (_outline_rays()),
@@ -469,7 +485,7 @@ class Analyzer:
         mean variance of the ray's points on the outline."""
         rays = Analyzer._outline_rays(roi, pad)
         if rays is None:
-            return np.zeros(64)
+            return np.zeros(ANGLES)
         variance, edge, ray_step, _centre = rays
         away = np.abs(np.arange(variance.shape[1])[None] - edge[:, None]) * ray_step
         on_outline = away <= width
@@ -497,7 +513,7 @@ class Analyzer:
         lamp that flickers changes nothing; `light` is that plate's grey level."""
         height, width = gray.shape[1:]
         edge = np.ones((height, width), dtype=bool)
-        edge[6:-6, 6:-6] = False
+        edge[RIM:-RIM, RIM:-RIM] = False
         plate = np.median(gray[:, edge], axis=1)
         if plate.min() <= 0:
             return None
@@ -507,19 +523,18 @@ class Analyzer:
     @staticmethod
     def _outline_rays(roi, pad=16):
         """The mite unrolled around its centre: (variance, edge, ray_step,
-        centre), or None for a patch without a mite. `variance` (64, points)
+        centre), or None for a patch without a mite. `variance` (ANGLES, points)
         is the variance over the frames at each point of each ray, the points
-        `ray_step` pixels apart from the centre outwards; `edge` (64,) is the
+        `ray_step` pixels apart from the centre outwards; `edge` (ANGLES,) is the
         point of each ray at which the body ends, where the mite stops being
-        half as dark as its darkest; `centre` is the mite's (x, y) in the
+        EDGE_SHARE as dark as its darkest; `centre` is the mite's (x, y) in the
         patch, in the mean of the frames.
 
         Two things change the pixels without the mite moving and are kept out.
         The lamp: each frame is brought to the light the plate has in the mean
         of the frames, read off the patch's outermost pixels. A shift of the
         whole mite, as when the plate shakes: each frame's rays start at the
-        mite's centre in that frame, the centre of the darkness of the body
-        and the two pixels around it."""
+        mite's centre in that frame, the centre of the darkness of the body."""
         gray = Analyzer.grey(roi)
         height, width = gray.shape[1:]
         lit = Analyzer._lit(gray)
@@ -529,30 +544,30 @@ class Analyzer:
         dark = np.clip(1 - lit / light, 0, None)
         still = dark.mean(axis=0)
 
-        # The body: what is at least 30% as dark as the darkest of the mite, the
-        # far surroundings left out, and two pixels around it. Of several
-        # pieces it is the one closest to the middle of the patch, where the
-        # mite's box is: the other is a neighbour, which may be walking past.
+        # The body: what is at least BODY_SHARE as dark as the darkest of the mite
+        # (the mean of its DARKEST_N darkest pixels), the far surroundings left out.
+        # Of several pieces it is the one closest to the middle of the patch,
+        # where the mite's box is: the other is a neighbour, which may be walking past.
         margin = max(pad - 8, 0)
         near = np.zeros((height, width), dtype=bool)
         near[margin:height - margin, margin:width - margin] = True
+        darkest = np.sort(still.ravel())[-DARKEST_N:].mean()
         if not near.any() or still[near].max() <= 0:
             return None
-        dark_enough = (still > 0.3 * still[near].max()) & near
+        dark_enough = (still > BODY_SHARE * darkest) & near
         pieces = cv2.connectedComponents(dark_enough.astype(np.uint8))[1]
         yy, xx = np.mgrid[:height, :width]
         from_middle = np.hypot(yy - (height - 1) / 2, xx - (width - 1) / 2)
         body = (pieces == pieces.ravel()[np.where(dark_enough, from_middle, np.inf).argmin()]).astype(np.uint8)
-        body = cv2.dilate(body, np.ones((3, 3), np.uint8), iterations=2)
         weight = dark * body
         total = weight.sum(axis=(1, 2))
         if total.min() <= 0:
             return None
         centre_x, centre_y = (weight * xx).sum(axis=(1, 2)) / total, (weight * yy).sum(axis=(1, 2)) / total
 
-        angles, ray_step = 64, 0.5
-        # 13 pixels reach past a mite's legs; less where the patch ends sooner (a mite at the image's edge)
-        reach = min(13.0, centre_x.min(), centre_y.min(), width - 1 - centre_x.max(), height - 1 - centre_y.max())
+        angles, ray_step = ANGLES, RAY_STEP
+        # REACH pixels reach past a mite's legs; less where the patch ends sooner (a mite at the image's edge)
+        reach = min(REACH, centre_x.min(), centre_y.min(), width - 1 - centre_x.max(), height - 1 - centre_y.max())
         if reach < 2:
             return None
         angle = np.arange(angles) * (2 * np.pi / angles)
@@ -562,7 +577,7 @@ class Analyzer:
             cv2.remap(frame, (x + ray_x).astype(np.float32), (y + ray_y).astype(np.float32), cv2.INTER_LINEAR)
             for frame, x, y in zip(lit, centre_x.tolist(), centre_y.tolist())
         ])
-        past_body = 1 - unrolled.mean(axis=0) / light < 0.5 * np.sort(still.ravel())[-30:].mean()
+        past_body = 1 - unrolled.mean(axis=0) / light < EDGE_SHARE * darkest
         body_ends = np.where(past_body.any(axis=1), past_body.argmax(axis=1), len(along) - 1)
         return unrolled.var(axis=0), body_ends, ray_step, (float(centre_x.mean()), float(centre_y.mean()))
 

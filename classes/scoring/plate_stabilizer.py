@@ -27,7 +27,8 @@ import numpy as np
 
 from classes.scoring.workers import side_by_side
 
-# How far beyond the patch the Lanczos interpolation reads, in pixels.
+# How far beyond the patch cut() may read for its interpolation, in pixels: Lanczos's
+# reach, kept although the cut is bilinear now (which reads 1), so the margins stay as they were.
 _LANCZOS_REACH = 4
 # The most cut() reads beyond the patch it cuts, in pixels (pipeline.STABILIZE_MARGIN):
 # what a saved live run keeps round the scored patch (classes/storage/roi_recordings.py).
@@ -35,8 +36,22 @@ MARGIN = 16
 # The most a mite's shift is followed, along each axis, so that cut() stays
 # within MARGIN. A centre that moves further belongs to a mite that walks.
 _REACH = float(MARGIN - _LANCZOS_REACH)
-# The outermost pixels of a mite's patch, read for the plate's light: the plate, never the mite.
-_RIM = 6
+# The constants below, and those of Analyzer._outline_rays(), were chosen by an
+# Optuna search on the labelled recordings (trial 228 of
+# scripts/pipeline_optuna.py, notebooks/pipeline_optuna.ipynb; the user's choice
+# of 2026-10-27). Before: pad 8, rim 6, body 0.3 of the single darkest pixel,
+# grown 2 px, Lanczos.
+# Pixels round each mite's box in which its centre is found.
+PAD = 4
+# The outermost pixels of that crop, read for the plate's light: the plate, never the mite.
+_RIM = 8
+# "The darkest of the mite": the mean of its this many darkest pixels (here and in the score).
+DARKEST_N = 8
+# The body: darker than this share of the darkest, grown by BODY_GROW pixels.
+BODY_SHARE = 0.241
+BODY_GROW = 4
+# How each frame is moved back by the mite's shift.
+INTERPOLATION = cv2.INTER_LINEAR
 _ECC_CRITERIA = (cv2.TERM_CRITERIA_EPS | cv2.TERM_CRITERIA_COUNT, 50, 1e-4)
 # How one mite's patch follows the plate in one recording: `shifts` (N, 2), its
 # own, what its frames are moved back by; `stray`, the most they strayed from the
@@ -49,7 +64,7 @@ class PlateStabilizer:
     """`pad`: pixels around each mite's box in which its centre is found, so the
     whole outline is in it."""
 
-    def __init__(self, pad=8):
+    def __init__(self, pad=PAD):
         self.pad = pad
 
     def shifts(self, frames, boxes):
@@ -120,7 +135,7 @@ class PlateStabilizer:
         for index, (frame, (dx, dy)) in enumerate(zip(frames, np.asarray(shifts, dtype=float).tolist())):
             m = math.ceil(max(abs(dx), abs(dy))) + _LANCZOS_REACH
             patch = _patch(frame, x1 - m, y1 - m, x2 + m, y2 + m).astype(np.float32)
-            patch = cv2.warpAffine(patch, _move(-dx, -dy), patch.shape[1::-1], flags=cv2.INTER_LANCZOS4,
+            patch = cv2.warpAffine(patch, _move(-dx, -dy), patch.shape[1::-1], flags=INTERPOLATION,
                                    borderMode=cv2.BORDER_REFLECT101)
             patch = patch[m:patch.shape[0] - m, m:patch.shape[1] - m].reshape(y2 - y1, x2 - x1, -1)
             if out is None:
@@ -172,9 +187,10 @@ def _centres(patches):
     Analyzer._outline_rays() finds it: a pixel's darkness is the share of the
     plate's light it takes away, the plate's light read off the patch's
     outermost pixels frame by frame, so a lamp that flickers changes nothing.
-    The body is what is at least 30% as dark as the darkest of the mite in the
-    mean of the frames, the piece closest to the middle of the patch (where the
-    mite's box is; another piece is a neighbour), and two pixels around it.
+    The body is what is at least BODY_SHARE as dark as the darkest of the mite
+    (the mean of its DARKEST_N darkest pixels) in the mean of the frames, the
+    piece closest to the middle of the patch (where the mite's box is; another
+    piece is a neighbour), and BODY_GROW pixels around it.
     Where the mite moved by a pixel or more, the body is moved along to where it
     is and the centre found again, so none of the mite is left outside it."""
     height, width = patches.shape[1:]
@@ -189,12 +205,13 @@ def _centres(patches):
     still = dark.mean(axis=0)
     if still[~rim].max() <= 0:
         return None
-    dark_enough = (still > 0.3 * still[~rim].max()) & ~rim
+    darkest = np.sort(still[~rim])[-DARKEST_N:].mean()
+    dark_enough = (still > BODY_SHARE * darkest) & ~rim
     pieces = cv2.connectedComponents(dark_enough.astype(np.uint8))[1]
     yy, xx = np.ogrid[:height, :width]
     from_middle = np.hypot(yy - (height - 1) / 2, xx - (width - 1) / 2)
     body = (pieces == pieces.ravel()[np.where(dark_enough, from_middle, np.inf).argmin()]).astype(np.uint8)
-    body = cv2.dilate(body, np.ones((3, 3), np.uint8), iterations=2).astype(np.float32)
+    body = cv2.dilate(body, np.ones((3, 3), np.uint8), iterations=BODY_GROW).astype(np.float32)
 
     middle = _weighted_centres((still * body)[None])
     centres = _weighted_centres(dark * body)
