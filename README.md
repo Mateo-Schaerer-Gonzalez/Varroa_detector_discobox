@@ -808,6 +808,7 @@ Each analysis writes to `results/<recording>/`:
 | `score_over_time.png` | Each mite's score across the session |
 | `score_distribution.png` | Overall histogram |
 | `detections.jpg` | First frame with zones, labels and detected mites drawn on |
+| `run_settings.json` | Every parameter that made these results, to publish with them and make them again. `software`: the git commit, any files changed but not committed, Python, OpenCV, numpy, pandas, operating system, machine. `in_use`: what decides the calls (metric, its parameters, threshold, review band, normalisations, death rule, zones per plate). `config`: the whole configuration as used. `constants`: every named constant of the app's code, with its value. `zones`: each plate's rectangle and group. `recordings`: the recordings' `.settings.txt`, a live run's `run.json`, the negative controls and the calls corrected by hand. A number written inside the code without a name is fixed by the commit. Written again with the workbook, e.g. after a correction. |
 
 ### Zone coordinates
 

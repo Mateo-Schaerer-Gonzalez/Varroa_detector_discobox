@@ -20,6 +20,7 @@ call; scripts may also import a module for its helpers.
     pipeline/preview_images.py                       the pictures of the plate the pages draw on
     pipeline/scoring.py                              detect and score: from frames to a run and its table
     pipeline/output_files.py                         the workbook and figures, written in the background
+    pipeline/run_settings.py                         run_settings.json: how the app was set for a run's results
     pipeline/run_results.py                          a run's results for the pages; corrections, mites to check, death time
     pipeline/folder_analysis.py                      a folder from the pages: open, run, correct
     pipeline/clips.py                                everything cut from the frames for the pages
@@ -58,6 +59,7 @@ from pipeline.plate_labels import (
 from pipeline.detections import set_rejected, mark_detection
 from pipeline.scoring import STABILIZE_MARGIN
 from pipeline.output_files import finish_files, results_file
+from pipeline.run_settings import COMMIT
 from pipeline.run_results import (
     review_mites, save_review_mites, death_minutes, death_minutes_range, save_death_minutes, describe_movement,
     describe_survival,

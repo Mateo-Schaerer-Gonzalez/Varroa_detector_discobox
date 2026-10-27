@@ -11,7 +11,7 @@ import cv2
 
 from classes.results import reporting
 from classes.storage.deferred_files import DeferredFiles
-from pipeline import paths, scoring
+from pipeline import paths, run_settings, scoring
 
 
 # The files a page need not wait for, written in the background once things are
@@ -28,10 +28,13 @@ def annotated(run):
     return run.zone_manager.draw(cv2.cvtColor(run.masked, cv2.COLOR_GRAY2BGR))  # the frames are grey, the zones drawn in colour
 
 
-def write_files(annotated, out_dir, mite_data):
+def write_files(annotated, out_dir, mite_data, run, normalizer):
     """Write the workbook, the figures and the annotated first frame of a run to
-    `out_dir` (reporting.write_outputs()), and say what was written."""
+    `out_dir` (reporting.write_outputs()), with run_settings.json, how the app
+    was set for it (`normalizer`: the ScoreNormalizer of `mite_data`), and say
+    what was written."""
     with _files_lock:
+        run_settings.write(run, out_dir, normalizer, mite_data)
         return reporting.write_outputs(mite_data, annotated, out_dir)
 
 
@@ -39,7 +42,8 @@ def write_files_later(run, out_dir, corrections, normalizer, delay=None):
     """Write the files of a folder's run in the background (see files_later),
     from the table as the corrections are when they are written."""
     files_later.later(paths.folder_key(out_dir),
-                      lambda: write_files(annotated(run), out_dir, scoring.mite_table(run, corrections, normalizer)[0]),
+                      lambda: write_files(annotated(run), out_dir, scoring.mite_table(run, corrections, normalizer)[0], run,
+                                          normalizer),
                       delay)
 
 

@@ -20,7 +20,6 @@ part of the page:
 Run it with start.bat, or:  python -m uvicorn web.server:app --port 8000
 """
 
-import subprocess
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -49,24 +48,14 @@ for routes in (analysis, recordings, playback, calibration, live, page_watch):
     app.include_router(routes.router)
 
 
-def _git_commit() -> str:
-    try:
-        return subprocess.run(["git", "rev-parse", "HEAD"], cwd=APP_DIR, capture_output=True,
-                              text=True, timeout=5).stdout.strip()
-    except (OSError, subprocess.SubprocessError):
-        return ""
-
-
-# Read once: the code this process runs, even if the folder is updated meanwhile.
 APP_DIR = Path(__file__).resolve().parent.parent
-COMMIT = _git_commit()
 
 
 @app.get("/api/version", response_class=PlainTextResponse)
 def version():
     """Folder, commit and whether a live run is going, one per line. start.sh
     restarts the server to load the new version, unless a live run is going."""
-    return f"{APP_DIR}\n{COMMIT}\n{int(pipeline.live_running())}\n"
+    return f"{APP_DIR}\n{pipeline.COMMIT}\n{int(pipeline.live_running())}\n"
 
 
 class FreshStaticFiles(StaticFiles):

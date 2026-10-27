@@ -160,9 +160,11 @@ def excel_sheets(path):
 
 
 def outputs(out_dir):
-    """Every file a run wrote: the workbook's sheets and each image's pixels."""
+    """Every file a run wrote: the workbook's sheets and each image's pixels.
+    run_settings.json is left out: it holds the commit and the date
+    (run_settings_test.py checks it)."""
     out_dir = Path(out_dir)
-    files = sorted(path.name for path in out_dir.iterdir() if path.is_file())
+    files = sorted(path.name for path in out_dir.iterdir() if path.is_file() and path.name != "run_settings.json")
     return {
         "files": files,
         "excel": {name: excel_sheets(out_dir / name) for name in files if name.endswith(".xlsx")},

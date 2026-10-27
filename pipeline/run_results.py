@@ -102,7 +102,7 @@ def describe_results(run, out_dir, labels, write_files=True, corrections=None, n
 
     if write_files:
         preview_images.write_preview(run.first_frame, out_dir)
-        results = output_files.write_files(output_files.annotated(run), out_dir, mite_data)
+        results = output_files.write_files(output_files.annotated(run), out_dir, mite_data, run, normalizer)
     else:
         results = reporting.describe_outputs(mite_data)
 

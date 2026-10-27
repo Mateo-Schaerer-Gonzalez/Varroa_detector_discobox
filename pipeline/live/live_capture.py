@@ -162,9 +162,10 @@ def _write_live_files(run):
     run.files_due = None  # a recording from now on is in the next write
     with run.session.lock:
         view = scoring.run_view(run.analysis, live_runs.live_frames(run), run.run_dir)
-        mite_data, _changes = scoring.mite_table(view, CallCorrections(run.run_dir), ScoreNormalizer())
+        normalizer = ScoreNormalizer()
+        mite_data, _changes = scoring.mite_table(view, CallCorrections(run.run_dir), normalizer)
         annotated = output_files.annotated(view)
-    output_files.write_files(annotated, run.out_dir, mite_data)
+    output_files.write_files(annotated, run.out_dir, mite_data, view, normalizer)
 
 
 def live_refresh(live_id):

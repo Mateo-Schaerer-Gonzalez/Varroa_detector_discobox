@@ -237,7 +237,16 @@ threshold over the old (`app_config._band_moved()`, the user's request of 2026-1
 `rois/`), `labels.json`/`controls.json` (`labels_2.json`/`controls_2.json` for two zones per
 plate), `ground_truth.json`, `poke_test.json`, `corrections.json`, `.settings.txt`,
 `run.json`, and a `scores/` cache. `results/<name>/` holds the latest analysis (workbook,
-figures, `clips/`, `kept/`, `calibration/`). Labels, ground truth and corrections are keyed
+figures, `run_settings.json`, `clips/`, `kept/`, `calibration/`). `run_settings.json`
+(`pipeline/run_settings.py`, written with the workbook) records every parameter that made the
+results, the user's rule of 2026-10-27 ("any parameter used anywhere in the app must be
+documented in this file"), so results delivered to others (the Australian runs) can be
+published with their settings and reproduced: commit, uncommitted changes, library
+versions, the whole config as loaded, the zones, the recordings' settings and corrections,
+and every upper-case constant (module or class level) of every loaded `classes`/`pipeline`
+module, collected from the source, not listed. So give a new parameter an upper-case name
+at module or class level, or put it in the config; a bare number inside a function is only
+pinned by the commit. The reference snapshots leave the file out (commit and date). Labels, ground truth and corrections are keyed
 by mite position, so they survive detector changes. On startup the server removes pooled
 report folders that made no report. The one-off migrations of older layouts (`output/`,
 `outputs/`, `uploads/`, `calibration_data/`, BMP folders shrunk to ROIs in bulk) were
@@ -307,9 +316,13 @@ The temporary label-overlap check page was deleted on 2026-10-22 at the user's r
   `adf.last_change`, not by agreement with these labels. It is unknown whether the user
   meant the labels to be the detector's calls. `adf.features()`'s cached `movement_score` is
   of the metric in use when that cache was made.
-- **There is no real poke test data.** `recordings/ground_truth_60min/poke_test.json` is a
-  made-up test entry (the user called it "bs"). Check poke-report changes with unit tests,
-  and ask the user for a real poke dataset before drawing conclusions from poke curves.
+- **Poke test data.** `recordings/ground_truth_60min/poke_test.json` is a made-up test entry
+  (the user called it "bs"). `recordings/Ground_truth_oct_26_final/Ground_truth_oct_26_final`
+  (79 recordings of 10 frames, 30 min apart) has a real one: 24 mites moved when poked after
+  recording 29, 21 did not in rounds after 30 to 44. From the first poke on its plates shake
+  about ten times more within a recording and 57 % of the dead recordings score above 0.074
+  (`notebooks/outline_fourier.ipynb`, 2026-10-27). `poke_test_oct`'s "unmoved" mites often
+  moved again later, so they are not deaths.
 - The scripts' cut patches of the long run are cached in `%TEMP%\varroa_death_time_patches`
   (4.4 GB), so the `alive_dead_*` notebooks run in seconds.
 
