@@ -2,6 +2,7 @@
 corrected by hand and the calls to check by eye.
 
     reporting.py         the score table as the workbook, the figures and the pages' numbers
+    workbook_sheets.py   the workbook's sheet per group and its settings sheet
     plotter.py           the figures' drawing
     survival.py          alive or dead per recording, deaths, log-rank tests against controls
     movement_stats.py    how the mites move, per mite, zone and group

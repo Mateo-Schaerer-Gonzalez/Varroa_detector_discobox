@@ -202,4 +202,8 @@ def describe(run, normalizer, mite_data):
 
 
 def write(run, out_dir, normalizer, mite_data):
-    write_json(Path(out_dir) / NAME, describe(run, normalizer, mite_data), indent=2)
+    """Write run_settings.json to `out_dir`, and return what it holds (also the
+    workbook's settings sheet)."""
+    settings = describe(run, normalizer, mite_data)
+    write_json(Path(out_dir) / NAME, settings, indent=2)
+    return settings

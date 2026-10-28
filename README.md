@@ -824,7 +824,7 @@ Each analysis writes to `results/<recording>/`:
 
 | File | Contents |
 | --- | --- |
-| `results.xlsx` | `mites` (one row per mite: when it last moved, in minutes from the start of the first recording), `scores` (every score: one row per mite, one column per recording), `mite_map` (the plate with each mite's ID drawn on it, to find a mite of the sheets in the video), `measurements` (one row per mite per recording, with `moving`, position and the `brightness` of the mite's patch; with normalised scores, `raw_score` holds them as scored), `group_summary`, and `moving` (fraction of mites moving per group and per zone at each recording) |
+| `results.xlsx` | `mites` (one row per mite: when it last moved, in minutes from the start of the first recording), `scores` (every score: one row per mite, one column per recording), `mite_map` (the plate with each mite's ID drawn on it, to find a mite of the sheets in the video), `measurements` (one row per mite per recording, with `moving`, position and the `brightness` of the mite's patch; with normalised scores, `raw_score` holds them as scored), `group_summary`, `moving` (fraction of mites moving per group and per zone at each recording), one sheet per group, `group <name>` (its mites only: zone, when each last moved and its score in every recording), and `settings` (every value of `run_settings.json`, one row per parameter: section, parameter, value) |
 | `moving_by_group.png` | Fraction of each group's mites moving in each recording |
 | `distribution_by_group.png` | Score distribution per group, box plot with raw points |
 | `score_over_time.png` | Each mite's score across the session |

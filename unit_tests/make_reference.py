@@ -22,7 +22,10 @@ bilinear stabilizer): every score changed, and the default threshold went from
 the user's choice, 2026-10-27): every score changed scale, the default
 threshold went from 0.106 to 0.074 (the poke run's F0.5 threshold without it),
 and no call changed on the four labelled datasets; on sample_data none changed
-with OpenCV 5 and one of 180 (still to moving, at the threshold) with OpenCV 4. It writes the reference of the OpenCV it runs with
+with OpenCV 5 and one of 180 (still to moving, at the threshold) with OpenCV 4. Made
+again when the workbook got a sheet per group (2026-10-28, the user's request): only
+those sheets were new, every other sheet, figure and number the same (its new
+settings sheet holds the commit and the date, so reference.py leaves it out). It writes the reference of the OpenCV it runs with
 (reference.py: one for OpenCV 4, one for 5), so run it in both Pythons; the
 OpenCV 5 one was first made from commit 76dba5e. Run this again only to accept a deliberate change to
 what folder mode produces, and say why in the commit.

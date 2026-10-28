@@ -128,23 +128,23 @@ gives exactly the same scores as the live run.
 ### 3.1 Open the recordings
 
 In *Analysis*, either pick one of the previous recordings, or **drag the session folder**
-(the one that holds the `..._fps-30` folders) onto the page, or click *Choose folder*. The
+(the one that holds the old discobox recordings folders) onto the page, or click *Choose folder*. The
 images are copied into the app and shrunk to the mites' surroundings (about 1/30 of the
 space, same results). Your own folder is not changed. Dropping the same folder again only
 sends what changed.
 
-> Don't open a folder by typing its path if you want to keep it untouched: labels and
-> corrections are then written next to the recordings.
+> Don't open a folder by typing its path if you want to keep it untouched
+
 
 ### 3.2 Label the plates
 
-As in §2.2: click a plate, type its group, <kbd>Tab</kbd> to the next, tick the negative
+As in 2.2: click a plate, type its group, <kbd>Tab</kbd> to the next, tick the negative
 controls. Labels are saved by themselves.
 
 *Read the names from the plates* (off by default) sends a picture of each hand-written
 label to Google Gemini and fills in the names for you to check. It needs the internet and a
 free API key (aistudio.google.com/apikey) saved as `GEMINI_API_KEY=...` in a file `.env` in
-the app's folder.
+the app's folder. This is preset with the developers key and works out of the box, but if you need to change it just paste your own API key.
 
 ### 3.3 Read the results
 
@@ -282,20 +282,6 @@ recordings, never during one**: a poked mite moves, and the detector would count
 
 ---
 
-## 5. Command line
-
-```
-python main.py                               # analyse sample_data -> results/sample_data/
-python main.py my_recordings out/run1        # analyse a folder
-python main.py --list-cameras
-python main.py --live --run-name hive3 --labels labels.json
-python main.py --live --no-save-frames       # long run: analyse, save nothing
-python main.py --live --dead-after 240       # death time 240 min
-```
-
-Ctrl+C stops a live run cleanly.
-
----
 
 ## 6. Where things are kept
 
@@ -320,3 +306,10 @@ deleted at any time and are rebuilt.
 | Dead mites keep coming back to life | The threshold is probably too low for your recordings, or still recordings of dead mites were never labelled. Recalibrate (§4) with labels including dead mites, and check the close calls (§3.5) |
 | Many still mites called moving on some plates from one moment on | A plate may have moved by many pixels. In a live run the mites are followed; in a folder analysis the boxes stay where they were found. Check the playback and the shake chart, and correct or mark the affected recordings |
 | A mite fell off | Mark it *gone* from that recording on (§3.4) |
+
+## 8. Contact
+
+In case of any issue or request feel free to leave an issue on the git repo:
+
+https://github.com/Mateo-Schaerer-Gonzalez/Varroa_detector_discobox
+

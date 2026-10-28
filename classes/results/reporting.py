@@ -18,6 +18,7 @@ from openpyxl.drawing.image import Image as ExcelImage
 from pathlib import Path
 
 from classes.plate.mite import Mite
+from classes.results import workbook_sheets
 from classes.results.plotter import Plotter
 
 EXCEL_NAME = "results.xlsx"
@@ -113,21 +114,31 @@ def _add_mite_map(writer, image_path):
     writer.sheets["mite_map"].add_image(picture, "A3")
 
 
-def write_excel(mite_data, out_dir, mite_map=None):
+def write_excel(mite_data, out_dir, mite_map=None, settings=None):
     """Write when each mite last moved, every score, the picture `mite_map` (a
     file with the mite ids drawn on the plate, if given), the long-form
-    measurements, the per-group summary and movement over time; all but the
-    scores and the measurements without the recordings in which a mite was
-    marked gone."""
+    measurements, the per-group summary, movement over time, a sheet per group
+    (its mites' last movement and scores) and, with `settings` (a dict, see
+    pipeline/run_settings.py), a sheet of every setting the results were made
+    with; all but the scores and the measurements without the recordings in
+    which a mite was marked gone."""
     path = Path(out_dir) / EXCEL_NAME
+    last_moved, scores = last_moved_table(_observed(mite_data)), scores_table(mite_data)
     with pd.ExcelWriter(path, engine="openpyxl") as writer:
-        last_moved_table(_observed(mite_data)).to_excel(writer, sheet_name="mites", index=False)
-        scores_table(mite_data).to_excel(writer, sheet_name="scores", index=False)
+        last_moved.to_excel(writer, sheet_name="mites", index=False)
+        scores.to_excel(writer, sheet_name="scores", index=False)
         if mite_map is not None:
             _add_mite_map(writer, mite_map)
         mite_data.to_excel(writer, sheet_name="measurements", index=False)
         summarise_by_group(_observed(mite_data)).to_excel(writer, sheet_name="group_summary", index=False)
         moving_table(_observed(mite_data)).to_excel(writer, sheet_name="moving", index=False)
+        tables = workbook_sheets.group_tables(last_moved, scores)
+        names = workbook_sheets.group_sheet_names(tables, taken=[*writer.sheets, workbook_sheets.SETTINGS_SHEET])
+        for group, table in tables.items():
+            table.to_excel(writer, sheet_name=names[group], index=False)
+        if settings is not None:
+            workbook_sheets.settings_table(settings).to_excel(
+                writer, sheet_name=workbook_sheets.SETTINGS_SHEET, index=False)
     return path.name
 
 
@@ -222,11 +233,11 @@ def describe_groups(mite_data, times):
     ]
 
 
-def write_outputs(mite_data, annotated_image, out_dir):
+def write_outputs(mite_data, annotated_image, out_dir, settings=None):
     """Write every artefact for one analysis run and describe it in plain data.
 
     The returned dict contains only filenames and numbers, so it can cross into the
-    web layer unchanged.
+    web layer unchanged. `settings` (a dict) becomes the workbook's settings sheet.
     """
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -236,7 +247,7 @@ def write_outputs(mite_data, annotated_image, out_dir):
     cv2.imwrite(str(out_dir / DETECTIONS_NAME), annotated_image)
 
     return {
-        "excel": write_excel(mite_data, out_dir, out_dir / DETECTIONS_NAME),
+        "excel": write_excel(mite_data, out_dir, out_dir / DETECTIONS_NAME, settings),
         "figures": write_figures(mite_data, out_dir),
         "detections": DETECTIONS_NAME,
         "summary": _summary(mite_data),

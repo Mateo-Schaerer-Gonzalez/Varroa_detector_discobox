@@ -34,8 +34,8 @@ def write_files(annotated, out_dir, mite_data, run, normalizer):
     was set for it (`normalizer`: the ScoreNormalizer of `mite_data`), and say
     what was written."""
     with _files_lock:
-        run_settings.write(run, out_dir, normalizer, mite_data)
-        return reporting.write_outputs(mite_data, annotated, out_dir)
+        settings = run_settings.write(run, out_dir, normalizer, mite_data)
+        return reporting.write_outputs(mite_data, annotated, out_dir, settings)
 
 
 def write_files_later(run, out_dir, corrections, normalizer, delay=None):

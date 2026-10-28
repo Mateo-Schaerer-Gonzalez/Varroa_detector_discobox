@@ -156,6 +156,7 @@ def excel_sheets(path):
     return {
         name: plain(frame.astype(object).where(pd.notna(frame), None).to_dict(orient="split"))
         for name, frame in pd.read_excel(path, sheet_name=None).items()
+        if name != "settings"  # the commit and the date (run_settings_test.py checks it)
     }
 
 
