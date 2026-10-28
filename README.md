@@ -1,109 +1,108 @@
-<div align="center">
+# Varroa detector for the Discobox
 
-# 🔬 Varroa Detector for the Discobox
+A computer-vision application that measures the survival of varroa mites in treatment assays.
+Mites are glued onto plates inside the Discobox, a box with a camera, LEDs and a fan that records
+a short burst of frames at set intervals. For every mite in every recording, the app decides whether
+it moved; followed over hours or days, those calls give each mite's time of death and the survival
+of each treatment group.
 
-**Computer vision that watches hundreds of varroa mites at once, decides in every 3-second recording
-which ones moved, and turns that into survival curves per treatment, live, in the lab.**
+Developed at [Agroscope](https://www.agroscope.admin.ch), the Swiss federal centre for agricultural
+research, for screening treatments against *Varroa destructor*, the main parasite of honeybee colonies.
 
 ![Python](https://img.shields.io/badge/Python-3.11%2B-3776AB?logo=python&logoColor=white)
 ![OpenCV](https://img.shields.io/badge/OpenCV-4%20%7C%205-5C3EE8?logo=opencv&logoColor=white)
-![FastAPI](https://img.shields.io/badge/FastAPI-web%20app-009688?logo=fastapi&logoColor=white)
-![NumPy](https://img.shields.io/badge/NumPy%20%C2%B7%20pandas%20%C2%B7%20SciPy-013243?logo=numpy&logoColor=white)
-![Optuna](https://img.shields.io/badge/tuned%20with-Optuna-6A5ACD)
-![pytest](https://img.shields.io/badge/tested%20with-pytest-0A9EDC?logo=pytest&logoColor=white)
-![Offline](https://img.shields.io/badge/runs-fully%20offline-2E7D32)
+![FastAPI](https://img.shields.io/badge/FastAPI-009688?logo=fastapi&logoColor=white)
 
-*Built for [Agroscope](https://www.agroscope.admin.ch), the Swiss federal centre for agricultural research,
-to screen treatments against* Varroa destructor, *the parasite that is the main threat to honeybee colonies.*
+<img src="docs/images/app_labels.png" width="900" alt="The label page: every mite found on the first frame, plates coloured by group">
 
-<img src="docs/images/app_labels.png" width="900" alt="The app: every mite found on the first frame, plates coloured by treatment group">
+## Overview
 
-</div>
+The app runs a test on the Discobox from start to finish, or analyses recordings made earlier:
 
----
+- **Live runs.** It controls the camera, fan and LEDs, analyses each recording as it arrives, follows
+  each mite from one recording to the next, and stops once every mite is dead.
+- **Motion score.** Each mite's movement is measured as the change on its outline across the frames
+  of a recording, summed as vectors round the mite (so uniform noise and flicker cancel while a moving
+  leg does not), in units of the recording's own noise floor.
+- **Stabilization.** Each mite's patch is held still to a tenth of a pixel before scoring, so a
+  shaking plate is not mistaken for a moving mite.
+- **Calibration.** A labelling interface for ground truth by eye, a precision-recall report, the
+  threshold with the best F0.5, and a poke test to check the calls against the mites' response.
+- **Statistics.** Kaplan–Meier survival with 95 % confidence intervals, LT50 and log-rank tests
+  against negative controls, shown in an interactive web interface and written to an Excel workbook.
+- **Testing.** Regression tests compare results, every workbook sheet, figure contents and pixels
+  against reference snapshots.
 
-## ✨ At a glance
+Compared with the Discobox's original analysis software
+([Abilium varroa-discobox](https://github.com/Abilium-GmbH/varroa-discobox)), on recordings labelled
+by eye that were not used to set the app's threshold:
 
-Mites are glued onto plates inside the **Discobox**, a box with a camera, LEDs and a fan.
-At set intervals it records a short burst of frames. The question for every mite in every burst is
-simple: **did it move?** The answer, followed for hours or days, says when each mite died, and
-so how well each treatment works.
-
-|  | This app | Discobox's original software |
+| | This app | Original software |
 |---|---|---|
-| 🎯 **Finds the mites** | Each one, tracked by id for the whole run | No: it counts changed spots |
-| ✅ **Wrong calls** on 18,480 mite-recordings labelled by eye | **89** | 974 |
-| ⏱️ **Time of death** error, long run (59 mites, 49 h) | **3.4 recordings** | 199.6 recordings (≈ 33 h late) |
-| ⚡ **Analysis time** per 90-frame recording | **0.53 s** | 69.8 s (**133× slower**) |
-| 💾 **Storage** of a run | **19–95× smaller** (lossless, per-mite video) | Every frame as a 3 MB BMP |
-| 🫨 **Plate shake** of 0.2 px | Held still, 0 % false "moving" | 35 % of still mites called moving |
-| 📈 **Output** | Moving/still per mite, Kaplan–Meier survival, LT50, log-rank tests | "Spots per recording" |
+| Unit of analysis | Each mite, tracked by id through the run | Changed spots per recording |
+| Wrong calls, 18,480 labelled mite-recordings | 89 | 974 |
+| Time-of-death error, long run (59 mites, 49 h) | 3.4 recordings | 199.6 recordings |
+| Analysis time per 90-frame recording | 0.53 s | 69.8 s |
+| Storage of a run | 19–95× smaller (lossless per-mite video) | every frame as a 3 MB BMP |
+| Still recordings called moving at 0.2–0.25 px of plate shake | 0 % | 35 % |
 
-<sub>Benchmark of 26 October 2026 on three labelled datasets that were not used to set the threshold; details in [How well it works](#-how-well-it-works).</sub>
+<sub>Benchmark of 26 October 2026; details in [How well it works](#how-well-it-works) and the
+[performance report](report/3_performance.md).</sub>
 
-**What it does, end to end:**
+## Contents
 
-- 🎥 **Runs the experiment live** from the Discobox camera, fan and LEDs, analysing each recording as it arrives and **stopping by itself** once every mite is dead.
-- 🧠 **Scores motion with a custom metric**: the change on each mite's outline, summed as vectors so that noise and shake cancel and a moving leg does not, then divided by the recording's own noise floor.
-- 🫨 **Stabilizes every mite to a tenth of a pixel**, so a plate that shakes doesn't look like a mite that moves.
-- 🏷️ **Calibrates itself against human labels**: a labelling UI, a precision-recall report and an F0.5-optimal threshold, plus a "poke test" for checking against what the mites actually did.
-- 📊 **Reports the biology**: Kaplan–Meier survival with 95 % CIs, LT50s and log-rank tests against negative controls, in an interactive web app and an Excel workbook.
-- 🧪 **Guarded by regression tests**: results, every workbook sheet, figure contents and pixels are compared to the last digit.
-
-## 📑 Contents
-
-- [How it works](#-how-it-works): the pipeline, step by step, on real mites
-- [How well it works](#-how-well-it-works): the benchmark against the original software
-- [Reports](#-reports): the user manual, how it works, the performance report
-- [Quick start](#-quick-start)
-- [User manual](#-user-manual): [Live](#-live-from-the-discobox) · [Analysis](#-analysing-recordings) · [Calibration](#-calibration)
-- [Architecture](#-architecture) · [Command line](#-command-line) · [Files](#-where-files-go) · [Tests](#-tests) · [References](#-references)
+- [How it works](#how-it-works): the pipeline, step by step, on real mites
+- [How well it works](#how-well-it-works): the benchmark against the original software
+- [Reports](#reports): the user manual, how it works, the performance report
+- [Quick start](#quick-start)
+- [User manual](#user-manual): [Live](#live-from-the-discobox) · [Analysis](#analysing-recordings) · [Calibration](#calibration)
+- [Architecture](#architecture) · [Command line](#command-line) · [Files](#where-files-go) · [Tests](#tests) · [References](#references)
 
 ---
 
-## 🧠 How it works
+## How it works
 
 ```mermaid
 flowchart LR
-    A["🔍 Find the mites<br/>first frame"] --> B["✂️ Cut each mite's<br/>patch, every frame"]
-    B --> C["🫨 Stabilize<br/>per mite"]
-    C --> D["💡 Lamp correction<br/>+ noise floor"]
-    D --> E["☀️ 128 rays → outline<br/>variance profile"]
-    E --> F["➕ Vector sum<br/>= motion score"]
+    A["Find the mites<br/>first frame"] --> B["Cut each mite's<br/>patch, every frame"]
+    B --> C["Stabilize<br/>per mite"]
+    C --> D["Lamp correction<br/>+ noise floor"]
+    D --> E["128 rays → outline<br/>variance profile"]
+    E --> F["Vector sum<br/>= motion score"]
     F --> G{"score ≥ T ?"}
-    G -->|moving / still| H["⚰️ Death rule →<br/>Kaplan–Meier"]
-    L["🏷️ Labels by eye"] -.->|"best F0.5"| G
+    G -->|moving / still| H["Death rule →<br/>Kaplan–Meier"]
+    L["Labels by eye"] -.->|"best F0.5"| G
 ```
 
 Below, the steps run on real data, a live run of 14 mites with 95 recordings of 90 frames over 15.7 h.
 Every figure comes from the app's own functions
 ([`scripts/visual_walkthrough.py`](scripts/visual_walkthrough.py)). The two examples are
-**mite 7.1 in recording 8** (labelled *moving* by eye) and **mite 7.3 in recording 19** (labelled *still*).
+mite 7.1 in recording 8 (labelled moving by eye) and mite 7.3 in recording 19 (labelled still).
 
-### 1 · Find the mites
+### 1. Find the mites
 
 Only the plates are kept and the hand-written labels are blanked out. Then OpenCV's blob detector finds the dark,
 mite-shaped regions. Each mite gets an id from its plate and its reading order: `7.3` is the third mite on plate 7.
 
 ![Detection](docs/images/walk_1_detection.png)
 
-### 2 · Cut each mite's patch from every frame
+### 2. Cut each mite's patch from every frame
 
-Each patch is the mite's box plus 16 px, in all 90 frames. By eye the frames look identical. The **variance
-over the frames** (right) shows what changed: a few bright spots where the legs moved.
+Each patch is the mite's box plus 16 px, in all 90 frames. By eye the frames look identical. The variance
+over the frames (right) shows what changed: a few bright spots where the legs moved.
 
 ![The moving mite's patch](docs/images/walk_2_frames.png)
 
-### 3 · Hold the patch still
+### 3. Hold the patch still
 
-The biggest pitfall is shake. A shift of **a fifth of a pixel**, far too small to see, slides the dark edge of every
+Plate shake is the main source of false movement. A shift of a fifth of a pixel, too small to see, slides the dark edge of every
 mite across its pixels and lights up the whole outline (top left). The stabilizer follows the centre
 of each mite's darkness, frame by frame, and cuts the patch shifted back by it (bilinear). The ring
-vanishes, but a moving mite's legs stay (bottom), because only a shift of the *whole* mite is removed.
+largely disappears, but a moving mite's legs stay (bottom), because only a shift of the whole mite is removed.
 
 ![What stabilizing changes](docs/images/walk_3_stabilizer_effect.png)
 
-### 4 · Read the outline along 128 rays
+### 4. Read the outline along 128 rays
 
 Every frame is scaled so that the plate has the same light, which cancels lamp flicker. From the mite's centre, 128 rays
 are sampled every 0.5 px. Along each ray the app finds where the body ends (orange) and measures
@@ -112,18 +111,18 @@ the band.
 
 ![Rays, edge and variance](docs/images/walk_5_rays.png)
 
-### 5 · One number per direction, in units of noise
+### 5. One number per direction, in units of noise
 
-Each direction gets one value: the variance on its stretch of the outline, divided by the **noise floor**,
+Each direction gets one value: the variance on its stretch of the outline, divided by the noise floor,
 which is the variance of the bare plate at the patch's rim in the same recording. A still mite is flat at about 0.4. The
 moving mite has peaks of up to 9× the noise, all on one side.
 
 ![The outline profile](docs/images/walk_6_profile.png)
 
-### 6 · Add them up as vectors: the motion score
+### 6. Add them up as vectors: the motion score
 
-Each value becomes an arrow pointing in its direction, and the arrows are laid tip to tail. **The score is the
-length of the sum.** Change that is the same all round (noise, flicker, a uniform blur) walks in a
+Each value becomes an arrow pointing in its direction, and the arrows are laid tip to tail. The score is the
+length of the sum. Change that is the same all round (noise, flicker, a uniform blur) walks in a
 circle and cancels. A leg moving on one side does not. In Fourier terms the score is the first
 harmonic of the profile.
 
@@ -134,31 +133,31 @@ from its centre:
 
 <p align="center"><img src="docs/images/mite_outline_app.png" width="560" alt="Outline and score arrow on a moving and a still mite"></p>
 
-### 7 · One threshold: moving or still
+### 7. One threshold: moving or still
 
 One score per mite per recording, one call each. Mite 7.1 moves on and off for 5.5 h, then its
 score drops tenfold and stays there.
 
 ![One mite's scores over the run](docs/images/walk_8_threshold.png)
 
-### 8 · Where the threshold comes from
+### 8. Where the threshold comes from
 
-The threshold is **calibrated against labels made by eye**. The labelled scores barely overlap (average
-precision 0.999). The app picks the threshold with the best **F0.5**, which counts a still recording called
+The threshold is calibrated against labels made by eye. The labelled scores barely overlap (average
+precision 0.999). The app picks the threshold with the best F0.5, which counts a still recording called
 *moving* four times as heavily as the opposite error, because one false "moving" can bring a dead mite back to life
 hours after it died.
 
 ![Calibration](docs/images/walk_9_calibration.png)
 
-### 9 · From calls to deaths and survival
+### 9. From calls to deaths and survival
 
-A mite **dies** at the recording after its last movement, once it has stayed still for the chosen
+A mite dies at the recording after its last movement, once it has stayed still for the chosen
 death time. Pooled per treatment, that gives Kaplan–Meier survival curves with 95 % confidence intervals
 (Greenwood, log-log), LT50s and log-rank tests against the negative controls.
 
 ![Calls, deaths, Kaplan–Meier](docs/images/walk_10_survival.png)
 
-> **Tuned with Optuna.** The constants of the stabilizer and the score (rays, band width, body edge,
+> The constants of the stabilizer and the score (rays, band width, body edge,
 > interpolation, …) were chosen by a 600-trial Optuna search on four labelled datasets, with the mites
 > split into tune and test halves ([`scripts/pipeline_optuna.py`](scripts/pipeline_optuna.py)).
 >
@@ -168,40 +167,42 @@ death time. Pooled per treatment, that gives Kaplan–Meier survival curves with
 
 ---
 
-## 🏆 How well it works
+## How well it works
 
-The app was benchmarked against the Discobox's original analysis
-([Abilium varroa-discobox](https://github.com/Abilium-GmbH/varroa-discobox)). For each frame, the original takes the
-difference to the first frame, thresholds it at 25 grey levels and counts the spots. Both ran on the same
-**18,480 mite-recordings labelled by eye**, from three datasets that were not used to set the app's threshold.
+The app was compared with the Discobox's original analysis software
+([Abilium varroa-discobox](https://github.com/Abilium-GmbH/varroa-discobox), reimplemented in
+[`classes/scoring/benchmark.py`](classes/scoring/benchmark.py)). For each recording, the original denoises
+every frame, takes the difference to the first frame, thresholds it at 25 grey levels and counts the spots;
+a mite counts as moving when a spot touches its box. Both ran on the same
+18,480 mite-recordings labelled by eye, from three datasets that were not used to set the app's threshold.
 
 ![Wrong calls per dataset](docs/images/benchmark_bars.png)
 
 | Dataset | Method | Accuracy | Still called moving | Moving called still | F0.5 |
 |---|---|---:|---:|---:|---:|
-| 2025 sessions (515 obs.) | **app** | **0.996** | **1** | 1 | **0.996** |
+| 2025 sessions (515 obs.) | app | 0.996 | 1 | 1 | 0.996 |
 | | original | 0.963 | 19 | 0 | 0.937 |
-| GT_oct_2 (651 obs.) | **app** | **0.969** | 0 | **20** | **0.975** |
+| GT_oct_2 (651 obs.) | app | 0.969 | 0 | 20 | 0.975 |
 | | original | 0.949 | 0 | 33 | 0.955 |
-| Long run (17,314 obs.) | **app** | **0.996** | **66** | **1** | **0.941** |
+| Long run (17,314 obs.) | app | 0.996 | 66 | 1 | 0.941 |
 | | original | 0.947 | 879 | 43 | 0.529 |
 
 A bootstrap over mites (2,000 resamples) puts the app's F0.5 gain above zero on every dataset
-(+0.058, +0.019 and +0.412). The biggest failure of the original is **shake**:
+(+0.058, +0.019 and +0.412). The largest difference is in recordings where the plate shakes:
 
 <p align="center"><img src="docs/images/benchmark_shake.png" width="720" alt="Still recordings called moving, by plate shake"></p>
 
-It is also **two orders of magnitude cheaper**. The app works only on the mites' patches, not on whole
+The app is also much cheaper to run, since it works only on the mites' patches rather than on whole
 denoised frames, and it saves each mite as a lossless FFV1 video instead of every frame as a BMP:
 
 ![Speed, memory and storage](docs/images/speed_memory_storage.png)
 
-For a 48 h run with a 3 s recording every 10 minutes, the app spends about **2.5 minutes** analysing in total.
-The original needs about **5.6 hours** on 22 cores.
+For a 48 h run with a 3 s recording every 10 minutes, the app spends about 2.5 minutes analysing in total;
+the original needs about 5.6 hours on 22 cores.
 
 ---
 
-## 📚 Reports
+## Reports
 
 Longer write-ups, in [`report/`](report/):
 
@@ -217,7 +218,7 @@ script draws which figure.
 
 ---
 
-## 🚀 Quick start
+## Quick start
 
 ```bash
 conda env create -f discobox_env.yaml && conda activate discobox_env
@@ -253,7 +254,7 @@ connection.
 
 ---
 
-## 📖 User manual
+## User manual
 
 The page opens on **Live**, the Discobox camera. The tabs *Live*, *Analysis* and *Calibration* in the header
 switch between the three modes. Each keeps its place while you look at another, and a test run goes on
@@ -273,7 +274,7 @@ in a recording when its motion score in that recording reaches the threshold of 
 own; *alive* and *dead* follow from one rule (a mite is alive up to the last recording in which it moved, and
 dead once still for the *death time*).
 
-### 🎥 Live from the Discobox
+### Live from the Discobox
 
 <img src="docs/images/app_live_setup.png" width="900" alt="Live setup page">
 
@@ -429,7 +430,7 @@ with the app, so check the movement threshold on a live recording (Calibration) 
 
 </details>
 
-### 📂 Analysing recordings
+### Analysing recordings
 
 **1. Recordings.** Pick one of the previous recordings, or drag the session folder (the one holding the
 `..._fps-30` folders) onto the page, or click *Choose folder*. The images are copied to
@@ -615,7 +616,7 @@ per-mite floor cannot be told from movement, and the report shows it.
 
 </details>
 
-### 🎯 Calibration
+### Calibration
 
 In *Calibration* you mark by eye which mites move in each recording and compare that with the detector.
 
@@ -732,7 +733,7 @@ to the mites' surroundings, and calibrated there; opening it again opens that co
 
 ---
 
-## 🧱 Architecture
+## Architecture
 
 ```mermaid
 flowchart TB
@@ -783,12 +784,12 @@ main.py                command-line entry point
 unit_tests/            includes test_layering.py, which enforces the boundary above
 ```
 
-**Tech stack:** Python · OpenCV · NumPy · pandas · SciPy · matplotlib · FastAPI/uvicorn · vanilla JS + SVG ·
+Built with Python · OpenCV · NumPy · pandas · SciPy · matplotlib · FastAPI/uvicorn · vanilla JS + SVG ·
 FFV1 lossless video · Optuna · pytest · Vimba X (vmbpy) camera · Arduino over pyserial · optional Google Gemini.
 
 ---
 
-## 💻 Command line
+## Command line
 
 ```
 python main.py                       # sample_data, labels from its labels.json -> results/sample_data/
@@ -810,7 +811,7 @@ It prints a line per recording analysed; the recordings go to `recordings/<run n
 
 ---
 
-## 📁 Where files go
+## Where files go
 
 | Folder | Contents |
 | --- | --- |
@@ -848,7 +849,7 @@ controls of two zones per plate are kept apart, in `labels_2.json` and `controls
 
 ---
 
-## 🧪 Tests
+## Tests
 
 ```
 python -m pytest
@@ -865,7 +866,7 @@ test of the hardware itself.
 
 ---
 
-## 📎 References
+## References
 
 1. **Abilium GmbH, *varroa-discobox*: the Discobox's control and analysis software.**
    GitHub, <https://github.com/Abilium-GmbH/varroa-discobox> (analysis as of commit `cbf8c47`).
@@ -879,19 +880,9 @@ test of the hardware itself.
    - **The benchmark.** Its analysis (`src/processing.py`: denoise, difference to the first frame, threshold
      25, grow, count the spots) is reimplemented step for step in
      [`classes/scoring/benchmark.py`](classes/scoring/benchmark.py) and compared with this app in
-     [How well it works](#-how-well-it-works) and the [performance report](report/3_performance.md).
+     [How well it works](#how-well-it-works) and the [performance report](report/3_performance.md).
 2. **Allied Vision, *Vimba X SDK* and *vmbpy*,** the camera's driver and Python API, installed as the
    Discobox's own instructions describe.
 3. Statistics: Kaplan–Meier survival with Greenwood's confidence intervals on the log-log scale, and the
    log-rank test (`scipy.stats.logrank`); motion-score constants tuned with **Optuna** (Akiba et al.,
    *Optuna: A Next-generation Hyperparameter Optimization Framework*, KDD 2019).
-
----
-
-<div align="center">
-
-Developed at **Agroscope** (Switzerland) for the Discobox varroa assay.<br/>
-<sub>Figures: real recordings analysed by the app's own code · Benchmark against
-<a href="https://github.com/Abilium-GmbH/varroa-discobox">Abilium's varroa-discobox</a> software.</sub>
-
-</div>
