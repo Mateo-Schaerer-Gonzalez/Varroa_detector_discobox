@@ -5,27 +5,29 @@ from typing import Optional
 import cv2
 from classes.app_config import AppConfig, get_default_config
 from classes.plate.mite import Mite
-from classes.scoring.plate_stabilizer import DARKEST_N, PlateStabilizer
+from classes.scoring.plate_stabilizer import PlateStabilizer
 from classes.scoring.mite_look import MiteLook
 from classes.scoring.workers import side_by_side
 import numpy as np
 
 
-# The constants of outline_variability, chosen by an Optuna search on the
-# labelled recordings (trial 228 of scripts/pipeline_optuna.py,
-# notebooks/pipeline_optuna.ipynb; the user's choice of 2026-10-27), with its
-# `width` in config.default.yaml; its `relative` 0.491 was taken out the same day.
-# Before: rim 6, body 0.3 of the single darkest pixel grown 2 px, edge 0.5,
-# 64 rays of 13 px, width 1.5.
+# The constants of outline_variability, with its `width` in config.default.yaml.
+# Those an Optuna search chose (2026-10-27: rim 3, body 0.355 of the 8 darkest
+# not grown, edge 0.226 of them, 128 rays of 11.4 px, width 1.04) were set back to
+# those of commit bd5a9c3, from before it, on 2026-10-29 (the user's choice:
+# every parameter as at that commit, so the reports' numbers hold).
 # The patch's outermost pixels, read for the plate's light and the noise floor.
-RIM = 3
-# The body (for the rays' centre): darker than this share of the darkest (the
-# mean of the DARKEST_N darkest pixels), not grown.
-BODY_SHARE = 0.355
-# The body's edge on a ray: where its darkness drops below this share of the darkest.
-EDGE_SHARE = 0.226
+RIM = 6
+# The body (for the rays' centre): darker than this share of the darkest pixel
+# near the middle, grown by BODY_GROW pixels.
+BODY_SHARE = 0.3
+BODY_GROW = 2
+# The body's edge on a ray: where its darkness drops below this share of the
+# darkest (the mean of the patch's EDGE_DARKEST_N darkest pixels).
+EDGE_SHARE = 0.5
+EDGE_DARKEST_N = 30
 # The rays: how many, the step along them and how far they reach (px).
-ANGLES, RAY_STEP, REACH = 128, 0.5, 11.4
+ANGLES, RAY_STEP, REACH = 64, 0.5, 13.0
 
 
 class NoNoiseWarning(UserWarning):
@@ -422,7 +424,7 @@ class Analyzer:
         return float(np.sort(swing)[-n:].mean())
 
     @staticmethod
-    def _outline_variability(roi, width=1.04, pad=16):
+    def _outline_variability(roi, width=1.5, pad=16):
         """Vector sum around the mite of the variance of the pixels on its outline: how much of that variance lies on one side.
 
         The variance over the frames is taken around the outline, one value
@@ -471,7 +473,7 @@ class Analyzer:
         return float(np.abs((profile * direction).mean()))
 
     @staticmethod
-    def outline_variability_profile(roi, width=1.04, pad=16):
+    def outline_variability_profile(roi, width=1.5, pad=16):
         """Where around the mite its pixels vary over the frames: the variance
         on the outline in each of ANGLES directions from the mite's centre, in
         grey levels squared, (ANGLES,). Direction 0 points right in the image and
@@ -542,21 +544,21 @@ class Analyzer:
         dark = np.clip(1 - lit / light, 0, None)
         still = dark.mean(axis=0)
 
-        # The body: what is at least BODY_SHARE as dark as the darkest of the mite
-        # (the mean of its DARKEST_N darkest pixels), the far surroundings left out.
-        # Of several pieces it is the one closest to the middle of the patch,
-        # where the mite's box is: the other is a neighbour, which may be walking past.
+        # The body: what is at least BODY_SHARE as dark as the darkest of the mite,
+        # the far surroundings left out, and BODY_GROW pixels around it. Of several
+        # pieces it is the one closest to the middle of the patch, where the
+        # mite's box is: the other is a neighbour, which may be walking past.
         margin = max(pad - 8, 0)
         near = np.zeros((height, width), dtype=bool)
         near[margin:height - margin, margin:width - margin] = True
-        darkest = np.sort(still.ravel())[-DARKEST_N:].mean()
         if not near.any() or still[near].max() <= 0:
             return None
-        dark_enough = (still > BODY_SHARE * darkest) & near
+        dark_enough = (still > BODY_SHARE * still[near].max()) & near
         pieces = cv2.connectedComponents(dark_enough.astype(np.uint8))[1]
         yy, xx = np.mgrid[:height, :width]
         from_middle = np.hypot(yy - (height - 1) / 2, xx - (width - 1) / 2)
         body = (pieces == pieces.ravel()[np.where(dark_enough, from_middle, np.inf).argmin()]).astype(np.uint8)
+        body = cv2.dilate(body, np.ones((3, 3), np.uint8), iterations=BODY_GROW)
         weight = dark * body
         total = weight.sum(axis=(1, 2))
         if total.min() <= 0:
@@ -575,7 +577,7 @@ class Analyzer:
             cv2.remap(frame, (x + ray_x).astype(np.float32), (y + ray_y).astype(np.float32), cv2.INTER_LINEAR)
             for frame, x, y in zip(lit, centre_x.tolist(), centre_y.tolist())
         ])
-        past_body = 1 - unrolled.mean(axis=0) / light < EDGE_SHARE * darkest
+        past_body = 1 - unrolled.mean(axis=0) / light < EDGE_SHARE * np.sort(still.ravel())[-EDGE_DARKEST_N:].mean()
         body_ends = np.where(past_body.any(axis=1), past_body.argmax(axis=1), len(along) - 1)
         return unrolled.var(axis=0), body_ends, ray_step, (float(centre_x.mean()), float(centre_y.mean()))
 

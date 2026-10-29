@@ -25,7 +25,17 @@ and no call changed on the four labelled datasets; on sample_data none changed
 with OpenCV 5 and one of 180 (still to moving, at the threshold) with OpenCV 4. Made
 again when the workbook got a sheet per group (2026-10-28, the user's request): only
 those sheets were new, every other sheet, figure and number the same (its new
-settings sheet holds the commit and the date, so reference.py leaves it out). It writes the reference of the OpenCV it runs with
+settings sheet holds the commit and the date, so reference.py leaves it out). Made again when
+the stabilizer's pad, rim, body share and growth went from the search's 4, 8, 0.241 and 4
+to 8, 4, 0.3 and 2 (2026-10-29, the user's choice: the search's left a 5 px square to
+search for the body): scores moved by 0.003 in the median and 0.38 at most; no call
+changed with OpenCV 5, two of 180 with OpenCV 4 (both within 0.004 of the threshold). Made
+again when every constant of the stabilizer and the score went back to those before the
+Optuna search, keeping its bilinear cut and 128 rays (2026-10-29, the user's choice: the
+figures looked nicer), and the stabilizer's shift was capped at MARGIN minus bilinear's
+1 px reach instead of Lanczos's 4: the default threshold went from 0.074 to 0.089 (the
+poke run's F0.5 threshold, mites followed); one call of 180 changed with OpenCV 5, two
+with OpenCV 4. It writes the reference of the OpenCV it runs with
 (reference.py: one for OpenCV 4, one for 5), so run it in both Pythons; the
 OpenCV 5 one was first made from commit 76dba5e. Run this again only to accept a deliberate change to
 what folder mode produces, and say why in the commit.

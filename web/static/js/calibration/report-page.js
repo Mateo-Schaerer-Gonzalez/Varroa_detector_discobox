@@ -15,6 +15,11 @@ class ReportPage {
     this.wrongCalls = new WrongCalls();
   }
 
+  // The F-score the suggestion is chosen on, as the server names it (e.g. "F0.25").
+  static fName(r) {
+    return r.precision_recall ? r.precision_recall.f_name : "F-score";
+  }
+
   static thr(value) {
     return Number(value).toFixed(2);
   }
@@ -54,8 +59,8 @@ class ReportPage {
     return `Every possible threshold, from the highest (left) to the lowest (right): the share of the mite-recordings labelled moving that are called moving
     (recall) against the share of the calls moving that are labelled moving (precision). Average precision ${ReportPage.averagePrecisionText(r)}, 1 when every
     moving label scores above every still one. The grey dashed line is the precision of calling everything moving, the share of moving labels
-    (${pct(r.precision_recall.chance)}): what scores that tell nothing give. The coloured dashed curve joins the points with the F0.5 of the best threshold marked;
-    no threshold reaches beyond it on the side away from the corner. Hover the curve for the threshold, its recall, precision and F0.5.`;
+    (${pct(r.precision_recall.chance)}): what scores that tell nothing give. The coloured dashed curve joins the points with the ${ReportPage.fName(r)} of the best threshold marked;
+    no threshold reaches beyond it on the side away from the corner. Hover the curve for the threshold, its recall, precision and ${ReportPage.fName(r)}.`;
   }
 
   // Who is left out of a survival curve, by the labels and by the detector's calls.
@@ -284,15 +289,15 @@ class ReportPage {
     const shown = cal.shownThreshold === "current" ? "current" : "best";
     return `
     <div class="stats stats-5">
-      ${stat("Suggested threshold", thr(r.suggested_threshold), `F0.5 ${r.best.f05.toFixed(3)} · ${same ? "the one in use" : `in use: ${thr(r.threshold)}`}`)}
+      ${stat("Suggested threshold", thr(r.suggested_threshold), `${ReportPage.fName(r)} ${r.best.f05.toFixed(3)} · ${same ? "the one in use" : `in use: ${thr(r.threshold)}`}`)}
       ${stat("Called right", pct(r.best.accuracy), `${r.best.n_wrong} wrong · in use: ${pct(r.current.accuracy)}`)}
       ${this.wrongStat("Moving called still", r, "moving", "still")}
       ${this.wrongStat("Still called moving", r, "still", "moving")}
       ${stat("Death time off by", deathText(r, "suggested"), `mean, in recordings · in use: ${deathText(r, "current")}`)}
     </div>
     <p class="caption">Key figures at the suggested threshold; "in use" is the threshold in config.yaml. The suggestion is the threshold with the
-      largest F0.5 of the calls moving, mite-recording by mite-recording: 1.25 × moving called moving over 1.25 × moving called moving
-      + 0.25 × moving called still + still called moving, so a still recording called moving costs four times a moving one called still.
+      largest ${ReportPage.fName(r)} of the calls moving, mite-recording by mite-recording: ${r.precision_recall.weight} × moving called moving over ${r.precision_recall.weight} × moving called moving
+      + ${r.precision_recall.weight - 1} × moving called still + still called moving, so a still recording called moving costs ${r.precision_recall.still_cost} times a moving one called still.
       The death time is reported, not chosen on.</p>
 
     <div class="grid-2">
@@ -313,7 +318,7 @@ class ReportPage {
           <button type="button" id="save-threshold">Save to config.yaml</button>
         </div>
         <p id="save-status" class="hint">Saves the movement score <code>${esc(scoreText(r.metric, r.metric_params, r))}</code> along with the threshold.</p>
-        <p class="hint">The suggestion has the largest F0.5: a still recording called moving costs four times a moving one called still, however many
+        <p class="hint">The suggestion has the largest ${ReportPage.fName(r)}: a still recording called moving costs ${r.precision_recall.still_cost} times a moving one called still, however many
           labels there are of each, because a dead mite called moving once comes back to life while a live one called still moves again later;
           among thresholds that make the same calls, it lies halfway into the gap between the scores on either side.
           A mite dies at the recording after its last movement, so a still recording called moving long after a death moves the death there
@@ -342,7 +347,7 @@ class ReportPage {
     const rows = [["in use", r.threshold, r.current, "current"], ...(r.best ? [["suggested", r.suggested_threshold, r.best, "suggested"]] : [])];
     const deathError = (key) => ReportPage.deathText(r, key);
     return `<div class="table-wrap"><table>
-    <thead><tr><th>Threshold</th><th class="num">Value</th><th class="num">F0.5</th><th class="num">Called right</th>
+    <thead><tr><th>Threshold</th><th class="num">Value</th><th class="num">${ReportPage.fName(r)}</th><th class="num">Called right</th>
       <th class="num">Moving called still</th><th class="num">Still called moving</th>
       <th class="num" title="Mean distance, in recordings, between each mite's death by the detector and by the labels">Death error</th></tr></thead>
     <tbody>${rows.map(([name, value, c, key]) => `<tr>

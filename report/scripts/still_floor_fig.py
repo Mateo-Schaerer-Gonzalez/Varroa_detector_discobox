@@ -1,17 +1,14 @@
 """Figure for report/2_how_it_works.md: still recordings' score before and after
 dividing by the noise floor, per dataset (from results/scripts/noise_floor.csv.gz)."""
-import sys
-from pathlib import Path
-
-import matplotlib
-matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import matplotlib.ticker
 import numpy as np
 import pandas as pd
 
-ROOT = Path(sys.argv[1])
-d = pd.read_csv(ROOT / "results/scripts/noise_floor.csv.gz", dtype={"mite": str})
+import figure_kit
+
+ROOT, OUT = figure_kit.REPO, figure_kit.out_dir()
+d = pd.read_csv(figure_kit.needs(ROOT / "results/scripts/noise_floor.csv.gz", "../../scripts/noise_floor.py"), dtype={"mite": str})
 d = d[(d.noise > 0) | (d.raw > 0)]
 labelled = d.labelled.isna() | (d.labelled == True)  # noqa: E712
 still = d[labelled & (d.moving == False)]  # noqa: E712
@@ -50,4 +47,5 @@ for ax, (col, title, unit, log) in zip(axes, PANELS):
 fig.text(0.01, 0.005, "Each dot: one mite's median over its still recordings. Black bar: median of all the "
          "dataset's still recordings. Grey: the long run, 10 frames per recording.", fontsize=8.5, color="#666666")
 plt.tight_layout(rect=(0, 0.03, 1, 1))
-fig.savefig(ROOT / "report/images/still_noise_floor.png", dpi=120)
+fig.savefig(OUT / "still_noise_floor.png", dpi=120)
+figure_kit.show()

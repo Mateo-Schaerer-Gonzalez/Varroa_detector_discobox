@@ -47,7 +47,7 @@ def evaluate_calibration(out_dir, datasets, metric=None, params=None, recordings
     Returns the confusion counts at the threshold in use and, when there are
     both moving and still labels, the precision-recall curve with its average
     precision ("precision_recall", "average_precision") and the suggested threshold with
-    its confusion counts: the one with the largest F0.5 of the calls moving,
+    its confusion counts: the one with the largest F-score (calibration.F_BETA) of the calls moving,
     recording by recording (calibration.best_f05_threshold()). The close calls
     it gets wrong are the ones the result pages ask to check by eye
     (classes/results/review_band.py). Also the fraction of mites moving per
@@ -269,8 +269,13 @@ def _precision_recall(scores, is_moving):
         "recall": report_rows.rounded(recall),
         "precision": report_rows.rounded(precision),
         "f05": report_rows.rounded(f05),
-        # the F-score's beta, for the figure's curve of equal F0.5
+        # the F-score's beta, for the figure's curve of equal F-score, and how the
+        # page names and explains it: F_BETA² weighs a moving one called still,
+        # 1 + F_BETA² one called moving, so a still one called moving costs 1 / F_BETA²
         "beta": calibration.F_BETA,
+        "f_name": f"F{calibration.F_BETA:g}",
+        "weight": 1 + calibration.F_BETA ** 2,
+        "still_cost": 1 / calibration.F_BETA ** 2,
         "thresholds": report_rows.rounded(thresholds, 3),
         "chance": round(float(is_moving.mean()), 4),
     }

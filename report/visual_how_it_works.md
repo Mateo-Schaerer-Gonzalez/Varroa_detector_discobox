@@ -24,7 +24,7 @@ one, difference 0.0 for both.
 
 All of it uses the constants the app has had since 27 October 2026, chosen by an Optuna
 search (`notebooks/pipeline_optuna.ipynb`): 128 rays of 11.4 px, the body's edge at 0.226 of
-its darkest, a ±1.04 px outline band and a bilinear stabilizer with its own body mask (0.241, grown 4 px). The search also divided the score by the profile's mean to the power
+its darkest, a ±1.04 px outline band and a bilinear stabilizer with its own body mask (0.3, grown 2 px, since 29 October; the search's 0.241 grown 4 px masked a square). The search also divided the score by the profile's mean to the power
 0.491; that was taken out the same day, so the score is the vector sum alone (step 7).
 
 ```mermaid
@@ -97,10 +97,10 @@ roi    = PlateStabilizer.cut(frames, box, 16, shifts)   # every frame moved back
 
 ![How the stabilizer finds the mite's centre](images/walk_3_stabilizer_centre.png)
 
-**a.** A crop of the box + 4 px; its outer 8 px (blue) are bare plate and give the
+**a.** A crop of the box + 8 px; its outer 4 px (blue) are bare plate and give the
 plate's light in each frame. **b.** Each pixel's *darkness*, the share of the plate's
-light it takes away. **c.** The body mask: at least 0.241 as dark as the darkest (the mean of the 8 darkest
-pixels), grown by 4 px
+light it takes away. **c.** The body mask: at least 0.3 as dark as the darkest (the mean of the 8 darkest
+pixels), grown by 2 px
 (orange); the green dots are the centre of darkness in each of the 90 frames, all on top of
 each other. **d.** The shift $s_t = c_t - c_1$ per frame: for this still mite at most
 0.03 px, only noise.

@@ -1,4 +1,5 @@
-"""Per mite and recording of the poke run copy: outline profile, noise floor, score, mean image, rays."""
+"""Per mite and recording of the poke run copy: outline profile, noise floor, score, mean image, rays.
+python outline_data.py [dataset]   (default poke_test_oct, what fig_outline.py draws)"""
 import os, pickle, sys, warnings
 from pathlib import Path
 REPO = Path(__file__).resolve().parents[2]
@@ -17,12 +18,12 @@ params = mite.params_for(mite.metric)
 
 def measure(roi):
     grey = Analyzer.grey(roi).astype(np.float32)
-    rays = Analyzer._outline_rays(grey, 16)
+    rays = Analyzer._outline_rays(grey, params["pad"])
     noise = Analyzer.plate_noise(grey)
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
         score = float(Analyzer._motion_score(roi, mite.metric, params))
-    profile = Analyzer.outline_variability_profile(grey, 1.5, 16)
+    profile = Analyzer.outline_variability_profile(grey, params["width"], params["pad"])
     return {"score": score, "noise": noise, "profile": profile, "mean": grey.mean(axis=0),
             "var": grey.var(axis=0), "rays": rays, "first": grey[0], "brightness": float(grey.mean())}
 

@@ -1,12 +1,20 @@
-import json, sys
-from pathlib import Path
+"""Speed, memory and storage against the original software (speed_memory_storage.png), from speed.jsonl;
+a measurement missing there is made first with speed.py."""
+import json
 import numpy as np
-import matplotlib; matplotlib.use("Agg"); import matplotlib.pyplot as plt
-H = Path(__file__).parent; OUT = Path(sys.argv[1])
+import matplotlib.pyplot as plt
+import figure_kit
+H = figure_kit.HERE; OUT = figure_kit.out_dir()
 APP, ABIL, INK, MUTED = "#1F8A5B", "#5B6CC2", "#222222", "#777777"
 plt.rcParams.update({"font.size": 10, "axes.edgecolor": "#BBBBBB", "xtick.color": MUTED, "ytick.color": MUTED,
                      "axes.spines.top": False, "axes.spines.right": False, "figure.dpi": 130})
-r = [json.loads(l) for l in open(H / "speed.jsonl")]
+def measured():
+    return [json.loads(l) for l in open(H / "speed.jsonl")] if (H / "speed.jsonl").exists() else []
+for which in ("app", "original"):
+    for threads in ("shipped", "1"):
+        if not any(x["which"] == which and x["threads"] == threads for x in measured()):
+            figure_kit.run("speed.py", which, threads)
+r = measured()
 get = lambda w, t: next(x for x in r if x["which"] == w and x["threads"] == t)
 fig, ax = plt.subplots(1, 3, figsize=(13, 4))
 def bars(a, labels, app, orig, unit, title, log=False, fmt="{:.2f}"):
@@ -30,3 +38,4 @@ ax[2].tick_params(axis="x", labelsize=7.5)
 fig.text(0.01, -0.03, "* 60 mites, every 10 min, if none died (dead mites stop being saved). Laptop: Intel Core Ultra 7 155H, 22 logical processors; sample_data, 30 mites.", fontsize=8, color=MUTED)
 fig.tight_layout(); fig.savefig(OUT / "speed_memory_storage.png", bbox_inches="tight")
 print("ok")
+figure_kit.show()

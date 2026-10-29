@@ -87,7 +87,7 @@ class TestShifts:
         frames = shaken([(0, 0), (30, -30), (-25, 40)])  # mites thrown out of their patches
         boxes = BOXES + [(-5, -5, 8, 8), (SIZE - 6, SIZE - 6, SIZE + 4, SIZE + 4)]  # partly off the image
         shifts = PlateStabilizer().shifts(frames, boxes)
-        reach = plate_stabilizer.MARGIN - plate_stabilizer._LANCZOS_REACH
+        reach = plate_stabilizer.MARGIN - plate_stabilizer._INTERPOLATION_REACH
         assert np.isfinite(shifts).all() and np.abs(shifts).max() <= reach
 
     def test_follow_tells_how_far_each_mite_strayed_and_shook(self):
@@ -124,7 +124,7 @@ class TestCut:
         # what a saved live run keeps: the scored patch and MARGIN round it, nothing else
         pad, margin = 16, plate_stabilizer.MARGIN
         x1, y1, x2, y2 = BOXES[4]
-        reach = margin - plate_stabilizer._LANCZOS_REACH
+        reach = margin - plate_stabilizer._INTERPOLATION_REACH
         frames = np.full((3, SIZE, SIZE), np.nan, np.float32)
         frames[:, y1 - pad - margin:y2 + pad + margin, x1 - pad - margin:x2 + pad + margin] = 100
         cut = PlateStabilizer.cut(frames, BOXES[4], pad, [(0, 0), (reach, -reach), (-reach, reach)])

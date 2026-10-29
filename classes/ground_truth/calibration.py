@@ -18,13 +18,15 @@ STILL = "still"
 NOT_A_MITE = "not_a_mite"  # a detection the user rejected: debris, a shadow, ...
 TRUTH_STATES = (MOVING, STILL, NOT_A_MITE)
 
-# The F-score a calibration report suggests the threshold on (f_score()): F0.5
-# weighs precision twice as much as recall, so a still recording called moving
-# costs four times a moving one called still. In a long run a dead mite is scored
+# The F-score a calibration report suggests the threshold on (f_score()): F0.25
+# weighs precision four times as much as recall, so a still recording called moving
+# costs sixteen times a moving one called still. In a long run a dead mite is scored
 # hundreds of times, and one still recording called moving brings it back to life;
 # a live mite called still moves again in a later recording
-# (notebooks/shaky_recordings.ipynb).
-F_BETA = 0.5
+# (notebooks/shaky_recordings.ipynb). F0.5 until 2026-10-29 (the user's choice): on
+# the poke run both give the same threshold (0.0915), as none of its still
+# recordings scores above it.
+F_BETA = 0.25
 
 # The first labels were saved as "alive" / "dead"; they meant moving / still.
 _OLDER_STATES = {"alive": MOVING, "dead": STILL}
@@ -154,9 +156,9 @@ def auc(scores, moving):
 
 
 def precision_recall_curve(scores, moving):
-    """Recall, precision and F0.5 of the calls moving at every distinct threshold,
+    """Recall, precision and F-score (F_BETA) of the calls moving at every distinct threshold,
     highest first: recall the share of the moving labels called moving,
-    precision the share of the calls moving labelled moving, F0.5 their
+    precision the share of the calls moving labelled moving, the F-score their
     weighted harmonic mean (f_score()). The last point, at the lowest score,
     calls everything moving: recall 1, precision the share of moving labels.
 
@@ -179,8 +181,8 @@ def f_score(tp, fp, fn, beta=F_BETA):
     """The F-score of the calls moving, (1 + beta²) TP / ((1 + beta²) TP +
     beta² FN + FP), from the counts of moving called moving (TP), still called
     moving (FP) and moving called still (FN): recall counts beta times as much
-    as precision. At 0.5 (F_BETA) a still recording called moving costs four
-    times a moving one called still; at 1 it is F1. Element-wise on arrays."""
+    as precision. At 0.25 (F_BETA) a still recording called moving costs sixteen
+    times a moving one called still, at 0.5 four times; at 1 it is F1. Element-wise on arrays."""
     weight = 1 + beta * beta
     return weight * tp / (weight * tp + beta * beta * fn + fp)
 
@@ -207,9 +209,9 @@ def best_threshold(scores, moving):
 
 
 def best_f05_threshold(scores, moving):
-    """The threshold with the largest F0.5 of the calls moving (f_score()), which
-    the calibration report suggests: a still recording called moving costs four
-    times a moving one called still, however many labels there are of each, and
+    """The threshold with the largest F-score (F_BETA, f_score()) of the calls moving,
+    which the calibration report suggests: a still recording called moving costs
+    sixteen times a moving one called still, however many labels there are of each, and
     still called still gives nothing. F1, which weighs both alike, put the
     threshold so low on labels mostly moving from a run's first hours (no dead
     mites among them) that a long run's dead mites came back to life
@@ -241,7 +243,7 @@ def calls_confusion(called, moving):
     labels, plus accuracy, sensitivity (moving called moving, the recall),
     specificity (still called still), precision (of the calls moving, the
     fraction labelled moving), F1 (the harmonic mean of precision and recall)
-    and F0.5 (f_score(), what a calibration report chooses on). A ratio with
+    and the F-score (f_score(), what a calibration report chooses on). A ratio with
     nothing to divide by is None."""
     called = np.asarray(called, dtype=bool)
     moving = np.asarray(moving, dtype=bool)

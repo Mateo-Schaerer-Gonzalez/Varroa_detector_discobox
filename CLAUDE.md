@@ -164,7 +164,10 @@ of 2026-10-27, against my recommendation): `scripts/pipeline_optuna.py` copies t
 with every constant a parameter (identical to the app at its values), searched 600 trials
 on the labelled poke run and three 30-frame datasets, mites split into a tune and a test
 half (`notebooks/pipeline_optuna.ipynb`). Trial 228, rounded to three decimals: stabilizer
-pad 4, rim 8, body 0.241 of the darkest grown 4 px, bilinear cut; score rim 3, body 0.355
+pad 4, rim 8, body 0.241 of the darkest grown 4 px (replaced on 2026-10-29, the user's
+choice, by pad 8, rim 4, body 0.3 grown 2 px: the search's pad and rim left a 5 px square of a
+13 px box to search, so the mask was a square; the new ones score the same, d′ 5.73 against
+5.63 on the test mites, and at 0.241 the mask took in a dark leg), bilinear cut; score rim 3, body 0.355
 not grown, edge 0.226, "the darkest" = mean of 8 pixels (`plate_stabilizer.DARKEST_N`),
 128 rays of 11.4 px every 0.5 px, band ±1.04 px (and `relative` 0.491, taken out since,
 see above; `pipeline_optuna.APP` has it at 0, as the search can still try it). It raised the
@@ -179,7 +182,7 @@ own are 0.11–0.13. Every machine's saved threshold is on an old scale and must
 again from a calibration report.
 
 The stabilizer (`classes/scoring/plate_stabilizer.py`) moves each mite's patch back by its own
-centre's shift within the recording (bilinear since 2026-10-27), capped at `MARGIN` minus the Lanczos reach (12 px, kept); a
+centre's shift within the recording (bilinear since 2026-10-27), capped at `MARGIN` minus bilinear's 1 px reach (15 px; 12 px for Lanczos's 4 until 2026-10-29); a
 mite whose centre is lost takes the median of the others'. That is the user's choice of
 2026-10-16. Before, every mite took the plate's median ECC shift, which
 `scripts/centre_stabilization.py` keeps as `ecc_shifts()` (`notebooks/centre_stabilization.ipynb`):
@@ -201,7 +204,7 @@ parallel already. The frame-rate and memory limits are measured by
 **Reads stay inside the saved ROI.** A saved live run keeps only `roi_recordings.ROI_MARGIN`
 (32) px round each mite's box: the metric's pad (16) plus `plate_stabilizer.MARGIN` (16, the
 source of `pipeline.scoring.STABILIZE_MARGIN`). A shift is followed at most `MARGIN` minus the
-Lanczos reach (12 px) so a cut never reads further, and `RoiRecordings.check_margin` refuses a
+1 px bilinear reach (15 px) so a cut never reads further, and `RoiRecordings.check_margin` refuses a
 pad that would. Anything new that reads round a mite must stay within that, or a saved run
 stops scoring like the live one.
 
@@ -246,15 +249,17 @@ threshold over the old (`app_config._band_moved()`, the user's request of 2026-1
 plate), `ground_truth.json`, `poke_test.json`, `corrections.json`, `.settings.txt`,
 `run.json`, and a `scores/` cache. `results/<name>/` holds the latest analysis (workbook,
 figures, `run_settings.json`, `clips/`, `kept/`, `calibration/`). `run_settings.json`
-(`pipeline/run_settings.py`, written with the workbook) records every parameter that made the
-results, the user's rule of 2026-10-27 ("any parameter used anywhere in the app must be
-documented in this file"), so results delivered to others (the Australian runs) can be
-published with their settings and reproduced: commit, uncommitted changes, library
-versions, the whole config as loaded, the zones, the recordings' settings and corrections,
-and every upper-case constant (module or class level) of every loaded `classes`/`pipeline`
-module, collected from the source, not listed. So give a new parameter an upper-case name
-at module or class level, or put it in the config; a bare number inside a function is only
-pinned by the commit. The reference snapshots leave the file out (commit and date). Labels, ground truth and corrections are keyed
+(`pipeline/run_settings.py`, written with the workbook, which shows it as its `settings`
+sheet; the workbook also has a `group <name>` sheet per group) records the settings that
+made the results, so results delivered to others (the Australian runs) can be published
+with them and reproduced (asked for on 2026-10-27). Only what concerns the recordings,
+the detector and the analysis (the user's choice of 2026-10-28, "way too many
+parameters" after a version listing every constant of the app): `code` (commit,
+uncommitted changes, Python, OpenCV), `recording` (.settings.txt's recording lines),
+`detector` (config's detector), `analysis` (metric, its parameters, threshold, mite
+radius, the score's and the stabilizer's constants, normalisations, death rule, zones per
+plate, mites corrected by hand). A new parameter of detection or scoring goes in there,
+listed by hand. The reference snapshots leave the file and the sheet out (commit and date). Labels, ground truth and corrections are keyed
 by mite position, so they survive detector changes. On startup the server removes pooled
 report folders that made no report. The one-off migrations of older layouts (`output/`,
 `outputs/`, `uploads/`, `calibration_data/`, BMP folders shrunk to ROIs in bulk) were
@@ -401,3 +406,4 @@ desktop icon points at it.
   to `python3`. A notebook importing `pipeline` needs `%matplotlib inline` after its imports
   (`classes/results/reporting.py` selects Agg). A script started from stdin can't start a ProcessPool on
   Windows: run a file.
+- ALWAYS CHECK PERFORMANCE ON THE LONG RUN IF THIS DEGRADES flag immediately !!!

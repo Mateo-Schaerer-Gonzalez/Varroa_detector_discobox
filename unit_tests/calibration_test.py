@@ -65,10 +65,11 @@ def test_average_precision_perfect_and_by_the_steps_of_recall():
     assert average_precision(SCORES, MOVING) == pytest.approx((1 + 1 + 3 / 4) / 3)
 
 
-def test_f_score_weighs_a_still_one_called_moving_four_times_a_moving_one_called_still():
-    assert f_score(2, 1, 0) == pytest.approx(2.5 / 3.5)
-    assert f_score(2, 0, 1) == pytest.approx(2.5 / 2.75)
-    assert f_score(2, 0, 4) == pytest.approx(f_score(2, 1, 0))
+def test_f_score_weighs_a_still_one_called_moving_sixteen_times_a_moving_one_called_still():
+    assert f_score(2, 1, 0) == pytest.approx(2.125 / 3.125)
+    assert f_score(2, 0, 1) == pytest.approx(2.125 / 2.1875)
+    assert f_score(2, 0, 16) == pytest.approx(f_score(2, 1, 0))
+    assert f_score(2, 0, 4, beta=0.5) == pytest.approx(f_score(2, 1, 0, beta=0.5))  # F0.5: four times
     assert f_score(2, 1, 1, beta=1) == pytest.approx(2 / 3)  # F1
 
 

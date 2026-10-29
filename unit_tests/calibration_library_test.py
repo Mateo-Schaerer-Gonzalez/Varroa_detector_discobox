@@ -525,14 +525,14 @@ def test_the_report_suggests_the_threshold_with_the_best_f05_and_reports_the_dea
     ids = [pipeline.dataset_id(data_dir)]
     result = pipeline.evaluate_calibration(tmp_path / "report", ids, recordings_root=recordings)
 
-    # leaving the 3 and the 4 still (F0.5 2.5/2.75) beats calling both moving (3.75/4.75), which F1 would
+    # leaving the 3 and the 4 still (F0.25 2.125/2.1875) beats calling both moving (3.1875/4.1875), which F1 would
     # prefer (6/7 against 4/5): halfway from 9 down to 4
     assert result["suggested_threshold"] == 6.5
     best = result["best"]
     assert (best["moving_called_still"], best["still_called_moving"], best["accuracy"]) == (1, 0, pytest.approx(11 / 12))
-    assert best["f05"] == pytest.approx(10 / 11)
+    assert best["f05"] == pytest.approx(2.125 / 2.1875)
     curve = result["precision_recall"]
-    assert max(curve["f05"]) == pytest.approx(10 / 11, abs=1e-4) and curve["chance"] == 0.25 and curve["beta"] == 0.5
+    assert max(curve["f05"]) == pytest.approx(2.125 / 2.1875, abs=1e-4) and curve["chance"] == 0.25 and curve["beta"] == 0.25
     assert "roc" not in result and 0 < result["average_precision"] <= 1
     # leaving the 3 still puts mite 0's death a recording early: reported, not chosen on
     death = result["death_error"]["suggested"]

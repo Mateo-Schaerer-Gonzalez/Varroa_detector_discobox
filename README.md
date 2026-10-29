@@ -567,7 +567,7 @@ plates that shake apart. A moving mite's legs pull its centre by about a tenth o
 the 17 829 calls of the ground truth (all near the threshold); `notebooks/centre_stabilization.ipynb`
 compares it with the median of the mites' shifts (by registration) used before: the same calls on a plate
 that shakes as one piece, far fewer still mites called moving when the plates shake apart, and twenty times
-cheaper to measure. A shift of more than 12 px along an axis is not followed further (`STABILIZE_MARGIN`
+cheaper to measure. A shift of more than 15 px along an axis is not followed further (`STABILIZE_MARGIN`
 beyond the scored patch is all a saved live run keeps). On a still plate it changes nothing, so a threshold
 calibrated on still ground truth holds on a shaking plate. The results overview shows the shake: the median
 over the mites of how far each one's own patch moved within each recording, recording by recording, to spot
@@ -824,13 +824,13 @@ Each analysis writes to `results/<recording>/`:
 
 | File | Contents |
 | --- | --- |
-| `results.xlsx` | `mites` (one row per mite: when it last moved, in minutes from the start of the first recording), `scores` (every score: one row per mite, one column per recording), `mite_map` (the plate with each mite's ID drawn on it, to find a mite of the sheets in the video), `measurements` (one row per mite per recording, with `moving`, position and the `brightness` of the mite's patch; with normalised scores, `raw_score` holds them as scored), `group_summary`, `moving` (fraction of mites moving per group and per zone at each recording), one sheet per group, `group <name>` (its mites only: zone, when each last moved and its score in every recording), and `settings` (every value of `run_settings.json`, one row per parameter: section, parameter, value) |
+| `results.xlsx` | `mites` (one row per mite: when it last moved, in minutes from the start of the first recording), `scores` (every score: one row per mite, one column per recording), `mite_map` (the plate with each mite's ID drawn on it, to find a mite of the sheets in the video), `measurements` (one row per mite per recording, with `moving`, position and the `brightness` of the mite's patch; with normalised scores, `raw_score` holds them as scored), `group_summary`, `moving` (fraction of mites moving per group and per zone at each recording), one sheet per group, `group <name>` (its mites only: zone, when each last moved and its score in every recording), and `settings` (the settings of `run_settings.json`, one row each: section, parameter, value) |
 | `moving_by_group.png` | Fraction of each group's mites moving in each recording |
 | `distribution_by_group.png` | Score distribution per group, box plot with raw points |
 | `score_over_time.png` | Each mite's score across the session |
 | `score_distribution.png` | Overall histogram |
 | `detections.jpg` | First frame with zones, labels and detected mites drawn on |
-| `run_settings.json` | Every parameter that made these results, to publish with them and make them again. `software`: the git commit, any files changed but not committed, Python, OpenCV, numpy, pandas, operating system, machine. `in_use`: what decides the calls (metric, its parameters, threshold, review band, normalisations, death rule, zones per plate). `config`: the whole configuration as used. `constants`: every named constant of the app's code, with its value. `zones`: each plate's rectangle and group. `recordings`: the recordings' `.settings.txt`, a live run's `run.json`, the negative controls and the calls corrected by hand. A number written inside the code without a name is fixed by the commit. Written again with the workbook, e.g. after a correction. |
+| `run_settings.json` | The settings the recordings were made and analysed with, to publish with the results and make them again (the same as the workbook's `settings` sheet). `code`: git commit, any files changed but not committed, Python, OpenCV. `recording`: number of recordings and how they were made (interval, frames, frame rate, fan and LEDs, following). `detector`: how the mites were found. `analysis`: metric and its parameters, threshold, mite radius, the score's and the stabilizer's constants, normalisations, death rule, zones per plate, mites corrected by hand. A number in the code not listed here is fixed by the commit. Written again with the workbook, e.g. after a correction. |
 
 ### Zone coordinates
 

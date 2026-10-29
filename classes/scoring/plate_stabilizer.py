@@ -27,31 +27,29 @@ import numpy as np
 
 from classes.scoring.workers import side_by_side
 
-# How far beyond the patch cut() may read for its interpolation, in pixels: Lanczos's
-# reach, kept although the cut is bilinear now (which reads 1), so the margins stay as they were.
-_LANCZOS_REACH = 4
+# How far beyond the shifted patch cut()'s Lanczos interpolation reads, in pixels.
+_INTERPOLATION_REACH = 4
 # The most cut() reads beyond the patch it cuts, in pixels (pipeline.STABILIZE_MARGIN):
 # what a saved live run keeps round the scored patch (classes/storage/roi_recordings.py).
 MARGIN = 16
 # The most a mite's shift is followed, along each axis, so that cut() stays
 # within MARGIN. A centre that moves further belongs to a mite that walks.
-_REACH = float(MARGIN - _LANCZOS_REACH)
-# The constants below, and those of Analyzer._outline_rays(), were chosen by an
-# Optuna search on the labelled recordings (trial 228 of
-# scripts/pipeline_optuna.py, notebooks/pipeline_optuna.ipynb; the user's choice
-# of 2026-10-27). Before: pad 8, rim 6, body 0.3 of the single darkest pixel,
-# grown 2 px, Lanczos.
+_REACH = float(MARGIN - _INTERPOLATION_REACH)
+# The constants below are those from before an Optuna search (2026-10-27: pad 4,
+# rim 8, body 0.241 of the 8 darkest grown 4 px), set back on 2026-10-29 (the
+# user's choice), with the bilinear cut kept. The search's pad 4 and rim 8 left
+# only the middle 5 px of a 13 px box to search for the body.
 # Pixels round each mite's box in which its centre is found.
-PAD = 4
+PAD = 8
 # The outermost pixels of that crop, read for the plate's light: the plate, never the mite.
-_RIM = 8
-# "The darkest of the mite": the mean of its this many darkest pixels (here and in the score).
-DARKEST_N = 8
+_RIM = 6
+# "The darkest of the mite": the mean of its this many darkest pixels inside the rim.
+DARKEST_N = 1
 # The body: darker than this share of the darkest, grown by BODY_GROW pixels.
-BODY_SHARE = 0.241
-BODY_GROW = 4
+BODY_SHARE = 0.3
+BODY_GROW = 2
 # How each frame is moved back by the mite's shift.
-INTERPOLATION = cv2.INTER_LINEAR
+INTERPOLATION = cv2.INTER_LANCZOS4
 _ECC_CRITERIA = (cv2.TERM_CRITERIA_EPS | cv2.TERM_CRITERIA_COUNT, 50, 1e-4)
 # How one mite's patch follows the plate in one recording: `shifts` (N, 2), its
 # own, what its frames are moved back by; `stray`, the most they strayed from the
@@ -133,7 +131,7 @@ class PlateStabilizer:
         x2, y2 = min(width, box[2] + pad), min(height, box[3] + pad)
         out = None
         for index, (frame, (dx, dy)) in enumerate(zip(frames, np.asarray(shifts, dtype=float).tolist())):
-            m = math.ceil(max(abs(dx), abs(dy))) + _LANCZOS_REACH
+            m = math.ceil(max(abs(dx), abs(dy))) + _INTERPOLATION_REACH
             patch = _patch(frame, x1 - m, y1 - m, x2 + m, y2 + m).astype(np.float32)
             patch = cv2.warpAffine(patch, _move(-dx, -dy), patch.shape[1::-1], flags=INTERPOLATION,
                                    borderMode=cv2.BORDER_REFLECT101)

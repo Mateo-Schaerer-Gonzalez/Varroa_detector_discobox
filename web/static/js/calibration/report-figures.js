@@ -169,7 +169,7 @@ class ReportFigures {
   }
 
   // The precision-recall curve (the server's r.precision_recall): every threshold,
-  // the thresholds marked on it, and the points with the F0.5 of the best of them.
+  // the thresholds marked on it, and the points with the F-score of the best of them.
   drawPrecisionRecall(container, r, marks) {
     const { thr } = ReportPage;
     const curve = r.precision_recall;
@@ -177,7 +177,7 @@ class ReportFigures {
     const tip = (title, recall, precision, f05) => `<div class="tip-title">${title}</div>
       <div>${percentFormat(recall)} of moving labels called moving (recall)</div>
       <div>${percentFormat(precision)} of the calls moving labelled moving (precision)</div>
-      <div class="tip-note">F0.5 ${f05.toFixed(3)}</div>`;
+      <div class="tip-note">${curve.f_name} ${f05.toFixed(3)}</div>`;
     const shown = marks.filter((mark) => mark.confusion.precision != null);
     const best = shown.reduce((a, b) => (b.confusion.f05 > a.confusion.f05 ? b : a), shown[0]);
     Charts.scatter(container, {
@@ -211,7 +211,7 @@ class ReportFigures {
       legend: [
         { name: "precision-recall", color: token("--ink"), shape: "line" },
         { name: "chance (everything called moving)", color: token("--muted"), dashed: true },
-        ...(best ? [{ name: `F0.5 ${best.confusion.f05.toFixed(3)}`, color: best.color, dashed: true }] : []),
+        ...(best ? [{ name: `${curve.f_name} ${best.confusion.f05.toFixed(3)}`, color: best.color, dashed: true }] : []),
         ...marks.map((mark) => ({ name: `${mark.name} threshold`, color: mark.color, shape: "circle" })),
       ],
     });
