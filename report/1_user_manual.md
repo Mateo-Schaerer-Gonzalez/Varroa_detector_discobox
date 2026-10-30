@@ -6,51 +6,71 @@
 computes, part 3 (`visual_how_it_works.md`) runs the same steps on one real mite, with the
 code of each, and part 4 (`3_performance.md`) shows how well it works.*
 
-The app watches varroa mites glued on plates inside the Discobox. It finds every mite on
-the first frame, decides in every short recording whether each mite moved, and turns those
-calls into survival curves per treatment group. It can run a test from start to finish on
-the Discobox camera (**Live**), analyse recordings made earlier (**Analysis**), and check
-its own calls against what you see by eye (**Calibration**).
-
-**What the app reports.** The camera only sees movement. A mite is *moving* in a recording
-when its motion score reaches the threshold, and *still* otherwise. *Alive* and *dead*
-follow from one rule: a mite is alive up to the last recording in which it moved, and dead
-once it has stayed still for the *death time* you set (for example 300 min). A mite never
-seen moving is left out of the survival numbers.
+The app watches varroa mites glued on plates inside the Discobox. It detects the mites on
+the first frame, decides in every short recording whether each mite moved, and generates
+survival curves per treatment group. It can run a test from start to finish on the
+Discobox camera (**Live**), analyse recordings made earlier (**Analysis**), and check its
+own calls against what you see by eye (**Calibration**).
 
 **The threshold matters most.** Every call depends on it. Section 4 explains when and how
 to set it, and how to check it.
 
 ---
 
-## 1. Starting and stopping
+## 1. Installing, starting and stopping
+
+### 1.1 First installation
+
+**On the Discobox PC (Linux)**, for live runs:
+
+1. Install Vimba X (the camera's driver) as the Discobox readme describes. The original
+   Discobox app's setup uses the same installation.
+2. Get the app and install it, giving the path of the Vimba X SDK (the same path as for
+   the Discobox app's `setup-python-env.sh`):
+
+   ```bash
+   git clone https://github.com/Mateo-Schaerer-Gonzalez/Varroa_detector_discobox ~/Varroa_detector_discobox
+   cd ~/Varroa_detector_discobox
+   bash install_linux.sh ../VimbaX_Setup-2025-1-Linux64     # your Vimba X SDK folder
+   ```
+
+   This installs conda (Miniforge) if it is missing, creates the Python environment
+   `discobox_env` and adds a *Varroa discobox* icon to the desktop and the app menu. It is
+   safe to run again.
+3. Allow your user to talk to the fan and LEDs, then log out and in again:
+
+   ```bash
+   sudo adduser $USER dialout
+   ```
+
+Without the Vimba X path (`bash install_linux.sh`) the app installs for analysis only.
+
+**On Windows** (analysis and calibration only, no camera): install
+[Miniforge](https://github.com/conda-forge/miniforge), then in its prompt
+
+```bash
+git clone https://github.com/Mateo-Schaerer-Gonzalez/Varroa_detector_discobox
+cd Varroa_detector_discobox
+conda env create -f discobox_env.yaml
+```
+
+### 1.2 Starting
 
 | Where | How to start | Address |
 |---|---|---|
 | Discobox PC (Linux) | Desktop icon *Varroa discobox* | http://127.0.0.1:8010 |
 | Windows | Double-click `start.bat` | http://127.0.0.1:8000 |
 
-The browser opens by itself. On the Discobox, the icon first fetches the newest version
-of the app (if the PC is online) and restarts the server, except while a live test is
-running.
+The browser opens by itself. On the Discobox, the icon first fetches the newest version of
+the app (if the PC is online) and restarts the server, except while a live test is
+running. Everything runs on the PC itself: no internet is needed, except for the optional
+reading of plate names (section 2.2).
 
-- **Stop**: close every tab of the app. The server stops about 10 s later. A running live
-  test keeps it going until the test ends. On Linux you can also right-click the icon and
-  choose *Stop the app*.
-- **No internet needed.** Everything runs on the PC itself. The only exception is the
-  optional reading of plate names by Google Gemini (section 3.3).
-- **First installation on Linux**: `bash install_linux.sh` once (it installs the Python
-  environment and the desktop icon). For the camera, Vimba X must be installed as the
-  Discobox readme describes, and your user must be in the `dialout` group for the fan and
-  LEDs (`sudo adduser $USER dialout`, then log in again).
+### 1.3 Stopping
 
-The header has three tabs: **Live**, **Analysis**, **Calibration**. Each keeps its place
-while you look at another, and a live test goes on in the background. A red dot on *Live*
-means a test is being recorded.
-
-The first page of each tab lists the **previous recordings**: every test run and every
-folder dropped into the app, with its date, number of recordings, Discobox settings,
-labels, ground truth and last results. *Analyse* and *Calibrate* open one.
+Close every tab of the app; the server stops about 10 s later. A running live test keeps
+it going until the test ends. On Linux you can also right-click the icon and choose *Stop
+the app*.
 
 ---
 
@@ -58,14 +78,14 @@ labels, ground truth and last results. *Analyse* and *Calibrate* open one.
 
 ![Live setup page](images/app_live_setup.png)
 
-*Taken on the development laptop, which has no camera, hence the "vmbpy is not installed"
-note.*
+Ignore the camera message above: the screenshot was taken on the development laptop, which
+has no camera.
 
 ### 2.1 Connect
 
-1. Type a **name** for the run and click **Connect**. The camera and the Discobox's Arduino
-   (fan and LEDs) are found by themselves, both LEDs come on, and the camera image appears.
-2. Check the **settings**. They can be changed until the test starts:
+1. Name your run and click **Connect**. The camera and the Discobox's Arduino (fan and
+   LEDs) are found by themselves, both LEDs come on, and the camera image appears.
+2. Check the **settings**. They can be changed until the run starts:
 
    | Setting | Meaning |
    |---|---|
@@ -74,10 +94,9 @@ note.*
    | Experiment duration, at most | The longest the test runs. It stops earlier once every mite is dead (section 2.3) |
    | Dead when still for | The death time. Required. It is added to the end of the run so a mite still at the end can be told from a dead one |
    | Most a mite moves between recordings | How far a mite is followed from one recording to the next (50 px by default, 0 = not at all) |
-   | Save the recordings | Keep each mite's video. Needed to replay, label ground truth or re-analyse. Untick only for very long runs where you don't need them |
+   | Save the recordings | Keep each mite's video. Needed to replay, label ground truth or re-analyse. Untick if you are only testing the run and don't need to keep the data |
 
-   Every recording is **3 s at 30 fps** (90 frames). This is fixed on purpose: a threshold
-   only fits recordings of the length it was calibrated on (section 4.1).
+   Every recording is **3 s at 30 fps** (90 frames).
 
 3. If the status text under *Connect* turns red or grey, read it: it says what failed
    (camera not found, serial port refused, …).
@@ -85,42 +104,38 @@ note.*
 ### 2.2 Label the plates and start
 
 1. Choose **Zones per plate** (1, or 2 to split each plate into an upper and lower half).
-2. Click a plate and type its **group** (e.g. the treatment). <kbd>Tab</kbd> saves and goes
-   to the next plate. Tick **negative control** under the control plates: the survival of
-   every group is tested against them.
+2. If the PC is online you can tick **Read the names from the plates** to fill in every
+   plate's name automatically (see the note below). Otherwise click a plate and type its
+   name. <kbd>Tab</kbd> saves and goes to the next plate. If you use negative controls, tick
+   **negative control** under the control plates: every other group is compared with them.
 3. Each detected mite has a ring. Click a ring that is not a mite (dust, a shadow) to cross
-   it out; it is left out of everything.
-4. If the detector **missed a mite**, place it by hand (section 3.3). The run then follows it like
-   the others.
-5. Click **Start test run**. The LEDs go off, and from then on the app switches the fan and
+   it out. To add a mite the detector missed, click **Place a mite by hand**, then the mite
+   (section 3.3).
+4. Click **Start test run**. The LEDs go off, and from then on the app switches the fan and
    LEDs before each recording.
 
 ![The label page: detections ringed, plates coloured by group](images/app_labels.png)
 
+**Note on *Read the names from the plates*.** This option (off by default) sends a picture
+of each hand-written label to Google Gemini and fills in the names for you to check. It
+needs an internet connection and a free API key (aistudio.google.com/apikey) saved as
+`GEMINI_API_KEY=...` in a file `.env` in the app's folder. The developer's key is preset,
+so it works out of the box; to use your own, paste your key there instead.
+
 ### 2.3 During the run
 
-The results pages fill in after every recording. A panel above them shows:
+The results pages fill in after every recording. A panel at the top of the page shows:
 
 - **A circle per zone**, filling as its mites die. A zone with no mite seen moving yet is
-  hollow and doesn't count. When every counting zone is done, the run **stops by itself**
-  and the panel says why.
+  hollow and doesn't count. When every counting zone is done, the run stops by itself and
+  the panel says why.
 - Frame rate, dropped frames, fan and LEDs, and the countdown to the next recording.
-- **Pause**, **Stop**, **Add mites**, **Ground truth**, **Poke test**.
 
-What happens to the mites:
-
-- **Following.** Before each recording, each mite moves to the nearest blob in its zone (at
-  most the distance set). Its clip follows it; its id and label stay.
-- **Dead mites** (still for the death time) are no longer scored or saved. Correcting a
-  call later can't bring back what wasn't saved.
-- **Add mites**: lights the plates between two recordings, detects the mites not followed
-  yet and shows them on the label page. Untick any that aren't mites, place any it missed
-  by hand, name new plates, then *Add N mites*. They are followed from the next recording,
-  numbered after the zone's other mites, and each runs on **its own clock** from when it
-  was added.
-- **Stop** ends the current recording with the frames already in, analyses it and writes
-  the results. Closing the browser does **not** stop a run: open the page again to get back
-  to it.
+The panel also has buttons to **pause** and **stop** the run, **add mites** (put on the
+plates since the start; they are found between two recordings, and can be placed by hand
+too), enter **ground truth** (label the mites moving or still by eye, section 4.3) and
+enter a **poke test** between recordings (section 4.4). Closing the browser does **not**
+stop a run: open the page again to get back to it.
 
 ### 2.4 After the run
 
@@ -134,15 +149,15 @@ gives exactly the same scores as the live run.
 
 ### 3.1 Open the recordings
 
-In *Analysis*, either pick one of the previous recordings, or **drag the session folder**
-(the one that holds the `..._fps-30` recording folders) onto the page, or click *Choose
-folder*. The images are copied into the app. Your own folder is not changed, and dropping
-the same folder again only sends what changed.
+In *Analysis*, either pick one of the previous recordings, or drag the session folder (the
+one that holds the old Discobox recording folders) onto the page, or click *Choose folder*.
+The images are copied into the app. Your own folder is not changed, and dropping the same
+folder again only sends what changed.
 
 The first time the folder is analysed or calibrated, the copy is **shrunk to the mites'
-surroundings** (about 1/30 of the space, same results). Until then it keeps its whole
-frames, so this is the moment to place any mite the detector missed (section 3.3): afterwards
-there is nothing left to place it on.
+surroundings**, with the same results (part 4 shows how much space this saves). Until then
+it keeps its whole frames, so this is the moment to place any mite the detector missed
+(section 3.3): afterwards there is nothing left to place it on.
 
 > Don't open a folder by typing its path if you want to keep it untouched: labels and
 > corrections are then saved next to its recordings.
@@ -150,13 +165,7 @@ there is nothing left to place it on.
 ### 3.2 Label the plates
 
 As in 2.2: click a plate, type its group, <kbd>Tab</kbd> to the next, tick the negative
-controls. Labels are saved by themselves.
-
-*Read the names from the plates* (off by default) sends a picture of each hand-written
-label to Google Gemini and fills in the names for you to check. It needs the internet and a
-free API key (aistudio.google.com/apikey) saved as `GEMINI_API_KEY=...` in a file `.env` in
-the app's folder. This is preset with the developer's key and works out of the box; to use
-your own, paste your key there instead.
+controls.
 
 ### 3.3 Place a mite the detector missed
 
@@ -171,7 +180,20 @@ analysis, in calibration and in a live run. The button is not shown for a sessio
 shrunk to the mites' surroundings (a saved live run, or a dropped folder after its first
 analysis).
 
-### 3.4 Read the results
+### 3.4 Mites put on the plates later
+
+Mites put on after the first recording are found too: the app looks at the first frame of
+every later recording, and takes new detections in a zone only when at least **Least new
+mites per zone** (on the label page, 3 by default, 0 to switch it off) turn up there in the
+same recording. Mites are put on several at once, while debris or a mite that walked away
+turns up alone. Lower the setting for a zone that got only one or two mites later.
+
+Each mite found this way is numbered after its zone's mites and runs on its own clock from
+the recording it appeared in. The label page shows them in yellow under *Added at recording
+N*, and the results list them under *Mites put on later*. Check each one, and mark any that
+isn't a mite *not a mite* on the label page.
+
+### 3.5 Read the results
 
 ![Results overview](images/app_results_top.png)
 
@@ -190,12 +212,9 @@ The overview shows, per group:
 
 ![Plate shake per recording](images/app_results_shake.png)
 
-*The shake chart of `sample_data`, a calm session: under a tenth of a pixel throughout. A
-recording or stretch that shakes much more than the rest is worth checking in the
-playback.*
-
-*The screenshots in this manual show the 2025 test sessions (`sample_data`,
-`ground_truth_60min`, `ground_truth_90min`, 4 September 2025).*
+*The shake chart of a relatively still recording: the shake is under a tenth of a pixel
+throughout. A recording or stretch that shakes much more than the rest is worth checking
+in the playback.*
 
 Below that: a **plate map**, one card per zone, all motion scores by group, and the scores
 of the moving mites alone.
@@ -220,7 +239,7 @@ gone. The dots round the mite are darker where its outline changes more over the
 
 ![A moving and a still mite's close-up, framed by their calls](images/mite_outline_app.png)
 
-### 3.5 Correct a call
+### 3.6 Correct a call
 
 On a mite's page, click the mite in the recording shown (or the recording's button in the
 table) to switch its call between *moving* and *still*. Every number follows at once and
@@ -232,16 +251,15 @@ nothing is assumed after.
 Corrections are saved by mite position in `corrections.json` next to the recordings, so a
 later analysis keeps them. They don't change the calibration's ground truth.
 
-### 3.6 Check the close calls by eye
+### 3.7 Check the close calls by eye
 
 A mite dies at the recording after its last movement, so a single wrong call can move its
 death by hours. Under **To check by eye** you choose how many mites to check (20 by
 default, 0 for none). The app picks the scores closest to the threshold that a mite's time
-of death depends on and asks about them one by one, latest first: *Moving* or *Still*
-(keys <kbd>M</kbd>, <kbd>S</kbd>). Once one shows the mite moving, the earlier ones no
-longer matter and aren't asked.
+of death depends on and asks about them one by one. Click the recordings it suggests and
+label each *Moving* or *Still* (<kbd>M</kbd>, <kbd>S</kbd>).
 
-### 3.7 Playback
+### 3.8 Playback
 
 ![Playback page](images/app_playback.png)
 
@@ -250,7 +268,7 @@ the whole run, 1× to 16× speed. Each square is framed green while the mite is 
 moving, orange while still, grey when gone or set aside, dashed when corrected by hand.
 Click a square to open the mite.
 
-### 3.8 Files written
+### 3.9 Files written
 
 | File in `results/<name>/` | Contents |
 |---|---|
@@ -264,41 +282,48 @@ once when you download the workbook or close the app.
 
 ---
 
-## 4. Calibration: setting and checking the threshold
+## 4. Calibrating the threshold
 
 The threshold decides *moving* or *still* for every mite in every recording, so it decides
-every death time and every survival curve. It is saved per machine in `config.yaml`. The
-*Calibration* tab sets it from recordings you labelled by eye (**Calibrate the
-threshold**) and checks it on others (**Test the threshold**).
+every death time and every survival curve. It is saved per machine in `config.yaml`. Set
+it from recordings you labelled by eye, ideally a full run with as many mites as possible,
+spread evenly over the plates. **Calibrate with the same setup you use for your tests, and
+recalibrate when anything in it changes** (section 4.1). The *Calibration* tab sets the
+threshold (**Calibrate the threshold**) and checks it on other recordings (**Test the
+threshold**).
 
 ![Calibration landing page](images/app_calibration_open.png)
 
-### 4.1 When to calibrate
+### 4.1 When to calibrate, and when to test
 
 Calibrate, then test, whenever the scores may have moved relative to the threshold:
 
 - **On a new machine**, or a new installation of the app. It starts with the default
   threshold (0.091), set on one 3 s / 30 fps run at Agroscope.
-- **When the recordings are made differently**: another recording length or frame rate
-  (older 1 s or 10-frame recordings need their own threshold; live runs are fixed at
-  3 s / 30 fps), camera, lens or focus, LED intensity, fan settings (a fan that stirs the
-  mites more makes them move more), or another kind of plate.
+- **When anything in the setup changes**: the test settings (recording length or frame
+  rate, time between recordings, fan, LED intensity), the box's location, the plates or
+  their bottom, the camera, lens or focus, the lighting. A threshold only fits recordings
+  made the way it was calibrated on: older 1 s or 10-frame recordings need their own, and a
+  fan that stirs the mites more makes them move more.
 - **When an update changes the score.** The report then says *"The threshold in use … was
   set for … on another scale"*. A threshold saved between 27 and 29 October 2026 was saved
   on such a scale: save one again from a calibration report.
 - **When results look wrong**: dead mites coming back to life, deaths much later than you
   see, or many still mites called moving (section 6).
 
-Otherwise there is no need to recalibrate for every experiment. A **test** on a new run
-now and then (section 4.6) shows whether the threshold still holds.
+Otherwise there is no need to recalibrate for every experiment. **Test the performance
+from time to time**, for example at the start of each season, to make sure the app still
+works to standard (section 4.6), and recalibrate if the test says so.
 
 ### 4.2 What makes good calibration data
 
 - **Recorded the way you run tests**: same Discobox, same settings, 3 s / 30 fps.
 - **A whole run, including dead mites.** The hard part is not the lively first hours but
   keeping a dead mite still for hours: one still recording called moving brings it back to
-  life. Labels without long stretches of dead mites can't show whether the threshold does
-  that.
+  life. Label the still recordings of dead mites too; labels without them can't show
+  whether the threshold keeps dead mites still.
+- **Many mites, spread evenly over the plates**, so that every part of the image (light,
+  focus, shake) is represented.
 - **Both moving and still labels.** With only one kind there is no threshold to suggest.
 - **Every mite in every recording you choose**, not only the obvious ones. The close calls
   are the ones that matter.
@@ -338,15 +363,17 @@ recordings so far, so you can label as the run goes.
 ### 4.4 Step 2 (optional): enter a poke test
 
 Poking a mite says whether it is alive: one that moves when poked was alive up to then, one
-that doesn't is dead from then on. On the ground-truth page click **Enter a poke test**:
+that doesn't is dead from then on. During a live run, open *Poke test* on the live panel
+between two recordings, right after you poke; for recordings made earlier, click **Enter a
+poke test** on the ground-truth page. Then:
 
 1. **Add round** for each time you poked, saying after which recording.
 2. Choose what a click marks (*moved*, *did not move*, *not poked*) and click each mite you
    poked, or a zone's number for all its mites not marked yet.
 
 **Poke between two recordings, never during one**: a poked mite moves, and the detector
-would count it. During a live run, enter each round from the live panel right after you
-poke. The poke test shows in the *Test* report (section 4.6).
+would count it. The *Test* report (section 4.6) then draws survival by the pokes with the
+detector's survival over it, as well as the outline change between recordings.
 
 ### 4.5 Step 3: read the calibration report and decide
 
@@ -359,22 +386,26 @@ Read it top to bottom:
 
 1. **The header** says what went in: the recordings, how many mites, how many moving and
    still labels, and how many were left out (unlabelled, not a mite).
-2. **Key figures at the suggested threshold**, each with the value at the threshold in use
-   beside it: share called right, moving called still, still called moving, and how many
-   recordings each mite's death is off on average.
-3. **The suggested threshold** has the best *F0.25*: a still recording called moving costs
-   **16 times** as much as a moving one called still, because a false *moving* brings a
-   dead mite back to life, while a missed movement is usually caught by the mite's next
-   one. Among thresholds that make the same calls, it sits halfway between the scores on
-   either side.
+2. **The suggested threshold** optimises the $F_{0.25}$ score, which weighs a false
+   *moving* sixteen times as heavily as a false *still*, because a single false *moving*
+   can bring a mite back to life hours after its death, while a missed movement is usually
+   caught by the mite's next one. Among thresholds that make the same calls, it sits
+   halfway between the scores on either side.
+3. **Key figures**, for the suggested threshold and the one in use: overall accuracy (share
+   of calls right), moving mites called still, still mites called moving, the $F_{0.25}$
+   score, and the **death-time error**: how many recordings each mite's death by the
+   detector is off from its death by your labels.
 4. **The table under *Save the threshold*** puts the two thresholds side by side. This is
    where you decide.
-5. **Wrong calls**: *Show the wrong calls* lists every labelled mite-recording the
-   detector called the other way. Check them (section 4.7) before you save anything: a wrong
-   call is often a wrong label.
-6. **Fig. 2** (survival by your labels and by the detector), **Fig. 3** (every labelled
+5. **The confusion matrix** (Fig. 1), switchable between the two thresholds (suggested and
+   in use).
+6. **Wrong calls**: *Show the wrong calls* lists every labelled mite-recording the detector
+   called the other way; *Check them one by one* opens each so you can confirm or change
+   your label (section 4.7). Do this before you save anything: a wrong call is often a
+   wrong label.
+7. **Fig. 2** (survival by your labels and by the detector), **Fig. 3** (every labelled
    score; everything right of a line is called moving at that threshold) and **Fig. 4**
-   (precision-recall curve, average precision 1 = perfect separation).
+   (precision-recall curve with both thresholds marked, average precision 1 = perfect).
 
 **Should you save the suggestion?** Save it when:
 
@@ -403,7 +434,7 @@ Everything is also written to `results/<recording>/calibration/calibration.xlsx`
 
 Go **Back**, choose **Test the threshold**, and open a **different** labelled run, then
 click **Show test report**. The test report judges the threshold in use; it doesn't
-suggest one.
+suggest one. Testing works like calibrating: label the run first (section 4.3).
 
 ![The test report: key figures, confusion matrix, survival](images/app_calibration_test_top.png)
 
@@ -454,18 +485,20 @@ last, the report comes back: click **Update** to see it with the corrected label
 
 Under **Data used**, tick **Pool with saved ground truth from other recordings**, then
 untick any you want left out. Pooling gives more labels, and more varied ones, for a
-steadier threshold. Pool only recordings made the same way (same length and frame rate).
-The *Saved ground truth* list on the first page can also report on ticked datasets alone,
-and reopen or delete a dataset's ground truth (its recordings stay).
+steadier threshold. Pool only recordings made the same way (same setup, recording length
+and frame rate). The *Saved ground truth* list on the first page can also report on ticked
+datasets alone, and reopen or delete a dataset's ground truth (its recordings stay).
 
 ### 4.9 Checklist
 
-1. Record a whole run the way you run tests, with mites that die.
+1. Record a whole run with your usual setup, with many mites spread over the plates, some
+   of which die.
 2. Label it (section 4.3), including hours of dead mites; add a poke test if you have one.
 3. *Calibrate*, check the wrong calls, read the table, save if section 4.5 says so.
 4. *Test* on a different labelled run. Keep the threshold if *still called moving* stays
    near zero and the deaths land within a recording or so.
-5. Repeat after any change in section 4.1.
+5. Repeat after any change in section 4.1, and test again from time to time (e.g. each
+   season).
 
 ---
 
@@ -489,11 +522,11 @@ deleted at any time and are rebuilt.
 |---|---|
 | Live: camera or fan/LEDs not found | Read the red/grey status text under *Connect*. Check that the original Discobox app is closed (only one program can use the camera) and that you are in the `dialout` group |
 | The page looks like an old version | Open http://127.0.0.1:8010/api/version: it shows the folder, the commit and any live run. The update log is `update.log` in the app's folder |
-| Dead mites keep coming back to life | The threshold is probably too low for your recordings, or still recordings of dead mites were never labelled. Recalibrate (section 4) with labels including dead mites, and check the close calls (section 3.6) |
+| Dead mites keep coming back to life | The threshold is probably too low for your recordings, or still recordings of dead mites were never labelled. Recalibrate (section 4), and check the close calls (section 3.7) |
 | The calibration report says the threshold in use is on another scale | The score changed with an update. Calibrate and save a threshold again (section 4.5) |
 | Many still mites called moving on some plates from one moment on | A plate may have moved by many pixels. In a live run the mites are followed; in a folder analysis the boxes stay where they were found. Check the playback and the shake chart, and correct or mark the affected recordings |
 | A mite was not detected | Place it by hand before the first analysis (section 3.3), or during a live run with *Add mites* |
-| A mite fell off | Mark it *gone* from that recording on (section 3.5) |
+| A mite fell off | Mark it *gone* from that recording on (section 3.6) |
 
 ## 7. Contact
 
