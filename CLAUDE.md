@@ -16,7 +16,7 @@ takes. **App screenshots show only the 2025 test sessions** (sample_data, ground
 ground_truth_90min), taken from a copy of the app holding only them (the user's rule of
 2026-10-27): the other runs are real experiments and the page (group names, the handwriting on
 the plates, the recordings list) shows what they test. Analysis figures may use any run. The
-four reports in `report/` (manual, how it works, step by step, performance), their scripts
+three reports in `report/` (manual, how it works with its worked example, performance), their scripts
 (`report/scripts/`, with an index of which draws which figure) and the images they show are in
 git; the rest of `report/` (drafts, PDFs, archive, the Fourier/Brownian-motion notes) stays on
 this laptop, as does `notebooks/`. Every figure's code is in the repository (the user's request).

@@ -1,4 +1,4 @@
-"""The figures of report/visual_how_it_works.md: every step of the analysis, run
+"""The worked example of report/2_how_it_works.md: every step of the analysis, run
 with the app's own functions on one mite of the poke run, drawn.
 
 The moving example is mite 7.1 in recording 8, the still one mite 7.3 in

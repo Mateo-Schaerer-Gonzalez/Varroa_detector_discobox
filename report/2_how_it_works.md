@@ -1,8 +1,8 @@
 # Varroa detector for the Discobox: how it works
 
-*Agroscope · status of 30 October 2026 · part 2 of 4*
+*Agroscope · status of 30 October 2026 · part 2 of 3*
 
-*Part 1 (`1_user_manual.md`) explains how to use the app. Part 3 (`visual_how_it_works.md`) runs the same steps on one real mite, with the code of each. Part 4 (`3_performance.md`) compares the app with the Discobox's original software in accuracy, speed, storage and memory use. This part guides the reader through the algorithm's steps, so that its results are easier to interpret. Every step names where in the code it is implemented, for readers who want to look at it.*
+*Part 1 (`1_user_manual.md`) explains how to use the app. Part 3 (`3_performance.md`) compares the app with the Discobox's original software in accuracy, speed, storage and memory use. This part guides the reader through the algorithm's steps, so that its results are easier to interpret. Every step names where in the code it is implemented, for readers who want to look at it, and ends with the same step run on one real mite.*
 
 ```mermaid
 flowchart LR
@@ -57,6 +57,25 @@ $(1, 0)$. A position worked out from pixels (a centre $\mathbf c_t$, a shift $\m
 has real-valued components and can fall between pixel centres; the image's value there,
 $I_t(\mathbf x)$, is interpolated.
 
+**The worked example.** Each section ends with the same steps run on real data, with the
+command the app runs and a figure of what it did. The data is the poke run `poke_test_oct`
+(a live run of 22–23 October 2026, 3 s at 30 fps = 90 frames per recording, 14 mites, 95
+recordings over 15.7 h), and the two example mites are:
+
+- **moving:** mite **7.1** in recording **8** (labelled moving by eye),
+- **still:** mite **7.3** in recording **19** (labelled still).
+
+These figures and numbers come from one script, which calls the app's own functions and
+re-implements nothing but two pictures (marked *picture only*):
+
+```bash
+python scripts/visual_walkthrough.py --long-run %TEMP%/zzrc/perf/long_run   # reads the poke run in %TEMP%/zzrc/gt; writes report/images/walk_*.png
+```
+
+The score built up step by step there is identical to the one the app's own analysis of the
+run gives (`scoring.detect_and_score()`): 0.617032 for the moving example and 0.010960 for
+the still one, difference 0.0 for both.
+
 ---
 
 ## 1. Finding the mites
@@ -93,6 +112,32 @@ In a live run each mite is also *followed* (`classes/live/`, `motion_analysis.py
 before each recording the detector runs on its first frame, and each mite moves to the
 nearest blob of its own zone at most `follow_px` away. A mite
 with no blob in reach, or one less than 2 px away, stays where it is.
+
+### 1.1 On the example run
+
+```python
+zones  = plate_zones.zones_of(data_dir)                 # the plates from coords_pixel.txt
+masked = zones.mask_image_to_valid_rois(first_frame)    # keep the plates, blank the rest
+mites  = Analyzer().detect(masked)                      # cv2.SimpleBlobDetector -> one Mite per blob
+zones.assign_mites(mites)                               # each mite to its zone; ids "zone.n" in reading order
+# all four: motion_analysis.detect_mites(zones, first_frame, Analyzer())
+```
+
+![Detection on the whole image](images/walk_1_detection.png)
+
+**a.** The first frame. **b.** Only the plates are kept; the rest (the box, the hand-written
+labels) is painted white, so it can't be taken for a mite. **c.** The blob detector finds
+10 mites, all on plate 7. (Plate 13's four mites were added during the run with the *Add
+mites* button: they are followed from recording 1 on.)
+
+![What the blob detector sees on plate 7](images/walk_1_detection_plate.png)
+
+`SimpleBlobDetector` thresholds the image at 18 grey levels (30, 40, …, 200) and keeps
+the dark regions whose centre stays put across several levels and that pass the area,
+circularity, convexity and inertia filters of `config.yaml`. Three of the levels are shown:
+at 40 only the mites' darkest cores; at 80 the whole mites; at 110 the plate's texture
+starts to come through too, but those regions fail the filters. Right: the 10 mites kept,
+numbered in reading order (two mite heights per line, then left to right).
 
 ---
 
@@ -199,6 +244,52 @@ shake per recording, to spot a recording or a stretch of time in which the plate
 A mite that walks more than `stabilizer_margin_px` px within a recording, or a plate displaced by many pixels
 *between* recordings, is beyond what the stabiliser follows. The second is handled in live
 runs by moving each mite's box to the mite before every recording.
+
+### 2.5 On the example mites
+
+**The patch.**
+
+```python
+loader = score_cache.open_recordings(data_dir)            # a live run: one FFV1 video per mite (rois/)
+box    = loader.placements(name)[number]                  # where the live run followed the mite to
+frames = loader.load_recording_region(name, x0, y0, x1, y1)   # (90, H, W) grey frames round it
+patch  = PlateStabilizer.cut(frames, box, pad=16, shifts=0)   # box + 16 px, every frame
+```
+
+![The moving mite's patch](images/walk_2_frames.png)
+
+The patch is the mite's box plus 16 px on every side, in all 90 frames. By eye the frames
+look the same; the **variance over the frames** (right) shows where pixels changed: a few
+bright spots on the mite's edge, where its legs moved. Everything after this point is
+computed from this stack of 90 small images.
+
+**Holding it still.**
+
+```python
+shifts = PlateStabilizer().shifts(frames, [box])[0]     # (90, 2): how far the mite moved since frame 1
+roi    = PlateStabilizer.cut(frames, box, 16, shifts)   # every frame moved back by -s_t (Lanczos)
+```
+
+![How the stabilizer finds the mite's centre](images/walk_3_stabilizer_centre.png)
+
+**a.** A crop of the box + 8 px; its outer 6 px (blue) are bare plate and give the
+plate's light in each frame. **b.** Each pixel's *darkness*, the share of the plate's
+light it takes away. **c.** The body mask: at least 0.3 as dark as the darkest pixel,
+grown by 2 px (orange); the green dots are the centre of darkness in each of the 90
+frames, all on top of each other. **d.** The shift $\mathbf s_t = \mathbf c_t - \mathbf c_1$
+per frame: for this still mite at most 0.03 px, only noise.
+
+![What stabilizing changes](images/walk_3_stabilizer_effect.png)
+
+**Top:** the poke run hardly shakes, so this row uses the **long run's** shakiest
+still-labelled recording (mite 12.10, recording 278, 10 frames), whose plate moved by up to
+**0.29 px** (as the stabiliser measures it). Cut at the box (left), the whole outline lights
+up: a shift far too small to see moves the dark edge across its pixels. Moved back by its
+shift (middle), most of the ring is gone (the 99th percentile of the variance drops from 7.6
+to 5.6 grey levels²), and **the score drops sevenfold: 0.0144 → 0.0020**, far below the
+threshold.
+**Bottom:** the moving mite. Its centre moves by up to 0.14 px (its legs pull it), and the
+legs' changes stay: stabilising removes a shift of the whole mite, not a leg moving.
 
 ---
 
@@ -376,6 +467,62 @@ when still.
 *The dots are shaded relative to the mite's own largest value, so a still mite's noise
 looks dark all round: what tells it from a moving mite is that the dark dots are not on one side.*
 
+### 3.9 On the example mites, in code
+
+**Lamp and noise floor** (sections 3.1 and 3.6):
+
+```python
+lit, L, rim = Analyzer._lit(roi)        # every frame scaled so the plate has the same light L
+sigma2      = Analyzer.plate_noise(roi) # median over the rim of each pixel's variance over the frames
+```
+
+![Lamp correction and noise floor](images/walk_4_lamp_noise.png)
+
+**a.** The rim $R$: the outer 6 px of the patch (936 pixels), bare plate. **b.** The plate's
+light per frame $P_t$ (the median of the rim). Here the lamp is steady to a quarter of a
+grey level; each frame is scaled by $L/P_t$ anyway, so a flickering lamp would change
+nothing. **c.** The variance over the frames of each rim pixel; their median is the
+**noise floor** $\sigma^2 = 2.82$ grey levels²: how much a pixel changes from noise alone in
+this recording, at this mite.
+
+**Rays, edge and variance** (sections 3.2 to 3.5; the figure *The outline unrolled* above
+shows them for the moving mite):
+
+```python
+variance, edge, step, centre = Analyzer._outline_rays(roi)
+# variance: (64, 26) = V(k, r), the variance over the frames at each point of each ray
+# edge:     (64,)    = b_k, where each ray leaves the body (darkness < 0.5 × the darkest, the mean of the 30 darkest)
+```
+
+**The profile** (sections 3.5 and 3.6):
+
+```python
+v = Analyzer.outline_variability_profile(roi)   # (64,): mean of V(k, r) within 1.5 px of b_k
+a = v / Analyzer.plate_noise(roi)               # in multiples of the noise floor
+```
+
+![The outline profile](images/walk_6_profile.png)
+
+**a.** $v_k$, the mean variance in each ray's outline band, in grey levels². **b.** Divided
+by the noise floor (2.82 for both): $a_k$. The still mite is flat at about 0.33 (a dark body
+is less noisy than the bright plate, so it sits below 1). The moving mite has peaks at about
+5°, 30°, 65° and 355°, up to 7 times the noise, and a small one at 185°. **c.** The same
+values drawn round the mite: the moving mite's change is all on one side, to the right and
+below.
+
+**The score** (section 3.7; the figure *The 64 values and their vector sum* above shows the
+walk):
+
+```python
+score = Analyzer._motion_score(roi, "outline_variability")
+# inside: direction = exp(2j·π·k/64);  score = |mean(a · direction)|
+```
+
+The moving mite's arrows walk away from the start, to a score of **0.617**. The still
+mite's arrows are all about equally long and go round a circle back to almost where they
+started: although the mean value (0.33) is far from 0, its score is **0.011**. As a check,
+`np.fft.rfft(a)[1] / 64` gives the same two numbers: the score is harmonic 1 of the profile.
+
 ---
 
 ## 4. One threshold: moving or still
@@ -402,6 +549,22 @@ asked latest first. The band changes no call by itself.
 (`classes/scoring/unusual_activity.py`) is censored: it counts neither as moving nor as
 still. A mite whose place stays empty for 3 recordings in a row (no blob within 6 px and its
 contrast below half its first) is a *fly-off* and is left out of the analysis.
+
+**On the example run.**
+
+```python
+run    = scoring.detect_and_score(data_dir, None)   # sections 1 to 3 for every mite in every recording
+moving = score >= T                                  # Mite.moving: one call per recording
+```
+
+![One mite's scores over the run](images/walk_8_threshold.png)
+
+Mite 7.1's score in each recording it was followed in, on a log scale. Green: at or above
+the threshold $T = 0.087$ (the run's own best, section 6), called moving; orange: below,
+called still. Squares: recordings labelled by eye. It moves on and off for 5.5 h, then its
+scores drop more than tenfold, to 0.01 and below, and stay there: still for good. The live
+run stopped saving it once it counted as dead (section 5.5), which is why its line ends at
+9.2 h.
 
 ---
 
@@ -467,6 +630,23 @@ still for $D$ from its start) is no longer followed, scored or saved. A zone is 
 every mite in it that was seen moving is dead or gone. Zones with no mite seen moving
 don't count. The run stops when every counting zone is done.
 
+### 5.6 On the example run
+
+```python
+analysis = SurvivalAnalysis(times, death_minutes=200)
+time, dead = analysis.survival(Calls(calls, start=mite.start))   # dead after 200 min still
+alive = analysis.alive_percent(movings)                           # Kaplan–Meier, in %
+```
+
+![Calls, deaths, Kaplan–Meier](images/walk_10_survival.png)
+
+**a.** Every mite's call in every recording it was followed in (green moving, orange
+still). A mite **dies** at the recording after its last movement, once it has been still
+for 200 min (this run's *dead when still for*); × marks that. All 14 moved at least once,
+so all are in the study, and all 14 died. After death the live run stopped following them.
+**b.** The Kaplan–Meier curve of the 14 with its 95 % interval: the first mite died after
+5.2 h, half were dead by about 8 h, the last at 12.5 h.
+
 ---
 
 ## 6. Calibration: choosing $T$
@@ -518,6 +698,22 @@ detector's curve over it.
 
 **Saving.** Saving a threshold writes it to `config.yaml`, and scales the review band in
 use by $T_\text{new}/T_\text{old}$, so the band keeps its shape.
+
+**On the example run.**
+
+```python
+T  = calibration.best_f05_threshold(scores, labels)      # the threshold with the best F0.25
+AP = calibration.average_precision(scores, labels)
+```
+
+![Calibration](images/walk_9_calibration.png)
+
+**a.** The scores of the 304 labelled (mite, recording)s of this run: 204 moving (green),
+100 still (orange). They barely overlap. **b.** Precision against recall over every
+threshold: average precision 0.9995. **c.** F0.25 at every threshold; its maximum is at
+**0.087**, which calls 0 still recordings moving and 4 moving ones still. Any threshold
+between the highest still score below it (0.082) and the lowest moving score above it
+(0.092) makes the same calls; the app's default threshold, 0.091, lies in that gap too.
 
 ---
 

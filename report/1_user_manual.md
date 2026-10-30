@@ -1,10 +1,10 @@
 # Varroa detector for the Discobox: user manual
 
-*Agroscope · status of 30 October 2026 · part 1 of 4*
+*Agroscope · status of 30 October 2026 · part 1 of 3*
 
 *This part explains how to use the app. Part 2 (`2_how_it_works.md`) explains what it
-computes, part 3 (`visual_how_it_works.md`) runs the same steps on one real mite, with the
-code of each, and part 4 (`3_performance.md`) shows how well it works.*
+computes, with each step run on one real mite, and part 3 (`3_performance.md`) shows how
+well it works.*
 
 The app watches varroa mites glued on plates inside the Discobox. It detects the mites on
 the first frame, decides in every short recording whether each mite moved, and generates
@@ -155,7 +155,7 @@ The images are copied into the app. Your own folder is not changed, and dropping
 folder again only sends what changed.
 
 The first time the folder is analysed or calibrated, the copy is **shrunk to the mites'
-surroundings**, with the same results (part 4 shows how much space this saves). Until then
+surroundings**, with the same results (part 3 shows how much space this saves). Until then
 it keeps its whole frames, so this is the moment to place any mite the detector missed
 (section 3.3): afterwards there is nothing left to place it on.
 
