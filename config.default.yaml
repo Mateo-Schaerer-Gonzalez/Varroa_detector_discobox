@@ -58,20 +58,24 @@ visual_styles:
       text_offset_y: 30           # Pixels above the top-left corner
 
 detector:
-  min_threshold: 30
-  max_threshold: 200
-  threshold_step: 10
+  # Chosen by Optuna on 398 frames labelled by hand (scripts/detector_optuna.py, 2026-10-30):
+  # the best F2 of the mites found. Always taken from this file: a config.yaml's own are ignored.
+  min_threshold: 13
+  max_threshold: 251
+  threshold_step: 9
   filter_by_color: true
   blob_color: 0            # 0 detects dark blobs on light background
   filter_by_area: true
-  min_area: 40              
-  max_area: 1200            
+  min_area: 58.067
+  max_area: 2675.317
   filter_by_circularity: true
-  min_circularity: 0.55
+  min_circularity: 0.599
   filter_by_convexity: true
-  min_convexity: 0.80
+  min_convexity: 0.682
   filter_by_inertia: true
-  min_inertia_ratio: 0.45
+  min_inertia_ratio: 0.087  # low: mites seen side-on or stretched are elongated
+  min_dist_between_blobs: 10
+  min_repeatability: 3      # grey levels a blob must be found at: 2 also took plate edges and shadows
 
 # The names written beside the plates are read by Google Gemini and filled in on
 # the label page (classes/plate/label_reader.py). It needs the internet and a free API

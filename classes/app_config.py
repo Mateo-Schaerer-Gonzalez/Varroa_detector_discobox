@@ -62,6 +62,17 @@ def _with_the_metric(mite: dict) -> dict:
     return mite
 
 
+def _with_the_blob_settings(detector: dict) -> dict:
+    """A config file's `detector` section with config.default.yaml's blob
+    detector settings (BLOB_SETTINGS), always: they were chosen on frames
+    labelled by hand (scripts/detector_optuna.py), and a machine's config.yaml
+    holds only the copy of older defaults it was made from."""
+    if not TEMPLATE_CONFIG_PATH.exists():
+        return detector
+    template = _load_yaml_cached(TEMPLATE_CONFIG_PATH).get("detector") or {}
+    return {**detector, **{key: template[key] for key in BLOB_SETTINGS if key in template}}
+
+
 def _known(section, data: dict) -> dict:
     """The entries of `data` that `section` (a dataclass) has a field for.
 
@@ -160,6 +171,16 @@ class DetectorConfig:
     min_convexity: float
     filter_by_inertia: bool
     min_inertia_ratio: float
+    # SimpleBlobDetector's own defaults, which applied before these were settings
+    min_dist_between_blobs: float = 10
+    min_repeatability: int = 2
+
+
+# The blob detector's settings: always config.default.yaml's (_with_the_blob_settings()).
+BLOB_SETTINGS = ("min_threshold", "max_threshold", "threshold_step", "filter_by_color", "blob_color",
+                 "filter_by_area", "min_area", "max_area", "filter_by_circularity", "min_circularity",
+                 "filter_by_convexity", "min_convexity", "filter_by_inertia", "min_inertia_ratio",
+                 "min_dist_between_blobs", "min_repeatability")
 
 
 @dataclass
@@ -180,7 +201,7 @@ class AppConfig:
         self.rect_style = RectStyle(**_known(RectStyle, _tuplify(visual_styles.get("rect", {}))))
         self.text_zone_style = TextZoneStyle(**_known(TextZoneStyle, _tuplify(visual_styles.get("text_zone", {}))))
         self.mite = MiteConfig(**_known(MiteConfig, _tuplify(_with_the_metric(self._raw_config.get("mite", {})))))
-        self.detector = DetectorConfig(**_known(DetectorConfig, self._raw_config.get("detector", {})))
+        self.detector = DetectorConfig(**_known(DetectorConfig, _with_the_blob_settings(self._raw_config.get("detector", {}))))
         self.label_reader = LabelReaderConfig(**_known(LabelReaderConfig, self._raw_config.get("label_reader") or {}))
         self.zone_styles = {
             name: TextZoneStyle(**_known(TextZoneStyle, _tuplify(style)))

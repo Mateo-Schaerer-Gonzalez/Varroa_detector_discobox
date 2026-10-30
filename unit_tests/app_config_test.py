@@ -44,3 +44,17 @@ class TestUnknownKeys:
 
         assert config.mite == AppConfig(app_config_module.TEMPLATE_CONFIG_PATH).mite
         assert not hasattr(config.mite, "metric_windows")
+
+
+class TestBlobSettings:
+    def test_a_machines_older_detector_settings_give_way_to_the_defaults(self, tmp_path):
+        text = app_config_module.TEMPLATE_CONFIG_PATH.read_text(encoding="utf-8")
+        text = text.replace("  min_inertia_ratio: 0.087", "  min_inertia_ratio: 0.45", 1)
+        text = text.replace("  min_repeatability: 3", "", 1)
+        path = tmp_path / "config.yaml"
+        path.write_text(text, encoding="utf-8")
+
+        config = AppConfig(path)
+
+        assert config.detector == AppConfig(app_config_module.TEMPLATE_CONFIG_PATH).detector
+        assert config.detector.min_inertia_ratio == 0.087 and config.detector.min_repeatability == 3

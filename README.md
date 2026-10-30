@@ -83,6 +83,10 @@ mite 7.1 in recording 8 (labelled moving by eye) and mite 7.3 in recording 19 (l
 
 Only the plates are kept and the hand-written labels are blanked out. Then OpenCV's blob detector finds the dark,
 mite-shaped regions. Each mite gets an id from its plate and its reading order: `7.3` is the third mite on plate 7.
+The detector's settings were chosen by an Optuna search on 398 frames labelled by hand (27,505 mites,
+`scripts/detector_optuna.py`, 2026-10-30): on sessions it was not tuned on, it finds all but 1 of 4,269 mites
+on today's Discobox frames, with 3 false detections (34 missed and 93 false before). They are read from
+`config.default.yaml`, never from a machine's `config.yaml`.
 
 ![Detection](docs/images/walk_1_detection.png)
 

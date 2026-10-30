@@ -77,12 +77,17 @@ TEST = {"2025-07-30", "2025-08-04", "2025-08-08", "2023-08-22"}
 SEED = 0
 
 _detector = get_default_config().detector
-# The app's settings (config.default.yaml) and SimpleBlobDetector's own defaults for the two it doesn't set.
+# The app's settings (config.default.yaml): since 2026-10-30 those this search chose (trial 189 of "settings").
 APP = dict(min_threshold=_detector.min_threshold, max_threshold=_detector.max_threshold,
            threshold_step=_detector.threshold_step, min_area=_detector.min_area, max_area=_detector.max_area,
            min_circularity=_detector.min_circularity, min_convexity=_detector.min_convexity,
-           min_inertia_ratio=_detector.min_inertia_ratio, min_dist_between_blobs=10.0, min_repeatability=2,
-           pre="none")
+           min_inertia_ratio=_detector.min_inertia_ratio, min_dist_between_blobs=_detector.min_dist_between_blobs,
+           min_repeatability=_detector.min_repeatability, pre="none")
+# The app's settings before (and SimpleBlobDetector's defaults for the two that were not settings then):
+# the search started from them, and the notebook compares with them as "today's settings".
+BEFORE = dict(min_threshold=30, max_threshold=200, threshold_step=10, min_area=40, max_area=1200,
+              min_circularity=0.55, min_convexity=0.8, min_inertia_ratio=0.45, min_dist_between_blobs=10.0,
+              min_repeatability=2, pre="none")
 
 
 def session_of(name):
@@ -320,7 +325,7 @@ def run(study_name, trials, workers):
     JOURNAL.parent.mkdir(parents=True, exist_ok=True)
     study = optuna.create_study(study_name=study_name, storage=storage(), direction="maximize", load_if_exists=True)
     if not len(study.trials):
-        study.enqueue_trial({k: v for k, v in APP.items() if k != "pre"} | ({"pre": "none"} if study_name == "preprocessing" else {}))
+        study.enqueue_trial({k: v for k, v in BEFORE.items() if k != "pre"} | ({"pre": "none"} if study_name == "preprocessing" else {}))
     each = -(-trials // workers)
     started = time.perf_counter()
     jobs = [subprocess.Popen([sys.executable, __file__, "worker", "--study", study_name, "--trials", str(each),
@@ -336,19 +341,19 @@ def rounded(p):
 
 
 def export():
-    """The settings compared (the app's, the best trial of the settings study and
-    the best one with a preprocessing step) into CHOSEN, then evaluated."""
+    """The settings compared (the app's before, the best trial of the settings
+    study and the best one with a preprocessing step) into CHOSEN, then evaluated."""
     import optuna
-    chosen = {"app": APP}
+    chosen = {"app": BEFORE}
     for name in ("settings", "preprocessing"):
         study = optuna.load_study(study_name=name, storage=storage())
         done = [t for t in study.trials if t.value is not None and (name == "settings" or t.params.get("pre") != "none")]
         best = max(done, key=lambda t: t.value)
-        chosen[name] = rounded({**APP, **best.params}) | {"trial": best.number}
+        chosen[name] = rounded({**BEFORE, **best.params}) | {"trial": best.number}
     # the best trial's 9.345 px between blobs finds the very same mites as SimpleBlobDetector's 10
     # on every frame; and its settings with min_repeatability at its default too: all config.yaml can set
-    chosen["settings"]["min_dist_between_blobs"] = APP["min_dist_between_blobs"]
-    chosen["config_only"] = chosen["settings"] | {"min_repeatability": APP["min_repeatability"]}
+    chosen["settings"]["min_dist_between_blobs"] = BEFORE["min_dist_between_blobs"]
+    chosen["config_only"] = chosen["settings"] | {"min_repeatability": BEFORE["min_repeatability"]}
     CHOSEN.write_text(json.dumps(chosen, indent=1))
     evaluate()
 

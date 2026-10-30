@@ -74,6 +74,9 @@ class Analyzer:
         params.filterByInertia = cfg.filter_by_inertia
         params.minInertiaRatio = cfg.min_inertia_ratio
 
+        params.minDistBetweenBlobs = cfg.min_dist_between_blobs
+        params.minRepeatability = cfg.min_repeatability
+
         return params
 
     def detect(self, masked_image):

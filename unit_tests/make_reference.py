@@ -35,7 +35,12 @@ Optuna search, keeping its bilinear cut and 128 rays (2026-10-29, the user's cho
 figures looked nicer), and the stabilizer's shift was capped at MARGIN minus bilinear's
 1 px reach instead of Lanczos's 4: the default threshold went from 0.074 to 0.089 (the
 poke run's F0.5 threshold, mites followed); one call of 180 changed with OpenCV 5, two
-with OpenCV 4. It writes the reference of the OpenCV it runs with
+with OpenCV 4. Made again when the detector's settings were set to those an Optuna search
+chose on 398 frames labelled by hand (scripts/detector_optuna.py, 2026-10-30, among them
+min_inertia_ratio 0.45 -> 0.087 and the new min_repeatability 3): sample_data has 31 mites
+instead of 30 (two elongated mites found, 4.3 and 7.1, one 8 px blob of debris no longer),
+11 boxes moved by a pixel, and the ids of plates 4 and 7 shift; the 17 mites with the same
+box score the same to the bit. It writes the reference of the OpenCV it runs with
 (reference.py: one for OpenCV 4, one for 5), so run it in both Pythons; the
 OpenCV 5 one was first made from commit 76dba5e. Run this again only to accept a deliberate change to
 what folder mode produces, and say why in the commit.

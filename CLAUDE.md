@@ -181,6 +181,21 @@ of the poke run (3 s / 30 fps) without `relative` (0.106 with it); the 30-frame 
 own are 0.11–0.13. Every machine's saved threshold is on an old scale and must be saved
 again from a calibration report.
 
+**The detector's settings were chosen by Optuna** (the user's choice of 2026-10-30):
+`scripts/detector_optuna.py` copies the app's detection exactly (`check`) and searched the
+SimpleBlobDetector settings for the best F2 of the mites found on 398 frames labelled in Label
+Studio (27,505 mites; the export is `project-2-at-2026-10-30-10-27-b73784e5/`, kept out of git;
+2021/2023 frames of an older, overexposed setup and the 2025 test sessions), split by session;
+`notebooks/detector_optuna.ipynb`. Trial 189: thresholds 13-251 step 9, area 58-2675, circularity
+0.599, convexity 0.682, inertia 0.087 (0.45 threw out elongated mites), and `min_repeatability` 3
+(new, with `min_dist_between_blobs` 10: both were OpenCV's defaults 2 and 10 before; 2 took plate
+edges and shadows). On the test sessions' 2025 frames: 1 of 4,269 missed and 3 false (34 and 93
+before); older frames 100 % found (83 %). Preprocessing (stretch, flat-field, CLAHE) did no better.
+The blob settings (`app_config.BLOB_SETTINGS`) are always read from `config.default.yaml`, never a
+machine's `config.yaml` (which held only a copy of the older defaults). Boxes of mites found
+before stay the same size on 2025 frames (median 0 px), and mites with the same box score the same
+to the bit; a saved ROI run's mites are its saved boxes, so the long run is unchanged.
+
 The stabilizer (`classes/scoring/plate_stabilizer.py`) moves each mite's patch back by its own
 centre's shift within the recording (bilinear since 2026-10-27), capped at `MARGIN` minus bilinear's 1 px reach (15 px; 12 px for Lanczos's 4 until 2026-10-29); a
 mite whose centre is lost takes the median of the others'. That is the user's choice of

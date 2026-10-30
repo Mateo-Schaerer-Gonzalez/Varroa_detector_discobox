@@ -41,7 +41,7 @@ def test_a_live_run_saves_a_folder_folder_mode_reads_the_same(tmp_path, recordin
     assert main.main([*camera(), "--run-name", "cli run", "--out-dir", str(out)]) == 0
     printed = capsys.readouterr().out
     assert "Test run cli run: Folder camera (small_session)" in printed
-    assert "3/3" in printed and "30 mites across 3 recordings" in printed
+    assert "3/3" in printed and "31 mites across 3 recordings" in printed
 
     folder = reference.run_folder(recordings_root / "cli run", tmp_path / "folder_out")
     assert reference.outputs(out)["excel"] == folder["excel"]
@@ -57,7 +57,7 @@ def test_ctrl_c_stops_a_live_run_cleanly(tmp_path, recordings_root, camera, monk
     out = tmp_path / "live_out"
     assert main.main([*camera(gap=30), "--run-name", "stopped", "--out-dir", str(out)]) == 0
     printed = capsys.readouterr().out
-    assert "Stopping" in printed and "30 mites across 1 recordings" in printed
+    assert "Stopping" in printed and "31 mites across 1 recordings" in printed
     assert (out / "results.xlsx").is_file()
     assert main.LIVE_ID not in live_runs.open_runs  # the source is closed and forgotten
 
