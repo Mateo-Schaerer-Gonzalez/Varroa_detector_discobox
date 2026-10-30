@@ -84,6 +84,10 @@
   cursor: pointer;
 }
 .label-mite:hover, .label-mite:focus-visible { width: 20px; height: 20px; margin: -10px 0 0 -10px; outline: none; }
+/* Added during a live run, on the frame it was found on. */
+.label-mite.added { border-color: #ffd23f; }
+/* The frame the labelling page shows, of a run that added mites. */
+.label-steps { flex-wrap: wrap; margin-bottom: 8px; }
 .label-mite.rejected {
   border-color: #ff5a5a; box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.55);
   background:

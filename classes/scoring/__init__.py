@@ -2,6 +2,7 @@
 a shaking plate, and what else is measured while scoring.
 
     motion_analysis.py   the analysis core: detect, then score each recording as it comes
+    new_mites.py         mites that appear after the first recording (put on later)
     analyzer.py          the detector and the motion metrics (outline_variability in use)
     plate_stabilizer.py  takes a shaking plate out of each mite's patch before scoring
     workers.py           work shared out over threads

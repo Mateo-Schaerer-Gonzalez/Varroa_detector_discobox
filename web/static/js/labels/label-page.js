@@ -10,6 +10,11 @@ class LabelPage {
     $("run-btn").addEventListener("click", () => (ctx.mode === "live" ? live.startRun() : analysis.run()));
     $("label-cancel-btn").addEventListener("click", () => livePanel.adding.cancel());
     $("zones-per-plate").addEventListener("change", (event) => (ctx.mode === "live" ? live : analysis).setZonesPerPlate(Number(event.target.value)));
+    $("min-new-mites").addEventListener("change", (event) => {
+      const least = Number(event.target.value);
+      if (Number.isInteger(least) && least >= 0) analysis.setMinNewMites(least);
+      else this.drawNewMitesOption();
+    });
   }
 
   showLoadedStatus() {
@@ -20,15 +25,68 @@ class LabelPage {
         + "those kept are followed from the next recording on.");
       return;
     }
+    const added = session.mites.filter((mite) => mite.from > 0);
+    const addedNote = added.length
+      ? ` ${plural(added.length, "mite")} came after the first recording, from recording `
+        + `${Math.min(...added.map((mite) => mite.from)) + 1}: each is shown on the frame it was found on, in yellow. Check them.`
+      : "";
     Hint.note($("run-status"), ctx.mode === "live"
       ? `Mites detected in ${withMites} of ${session.zones.length} zones on ${session.n_recordings ? "the first recording" : "the camera's newest frame"}.`
-      : `${session.n_recordings} recordings loaded · mites detected in ${withMites} of ${session.zones.length} zones.`);
+      : `${session.n_recordings} recordings loaded · mites detected in ${withMites} of ${session.zones.length} zones.${addedNote}`);
+  }
+
+  // The frames the plate can be shown on: the first, and of a saved live run
+  // that added mites, each frame they were found on (`from` its recording).
+  steps() {
+    const { session } = ctx;
+    return !session.adding && session.steps?.length ? session.steps : [{ from: 0, preview: session.preview }];
+  }
+
+  // The step shown: the one picked, else the first with mites on it, so a run
+  // whose mites were all added later does not open on an empty plate.
+  step() {
+    const { session } = ctx;
+    const steps = this.steps();
+    if (session.step == null || session.step >= steps.length) {
+      const first = Math.min(...session.mites.map((mite) => mite.from || 0));
+      session.step = steps.reduce((found, step, index) => (step.from <= first ? index : found), 0);
+    }
+    return session.step;
+  }
+
+  // The mites on the step's frame: those added up to the next step.
+  stepMites(index) {
+    const steps = this.steps();
+    const until = steps[index + 1]?.from ?? Infinity;
+    return ctx.session.mites.filter((mite) => (mite.from || 0) < until);
+  }
+
+  drawSteps() {
+    const steps = this.steps();
+    const box = $("label-steps");
+    box.hidden = steps.length < 2;
+    if (box.hidden) return;
+    const current = this.step();
+    box.innerHTML = steps.map((step, index) => {
+      const added = this.stepMites(index).filter((mite) => (mite.from || 0) >= step.from).length;
+      const text = index === 0 ? "First recording" : `Added at recording ${step.from + 1} (${plural(added, "mite")})`;
+      return `<button type="button" class="small${index === current ? "" : " secondary"}" data-step="${index}"
+        aria-pressed="${index === current}">${text}</button>`;
+    }).join("");
+    box.querySelectorAll("button").forEach((button) => button.addEventListener("click", () => {
+      ctx.session.step = Number(button.dataset.step);
+      this.editor.close();
+      this.draw();
+    }));
   }
 
   draw() {
     const { session } = ctx;
     const plate = $("label-plate");
-    const place = PlateView.overlay(plate, ctx.fileUrl(session.preview), session.image);
+    this.drawSteps();
+    const steps = this.steps();
+    const index = this.step();
+    const place = PlateView.overlay(plate, ctx.fileUrl(steps[index].preview), session.image);
     const groups = ctx.labelGroups();
 
     session.zones.filter((zone) => !zone.n_mites).forEach((zone) => {
@@ -37,8 +95,12 @@ class LabelPage {
       plate.appendChild(box);
     });
     ctx.labelZones().forEach((zone) => plate.append(...this.plateElements(zone, place, groups)));
-    // Every detection, on top of the plates, so a false one can be clicked away.
-    session.mites.forEach((mite) => plate.appendChild(this.miteMarker(mite, place)));
+    // Every detection on this frame, on top of the plates, so a false one can be
+    // clicked away; those added on it ringed apart.
+    this.stepMites(index).forEach((mite) => {
+      const marker = plate.appendChild(this.miteMarker(mite, place));
+      marker.classList.toggle("added", index > 0 && (mite.from || 0) >= steps[index].from);
+    });
 
     this.drawGroupList();
     this.refreshSuggestions();
@@ -146,6 +208,7 @@ class LabelPage {
   drawRunButton() {
     const living = ctx.mode === "live";
     this.drawZonesOption(living);
+    this.drawNewMitesOption();
     labelReader.draw();
     if (living) live.drawRunButton();
     else {
@@ -162,6 +225,16 @@ class LabelPage {
     select.innerHTML = session.zone_layouts.map((zones) => `<option value="${zones}">${zones}</option>`).join("");
     select.value = String(session.zones_per_plate);
     select.disabled = living ? live.started : analysis.running;  // a run going on is of the zones it started with
+  }
+
+  // The least mites to appear in a zone at once, after the first recording, to
+  // be taken: of a folder of frames only (a saved run's mites are those saved).
+  drawNewMitesOption() {
+    const setting = ctx.session.new_mites;
+    $("new-mites-option").hidden = ctx.mode === "live" || !setting?.applies;
+    if (!setting) return;
+    $("min-new-mites").value = String(setting.least);
+    $("min-new-mites").disabled = analysis.running;
   }
 
   // Offer labels already typed as autocomplete, so repeating a group is one keystroke.

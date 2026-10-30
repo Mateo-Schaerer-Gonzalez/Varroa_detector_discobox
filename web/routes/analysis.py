@@ -41,6 +41,10 @@ class ZonesRequest(BaseModel):
     zones_per_plate: int  # 1 or 2
 
 
+class NewMitesRequest(BaseModel):
+    least: int  # 0: no mites are looked for after the first recording
+
+
 class CorrectRequest(BaseModel):
     mite: str       # the mite's id in the results
     recording: int  # the recording whose call to change
@@ -149,6 +153,19 @@ def save_zones_per_plate(session_id: str, request: ZonesRequest):
         return label_live_plates(session_id)
     with refused():
         opened = pipeline.save_zones_per_plate(session["data_dir"], session["out_dir"], request.zones_per_plate)
+    session["mites"] = opened["mites"]
+    session.pop("results", None)
+    return {"session_id": session_id, "results_dir": str(session["out_dir"]), **opened}
+
+
+@router.post("/api/session/{session_id}/new-mites")
+def save_min_new_mites(session_id: str, request: NewMitesRequest):
+    """The least mites to appear in a zone at once after the first recording to
+    be taken as mites, saved in config.yaml. The label page gets the session
+    again, with the mites found so; the results of the mites before are let go."""
+    session = get_session(session_id)
+    with refused():
+        opened = pipeline.save_min_new_mites(session["data_dir"], session["out_dir"], request.least)
     session["mites"] = opened["mites"]
     session.pop("results", None)
     return {"session_id": session_id, "results_dir": str(session["out_dir"]), **opened}

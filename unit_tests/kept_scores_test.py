@@ -18,6 +18,9 @@ from classes.plate.mite import Mite
 
 FRAMES = [["2025-09-04-09-28-17_fps-30", [["a.bmp", 100, 1], ["b.bmp", 100, 2]]]]
 FIRST = np.arange(48, dtype=np.uint8).reshape(4, 4, 3)
+# Frames read to find mites put on after the first recording (pipeline/new_mites.py):
+# the first of each recording.
+SEARCH = reference.SMALL_RECORDINGS
 
 
 def mites(n=2):
@@ -157,7 +160,9 @@ def test_the_same_recordings_are_scored_once(tmp_path, decoded):
     out = tmp_path / "out"
     n_frames = reference.SMALL_RECORDINGS * reference.SMALL_FRAMES
     first = pipeline.run_analysis(session, out)
-    assert len(decoded) == n_frames + 1  # the first frame once more, to find the mites before anything is scored
+    # the first frame once more, to find the mites before anything is scored, and each recording's
+    # first frame to find mites put on later (pipeline/new_mites.py), kept from then on
+    assert len(decoded) == n_frames + 1 + SEARCH
 
     del decoded[:]
     again = pipeline.run_analysis(session, out)
@@ -200,14 +205,14 @@ def test_other_frames_or_another_metric_are_scored_again(tmp_path, decoded, monk
     # another results folder knows nothing of these
     del decoded[:]
     pipeline.run_analysis(session, tmp_path / "elsewhere")
-    assert len(decoded) == n_frames + 1
+    assert len(decoded) == n_frames + 1 + SEARCH
 
 
 @pytest.mark.slow
 def test_a_calibration_decodes_one_frame_to_find_the_mites(tmp_path, decoded):
     session = reference.make_small_session(tmp_path / "small_session")
     view = pipeline.open_calibration(session, tmp_path / "out")
-    assert len(decoded) == 1
+    assert len(decoded) == 1 + SEARCH  # and each recording's first, for mites put on later
     assert view["n_recordings"] == reference.SMALL_RECORDINGS and view["mites"]
 
 
