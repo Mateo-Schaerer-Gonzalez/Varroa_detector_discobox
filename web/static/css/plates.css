@@ -103,3 +103,10 @@
 /* Placing mites by hand, on the label page's side panel. */
 .hand-mites-option { margin-top: 12px; }
 .hand-mites-option .hint { margin-top: 0; }
+
+/* --- a clip's Play/Pause button and Loop box (ClipPlayer.controls) ------------------ */
+
+.clip-controls { display: inline-flex; align-items: center; gap: 10px; }
+.clip-status + .clip-controls { margin: 0 0 6px; }
+.clip-controls label { display: inline-flex; align-items: center; gap: 4px; font-size: 13px; color: var(--muted); cursor: pointer; }
+.clip-controls input { margin: 0; accent-color: var(--ink); }

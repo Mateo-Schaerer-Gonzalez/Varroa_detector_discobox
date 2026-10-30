@@ -34,8 +34,9 @@ class ResultsPage {
 
   // What a mite is in a recording, set by hand on its page: "moving" or "still"
   // (its call), "gone" (not there in this recording, e.g. fallen off: censored) or
-  // "gone_from" (the recording from which it is gone for good). A click on the
-  // mite steps through them in this order, the server's (classes/results/call_corrections.py).
+  // "gone_from" (the recording from which it is gone for good), in the server's
+  // order (classes/results/call_corrections.py). The table offers them all; a click
+  // on the mite only switches it between moving and still.
   static STATES = ["moving", "still", "gone", "gone_from"];
   static STATE_NAMES = { moving: "moving", still: "still", gone: "gone in this recording", gone_from: "gone from this recording on" };
 
@@ -320,12 +321,12 @@ class ResultsPage {
 
   // --- the recording on screen
 
-  // A figure playing the recording shown, with the recording slider above it; the
-  // clip goes in the element with `id`, its loading status below it.
+  // A figure playing the recording shown, with the recording slider and the
+  // player's controls above it; the clip goes in the element with `id`, its loading status below it.
   clipFigure(id, number, title, caption, extraClass = "") {
     return `<figure class="fig">
       <div class="fig-title">${title}</div>
-      <div class="rec-bar">${RecordingSlider.html({ times: this.results.times, current: ctx.shown })}</div>
+      <div class="rec-bar">${RecordingSlider.html({ times: this.results.times, current: ctx.shown })}${player.controls()}</div>
       <div id="${id}" class="${extraClass}"></div>
       <p class="hint clip-status"></p>
       <figcaption><b>Fig. ${number}.</b> ${caption}</figcaption>
@@ -342,8 +343,7 @@ class ResultsPage {
       const clip = await player.load(url, this.frameUrl());
       if (!clip) return;
       wrap.classList.remove("loading");
-      status.textContent = `Recording at ${this.shownTime()}: ${clip.frames.length} frames, looped in real time.`;
-      player.playing = true;
+      status.textContent = `Recording at ${this.shownTime()}: ${clip.frames.length} frames, played back in real time.`;
       player.start(clip, place(clip));
     } catch (error) {
       wrap.classList.remove("loading");
@@ -403,7 +403,7 @@ class ResultsPage {
   // when that call was corrected by hand, grey and dotted when the mite is gone. The whole disc inside the ring is its
   // hover and click target; the label is not. `hint` says what `onClick` does.
   miteMarker(svg, mite, radius, { withLabel = true, onClick = null, hint = "" } = {}) {
-    const state = mite.censored[ctx.shown] ? "gone" : this.movingShown(mite) ? "moving" : "still";
+    const state = this.shownState(mite);
     const corrected = mite.corrected[ctx.shown];
     const g = PlateView.svgEl("g", {
       class: `mite-marker ${state}${corrected ? " corrected" : ""}${this.inStudy(mite) ? "" : " left-out"}`,
@@ -429,12 +429,25 @@ class ResultsPage {
     svg.appendChild(g);
   }
 
+  // A mite in the recording shown: moving, still or gone.
+  shownState(mite) {
+    return mite.censored[ctx.shown] ? "gone" : this.movingShown(mite) ? "moving" : "still";
+  }
+
+  // A mite's picture (the close-up, a playback square) framed in the colour of its
+  // call, `state` moving, still or gone, dashed when the call was corrected by hand:
+  // the call is shown round the picture, nothing over the mite.
+  static frameCall(element, state, corrected = false) {
+    element.classList.add("call-frame");
+    element.dataset.call = state;
+    element.toggleAttribute("data-corrected", Boolean(corrected));
+  }
+
   // On the mite's page: over each mite marked in `svg`, a crop of the zone `zoneId`,
   // what the score sees of it in the recording shown (classes/scoring/outline_view.py), in
   // place of its ring: a dot in each direction round its outline, the darker the more the
-  // outline varies there, and an arrow toward the side the variance lies on, as
-  // long as that side is marked; green for a mite called moving, orange for one
-  // called still. Where the server has no outline (no frames kept), the ring stays.
+  // outline varies there. Its call is the picture's frame (frameCall). Where the server
+  // has no outline (no frames kept), the ring stays.
   async drawOutlines(svg, zoneId) {
     const { sessionId, shown } = ctx;
     let outlines;
@@ -453,16 +466,6 @@ class ResultsPage {
         const mix = (from, to) => Math.round(from + (to - from) * share);
         g.appendChild(PlateView.svgEl("circle", { cx: x, cy: y, r: 0.55, fill: `rgb(${mix(255, 24)},${mix(255, 58)},${mix(255, 140)})` }));
       });
-      const [endX, endY] = outline.arrow;
-      const length = Math.hypot(endX - outline.x, endY - outline.y);
-      const [ux, uy] = length > 1e-6 ? [(endX - outline.x) / length, (endY - outline.y) / length] : [1, 0];
-      const head = 1.8;  // pixels of the recording
-      g.appendChild(PlateView.svgEl("line", { x1: outline.x, y1: outline.y, x2: endX, y2: endY, class: "arrow" }));
-      g.appendChild(PlateView.svgEl("polygon", {
-        class: "arrow-head",
-        points: [[endX + ux * head, endY + uy * head], [endX - uy * head * 0.6, endY + ux * head * 0.6], [endX + uy * head * 0.6, endY - ux * head * 0.6]]
-          .map((point) => point.map((value) => value.toFixed(2)).join(",")).join(" "),
-      }));
       marker.appendChild(g);
       marker.classList.add("outlined");
     });

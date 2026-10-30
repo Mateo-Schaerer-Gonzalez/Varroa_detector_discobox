@@ -1,5 +1,5 @@
 // The ground-truth page: one mite in one recording. Its clip, cut close around it
-// and looped, beside a picture of where its pixels change; its label to set; and
+// and played, beside a picture of where its pixels change; its label to set; and
 // the whole plate, small, showing where the mite is. M, S, N and U label it
 // moving, still, not a mite or not at all, and a label goes on to the next
 // recording; D marks the mite dead from the recording on screen on. ← → move
@@ -16,9 +16,7 @@ class TruthPage {
   static RING = 18;  // pixels of the recording: the ring's radius, clear of a mite's legs
 
   constructor() {
-    $("play-btn").addEventListener("click", () => {
-      $("play-btn").textContent = player.toggle() ? "Pause" : "Play";
-    });
+    $("truth-clip-controls").outerHTML = player.controls();
     document.querySelectorAll(".truth-labels [data-truth]").forEach((button) => button.addEventListener("click", () => {
       button.blur();
       this.label(button.dataset.truth || null);
@@ -94,7 +92,6 @@ class TruthPage {
     const holder = $("rec-tabs");
     holder.innerHTML = RecordingSlider.html({ times, current: cal.recording, done, label: "Recording" });
     RecordingSlider.wire(holder, times, done, (recording) => router.go(cal.truthHref(cal.miteId, recording)));
-    $("play-btn").textContent = player.playing ? "Pause" : "Play";
   }
 
   // The note asking about the wrong call shown, while checking the report's.
@@ -123,7 +120,7 @@ class TruthPage {
     return PlateView.clipPicture(clip, src, mite, TruthPage.RING, "truth-ring");
   }
 
-  // The recording's frames, looped, and beside them where its pixels change.
+  // The recording's frames, played, and beside them where its pixels change.
   async playClip(mite, recording) {
     const holders = [$("truth-crop"), $("truth-variation")];
     const status = $("clip-status");
@@ -313,7 +310,7 @@ class TruthPage {
     const slider = event.target.type === "range";
     if (event.target.tagName === "INPUT" && !slider) return;
     const key = event.key.length === 1 ? event.key.toLowerCase() : event.key;
-    if (key === "p") { $("play-btn").click(); return; }
+    if (key === "p") { player.toggle(); return; }
     if (slider) return;
     const labels = { m: "moving", s: "still", n: "not_a_mite", u: null };
     if (key in labels) { event.preventDefault(); this.label(labels[key]); return; }

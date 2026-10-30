@@ -128,10 +128,10 @@ harmonic of the profile.
 
 ![The vector sum](docs/images/walk_7_vector_sum.png)
 
-In the app, every mite's page draws this over its picture, the outline coloured by change and the arrow
-from its centre:
+In the app, every mite's page draws the outline over its picture, coloured by change, and frames the
+picture in the colour of the call:
 
-<p align="center"><img src="docs/images/mite_outline_app.png" width="560" alt="Outline and score arrow on a moving and a still mite"></p>
+<p align="center"><img src="docs/images/mite_outline_app.png" width="560" alt="Outline on a moving and a still mite, framed in the colour of the call"></p>
 
 ### 7. One threshold: moving or still
 
@@ -494,19 +494,25 @@ and downloads as SVG or PNG. The browser's back button works throughout. When co
 *Scores on one scale per mite* below), the scores of a folder are normalised over the run, and the pages'
 headings say by what.
 
+Every recording shown (plate, zone, mite, ground truth, the calibration report's last recording) plays once
+and stops on its last frame; *Play* plays it again. Tick *Loop* under any of them to play them over and over,
+which the browser remembers; a loop is off by default, as its jump from the last frame back to the first can
+look like movement.
+
 <p align="center"><img src="docs/images/app_zone_top.png" width="800" alt="A zone with its mites, each ringed and numbered, green when moving and orange when still"></p>
 
-A mite's page plays its close-up with the outline coloured by change and the arrow of its score, and charts
+A mite's page plays its close-up with the outline coloured by change, framed in the colour of the call
+(green moving, orange still, grey gone; dashed when corrected by hand), as the playback frames its squares, and charts
 its score in every recording:
 
-<p align="center"><img src="docs/images/app_mite.png" width="800" alt="A mite's page: close-up with outline and score arrow, score over time, a call per recording"></p>
+<p align="center"><img src="docs/images/app_mite.png" width="800" alt="A mite's page: close-up with outline framed by the call, score over time, a call per recording"></p>
 
 **4. Playback.** Every mite's whole video, its recordings one after the other, laid out by zone (a box per
 zone, a square per mite in it, the fly-offs at the end of theirs), all on one timer at the top of the page:
 play or pause, a slider over every frame of the run, a speed of 1× (real time) to 16×, and the time,
 recording and frame shown. Each square is the mite's box (the detector's `mite.radius` round its centre) and
-4 pixels more, as recorded, so the mite fills it, its edge the mite's call in the recording playing (green
-moving, orange still, grey gone or set aside); click it to open the mite. The server cuts, per recording and
+4 pixels more, as recorded, so the mite fills it, its frame the mite's call in the recording playing (green
+moving, orange still, grey gone or set aside, dashed when corrected by hand); click it to open the mite. The server cuts, per recording and
 zone, one picture with a row per mite and a column per frame (`pipeline.playback_sheet`, kept in
 `results/<name>/clips/`; a recording of more than 100 frames is thinned to 100), and the page fetches the
 recording playing and the two after it. Of a run saved as the mites' ROIs, a square is the mite's own ROI. A
@@ -517,7 +523,7 @@ live run has it too when it saves its recordings.
 **Correcting a call.** A call the detector got wrong can be corrected by hand on the result pages, of a
 folder and of a live run alike: on the mite's page, click the mite in the recording shown, or the button of
 a recording in the table, and its call changes from *moving* to *still* or back. Every number and chart
-follows at once, and the mite's ring is dashed; the workbook (its `corrected` column) and the figures are
+follows at once, and the frame round the mite's close-up is dashed; the workbook (its `corrected` column) and the figures are
 written again once the corrections pause for half a minute, and at once when the workbook is downloaded or
 the app is closed. Clicking again brings back the detector's call. A mite that is not there any more, e.g.
 one that fell off the plate, can be marked *gone* the same way, in one recording or from a recording on: it
@@ -643,9 +649,10 @@ In *Calibration* you mark by eye which mites move in each recording and compare 
 1. **Calibration data**: pick *Calibrate the threshold* or *Test the threshold*, then drop the folder, or
    *Calibrate* one of the previous recordings. The mites are found on its first frame; nothing is scored
    until a report is made.
-2. **Ground truth**: zone by zone and recording by recording, the zone's frames of that recording play in a
-   loop; click each mite to cycle it through *moving*, *still*, *not a mite* (a false detection) and back to
-   unlabelled; clicking on past a *not a mite* you just set brings back the mite's labels. <kbd>↑</kbd>
+2. **Ground truth**: zone by zone and recording by recording, the zone's frames of that recording play
+   (once, or in a loop with *Loop* ticked); click each mite to cycle it through *moving*, *still*, *not a
+   mite* (a false detection) and back to unlabelled; clicking on past a *not a mite* you just set brings back
+   the mite's labels. <kbd>↑</kbd>
    <kbd>↓</kbd> change recording, <kbd>←</kbd> <kbd>→</kbd> change zone. The detector's own call is hidden so
    it cannot bias you. Every label is saved as it is set, by position in `ground_truth.json` next to the
    recordings, so they survive a change in detector settings.
