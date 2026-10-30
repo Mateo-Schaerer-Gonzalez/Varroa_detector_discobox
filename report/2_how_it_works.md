@@ -65,12 +65,7 @@ recordings over 15.7 h), and the two example mites are:
 - **moving:** mite **7.1** in recording **8** (labelled moving by eye),
 - **still:** mite **7.3** in recording **19** (labelled still).
 
-These figures and numbers come from one script, which calls the app's own functions and
-re-implements nothing but two pictures (marked *picture only*):
 
-```bash
-python scripts/visual_walkthrough.py --long-run %TEMP%/zzrc/perf/long_run   # reads the poke run in %TEMP%/zzrc/gt; writes report/images/walk_*.png
-```
 
 The score built up step by step there is identical to the one the app's own analysis of the
 run gives (`scoring.detect_and_score()`): 0.617032 for the moving example and 0.010960 for

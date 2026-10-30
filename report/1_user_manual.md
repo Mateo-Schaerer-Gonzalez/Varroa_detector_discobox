@@ -299,37 +299,36 @@ threshold**).
 Calibrate, then test, whenever the scores may have moved relative to the threshold:
 
 - **On a new machine**, or a new installation of the app. It starts with the default
-  threshold (0.091), set on one 3 s / 30 fps run at Agroscope.
+  threshold (0.091), set on one 3 s / 30 fps run.
 - **When anything in the setup changes**: the test settings (recording length or frame
   rate, time between recordings, fan, LED intensity), the box's location, the plates or
   their bottom, the camera, lens or focus, the lighting. A threshold only fits recordings
   made the way it was calibrated on: older 1 s or 10-frame recordings need their own, and a
   fan that stirs the mites more makes them move more.
-- **When an update changes the score.** The report then says *"The threshold in use … was
-  set for … on another scale"*. A threshold saved between 27 and 29 October 2026 was saved
-  on such a scale: save one again from a calibration report.
 - **When results look wrong**: dead mites coming back to life, deaths much later than you
   see, or many still mites called moving (section 6).
 
 Otherwise there is no need to recalibrate for every experiment. **Test the performance
 from time to time**, for example at the start of each season, to make sure the app still
-works to standard (section 4.6), and recalibrate if the test says so.
+works to standard (section 4.6), and recalibrate if need be.
 
 ### 4.2 What makes good calibration data
 
 - **Recorded the way you run tests**: same Discobox, same settings, 3 s / 30 fps.
-- **A whole run, including dead mites.** The hard part is not the lively first hours but
+- **A whole run labelled** The hard part is not the lively first hours but
   keeping a dead mite still for hours: one still recording called moving brings it back to
   life. Label the still recordings of dead mites too; labels without them can't show
-  whether the threshold keeps dead mites still.
+  whether the threshold keeps dead mites still.To avoid too much labelling you can increase the time between recordings for calibration runs.
 - **Many mites, spread evenly over the plates**, so that every part of the image (light,
   focus, shake) is represented.
-- **Both moving and still labels.** With only one kind there is no threshold to suggest.
-- **Every mite in every recording you choose**, not only the obvious ones. The close calls
+
+- **Label every mite in every recording you choose**, not only the obvious ones. The close calls
   are the ones that matter.
-- **A poke test if you can** (section 4.4): it says which mites were really alive.
+
 - **Two runs**: one to calibrate on, a different one to test on. On the run it was set on,
   a threshold always looks better than it will be.
+
+- **Analyse the mite score traces and plate shake for anomalies** Since all future recordings depend on the quality of calibration data it is important to ensure that there are no anomalies (such as construction work nearby that might cause excessive plate shake)
 
 ### 4.3 Step 1: label the ground truth
 
@@ -362,6 +361,9 @@ recordings so far, so you can label as the run goes.
 
 ### 4.4 Step 2 (optional): enter a poke test
 
+
+**Note: the poke test is not used to calibrate the threshold but is mearly if it is of interest to you. If you do decide to run a poke test ensure that there is as little slack as possible in the plates moving and align the plate holder to the top right corner all the time**
+
 Poking a mite says whether it is alive: one that moves when poked was alive up to then, one
 that doesn't is dead from then on. During a live run, open *Poke test* on the live panel
 between two recordings, right after you poke; for recordings made earlier, click **Enter a
@@ -374,6 +376,9 @@ poke test** on the ground-truth page. Then:
 **Poke between two recordings, never during one**: a poked mite moves, and the detector
 would count it. The *Test* report (section 4.6) then draws survival by the pokes with the
 detector's survival over it, as well as the outline change between recordings.
+
+
+
 
 ### 4.5 Step 3: read the calibration report and decide
 
@@ -479,7 +484,10 @@ In either report, **Show the wrong calls**, then **Check them one by one**. Each
 mite in its recording on the ground-truth page, says how you labelled it and how the
 detector called it, and asks *Moving* or *Still* (<kbd>M</kbd>, <kbd>S</kbd>). Your answer
 becomes its label, and the next wrong call comes up, across all pooled datasets. After the
-last, the report comes back: click **Update** to see it with the corrected labels.
+last, the report comes back: click **Update** to see it with the corrected labels. 
+
+
+**Note: this is a guard against misslabeled ground truth but if it is a close call it is recommend to keep your original label as otherwise this will introduce a bias.**
 
 ### 4.8 Pool several runs
 
