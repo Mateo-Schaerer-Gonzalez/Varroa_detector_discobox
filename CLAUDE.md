@@ -20,6 +20,8 @@ four reports in `report/` (manual, how it works, step by step, performance), the
 (`report/scripts/`, with an index of which draws which figure) and the images they show are in
 git; the rest of `report/` (drafts, PDFs, archive, the Fourier/Brownian-motion notes) stays on
 this laptop, as does `notebooks/`. Every figure's code is in the repository (the user's request).
+Never use the § sign, in the reports or anywhere else: write "section 4.2" (the user's rule of
+2026-10-30).
 
 ## Commands
 

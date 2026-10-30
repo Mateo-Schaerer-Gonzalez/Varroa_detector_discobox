@@ -9,7 +9,7 @@ memory and how much disk each takes.*
 
 Both were run on the same mite-recordings on 26 October 2026: the app with its current code,
 the original with its own code and constants (`classes/scoring/benchmark.py`). **The app
-uses one threshold, 0.091**, the best on the poke run by F0.5 and by F0.25 alike (part 2, §6), the
+uses one threshold, 0.091**, the best on the poke run by F0.5 and by F0.25 alike (part 2, section 6), the
 app's default. The poke run was
 used only to set it, so it is not among the datasets the methods are compared on. The
 original uses its fixed threshold of 25.
@@ -126,7 +126,7 @@ centre shifts).*
 The original takes raw differences to the first frame. A shake of a fifth of a pixel slides
 every dark mite edge across its pixels by enough to pass 25 grey levels, and the grown spot
 touches the mite's box. The app follows each mite's centre and holds its patch still
-(part 2, §2), and calls no still recording moving once the plate shakes more than 0.15 px.
+(part 2, section 2), and calls no still recording moving once the plate shakes more than 0.15 px.
 In the calmest recordings (below 0.05 px) the app calls slightly more still recordings
 moving than the original (1.0 % against 0.5 %).
 

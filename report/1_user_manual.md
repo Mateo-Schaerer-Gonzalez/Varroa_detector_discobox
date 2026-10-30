@@ -38,7 +38,7 @@ running.
   test keeps it going until the test ends. On Linux you can also right-click the icon and
   choose *Stop the app*.
 - **No internet needed.** Everything runs on the PC itself. The only exception is the
-  optional reading of plate names by Google Gemini (§3.3).
+  optional reading of plate names by Google Gemini (section 3.3).
 - **First installation on Linux**: `bash install_linux.sh` once (it installs the Python
   environment and the desktop icon). For the camera, Vimba X must be installed as the
   Discobox readme describes, and your user must be in the `dialout` group for the fan and
@@ -71,13 +71,13 @@ note.*
    |---|---|
    | Time between recordings | How often a recording is made |
    | Fan / LED durations and intensities | As in the Discobox app. *On/Off* tests the fan; the sliders set intensities |
-   | Experiment duration, at most | The longest the test runs. It stops earlier once every mite is dead (§2.3) |
+   | Experiment duration, at most | The longest the test runs. It stops earlier once every mite is dead (section 2.3) |
    | Dead when still for | The death time. Required. It is added to the end of the run so a mite still at the end can be told from a dead one |
    | Most a mite moves between recordings | How far a mite is followed from one recording to the next (50 px by default, 0 = not at all) |
    | Save the recordings | Keep each mite's video. Needed to replay, label ground truth or re-analyse. Untick only for very long runs where you don't need them |
 
    Every recording is **3 s at 30 fps** (90 frames). This is fixed on purpose: a threshold
-   only fits recordings of the length it was calibrated on (§4.1).
+   only fits recordings of the length it was calibrated on (section 4.1).
 
 3. If the status text under *Connect* turns red or grey, read it: it says what failed
    (camera not found, serial port refused, …).
@@ -90,7 +90,7 @@ note.*
    every group is tested against them.
 3. Each detected mite has a ring. Click a ring that is not a mite (dust, a shadow) to cross
    it out; it is left out of everything.
-4. If the detector **missed a mite**, place it by hand (§3.3). The run then follows it like
+4. If the detector **missed a mite**, place it by hand (section 3.3). The run then follows it like
    the others.
 5. Click **Start test run**. The LEDs go off, and from then on the app switches the fan and
    LEDs before each recording.
@@ -141,7 +141,7 @@ the same folder again only sends what changed.
 
 The first time the folder is analysed or calibrated, the copy is **shrunk to the mites'
 surroundings** (about 1/30 of the space, same results). Until then it keeps its whole
-frames, so this is the moment to place any mite the detector missed (§3.3): afterwards
+frames, so this is the moment to place any mite the detector missed (section 3.3): afterwards
 there is nothing left to place it on.
 
 > Don't open a folder by typing its path if you want to keep it untouched: labels and
@@ -287,10 +287,10 @@ Calibrate, then test, whenever the scores may have moved relative to the thresho
   set for … on another scale"*. A threshold saved between 27 and 29 October 2026 was saved
   on such a scale: save one again from a calibration report.
 - **When results look wrong**: dead mites coming back to life, deaths much later than you
-  see, or many still mites called moving (§6).
+  see, or many still mites called moving (section 6).
 
 Otherwise there is no need to recalibrate for every experiment. A **test** on a new run
-now and then (§4.6) shows whether the threshold still holds.
+now and then (section 4.6) shows whether the threshold still holds.
 
 ### 4.2 What makes good calibration data
 
@@ -302,7 +302,7 @@ now and then (§4.6) shows whether the threshold still holds.
 - **Both moving and still labels.** With only one kind there is no threshold to suggest.
 - **Every mite in every recording you choose**, not only the obvious ones. The close calls
   are the ones that matter.
-- **A poke test if you can** (§4.4): it says which mites were really alive.
+- **A poke test if you can** (section 4.4): it says which mites were really alive.
 - **Two runs**: one to calibrate on, a different one to test on. On the run it was set on,
   a threshold always looks better than it will be.
 
@@ -346,7 +346,7 @@ that doesn't is dead from then on. On the ground-truth page click **Enter a poke
 
 **Poke between two recordings, never during one**: a poked mite moves, and the detector
 would count it. During a live run, enter each round from the live panel right after you
-poke. The poke test shows in the *Test* report (§4.6).
+poke. The poke test shows in the *Test* report (section 4.6).
 
 ### 4.5 Step 3: read the calibration report and decide
 
@@ -370,7 +370,7 @@ Read it top to bottom:
 4. **The table under *Save the threshold*** puts the two thresholds side by side. This is
    where you decide.
 5. **Wrong calls**: *Show the wrong calls* lists every labelled mite-recording the
-   detector called the other way. Check them (§4.7) before you save anything: a wrong
+   detector called the other way. Check them (section 4.7) before you save anything: a wrong
    call is often a wrong label.
 6. **Fig. 2** (survival by your labels and by the detector), **Fig. 3** (every labelled
    score; everything right of a line is called moving at that threshold) and **Fig. 4**
@@ -378,7 +378,7 @@ Read it top to bottom:
 
 **Should you save the suggestion?** Save it when:
 
-- the data meets §4.2 (above all: the dead mites' still recordings are labelled), and
+- the data meets section 4.2 (above all: the dead mites' still recordings are labelled), and
 - the table shows a real gain at the suggested threshold, chiefly fewer *still called
   moving* and a smaller death error, and
 - the wrong calls have been checked.
@@ -438,7 +438,7 @@ two late).
 | The test shows | Then |
 |---|---|
 | Still called moving near 0, deaths within a recording or so | Keep the threshold |
-| Many still called moving, deaths too late (positive mean error) | The threshold is too low for these recordings. Check the wrong calls, then calibrate on more data with dead mites, pooled (§4.8) |
+| Many still called moving, deaths too late (positive mean error) | The threshold is too low for these recordings. Check the wrong calls, then calibrate on more data with dead mites, pooled (section 4.8) |
 | Many moving called still, deaths too early (negative mean error) | The threshold may be too high. Check the wrong calls; if they are real, calibrate again |
 | Errors on one plate or in one stretch of time | Look at the shake chart and the playback first; it may be the recording, not the threshold |
 
@@ -461,11 +461,11 @@ and reopen or delete a dataset's ground truth (its recordings stay).
 ### 4.9 Checklist
 
 1. Record a whole run the way you run tests, with mites that die.
-2. Label it (§4.3), including hours of dead mites; add a poke test if you have one.
-3. *Calibrate*, check the wrong calls, read the table, save if §4.5 says so.
+2. Label it (section 4.3), including hours of dead mites; add a poke test if you have one.
+3. *Calibrate*, check the wrong calls, read the table, save if section 4.5 says so.
 4. *Test* on a different labelled run. Keep the threshold if *still called moving* stays
    near zero and the deaths land within a recording or so.
-5. Repeat after any change in §4.1.
+5. Repeat after any change in section 4.1.
 
 ---
 
@@ -489,11 +489,11 @@ deleted at any time and are rebuilt.
 |---|---|
 | Live: camera or fan/LEDs not found | Read the red/grey status text under *Connect*. Check that the original Discobox app is closed (only one program can use the camera) and that you are in the `dialout` group |
 | The page looks like an old version | Open http://127.0.0.1:8010/api/version: it shows the folder, the commit and any live run. The update log is `update.log` in the app's folder |
-| Dead mites keep coming back to life | The threshold is probably too low for your recordings, or still recordings of dead mites were never labelled. Recalibrate (§4) with labels including dead mites, and check the close calls (§3.6) |
-| The calibration report says the threshold in use is on another scale | The score changed with an update. Calibrate and save a threshold again (§4.5) |
+| Dead mites keep coming back to life | The threshold is probably too low for your recordings, or still recordings of dead mites were never labelled. Recalibrate (section 4) with labels including dead mites, and check the close calls (section 3.6) |
+| The calibration report says the threshold in use is on another scale | The score changed with an update. Calibrate and save a threshold again (section 4.5) |
 | Many still mites called moving on some plates from one moment on | A plate may have moved by many pixels. In a live run the mites are followed; in a folder analysis the boxes stay where they were found. Check the playback and the shake chart, and correct or mark the affected recordings |
-| A mite was not detected | Place it by hand before the first analysis (§3.3), or during a live run with *Add mites* |
-| A mite fell off | Mark it *gone* from that recording on (§3.5) |
+| A mite was not detected | Place it by hand before the first analysis (section 3.3), or during a live run with *Add mites* |
+| A mite fell off | Mark it *gone* from that recording on (section 3.5) |
 
 ## 7. Contact
 

@@ -6,14 +6,14 @@
 
 ```mermaid
 flowchart LR
-    A["First frame"] --> B["§1 Find the mites"]
-    B --> C["§2 Every recording:<br/>cut each mite's patch,<br/>hold it still"]
-    C --> D["§3 Outline score<br/>(in multiples of<br/>the noise floor)"]
-    D --> E{"§4 score ≥ T ?"}
+    A["First frame"] --> B["1 Find the mites"]
+    B --> C["2 Every recording:<br/>cut each mite's patch,<br/>hold it still"]
+    C --> D["3 Outline score<br/>(in multiples of<br/>the noise floor)"]
+    D --> E{"4 score ≥ T ?"}
     E -- yes --> F["moving"]
     E -- no --> G["still"]
-    F & G --> H["§5 Alive / dead,<br/>Kaplan–Meier, LT50,<br/>log-rank"]
-    I["§6 Labels by eye"] -. "choose T (F0.25)" .-> E
+    F & G --> H["5 Alive / dead,<br/>Kaplan–Meier, LT50,<br/>log-rank"]
+    I["6 Labels by eye"] -. "choose T (F0.25)" .-> E
 ```
 *Flowchart of the analysis pipeline.*
 
@@ -148,7 +148,7 @@ in the mask, 0 elsewhere.
 
 **Where the constants come from.** The crop (`stabilizer_pad_px`), the rim
 (`stabilizer_rim_px`), the share (`stabilizer_body_share`), the number of darkest pixels
-(`stabilizer_darkest_n`) and the growth (`stabilizer_body_grow_px`), like the score's constants in §3, are
+(`stabilizer_darkest_n`) and the growth (`stabilizer_body_grow_px`), like the score's constants in section 3, are
 those the app had before an Optuna search of 27 October 2026 (`scripts/pipeline_optuna.py`). The
 search's constants separated moving from still better on the mites it was tuned on, but not on the
 mites held back to test it, and the earlier ones were restored on 29 October 2026.
@@ -220,13 +220,13 @@ The score uses three regions of the patch:
 
 ![The regions of the score's patch](images/score_regions.png)
 
-*The same mite as in §2, stabilised. a. Blue: the rim, the outermost 6 px, always bare plate.
-It gives the lamp's light in each frame (§3.1) and the noise floor (§3.6). Grey and blue: the
+*The same mite as in section 2, stabilised. a. Blue: the rim, the outermost 6 px, always bare plate.
+It gives the lamp's light in each frame (section 3.1) and the noise floor (section 3.6). Grey and blue: the
 outer 8 px, where the body isn't looked for, so a neighbour at the patch's edge isn't taken
-for the mite. Orange: the body mask (§3.2). b. The 64 rays from the centre (§3.3), the body's
-edge on each (solid, §3.4) and the outline band ±1.5 px round it (dotted, §3.5). c. The noise
+for the mite. Orange: the body mask (section 3.2). b. The 64 rays from the centre (section 3.3), the body's
+edge on each (solid, section 3.4) and the outline band ±1.5 px round it (dotted, section 3.5). c. The noise
 floor: the variance over the frames of each of the rim's 936 pixels; their median is
-$\sigma^2$ (§3.6). The median ignores the long right tail, where a neighbour or a speck
+$\sigma^2$ (section 3.6). The median ignores the long right tail, where a neighbour or a speck
 changes a few rim pixels.*
 
 The example below is mite 7.1 in recording 8 of the poke run of 22 October 2026 (3 s,
@@ -329,7 +329,7 @@ undivided and the app raises a `NoNoiseWarning`: that score isn't on the thresho
 
 Each direction's value becomes an arrow pointing in that direction, as long as the value:
 the vector $a_k\,\mathbf e_k$, with $\mathbf e_k$ the unit
-vector of ray $k$ (§3.3). The score is the length $\lVert\cdot\rVert$ of their sum, divided
+vector of ray $k$ (section 3.3). The score is the length $\lVert\cdot\rVert$ of their sum, divided
 by $K$:
 
 $$\boxed{\;\text{score} = \left\lVert\frac{1}{K}\sum_{k=0}^{K-1} a_k\,\mathbf e_k\right\rVert\;}$$
@@ -462,7 +462,7 @@ $\chi^2$ and $p$.
 
 ### 5.5 A live run stops itself
 
-After each recording, a mite that counts as dead by §5.1 (a never-moved one too, once
+After each recording, a mite that counts as dead by section 5.1 (a never-moved one too, once
 still for $D$ from its start) is no longer followed, scored or saved. A zone is done when
 every mite in it that was seen moving is dead or gone. Zones with no mite seen moving
 don't count. The run stops when every counting zone is done.

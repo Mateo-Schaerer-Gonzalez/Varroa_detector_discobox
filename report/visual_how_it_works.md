@@ -253,10 +253,10 @@ so all are in the study, and all 14 died. After death the live run stopped follo
 
 | Step | Part 2 section | Code |
 |---|---|---|
-| 1 Detection | §1 | `classes/scoring/analyzer.py` `detect`, `classes/plate/zones.py` |
-| 2–3 Patch, stabilizer | §2 | `classes/scoring/plate_stabilizer.py` |
-| 4–7 Score | §3 | `classes/scoring/analyzer.py` `_lit`, `plate_noise`, `_outline_rays`, `outline_variability_profile`, `_outline_variability` |
-| 8 Threshold | §4 | `classes/plate/mite.py` |
-| 9 Calibration | §6 | `classes/ground_truth/calibration.py` |
-| 10 Survival | §5 | `classes/results/survival.py` |
+| 1 Detection | 1 | `classes/scoring/analyzer.py` `detect`, `classes/plate/zones.py` |
+| 2–3 Patch, stabilizer | 2 | `classes/scoring/plate_stabilizer.py` |
+| 4–7 Score | 3 | `classes/scoring/analyzer.py` `_lit`, `plate_noise`, `_outline_rays`, `outline_variability_profile`, `_outline_variability` |
+| 8 Threshold | 4 | `classes/plate/mite.py` |
+| 9 Calibration | 6 | `classes/ground_truth/calibration.py` |
+| 10 Survival | 5 | `classes/results/survival.py` |
 
