@@ -11,8 +11,8 @@ from classes.results.call_corrections import CallCorrections
 from classes.scoring.motion_analysis import detect_mites
 from classes.storage.roi_recordings import open_recordings
 from classes.plate.zone_layout import ZoneLayout
-from pipeline import (ground_truth, hand_mites, output_files, paths, plate_labels, plate_zones, preview_images,
-                      run_results, scoring, uploads)
+from pipeline import (ground_truth, hand_mites, new_mites, output_files, paths, plate_labels, plate_zones,
+                      preview_images, run_results, scoring, uploads)
 
 
 # The last run of each results folder, so a call corrected by hand on its result
@@ -28,6 +28,18 @@ def save_zones_per_plate(data_dir, out_dir, zones):
     found in them. The last run of `out_dir` is of the other zones, so its calls
     can no longer be corrected; run the analysis again."""
     ZoneLayout(zones).save(data_dir)
+    with _runs_lock:
+        _runs.pop(paths.folder_key(out_dir), None)
+    return open_session(data_dir, out_dir)
+
+
+def save_min_new_mites(data_dir, out_dir, count):
+    """The least mites to appear in a zone at once, after the first recording,
+    to be taken as mites (pipeline/new_mites.py; 0: none are looked for), saved
+    in config.yaml for every later analysis. Returns the session as
+    open_session() does, with the mites found so. The last run of `out_dir`
+    has other mites, so its calls can no longer be corrected."""
+    new_mites.save_least(count)
     with _runs_lock:
         _runs.pop(paths.folder_key(out_dir), None)
     return open_session(data_dir, out_dir)
@@ -54,7 +66,12 @@ def open_session(data_dir, out_dir, coords_file=None):
 
     zone_manager, frame, n_recordings = _detected(data_dir, coords_file)
     preview_images.write_preview(frame, out_dir)
-    return session_view(zone_manager, frame, data_dir, n_recordings, place_by_hand=hand_mites.can_place(data_dir))
+    later = _later_mites(data_dir, coords_file, out_dir, n_recordings)
+    previews = None
+    if later is not None:
+        zone_manager, previews = later
+    return session_view(zone_manager, frame, data_dir, n_recordings, previews,
+                        place_by_hand=hand_mites.can_place(data_dir))
 
 
 def _detected(data_dir, coords_file=None):
@@ -69,6 +86,22 @@ def _detected(data_dir, coords_file=None):
     zone_manager = plate_zones.zones_of(data_dir, coords_file)
     detect_mites(zone_manager, frame, Analyzer(), getattr(loader, "boxes", None))
     return zone_manager, frame, n_recordings
+
+
+def _later_mites(data_dir, coords_file, out_dir, n_recordings):
+    """(zone manager, the picture of the plate per recording) of the recordings
+    in `data_dir` when mites came after the first: added during a live run, or
+    put on a folder's plates later (pipeline/new_mites.py). They are numbered as
+    the analysis numbers them, after their zone's, and shown on the frame they
+    were found on. None when every mite was there from the first recording."""
+    loader = open_recordings(data_dir)
+    rois = hasattr(loader, "starts")
+    if not (any(loader.starts) if rois else new_mites.found(data_dir, coords_file, keep_in=out_dir) is not None):
+        return None
+    analysis = scoring.counted_analysis(data_dir, coords_file, keep_in=out_dir)
+    previews = (preview_images.added_previews(data_dir, out_dir, n_recordings) if rois else
+                new_mites.previews(data_dir, out_dir, n_recordings, [mite.start for mite in analysis.mites]))
+    return analysis.zone_manager, previews
 
 
 def place_mite(data_dir, out_dir, x, y, remove=False):
@@ -86,14 +119,21 @@ def place_mite(data_dir, out_dir, x, y, remove=False):
     return open_session(data_dir, out_dir)
 
 
-def session_view(zone_manager, frame, data_dir, n_recordings, place_by_hand=False):
+def session_view(zone_manager, frame, data_dir, n_recordings, previews=None, place_by_hand=False):
     """What the labelling page needs: the zones, with their labels and number of
     mites, and every detection, those marked "not a mite" and those placed by
-    hand included; `place_by_hand`: whether more can be placed by hand."""
+    hand included, each with the recording it was added in (`from`, 0 for those
+    of the first frame); `place_by_hand`: whether more can be placed by hand.
+    `previews`, per recording the picture of the plate
+    (preview_images.added_previews()), gives `steps`: the first frame and each
+    frame mites were added on, with the recording it is from."""
     # Rejected detections are listed too, marked, so the user can take a mark back.
     rejected = set(map(id, ground_truth.rejected_detections(zone_manager, ground_truth.load_ground_truth(data_dir))))
-    mites = [plate_zones.mite_view(mite, zone.id, rejected=id(mite) in rejected)
+    mites = [plate_zones.mite_view(mite, zone.id, rejected=id(mite) in rejected, **{"from": mite.start})
              for zone in zone_manager.zones for mite in zone.mites]
+    previews = previews or [paths.PREVIEW_NAME]
+    steps = [{"from": number, "preview": preview} for number, preview in enumerate(previews)
+             if number == 0 or preview != previews[number - 1]]
 
     zones = plate_zones.describe_zones(zone_manager, plate_labels.load_labels(data_dir))
     controls = set(plate_labels.load_controls(data_dir))
@@ -103,6 +143,8 @@ def session_view(zone_manager, frame, data_dir, n_recordings, place_by_hand=Fals
     return {
         "data_dir": str(data_dir),
         "preview": paths.PREVIEW_NAME,
+        "steps": steps,
+        "new_mites": new_mites.setting(data_dir),
         "image": {"width": int(frame.shape[1]), "height": int(frame.shape[0])},
         "n_recordings": n_recordings,
         "zones_per_plate": plate_zones.zones_per_plate(data_dir),

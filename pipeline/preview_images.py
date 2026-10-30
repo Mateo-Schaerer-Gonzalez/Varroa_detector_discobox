@@ -19,8 +19,7 @@ def write_preview(frame, out_dir):
     """The first frame as preview.jpg, written whole before it takes the name: a
     page may be loading the one it replaces, e.g. a live run's labels page while
     the first recording's results come in."""
-    Path(out_dir).mkdir(parents=True, exist_ok=True)
-    write_image_whole(Path(out_dir) / paths.PREVIEW_NAME, frame, [cv2.IMWRITE_JPEG_QUALITY, 85])
+    write_preview_as(frame, out_dir, paths.PREVIEW_NAME)
 
 
 def added_previews(data_dir, out_dir, n_recordings, again=True):
@@ -44,3 +43,22 @@ def added_previews(data_dir, out_dir, n_recordings, again=True):
             shutil.copyfile(path, Path(out_dir) / name)
         previews[start:] = [name] * (n_recordings - start)
     return previews
+
+
+def found_previews(first_frames, out_dir, n_recordings):
+    """added_previews() for a folder of frames whose mites were partly put on
+    later (pipeline/new_mites.py): `first_frames` maps each recording mites
+    appeared in to its first frame, written to `out_dir` as preview_from_<recording>.jpg."""
+    previews = [paths.PREVIEW_NAME] * n_recordings
+    for start in sorted(first_frames):
+        if start >= n_recordings:
+            continue
+        name = f"preview_from_{start}.jpg"
+        write_preview_as(first_frames[start], out_dir, name)
+        previews[start:] = [name] * (n_recordings - start)
+    return previews
+
+
+def write_preview_as(frame, out_dir, name):
+    Path(out_dir).mkdir(parents=True, exist_ok=True)
+    write_image_whole(Path(out_dir) / name, frame, [cv2.IMWRITE_JPEG_QUALITY, 85])

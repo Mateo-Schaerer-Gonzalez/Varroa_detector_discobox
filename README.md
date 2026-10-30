@@ -398,7 +398,7 @@ Only what the analysis reads of the recordings is saved, to `recordings/<run nam
 |---|---|
 | `first_frame.png` | The first frame of the first recording, whole: the mites are found and the zones labelled on it |
 | `rois/mite_000.mkv` ... | Per mite, its surroundings (its box and 32 px round it, at least 40 px round its centre) in every frame of every recording it was followed in, one recording after the other: one lossless (FFV1) grey video, its region moving with the mite |
-| `added_frames/from_<n>.jpg` | The lit frame mites were added on, `n` the recording they were added in: the result pages (plate map, zone and mite crops), the ground-truth and the poke-test pages draw the plate from that recording on with it, so the mites added are seen where they are drawn, and a mite has no ring before it is there |
+| `added_frames/from_<n>.jpg` | The lit frame mites were added on, `n` the recording they were added in: the label page (when the run is opened again), the result pages (plate map, zone and mite crops), the ground-truth and the poke-test pages draw the plate from that recording on with it, so the mites added are seen where they are drawn, and a mite has no ring before it is there |
 | `rois/index.json` | Where each mite was found (and from which recording, for one added), and per recording its name, frame rate, number of frames, where each mite was in it (none once it counted as dead) and the blobs found on its whole first and last frame (fly-offs, see below) |
 
 While the run goes on, each recording is saved as its own short videos in `rois/parts/`; once it is over,
@@ -412,7 +412,11 @@ to the last digit. The live results go to `results/<run name>/`.
 Since only the mites' surroundings are saved, the pages of such a session play only a mite's own clip (its
 page, the ground truth, the playback): the plate map and the zones show the first frame, and a fly-off is
 seen leaving its place, not its walk across the plate. The mites are those found when the run started and
-added during it; the detector's settings changed later find no others there. Untick *Save the recordings*
+added during it; the detector's settings changed later find no others there. Opened again, its label page
+lists the mites added with the ids the results give them, and offers above the plate *First recording* and
+one *Added at recording N* per frame mites were added on: each shows that frame, with the rings of the
+mites there by then, those added on it in yellow. It opens on the first frame with mites on it, so a run
+whose mites were all added later does not open on empty plates. Untick *Save the recordings*
 for long runs; the results are the same, but there is then no clip to play and nothing to open again.
 Folders of BMPs opened by path, from the Discobox app or from runs before this, are read as before; folders
 dropped onto the page are shrunk (classes/storage/roi_conversion.py).
@@ -473,6 +477,29 @@ read by Google Gemini and filled in, to be checked (`classes/plate/label_reader.
 each label area to Google, so it takes the internet and a free API key from aistudio.google.com/apikey: put
 it in a file `.env` in the app's folder as `GEMINI_API_KEY=...` (the file is this machine's own, not in git)
 and start the app again. Without one the box is greyed out and names are typed as before.
+
+</details>
+
+<details>
+<summary>Mites put on the plates after the first recording</summary>
+
+The mites are found on the first frame. Mites put on after the recording started are looked for too, on the
+first frame of every later recording (`classes/scoring/new_mites.py`): a detection not within 4 px of a mite
+already known, in a zone, is a new mite, but only when at least *Least new mites per zone* (on the label
+page; `detector.min_new_mites` in `config.yaml`, 3 by default, 0 to look for none) appear in that zone in
+the same recording. Mites are put on several at once; debris, or a mite that walked away from where it was
+found, turns up alone, so it is left out. A zone that gets only one or two mites later needs the setting
+lowered for that analysis.
+
+The mites found so are treated as a live run treats the mites added during it: numbered after their zone's
+mites, on their own clock from the recording they appeared in, and censored before it. The label page shows
+them in yellow on that recording's first frame (*Added at recording N* above the plate) and says how many came;
+the results overview lists them under *Mites put on later*, each opening on the recording it came in. Check
+each one, and mark one that is not a mite *not a mite* on the label page. Each recording's first frame is
+read once (about 0.1 s each); what was found is kept in `results/<name>/kept/new_mites.json` until the
+recordings, the zones or the detector's settings change. A folder dropped onto the page is searched before
+its frames are shrunk, and keeps the mites found as a live run keeps its added mites (`"from"` in
+`rois/index.json`, the frame in `added_frames/`).
 
 </details>
 
@@ -846,7 +873,7 @@ It prints a line per recording analysed; the recordings go to `recordings/<run n
 | Folder | Contents |
 | --- | --- |
 | `recordings/<name>/` | Every recording session: each live test run, and each folder dropped into the page or calibrated. Its frames (the mites' surroundings), labels, *not a mite* marks, mites placed by hand, ground truth, poke test, `.settings.txt` and, for a live run, `run.json`; `scores/` caches the scores (and outline changes) calibration reports computed. |
-| `results/<name>/` | The last analysis of that recording, replaced when it is analysed again (files below). `clips/` holds the frames the result pages play, and `kept/` the scores, so that analysing the same recordings again, with the same metric and the same scoring code, takes a moment instead of scoring every frame again; both can be deleted at any time. `calibration/` holds its calibration session and report, `calibration.xlsx`. |
+| `results/<name>/` | The last analysis of that recording, replaced when it is analysed again (files below). `clips/` holds the frames the result pages play, and `kept/` the scores, so that analysing the same recordings again, with the same metric and the same scoring code, takes a moment instead of scoring every frame again; `kept/new_mites.json` the mites a folder of frames had put on after its first recording; all can be deleted at any time. `calibration/` holds its calibration session and report, `calibration.xlsx`. |
 | `results/pooled/<date time>/` | A calibration report pooled over saved ground truth alone: its `calibration.xlsx`. Those that made no report are removed at the next start. |
 | `results/scripts/` | What the scripts in `scripts/` write: tables, optuna studies. |
 

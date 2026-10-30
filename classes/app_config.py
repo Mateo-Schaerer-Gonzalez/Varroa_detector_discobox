@@ -160,6 +160,11 @@ class DetectorConfig:
     min_convexity: float
     filter_by_inertia: bool
     min_inertia_ratio: float
+    # Mites put on the plates after a folder's first recording: the least that
+    # must appear in a zone in one recording to be taken as mites
+    # (classes/scoring/new_mites.py); fewer are debris or a mite that walked.
+    # 0: none are looked for. A config.yaml made before has none: 3.
+    min_new_mites: int = 3
 
 
 @dataclass
@@ -382,28 +387,41 @@ def _set_flag(text, key, value, path):
     return text[:end] + f"\n{match.group(1)}{key}: {flag}" + text[end:]
 
 
-_LABEL_READER_SECTION = re.compile(r"^label_reader:[ \t]*(?:#.*)?$", re.MULTILINE)
-# The section's own `enabled:` line: only indented or empty lines lie between.
-_LABEL_READER_ENABLED = re.compile(
-    r"^label_reader:[ \t]*(?:#.*)?\n(?:[ \t]+.*\n|[ \t]*\n)*?[ \t]+enabled:[ \t]*([^\s#]*)", re.MULTILINE)
+def _set_in_section(text: str, section: str, key: str, value: str) -> str:
+    """`text` (a config file) with `section`'s own `key:` line set to `value`.
+    Only that line is rewritten; a file without the line gets it at the top of
+    the section, one without the section gets the section at its end."""
+    head = rf"^{section}:[ \t]*(?:#.*)?"
+    # the section's own line: only indented or empty lines lie between
+    match = re.search(head + rf"\n(?:[ \t]+.*\n|[ \t]*\n)*?[ \t]+{key}:[ \t]*([^\s#]*)", text, re.MULTILINE)
+    if match:
+        return text[:match.start(1)] + value + text[match.end(1):]
+    match = re.search(head + "$", text, re.MULTILINE)
+    if match:
+        return text[:match.end()] + f"\n  {key}: {value}" + text[match.end():]
+    return text.rstrip("\n") + f"\n\n{section}:\n  {key}: {value}\n"
+
+
+def _save_in_section(section: str, key: str, value: str, config_path: Optional[str | Path] = None) -> None:
+    path = _config_file(config_path)
+    path.write_text(_set_in_section(path.read_text(encoding="utf-8"), section, key, value), encoding="utf-8")
+    _forget_loaded_config()
 
 
 def save_label_reading(enabled: bool, config_path: Optional[str | Path] = None) -> bool:
     """Write whether the names written beside the plates are read
     (`label_reader.enabled`) into the config file and reload it. Only that line
     is rewritten; a file made before the names were read gets the section."""
-    path = _config_file(config_path)
-    text = path.read_text(encoding="utf-8")
-    flag = "true" if enabled else "false"
-
-    match = _LABEL_READER_ENABLED.search(text)
-    section = _LABEL_READER_SECTION.search(text)
-    if match:
-        text = text[:match.start(1)] + flag + text[match.end(1):]
-    elif section:
-        text = text[:section.end()] + f"\n  enabled: {flag}" + text[section.end():]
-    else:
-        text = text.rstrip("\n") + f"\n\nlabel_reader:\n  enabled: {flag}\n"
-    path.write_text(text, encoding="utf-8")
-    _forget_loaded_config()
+    _save_in_section("label_reader", "enabled", "true" if enabled else "false", config_path)
     return bool(enabled)
+
+
+def save_min_new_mites(count: int, config_path: Optional[str | Path] = None) -> int:
+    """Write the least mites to appear in a zone at once for them to be taken as
+    mites (`detector.min_new_mites`, 0: none looked for) into the config file
+    and reload it."""
+    count = int(count)
+    if count < 0:
+        raise ValueError("The least number of new mites per zone is 0 or more.")
+    _save_in_section("detector", "min_new_mites", str(count), config_path)
+    return count

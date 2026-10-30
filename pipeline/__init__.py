@@ -19,6 +19,7 @@ call; scripts may also import a module for its helpers.
     pipeline/detections.py                           marking a detection "not a mite" from the label page
     pipeline/hand_mites.py                           mites placed by hand where the detector missed them
     pipeline/preview_images.py                       the pictures of the plate the pages draw on
+    pipeline/new_mites.py                            mites put on a folder's plates after its first recording
     pipeline/scoring.py                              detect and score: from frames to a run and its table
     pipeline/output_files.py                         the workbook and figures, written in the background
     pipeline/run_settings.py                         run_settings.json: how the app was set for a run's results
@@ -51,7 +52,7 @@ from pipeline.paths import (
     LABELS_FILENAME, CONTROLS_FILENAME, GROUND_TRUTH_FILENAME, POKE_FILENAME, HAND_MITES_FILENAME, SETTINGS_FILENAME,
     PREVIEW_NAME,
     CALIBRATION_SESSION_NAME, RECORDINGS_ROOT, RESULTS_ROOT, SCRIPTS_OUTPUT, CALIBRATION_REPORT_NAME,
-    SCORES_DIRNAME, ADDED_FRAMES_DIRNAME, results_dir, calibration_dir, new_pooled_report_dir,
+    SCORES_DIRNAME, ADDED_FRAMES_DIRNAME, NEW_MITES_NAME, results_dir, calibration_dir, new_pooled_report_dir,
     remove_empty_pooled_reports, dataset_id,
 )
 from pipeline.plate_zones import DEFAULT_COORDS_FILE, zones_per_plate
@@ -67,7 +68,7 @@ from pipeline.run_results import (
     describe_survival,
 )
 from pipeline.folder_analysis import (
-    open_session, place_mite, save_zones_per_plate, run_analysis, correct_call, review_again,
+    open_session, place_mite, save_zones_per_plate, save_min_new_mites, run_analysis, correct_call, review_again,
 )
 from pipeline.clips import CLIP_MARGIN, MITE_CLIP_REACH, analysis_outlines, analysis_clip, analysis_mite_clip
 from pipeline.playback import playback_reach, playback_timeline, playback_sheet

@@ -10,6 +10,7 @@ from pathlib import Path
 from classes.storage.files import write_jpeg
 from classes.live.lights import DEVICES
 from classes.live.progress import RunProgress
+from classes.scoring import new_mites
 from classes.scoring.motion_analysis import DETECTION_LOCK
 from classes.plate import hand_mites as hand, positions
 from classes.plate.rect import Rect
@@ -28,8 +29,6 @@ FIND_MITES_SETTLE = 10
 # plates to find mites to add (live_find_mites()): FIND_MITES_SETTLE and the
 # wait for a frame after it.
 FIND_MITES_SPARE = 20
-# Pixels round a mite already followed in which a blob found is that mite.
-FOUND_MITE_REACH = 4
 ADD_PREVIEW_NAME = "add_mites.jpg"
 
 
@@ -170,7 +169,7 @@ def _known(analysis):
 
 def _new_mites(run, image):
     """The mites the detector finds on `image` that are not followed already:
-    none within FOUND_MITE_REACH of where a mite was last placed, or is to be
+    none within new_mites.REACH of where a mite was last placed, or is to be
     added; only in a zone."""
     analysis = run.analysis
     with run.session.lock:
@@ -178,16 +177,8 @@ def _new_mites(run, image):
         masked = analysis.zone_manager.mask_image_to_valid_rois(image)
     with DETECTION_LOCK:  # a Mite counts the ids on
         detected = analysis.analyzer.detect(masked)
-    found = []
-    for mite in detected:
-        x, y = mite.home
-        if any(x1 - FOUND_MITE_REACH <= x <= x2 + FOUND_MITE_REACH and y1 - FOUND_MITE_REACH <= y <= y2 + FOUND_MITE_REACH
-               for x1, y1, x2, y2 in known):
-            continue
-        zone = analysis.zone_manager.zone_of(mite)
-        if zone is not None:
-            found.append(plate_zones.mite_view(mite, zone.id, x1=mite.x1, y1=mite.y1, x2=mite.x2, y2=mite.y2, rejected=False))
-    return found
+    return [plate_zones.mite_view(mite, zone.id, x1=mite.x1, y1=mite.y1, x2=mite.x2, y2=mite.y2, rejected=False)
+            for mite, zone in new_mites.unknown(detected, known, analysis.zone_manager)]
 
 
 def live_add_mites(live_id, boxes):

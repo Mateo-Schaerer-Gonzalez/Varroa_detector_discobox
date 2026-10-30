@@ -48,6 +48,28 @@ class AnalysisMode {
     router.go("#/open");
   }
 
+  // The label page's "Least new mites per zone": saved in config.yaml, for every
+  // analysis. The server looks for the mites put on later again; the results
+  // shown are of other mites, so they go.
+  async setMinNewMites(least) {
+    const { workspace } = this;
+    const { sessionId } = workspace;
+    labelPage.editor.close();
+    $("min-new-mites").disabled = true;
+    this.status("hint", `<span class="spinner"></span> Looking for mites put on after the first recording…`);
+    try {
+      const opened = await post(`/api/session/${sessionId}/new-mites`, { least });
+      if (workspace.sessionId !== sessionId) return;  // the folder was closed meanwhile
+      opened.zones.forEach((zone) => { zone.label = zone.label || ""; });
+      Object.assign(workspace, { session: opened, results: null, runStamp: Date.now(), labelsChanged: false });
+      labelPage.showLoadedStatus();
+    } catch (error) {
+      if (workspace.sessionId !== sessionId) return;
+      this.status("hint error", esc(error.message));
+    }
+    router.go("#/label");
+  }
+
   // The label page's "Zones per plate": saved with the recordings, for every
   // later analysis of them. The server finds the mites again in the new zones;
   // the results shown are of the other zones, so they go.

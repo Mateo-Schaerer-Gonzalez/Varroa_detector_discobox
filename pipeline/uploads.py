@@ -6,6 +6,7 @@ placed by hand on its whole frames before (pipeline/hand_mites.py).
 
 from pathlib import Path
 
+from classes.storage.files import write_jpeg
 from classes.storage.roi_conversion import RoiConversion
 from classes.storage.roi_recordings import RoiRecordings, is_roi_session
 from classes.storage.upload_plan import UploadPlan
@@ -63,9 +64,15 @@ def shrink_pending(folder, results_root=paths.RESULTS_ROOT):
 
 def convert_folder(folder, results_root=paths.RESULTS_ROOT):
     """Shrink the recordings of whole frames in `folder` to the mites'
-    surroundings (classes/storage/roi_conversion.py). Returns how many were."""
+    surroundings (classes/storage/roi_conversion.py). Returns how many were.
+    Mites put on after the first recording are kept as a live run keeps those
+    it added, with the frame they appeared on (ADDED_FRAMES_DIRNAME)."""
     folder = Path(folder)
-    converted = RoiConversion(folder, plate_zones.zones_of(folder)).run()
+    conversion = RoiConversion(folder, plate_zones.zones_of(folder))
+    converted = conversion.run()
+    for start, image in conversion.added_frames.items():
+        (folder / paths.ADDED_FRAMES_DIRNAME).mkdir(parents=True, exist_ok=True)
+        write_jpeg(folder / paths.ADDED_FRAMES_DIRNAME / f"from_{start}.jpg", image, quality=90)
     if converted:
         # clips of the whole frames, which are gone: those of its analysis and of its calibration
         paths.clear_clips(paths.results_dir(folder, results_root))

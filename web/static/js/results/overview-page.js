@@ -32,6 +32,8 @@ class OverviewPage extends ResultsPage {
 
     ${review.section()}
 
+    ${this.laterSection()}
+
     <div class="clip-block">
       ${this.clipFigure("result-plate", 1, `Plate map · recording at ${this.shownTime()}`,
         `The recording at ${this.shownTime()}, with every detected mite ${movingBadge(true)} or ${movingBadge(false)} in it.
@@ -78,6 +80,7 @@ class OverviewPage extends ResultsPage {
       <p class="caption">${this.resultsFolderNote()}Every chart above can be downloaded as SVG or PNG from the buttons beside its title.</p>`)}`;
     this.wire(body);
     review.wire(body);
+    this.wireLater(body);
 
     this.timeChart($("chart-group-alive"), {
       yLabel: "Survival rate (%)",
@@ -98,6 +101,29 @@ class OverviewPage extends ResultsPage {
     new SurvivalTable(this, groups).draw($("logrank-table"), $("logrank-caption"));
     new ScoreFigures(this, groups).draw();
     activity.draw();
+  }
+
+  // The mites that were put on after the first recording (found on a folder's
+  // frames, or added during a live run), by the recording they came in: each
+  // opens on its first recording, to check it is a mite.
+  laterSection() {
+    const started = this.results.started || {};
+    const byRecording = {};
+    for (const [id, recording] of Object.entries(started)) (byRecording[recording] ||= []).push(id);
+    const recordings = Object.keys(byRecording).map(Number).sort((a, b) => a - b);
+    if (!recordings.length || ctx.mode === "live") return "";
+    const rows = recordings.map((recording) => `<li>Recording ${recording + 1} (${minutes(this.results.times[recording])}):
+      ${byRecording[recording].sort((a, b) => a.localeCompare(b, undefined, { numeric: true })).map((id) => `<a href="${this.miteHref({ id })}" data-later-mite="${esc(id)}" data-later-recording="${recording}">${esc(id)}</a>`).join(", ")}</li>`);
+    return Markup.section("Mites put on later", `<ul class="later-mites">${rows.join("")}</ul>
+      <p class="caption">${plural(Object.keys(started).length, "mite")} came after the first recording. Each counts its time from the recording it came in.
+        Open each one on that recording to check it is a mite: if it is not, mark it <i>not a mite</i> on the label page and run the analysis again.</p>`);
+  }
+
+  wireLater(body) {
+    body.querySelectorAll("[data-later-mite]").forEach((link) => link.addEventListener("click", (event) => {
+      event.preventDefault();
+      resultsView.openMite({ id: link.dataset.laterMite }, Number(link.dataset.laterRecording));
+    }));
   }
 
   // Where the workbook and figures are saved on disk: results/<recording>/.

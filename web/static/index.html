@@ -95,6 +95,8 @@
 <section id="view-label" class="view" hidden>
   <div class="split">
     <div class="split-main">
+      <!-- Of a live run that added mites: the frame of the plate to show them on. -->
+      <div id="label-steps" class="segmented label-steps" role="group" aria-label="Frame shown" hidden></div>
       <div id="label-plate" class="plate"></div>
     </div>
     <aside class="split-side panel">
@@ -128,6 +130,14 @@
         <select id="zones-per-plate" class="number-input"></select>
         <p class="hint">Analyse each plate as one zone, or as two: its upper and its lower half.
           Saved with this recording, for every later analysis of it.</p>
+      </div>
+      <!-- Of a folder of frames: mites put on the plates after the first recording. -->
+      <div id="new-mites-option" class="zones-option" hidden>
+        <label for="min-new-mites">Least new mites per zone</label>
+        <input id="min-new-mites" type="number" min="0" step="1" class="number-input">
+        <p class="hint">Mites put on after the first recording are looked for on each recording's first frame,
+          and taken only when at least this many appear in a zone at once: fewer are debris, or a mite that
+          walked. 0: none are looked for. Saved for every analysis.</p>
       </div>
       <button id="run-btn" type="button" class="wide">Run analysis</button>
       <!-- While mites are added to a test run. -->

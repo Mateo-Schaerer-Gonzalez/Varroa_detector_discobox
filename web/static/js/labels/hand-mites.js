@@ -24,9 +24,14 @@ class HandMites {
     return Boolean(session && (session.adding || session.place_by_hand));
   }
 
+  // Mites are placed on the first frame: the plate goes back to it.
   setPlacing(on) {
     if (on) labelPage.editor.close();
     this.placing = on;
+    if (on && !ctx.session.adding && labelPage.step() !== 0) {
+      ctx.session.step = 0;
+      labelPage.draw();
+    }
     this.draw();
   }
 

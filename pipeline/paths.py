@@ -42,6 +42,9 @@ RUN_INFO_NAME = "run.json"  # in a live run's folder: how the run was made, and 
 # In a live run's folder: the frame mites were added on, from_<recording>.jpg, the
 # recording they were added in (live_add_mites(), preview_images.added_previews()).
 ADDED_FRAMES_DIRNAME = "added_frames"
+# In a results folder's kept/: the mites a folder of frames had put on after its first
+# recording, as pipeline/new_mites.py found them.
+NEW_MITES_NAME = "new_mites.json"
 
 # The app's folders, one for each kind of file it keeps:
 APP_DIR = Path(__file__).resolve().parent.parent

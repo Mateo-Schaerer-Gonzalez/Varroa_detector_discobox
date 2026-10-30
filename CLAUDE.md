@@ -140,6 +140,14 @@ The user's choices for live runs (2026-10-20), not to be undone:
   `FRAME_COUNT`, `FIXED`), not settings: `scripts/recording_length.py` showed length matters
   far more than frame rate, and a threshold only fits the length it was calibrated on.
   Don't reintroduce fps or frame_count as settings.
+**Mites put on a folder's plates later** (the user's choice of 2026-10-30): a folder of frames is
+searched on each later recording's first frame (`classes/scoring/new_mites.py`, `pipeline/new_mites.py`,
+kept in `results/<name>/kept/new_mites.json`); a zone's new detections are taken only when at least
+`detector.min_new_mites` (default 3, set on the label page, 0 = off) appear in one recording, which keeps
+out debris and walked mites. They go into `MotionAnalysis` as `boxes`/`starts` like a saved live run's
+added mites (no scoring code changed; boxes stay fixed), and an upload's conversion saves them with
+`"from"` and `added_frames/`. The label page shows any session's added mites on the frame they came on
+(`steps`), with the analysis's ids; the overview lists them under *Mites put on later*.
 `classes/live/` holds the camera (vmbpy, Vimba X), fan/LEDs over serial (pyserial), the
 schedule and the live session; those libraries are imported only for a live run.
 `classes/discobox/camera_utils.py` is copied unchanged from the Discobox app.

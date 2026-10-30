@@ -10,7 +10,7 @@ from classes.live.settings import RANGES as SETTING_RANGES
 from classes.results.movement_stats import MovementReport
 from classes.results.review_band import ReviewBand
 from classes.results.survival import SurvivalReport
-from pipeline import output_files, paths, plate_zones, preview_images, refusals, scoring
+from pipeline import new_mites, output_files, paths, plate_zones, preview_images, refusals, scoring
 
 
 def review_calls(run, mite_data, changes, data_dir):
@@ -128,6 +128,10 @@ def describe_results(run, out_dir, labels, write_files=True, corrections=None, n
         previews = preview_images.added_previews(run.data_dir, out_dir, run.n_recordings, again=False)
         if any(name != paths.PREVIEW_NAME for name in previews):
             results["previews"] = previews
+    starts = [mite.start for mite in run.zone_manager.mites]
+    if run.frames == "whole" and getattr(run, "data_dir", None) is not None and any(starts):
+        # mites put on a folder's plates later: the plate from the recording they appeared in
+        results["previews"] = new_mites.previews(run.data_dir, out_dir, run.n_recordings, starts)
     if getattr(run, "activity", None) is not None:
         results["activity"] = run.activity.describe()
     if normalizer is not None:

@@ -72,6 +72,10 @@ detector:
   min_convexity: 0.80
   filter_by_inertia: true
   min_inertia_ratio: 0.45
+  # Mites put on the plates after a folder's first recording are found on each
+  # recording's first frame: this many at least in a zone at once, or none of
+  # them is taken (debris, a mite that walked). 0: none are looked for.
+  min_new_mites: 3
 
 # The names written beside the plates are read by Google Gemini and filled in on
 # the label page (classes/plate/label_reader.py). It needs the internet and a free API
