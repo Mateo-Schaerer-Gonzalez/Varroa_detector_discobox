@@ -53,7 +53,7 @@ class MitePage extends ResultsPage {
 
     <div class="grid-mite">
       ${this.clipFigure("mite-crop", 1, "Close-up",
-        `The recording at ${this.shownTime()}, looped, 56 × 56 px around the mite: ${this.callBadge(mite, ctx.shown)} in it. The dots round the mite are darker where its outline changes more over the frames, and the arrow points to the side most of that change lies on: the longer, the more one-sided; green when the mite is called moving, orange when still.
+        `The recording at ${this.shownTime()}, looped, 56 × 56 px around the mite: ${this.callBadge(mite, ctx.shown)} in it. The frame is green when the mite is called moving, orange when still, grey when gone, dashed when the call was corrected by hand. The dots round the mite are darker where its outline changes more over the frames.
         Where that is wrong, click the mite to step through moving, still, gone in this recording (e.g. fallen off) and gone from this recording on,
         or choose one in the table below.${review.ask(mite)}`, "crop-wrap square")}
       ${figure("chart-mite", 2, "Motion score over time",
@@ -127,6 +127,7 @@ class MitePage extends ResultsPage {
       hint: `Click: change to ${STATE_NAMES[next]}`,
     });
     $("mite-crop").appendChild(crop);
+    ResultsPage.frameCall($("mite-crop"), this.shownState(mite), mite.corrected[ctx.shown]);
     this.drawOutlines(crop, zone.id);
     this.playClip(this.miteClipUrl(mite, ctx.shown), $("mite-crop"), $("mite-crop").nextElementSibling,
       (clip) => {

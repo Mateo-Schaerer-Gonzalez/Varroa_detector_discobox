@@ -128,10 +128,10 @@ harmonic of the profile.
 
 ![The vector sum](docs/images/walk_7_vector_sum.png)
 
-In the app, every mite's page draws this over its picture, the outline coloured by change and the arrow
-from its centre:
+In the app, every mite's page draws the outline over its picture, coloured by change, and frames the
+picture in the colour of the call:
 
-<p align="center"><img src="docs/images/mite_outline_app.png" width="560" alt="Outline and score arrow on a moving and a still mite"></p>
+<p align="center"><img src="docs/images/mite_outline_app.png" width="560" alt="Outline on a moving and a still mite, framed in the colour of the call"></p>
 
 ### 7. One threshold: moving or still
 
@@ -478,17 +478,18 @@ headings say by what.
 
 <p align="center"><img src="docs/images/app_zone_top.png" width="800" alt="A zone with its mites, each ringed and numbered, green when moving and orange when still"></p>
 
-A mite's page plays its close-up with the outline coloured by change and the arrow of its score, and charts
+A mite's page plays its close-up with the outline coloured by change, framed in the colour of the call
+(green moving, orange still, grey gone; dashed when corrected by hand), as the playback frames its squares, and charts
 its score in every recording:
 
-<p align="center"><img src="docs/images/app_mite.png" width="800" alt="A mite's page: close-up with outline and score arrow, score over time, a call per recording"></p>
+<p align="center"><img src="docs/images/app_mite.png" width="800" alt="A mite's page: close-up with outline framed by the call, score over time, a call per recording"></p>
 
 **4. Playback.** Every mite's whole video, its recordings one after the other, laid out by zone (a box per
 zone, a square per mite in it, the fly-offs at the end of theirs), all on one timer at the top of the page:
 play or pause, a slider over every frame of the run, a speed of 1× (real time) to 16×, and the time,
 recording and frame shown. Each square is the mite's box (the detector's `mite.radius` round its centre) and
-4 pixels more, as recorded, so the mite fills it, its edge the mite's call in the recording playing (green
-moving, orange still, grey gone or set aside); click it to open the mite. The server cuts, per recording and
+4 pixels more, as recorded, so the mite fills it, its frame the mite's call in the recording playing (green
+moving, orange still, grey gone or set aside, dashed when corrected by hand); click it to open the mite. The server cuts, per recording and
 zone, one picture with a row per mite and a column per frame (`pipeline.playback_sheet`, kept in
 `results/<name>/clips/`; a recording of more than 100 frames is thinned to 100), and the page fetches the
 recording playing and the two after it. Of a run saved as the mites' ROIs, a square is the mite's own ROI. A
