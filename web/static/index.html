@@ -109,6 +109,14 @@
         Each detection has a ring. Click one that is not a mite to cross it out and
         leave it out of the analysis; click it again to keep it.
       </p>
+      <!-- Of a folder of whole frames, of a test run until it starts, and while mites are added to one. -->
+      <div id="hand-mites-option" class="hand-mites-option" hidden>
+        <p class="hint">
+          A mite the detector missed: click <i>Place a mite by hand</i>, then on the
+          mite. Its ring is dashed; click it to take it away.
+        </p>
+        <button id="place-mite-btn" type="button" class="secondary wide" aria-pressed="false">Place a mite by hand</button>
+      </div>
       <div id="zone-editor-slot" class="zone-editor-slot"></div>
       <ul id="group-list" class="group-list"></ul>
       <div class="read-option">
@@ -399,6 +407,7 @@
 <script src="js/labels/zone-editor.js"></script>
 <script src="js/labels/label-reader.js"></script>
 <script src="js/labels/label-page.js"></script>
+<script src="js/labels/hand-mites.js"></script>
 <script src="js/results/results-page.js"></script>
 <script src="js/results/results-view.js"></script>
 <script src="js/results/overview-page.js"></script>

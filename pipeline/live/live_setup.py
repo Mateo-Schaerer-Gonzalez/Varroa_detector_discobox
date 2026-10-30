@@ -17,7 +17,7 @@ from classes.live.sources import CameraSource
 from classes.scoring.motion_analysis import MotionAnalysis, detect_mites
 from classes.storage.roi_recordings import open_recordings
 from classes.plate.zone_layout import ZoneLayout
-from pipeline import folder_analysis, output_files, paths, plate_labels, preview_images
+from pipeline import folder_analysis, hand_mites, output_files, paths, plate_labels, preview_images
 from pipeline.live import live_capture, live_runs, live_settings
 
 
@@ -147,6 +147,19 @@ def live_preview(live_id, out_dir=None):
     open_session() does for a folder: on the newest frame before the run, and on
     the frame the run's results come from once it has one."""
     run = live_runs.get_live(live_id)
+    frame = _labelling_frame(run)
+    out_dir = Path(out_dir or run.out_dir)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    preview_images.write_preview(frame, out_dir)
+    zone_manager = live_runs.live_zone_manager(run)
+    detect_mites(zone_manager, frame, Analyzer())
+    return folder_analysis.session_view(zone_manager, frame, run.run_dir, run.source.completed,
+                                        place_by_hand=run.session.state == "ready")
+
+
+def _labelling_frame(run):
+    """The frame the plates of a live run are labelled on: its newest before the
+    run, the one its results come from once it has one."""
     with run.session.lock:
         frame = run.analysis.first_frame
     if frame is None:
@@ -154,12 +167,24 @@ def live_preview(live_id, out_dir=None):
         _count, frame = run.source.latest.get()
         if frame is None:
             raise ValueError("No frame has come from the camera yet.")
-    out_dir = Path(out_dir or run.out_dir)
-    out_dir.mkdir(parents=True, exist_ok=True)
-    preview_images.write_preview(frame, out_dir)
-    zone_manager = live_runs.live_zone_manager(run)
-    detect_mites(zone_manager, frame, Analyzer())
-    return folder_analysis.session_view(zone_manager, frame, run.run_dir, run.source.completed)
+    return frame
+
+
+def live_place_mite(live_id, x, y, remove=False, out_dir=None):
+    """place_mite() for a live run not started yet, on the camera's newest
+    frame: the run follows the mite from its first recording. Returns what
+    live_preview() does, with it."""
+    run = live_runs.get_live(live_id)
+    if run.session.state != "ready":
+        raise ValueError("Mites are placed by hand before the test run starts; during it, with Add mites.")
+    if remove:
+        hand_mites.remove(run.run_dir, x, y)
+    else:
+        frame = _labelling_frame(run)
+        zone_manager = live_runs.live_zone_manager(run)
+        detect_mites(zone_manager, frame, Analyzer())
+        hand_mites.place(run.run_dir, zone_manager, frame, x, y)
+    return live_preview(live_id, out_dir)
 
 
 def live_read_labels(live_id, out_dir, mites):

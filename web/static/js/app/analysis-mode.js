@@ -27,6 +27,17 @@ class AnalysisMode {
     }
   }
 
+  // The label page's session again, as the server sent it after a mite was
+  // placed by hand or taken away (HandMites).
+  takeSession(opened) {
+    opened.zones.forEach((zone) => { zone.label = zone.label || ""; });
+    this.workspace.session = opened;
+    if (ctx === this.workspace && location.hash.startsWith("#/label")) {
+      labelPage.draw();
+      labelPage.showLoadedStatus();
+    }
+  }
+
   // The Back button: close the folder. An analysis still running goes on on the
   // server, but its results are dropped (see run).
   quit() {

@@ -1,6 +1,6 @@
 """Mites added during a live run: the plates are lit between two recordings,
-the mites not followed yet detected, and those the user keeps followed from the
-next recording on.
+the mites not followed yet detected (and any the detector missed placed by
+hand), and those the user keeps followed from the next recording on.
 """
 
 import logging
@@ -11,9 +11,10 @@ from classes.storage.files import write_jpeg
 from classes.live.lights import DEVICES
 from classes.live.progress import RunProgress
 from classes.scoring.motion_analysis import DETECTION_LOCK
+from classes.plate import hand_mites as hand, positions
 from classes.plate.rect import Rect
 from classes.plate.zones import mite_ids
-from pipeline import paths, plate_labels, plate_zones, preview_images
+from pipeline import hand_mites, paths, plate_labels, plate_zones, preview_images
 from pipeline.live import live_runs
 
 _logger = logging.getLogger(__name__)
@@ -133,14 +134,47 @@ def _lit_frame(run):
                 lights.switch_off(device)
 
 
+def live_hand_mite(live_id, x, y, mites, remove=False):
+    """Place a mite by hand at (x, y) among the mites live_find_mites() found
+    to add (`mites`, as it gave them), on the frame they were found on
+    (hand_mites.where()); or with `remove` take out the one placed there.
+    Returns {zones, mites} as live_find_mites() does, numbered again."""
+    run = _adding_to(live_id)
+    image = run.found_frame
+    if image is None:
+        raise ValueError("Look for mites to add first.")
+    found = [dict(mite) for mite in mites]
+    if remove:
+        nearest = positions.nearest([mite for mite in found if mite.get("by_hand")], float(x), float(y))
+        if nearest is None:
+            raise ValueError("No mite was placed by hand there.")
+        found.remove(nearest)
+    else:
+        analysis = run.analysis
+        with run.session.lock:
+            others = [((x1 + x2) / 2, (y1 + y2) / 2) for x1, y1, x2, y2 in _known(analysis)]
+            point = hand_mites.where(analysis.zone_manager, image, x, y,
+                                     others + [(mite["x"], mite["y"]) for mite in found])
+            box = hand.box_at(point["x"], point["y"], point["size"])
+            zone = analysis.zone_manager.zone_of(box)
+        found.append({"id": "", "zone_id": zone.id, "x": point["x"], "y": point["y"], "r": point["size"] / 2,
+                      "by_hand": True, "x1": box[0], "y1": box[1], "x2": box[2], "y2": box[3], "rejected": False})
+    return {"zones": _add_zones(run, found), "mites": found}
+
+
+def _known(analysis):
+    """The boxes of the mites followed, where last placed, and of those to be added."""
+    last = analysis.placed[-1] if analysis.placed else {}
+    return [last.get(mite, tuple(mite)) for mite in analysis.mites] + list(analysis._pending)
+
+
 def _new_mites(run, image):
     """The mites the detector finds on `image` that are not followed already:
     none within FOUND_MITE_REACH of where a mite was last placed, or is to be
     added; only in a zone."""
     analysis = run.analysis
     with run.session.lock:
-        last = analysis.placed[-1] if analysis.placed else {}
-        known = [last.get(mite, tuple(mite)) for mite in analysis.mites] + list(analysis._pending)
+        known = _known(analysis)
         masked = analysis.zone_manager.mask_image_to_valid_rois(image)
     with DETECTION_LOCK:  # a Mite counts the ids on
         detected = analysis.analyzer.detect(masked)

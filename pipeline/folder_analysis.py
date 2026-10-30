@@ -11,7 +11,8 @@ from classes.results.call_corrections import CallCorrections
 from classes.scoring.motion_analysis import detect_mites
 from classes.storage.roi_recordings import open_recordings
 from classes.plate.zone_layout import ZoneLayout
-from pipeline import ground_truth, output_files, paths, plate_labels, plate_zones, preview_images, run_results, scoring
+from pipeline import (ground_truth, hand_mites, output_files, paths, plate_labels, plate_zones, preview_images,
+                      run_results, scoring, uploads)
 
 
 # The last run of each results folder, so a call corrected by hand on its result
@@ -51,23 +52,44 @@ def open_session(data_dir, out_dir, coords_file=None):
     out_dir.mkdir(parents=True, exist_ok=True)
     paths.clear_clips(out_dir)
 
+    zone_manager, frame, n_recordings = _detected(data_dir, coords_file)
+    preview_images.write_preview(frame, out_dir)
+    return session_view(zone_manager, frame, data_dir, n_recordings, place_by_hand=hand_mites.can_place(data_dir))
+
+
+def _detected(data_dir, coords_file=None):
+    """(zone manager with the mites in it, first frame, number of recordings) of
+    the recordings in `data_dir`: the same detection as an analysis run, on the
+    same first frame."""
     loader = open_recordings(data_dir)
     n_recordings = loader.count_recordings()
     if n_recordings == 0:
         raise FileNotFoundError(f"No recordings found in {data_dir}")
-
     frame = loader.load_preview_frame()
-    preview_images.write_preview(frame, out_dir)
-
     zone_manager = plate_zones.zones_of(data_dir, coords_file)
-    # The same detection as an analysis run, on the same first frame.
     detect_mites(zone_manager, frame, Analyzer(), getattr(loader, "boxes", None))
-    return session_view(zone_manager, frame, data_dir, n_recordings)
+    return zone_manager, frame, n_recordings
 
 
-def session_view(zone_manager, frame, data_dir, n_recordings):
+def place_mite(data_dir, out_dir, x, y, remove=False):
+    """Place a mite by hand at (x, y) on the first frame of `data_dir`, where
+    the detector found none, or with `remove` forget the one placed there
+    (pipeline/hand_mites.py): every later detection there finds it. Returns
+    the session as open_session() does, with it."""
+    data_dir = Path(data_dir)
+    if remove:
+        hand_mites.remove(data_dir, x, y)
+    else:
+        hand_mites.check_whole(data_dir)
+        zone_manager, frame, _n = _detected(data_dir)
+        hand_mites.place(data_dir, zone_manager, frame, x, y)
+    return open_session(data_dir, out_dir)
+
+
+def session_view(zone_manager, frame, data_dir, n_recordings, place_by_hand=False):
     """What the labelling page needs: the zones, with their labels and number of
-    mites, and every detection, those marked "not a mite" included."""
+    mites, and every detection, those marked "not a mite" and those placed by
+    hand included; `place_by_hand`: whether more can be placed by hand."""
     # Rejected detections are listed too, marked, so the user can take a mark back.
     rejected = set(map(id, ground_truth.rejected_detections(zone_manager, ground_truth.load_ground_truth(data_dir))))
     mites = [plate_zones.mite_view(mite, zone.id, rejected=id(mite) in rejected)
@@ -88,6 +110,7 @@ def session_view(zone_manager, frame, data_dir, n_recordings):
         "label_reading": plate_labels.label_reading(),
         "zones": zones,
         "mites": mites,
+        "place_by_hand": place_by_hand,
     }
 
 
@@ -106,6 +129,8 @@ def run_analysis(data_dir, out_dir, labels=None, coords_file=None,
     after the results are handed over, as after a correction, so a page need not
     wait for them (finish_files() does).
     """
+    # a folder dropped into the page, shrunk once its mites are placed (uploads.shrink_pending())
+    uploads.shrink_pending(data_dir, Path(out_dir).parent)
     run = scoring.detect_and_score(data_dir, coords_file, labels, kept_in=out_dir)
     corrections = CallCorrections(data_dir)
     normalizer = scoring.normalizer_in_use(run.analyzer.config.mite)

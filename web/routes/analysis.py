@@ -59,6 +59,12 @@ class RejectRequest(BaseModel):
     rejected: bool
 
 
+class HandMiteRequest(BaseModel):
+    x: float  # where it is clicked, in image pixels
+    y: float
+    remove: bool = False  # forget the mite placed by hand there
+
+
 @router.post("/api/session")
 def open_session(request: OpenRequest):
     """Point the app at a folder of recordings and get back the zones to label."""
@@ -125,6 +131,22 @@ def reject_detection(session_id: str, request: RejectRequest):
         marks = pipeline.mark_detection(session["data_dir"], session.get("mites", []), request.mite, request.rejected)
     refresh_live(session_id)
     return marks
+
+
+@router.post("/api/session/{session_id}/hand-mite")
+def place_hand_mite(session_id: str, request: HandMiteRequest):
+    """Place a mite by hand where the detector found none, or forget one placed
+    so; every later detection on these recordings finds it. The label page gets
+    the session again, with it. A test run not started yet has it placed on the
+    camera's newest frame (pipeline.place_mite, pipeline.live_place_mite)."""
+    session = get_session(session_id)
+    if session.get("live"):
+        opened = answer(pipeline.live_place_mite, session_id, request.x, request.y, request.remove, session["out_dir"])
+    else:
+        with refused():
+            opened = pipeline.place_mite(session["data_dir"], session["out_dir"], request.x, request.y, request.remove)
+    session["mites"] = opened["mites"]  # the detections of the label page, for the "not a mite" marks
+    return {"session_id": session_id, **opened}
 
 
 @router.post("/api/session/{session_id}/death")

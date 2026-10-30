@@ -1,5 +1,7 @@
 """Folders dropped into the page: which of their files to copy into
-recordings/, and once copied, their frames shrunk to the mites' surroundings.
+recordings/, and their frames shrunk to the mites' surroundings: when the
+folder is first analysed or calibrated, so mites the detector missed can be
+placed by hand on its whole frames before (pipeline/hand_mites.py).
 """
 
 from pathlib import Path
@@ -28,15 +30,35 @@ def plan_upload(name, files, uploads_root=paths.RECORDINGS_ROOT):
 
 
 def finish_upload(name, uploads_root=paths.RECORDINGS_ROOT):
-    """Once every file of a dropped folder is in: its recordings of whole frames
-    are shrunk to what a live run saves, the mites' surroundings
-    (classes/storage/roi_conversion.py), so they take a thirtieth of the space and give
-    the same results. {data_dir, converted (recordings)}."""
+    """Once every file of a dropped folder is in. A folder of whole frames is
+    marked to be shrunk to what a live run saves, the mites' surroundings
+    (classes/storage/roi_conversion.py), when it is first analysed or calibrated
+    (shrink_pending()): until then mites can be placed by hand on it. Recordings
+    added to a folder shrunk already are shrunk now, with its mites.
+    {data_dir, converted (recordings shrunk now)}."""
     UploadPlan.check_part(name)
     folder = Path(uploads_root) / name
     if not folder.is_dir():
         raise FileNotFoundError(f"Nothing was copied to {folder}.")
+    if not is_roi_session(folder):
+        (folder / paths.SHRINK_PENDING_NAME).write_text(
+            "Dropped into the page: shrunk to the mites' surroundings when first analysed or calibrated.\n",
+            encoding="utf-8")
+        return {"data_dir": str(folder), "converted": 0}
     return {"data_dir": str(folder), "converted": convert_folder(folder)}
+
+
+def shrink_pending(folder, results_root=paths.RESULTS_ROOT):
+    """Shrink a dropped folder marked to be (finish_upload()) to the mites'
+    surroundings, the mites placed by hand on it among them; nothing for any
+    other folder. Returns how many recordings were."""
+    folder = Path(folder)
+    marker = folder / paths.SHRINK_PENDING_NAME
+    if not marker.is_file():
+        return 0
+    converted = convert_folder(folder, results_root)
+    marker.unlink()
+    return converted
 
 
 def convert_folder(folder, results_root=paths.RESULTS_ROOT):

@@ -320,7 +320,9 @@ sequenceDiagram
    until every mite is dead*, which this replaced, is read without it). *On/Off* switches the fan to check
    it; the sliders set the intensity of the fan and of the LEDs.
 2. **Plate labels**: the same page as for a folder, on the camera's newest frame, with the LEDs on. *Zones per
-   plate* (1 or 2) is chosen here. *Start test run* switches the LEDs off and starts recording; from then on
+   plate* (1 or 2) is chosen here, and mites the detector missed are placed by hand (see *Placing a mite by
+   hand* under *Analysing recordings*): the run finds them on its first frame with the detector's and follows
+   them. *Start test run* switches the LEDs off and starts recording; from then on
    the run switches them.
 3. **Live results**: the result pages of a folder, with a panel above them: a circle per zone with mites,
    filled as its mites die (dead of those seen moving, under it), the frame rate, dropped frames, the fan and
@@ -350,7 +352,8 @@ square in the playback are cut round where it was in that recording, with its ri
 **Adding mites.** *Add mites* on the panel lights the plates between two recordings (it is refused while one
 is being captured or is about to start; the run waits meanwhile; the camera is given 10 s to follow the
 LEDs), detects the mites and shows those not followed yet on the label page, over that frame, as before the
-run: a ring each, all kept; click one to leave it out, and name a plate a new mite is on. Then *Add N mites*
+run: a ring each, all kept; click one to leave it out, place one it missed by hand (*Place a mite by hand*,
+then a click on it; a dashed ring, which a click takes away), and name a plate a new mite is on. Then *Add N mites*
 (or *Cancel*). They are followed from the next recording on, numbered after the mites of their zone, those
 added together in reading order (left to right, line by line, as the first frame's) (mite `13.7` after
 `13.6`). Before then they count as not there (censored, as a mite marked gone), and their survival is counted
@@ -434,8 +437,10 @@ with the app, so check the movement threshold on a live recording (Calibration) 
 
 **1. Recordings.** Pick one of the previous recordings, or drag the session folder (the one holding the
 `..._fps-30` folders) onto the page, or click *Choose folder*. The images are copied to
-`recordings/<folder name>/`, then shrunk to what a live run saves, the mites' surroundings (about a thirtieth
-of the space, the same results; your own folder is left as it is). Its labels, ground truth and poke test
+`recordings/<folder name>/` and, when the folder is first analysed or calibrated, shrunk to what a live run
+saves, the mites' surroundings (about a thirtieth of the space, the same results; your own folder is left as
+it is). Until then its frames are whole, so mites the detector missed can be placed by hand (below); the
+first analysis takes a moment per recording longer. Its labels, ground truth and poke test
 come along. Dropping the same folder again only sends files that changed (no frames already shrunk; new
 recordings join the others), and keeps the labels you already typed. You can also type a path instead, and
 then labels are saved next to the recordings.
@@ -444,6 +449,19 @@ then labels are saved next to the recordings.
 to the next plate. Labels are saved to `labels.json` automatically. Tick *negative control* under the name of
 the control plates; they are saved to `controls.json`. Each detection has a ring: click one that is not a
 mite to cross it out (*not a mite*).
+
+**Placing a mite by hand.** A mite the detector missed can be added: click *Place a mite by hand*, then on
+the mite (<kbd>Esc</kbd> or *Done placing mites* ends it). The ring goes on the dark spot nearest the click,
+within 8 px, so it need not be exact, and the mite's box is the size of the detector's on that frame; a click
+off the plates, on a plate's label or within 10 px of another mite is refused. Its ring is dashed: click it
+to take it away. The mites placed by hand are saved with the recordings (`mites_by_hand.json`, by position)
+and found with the detector's wherever the mites are found: in the analysis, its calibration, and when the
+frames are shrunk to the mites' surroundings, which then keep theirs too. A detector that later finds the
+same mite (other settings) counts it once. The results list them in `run_settings.json` (`detector`). A
+folder dropped into the page takes them until it is first analysed or calibrated, a folder opened by typed
+path always, and a test run until it starts; during a run, they are placed among the mites found by *Add
+mites*. A recording kept only as the mites' surroundings (a dropped folder once analysed, a saved test run)
+has no frames elsewhere, so there the button is not shown: place the mites before the first analysis.
 
 <details>
 <summary>Reading the hand-written names with Google Gemini (optional)</summary>
@@ -815,7 +833,7 @@ It prints a line per recording analysed; the recordings go to `recordings/<run n
 
 | Folder | Contents |
 | --- | --- |
-| `recordings/<name>/` | Every recording session: each live test run, and each folder dropped into the page or calibrated. Its frames (the mites' surroundings), labels, *not a mite* marks, ground truth, poke test, `.settings.txt` and, for a live run, `run.json`; `scores/` caches the scores (and outline changes) calibration reports computed. |
+| `recordings/<name>/` | Every recording session: each live test run, and each folder dropped into the page or calibrated. Its frames (the mites' surroundings), labels, *not a mite* marks, mites placed by hand, ground truth, poke test, `.settings.txt` and, for a live run, `run.json`; `scores/` caches the scores (and outline changes) calibration reports computed. |
 | `results/<name>/` | The last analysis of that recording, replaced when it is analysed again (files below). `clips/` holds the frames the result pages play, and `kept/` the scores, so that analysing the same recordings again, with the same metric and the same scoring code, takes a moment instead of scoring every frame again; both can be deleted at any time. `calibration/` holds its calibration session and report, `calibration.xlsx`. |
 | `results/pooled/<date time>/` | A calibration report pooled over saved ground truth alone: its `calibration.xlsx`. Those that made no report are removed at the next start. |
 | `results/scripts/` | What the scripts in `scripts/` write: tables, optuna studies. |

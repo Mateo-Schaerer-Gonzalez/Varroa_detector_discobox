@@ -1,5 +1,6 @@
 from typing import Optional
 
+from classes.plate import hand_mites
 from classes.plate.rect import Rect, TextZone
 from classes.app_config import AppConfig, get_default_config
 import cv2
@@ -131,6 +132,9 @@ class ZoneManager:
         self.zones = zones
         # Types of zones where mites should be eliminated / ignored
         self.excluded_types = set(zone_type.lower() for zone_type in excluded_types or [])
+        # Mites placed by hand, {x, y, size} each (classes/plate/hand_mites.py):
+        # assign_mites() puts them with the detector's.
+        self.by_hand = []
 
         # Number the zones the user labels, in reading order, so that an id always
         # points at the same physical plate.
@@ -251,11 +255,13 @@ class ZoneManager:
 
 
     def assign_mites(self, mites):
-        """Assigns mites to their respective zones.
+        """Assigns mites to their respective zones, and those placed by hand
+        (`by_hand`) that are not among them, after them.
 
         Returns the list of mites that successfully landed inside a valid zone,
         each named by its zone (see number_mites()).
         """
+        mites = [*mites, *hand_mites.missing(self.by_hand, mites)]
         assigned_mites = []
 
         for mite in mites:

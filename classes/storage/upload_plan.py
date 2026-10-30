@@ -20,12 +20,12 @@ from pathlib import PurePosixPath
 
 # labels_2.json and controls_2.json: those of two zones per plate (classes/plate/zone_layout.py)
 KEPT = ("labels.json", "controls.json", "labels_2.json", "controls_2.json", "ground_truth.json", "corrections.json",
-        "poke_test.json")
+        "poke_test.json", "mites_by_hand.json")
 FRAME = re.compile(r"\.bmp$", re.IGNORECASE)
 # a session saved as the mites' ROIs: its index says it is one
 ROI_INDEX = re.compile(r"^rois/index\.json$")
 ROI_FILE = re.compile(r"^(first_frame\.png|rois/index\.json|rois/(parts/[^/]+(?<!\.part)/)?mite_\d+\.mkv)$")
-APP_FILE = re.compile(r"(^|/)(\.settings\.txt|(labels|controls)(_2)?\.json|(ground_truth|corrections|poke_test|run)\.json)$")
+APP_FILE = re.compile(r"(^|/)(\.settings\.txt|(labels|controls)(_2)?\.json|(ground_truth|corrections|poke_test|run|mites_by_hand)\.json)$")
 SINGLE_RECORDING = re.compile(r"_fps-\d+")
 
 

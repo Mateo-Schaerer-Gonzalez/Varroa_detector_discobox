@@ -8,6 +8,7 @@ from pathlib import Path
 
 from classes.plate.zone_layout import ZoneLayout
 from classes.plate.zones import ZoneManager
+from pipeline import hand_mites
 
 
 # Zone type ids as they appear in the coordinates file.
@@ -34,8 +35,11 @@ def coords_file_of(data_dir, coords_file=None):
 
 def zones_of(data_dir, coords_file=None):
     """The ZoneManager of the recordings in `data_dir`: the zones of the layout
-    saved with them, unless a `coords_file` is given; no mites in them yet."""
-    return build_zone_manager(coords_file_of(data_dir, coords_file))
+    saved with them, unless a `coords_file` is given; no mites in them yet, but
+    the mites placed by hand there, which the detection finds with its own."""
+    zone_manager = build_zone_manager(coords_file_of(data_dir, coords_file))
+    zone_manager.by_hand = hand_mites.points(data_dir)
+    return zone_manager
 
 
 def zones_per_plate(data_dir):
@@ -72,7 +76,11 @@ def describe_zones(zone_manager, labels):
 
 def mite_view(mite, zone_id, **more):
     """A detected mite (a Mite) as the pages and the ground truth know it: {id,
-    zone_id, x, y (its centre), r (half its box's width)}, and `more`."""
+    zone_id, x, y (its centre), r (half its box's width)}, by_hand: true for
+    a mite placed by hand (classes/plate/hand_mites.py), and `more`."""
     x, y = mite.home
-    return {"id": mite.text, "zone_id": zone_id, "x": round(float(x), 1), "y": round(float(y), 1),
-            "r": round(float((mite.x2 - mite.x1) / 2), 1), **more}
+    view = {"id": mite.text, "zone_id": zone_id, "x": round(float(x), 1), "y": round(float(y), 1),
+            "r": round(float((mite.x2 - mite.x1) / 2), 1)}
+    if getattr(mite, "by_hand", False):
+        view["by_hand"] = True
+    return {**view, **more}
