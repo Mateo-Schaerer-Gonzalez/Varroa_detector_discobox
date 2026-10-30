@@ -1,4 +1,4 @@
-// The test report's last recording, looped twice over the whole plate: once with
+// The test report's last recording, played twice over the whole plate: once with
 // every mite's box coloured by the detector's call at the threshold in use, once
 // with what the benchmark draws on it, its circles as they are, over the mites'
 // boxes coloured by its call. The calls, boxes and circles are the server's
@@ -28,6 +28,7 @@ class LastRecording {
       <figcaption><b>Fig. ${n}.</b> <span id="${id}-caption"></span> ${caption}</figcaption>
     </figure>`;
     return `<p id="last-status" class="hint clip-status"></p>
+    ${player.controls()}
     ${figure("last-detector", number, "The last recording, as the detector calls it",
       `Each box is a detected mite, as the detector cuts it out, coloured by its call: moving when its score in this recording reaches the threshold in use.
       Mites marked not a mite are left out. Hover a mite for its score and its label, select it to see it.`)}
@@ -111,7 +112,7 @@ class LastRecording {
     return g;
   }
 
-  // The recording's frames, looped under both drawings; until they are in, the
+  // The recording's frames, played under both drawings; until they are in, the
   // first frame of the dataset stays.
   async play(dataset, last, svgs) {
     const status = $("last-status");
@@ -122,8 +123,7 @@ class LastRecording {
         (name) => `/api/session/${cal.id}/file/${name}`);
       if (!clip) return;  // another clip was asked for meanwhile
       const shows = svgs.map((svg) => ClipPlayer.onSvg(svg, clip));
-      status.textContent = `${clip.frames.length} frames, looped in real time.`;
-      player.playing = true;
+      status.textContent = `${clip.frames.length} frames, played back in real time.`;
       player.start(clip, (src) => shows.forEach((show) => show(src)));
     } catch (error) {
       Hint.error(status, `${error.message} Showing the first frame.`, "clip-status");

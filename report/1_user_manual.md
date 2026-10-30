@@ -188,7 +188,7 @@ The browser's back button works throughout.
 
 On a mite's page, click the mite in the recording shown (or the recording's button in the
 table) to switch its call between *moving* and *still*. Every number follows at once and
-the mite's ring is dashed. Clicking again restores the detector's call. A mite that is no
+the frame round the mite's close-up is dashed. Clicking again restores the detector's call. A mite that is no
 longer there (fell off the plate) can be marked **gone**, in one recording or from a
 recording on: it then counts as alive up to its last recording, and nothing is assumed
 after.

@@ -58,8 +58,6 @@
 .playback-zone-head { font-size: 13px; margin-bottom: 8px; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
 .playback-mites { display: grid; grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); gap: 8px; }
 .playback-card { display: block; color: var(--text); }
-.playback-card canvas { width: 100%; height: auto; display: block; image-rendering: pixelated; background: #000;
-  border: 3px solid var(--rule); border-radius: 3px; box-sizing: border-box; }
-.playback-card[data-state="moving"] canvas { border-color: var(--moving); }
-.playback-card[data-state="still"] canvas { border-color: var(--still); }
+/* framed in the colour of the mite's call: .call-frame (results.css) */
+.playback-card canvas { width: 100%; height: auto; display: block; image-rendering: pixelated; background: #000; }
 .playback-card[href]:hover canvas { outline: 2px solid var(--ink); }

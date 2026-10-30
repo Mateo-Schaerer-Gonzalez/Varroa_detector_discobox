@@ -1,7 +1,7 @@
 """What the outline_variability score sees of one mite in one recording, for the
 result pages to draw over the mite: a dot in each of the score's directions,
-just outside the body's edge, saying how much the outline varies there, and the
-arrow of the vector sum, toward the side the variance lies on.
+just outside the body's edge, saying how much the outline varies there, and how
+one-sided that variance is. The call itself is the frame round the picture.
 
 Nothing here is used for scoring; it reads the same outline as the score does
 (Analyzer.outline_variability_profile()).
@@ -25,8 +25,6 @@ class OutlineView:
             x, y    the mite's centre
             dots    [x, y, share] per direction: where the dot is, and the
                     variance there as a share of the outline's largest
-            arrow   [x, y]: where the arrow from the centre ends; it is as long
-                    as the dots are far when all the variance is on one side
             share   the share of the variance on one side, 0 to 1
 
         None for a patch without a mite."""
@@ -41,14 +39,11 @@ class OutlineView:
         most, mean = float(profile.max()), float(profile.mean())
         pull = (profile * np.exp(1j * angle)).mean()
         share = float(abs(pull) / mean) if mean >= 1e-6 else 0.0
-        reach = float(np.median(radius)) * min(share, 1.0)
-        toward = float(np.angle(pull))
         x, y = x0 + centre_x, y0 + centre_y
         return {
             "x": round(x, 2),
             "y": round(y, 2),
             "dots": [[round(float(x + r * np.cos(a)), 2), round(float(y + r * np.sin(a)), 2), round(value / most, 3) if most > 0 else 0.0]
                      for r, a, value in zip(radius.tolist(), angle.tolist(), profile.tolist())],
-            "arrow": [round(float(x + reach * np.cos(toward)), 2), round(float(y + reach * np.sin(toward)), 2)],
             "share": round(share, 3),
         }

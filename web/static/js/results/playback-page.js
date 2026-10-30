@@ -52,7 +52,7 @@ class PlaybackPage extends ResultsPage {
     <div id="playback-grid" class="playback-zones"></div>
     <p class="caption">Each square is a mite's box and a few pixels round it, as recorded (not moved back by the plate's shake), every frame of each recording
       in real time at 1×; between two recordings the time the box waited is skipped. The time is at the top, with the frame and the recording.
-      A square's edge is the mite's call in the recording playing: ${Markup.movingBadge(true)} or ${Markup.movingBadge(false)}, grey where it is gone or set aside.
+      A square's frame is the mite's call in the recording playing: ${Markup.movingBadge(true)} or ${Markup.movingBadge(false)}, grey where it is gone or set aside, dashed where the call was corrected by hand.
       A mite added during a live run is black before it was added, and one counted dead is black once it is no longer followed: nothing of them was saved there.
       The fly-offs, left out of the analysis, are at the end of their zone. Select a mite to open it.</p>`;
     this.wireBar();
@@ -205,13 +205,14 @@ class PlaybackPage extends ResultsPage {
     if (recording !== this.shownRecording) this.drawCalls(recording);
   }
 
-  // Each square's edge: the mite's call in the recording playing.
+  // Each square's frame: the mite's call in the recording playing (frameCall).
   drawCalls(recording) {
     this.shownRecording = recording;
     const byId = new Map(this.results.mites.map((mite) => [mite.id, mite]));
     this.canvases.forEach(({ card }, miteId) => {
       const mite = byId.get(miteId);
       let state = "gone";
+      let corrected = false;
       let text = "–";
       const unfollowed = mite && recording < mite.moving.length ? this.unfollowed(mite, recording) : null;
       if (unfollowed) {
@@ -223,10 +224,11 @@ class PlaybackPage extends ResultsPage {
         const aside = this.setAside(mite, recording);
         state = aside || call.startsWith("gone") ? "gone" : call;
         text = aside ? "set aside" : state;
+        corrected = mite.corrected[recording];
       } else if (this.flyOffs.has(miteId)) {
         text = recording >= this.flyOffs.get(miteId) ? "flown off" : "fly-off";
       }
-      card.dataset.state = state;
+      ResultsPage.frameCall(card.querySelector("canvas"), state, corrected);
       card.querySelector(".playback-call").textContent = text;
     });
     // A zone whose mites a live run all added later is not there before then.

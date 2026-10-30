@@ -46,7 +46,7 @@ class ZonePage extends ResultsPage {
 
     <div class="clip-block">
       ${this.clipFigure("zone-crop", 1, `Zone ${zone.id} · recording at ${this.shownTime()}`,
-        `The recording, looped, with each detected mite ${movingBadge(true)} or ${movingBadge(false)} in it. Hover a mite for every recording, select it to open it;
+        `The recording, with each detected mite ${movingBadge(true)} or ${movingBadge(false)} in it. Hover a mite for every recording, select it to open it;
         a call that is wrong can be corrected on the mite's page, and its ring is then dashed here. A mite marked gone there, e.g. fallen off, has a grey dotted ring.`, "crop-wrap truth-crop")}
     </div>
 
