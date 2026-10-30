@@ -25,7 +25,7 @@ for a, key, den, title in ((ax[0], "still_called_moving", "still", "a. still rec
         for b_, p, v in zip(bars, pct, n):
             a.text(b_.get_x() + b_.get_width() / 2, p + 0.25, f"{int(v)}", ha="center", fontsize=8, color=INK)
     a.set_xticks(x); a.set_xticklabels(lab, fontsize=8); a.set_title(title, loc="left", fontsize=10); a.set_ylabel("%")
-ax[0].legend(frameon=False, fontsize=8, loc="upper left")
+ax[0].legend(frameon=False, fontsize=8, loc="upper center")  # over GT_oct_2, which has no bars
 fig.text(0.01, -0.03, "Bar labels: number of recordings.", fontsize=8, color=MUTED)
 fig.tight_layout(); fig.savefig(OUT / "benchmark_bars.png", bbox_inches="tight")
 

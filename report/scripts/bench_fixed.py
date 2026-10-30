@@ -1,7 +1,10 @@
-"""App at its F0.5 threshold against the original software, per dataset group and pooled. Writes bench_f05.json."""
+"""The app at its default threshold against the original software, per dataset group and pooled, scored by
+the F-score calibration chooses on (calibration.F_BETA: F0.25 since 2026-10-29; the key is still "f05").
+Writes bench_fixed.json."""
 import json, sys
 from pathlib import Path
 import numpy as np
+import yaml
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 from classes.ground_truth import calibration as cal
 E = Path(__file__).parent / "eval"
@@ -31,7 +34,7 @@ def held_out(rows, s, m, splits=200):
             "f05": t[:, 3].mean(), "f05_range": np.percentile(t[:, 3], [5, 95]).tolist()}
 
 def boot_diff(rows, app_called, abil_called, m, n=2000):
-    """95% interval of (app F0.5 - original F0.5), resampling mites."""
+    """95% interval of (app F-score - original F-score), resampling mites."""
     mites = np.array([f'{r["dataset"]}|{r["mite_id"]}' for r in rows]); ids = np.unique(mites)
     where = {i: np.flatnonzero(mites == i) for i in ids}; out = []
     for _ in range(n):
@@ -42,9 +45,11 @@ def boot_diff(rows, app_called, abil_called, m, n=2000):
     return np.percentile(out, [2.5, 50, 97.5]).tolist()
 
 poke = json.load(open(E / 'poke_test_oct.json'))['rows']
-T = cal.best_f05_threshold(np.array([r['score'] for r in poke]), np.array([r['movement'] == 'moving' for r in poke]))
-T = 0.074  # the app's default: the poke run's best F0.5 on the scores the live run gave (mites followed); the calibration report's fixed boxes give 0.108
-print('threshold:', T)
+T_poke = cal.best_f05_threshold(np.array([r['score'] for r in poke]), np.array([r['movement'] == 'moving' for r in poke]))
+# the app's default threshold (config.default.yaml), the poke run's best by F0.5 and F0.25 alike
+T = float(yaml.safe_load(open(Path(__file__).resolve().parents[2] / "config.default.yaml"))["mite"]["metric_thresholds"]["outline_variability"])
+F = f"F{cal.F_BETA:g}"
+print("threshold:", T, "· the poke run's own best", F, round(T_poke, 4))
 res = {}
 allrows = []
 for g, names in list(GROUPS.items()) + [("all four, pooled", None)]:
@@ -61,8 +66,8 @@ for g, names in list(GROUPS.items()) + [("all four, pooled", None)]:
               "f05_diff_ci": boot_diff(rows, app, abil, m),
               "deaths": {k: {kk: v[kk] for kk in ("mae", "n_exact", "n_mites", "n_early", "n_late")} for k, v in deaths.items()}}
     r_ = res[g]
-    print(f"== {g}: {r_['n']} obs ({r_['moving']}/{r_['still']}), {r_['mites']} mites, F0.5 threshold {t:.3f}, AP {r_['ap']:.4f}")
+    print(f"== {g}: {r_['n']} obs ({r_['moving']}/{r_['still']}), {r_['mites']} mites, threshold {t:.3f}, AP {r_['ap']:.4f}")
     for k in ("app", "original"): print("  ", k, {a: round(b, 3) for a, b in r_[k].items()})
-    print("   F0.5 app - original, 95%:", [round(x, 3) for x in r_["f05_diff_ci"]])
+    print(f"   {F} app - original, 95%:", [round(x, 3) for x in r_["f05_diff_ci"]])
     print("   deaths", r_["deaths"])
 json.dump(res, open(Path(__file__).parent / "bench_fixed.json", "w"), default=float)
