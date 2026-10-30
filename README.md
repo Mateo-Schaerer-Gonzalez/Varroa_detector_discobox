@@ -476,6 +476,11 @@ and downloads as SVG or PNG. The browser's back button works throughout. When co
 *Scores on one scale per mite* below), the scores of a folder are normalised over the run, and the pages'
 headings say by what.
 
+Every recording shown (plate, zone, mite, ground truth, the calibration report's last recording) plays once
+and stops on its last frame; *Play* plays it again. Tick *Loop* under any of them to play them over and over,
+which the browser remembers; a loop is off by default, as its jump from the last frame back to the first can
+look like movement.
+
 <p align="center"><img src="docs/images/app_zone_top.png" width="800" alt="A zone with its mites, each ringed and numbered, green when moving and orange when still"></p>
 
 A mite's page plays its close-up with the outline coloured by change, framed in the colour of the call
@@ -626,9 +631,10 @@ In *Calibration* you mark by eye which mites move in each recording and compare 
 1. **Calibration data**: pick *Calibrate the threshold* or *Test the threshold*, then drop the folder, or
    *Calibrate* one of the previous recordings. The mites are found on its first frame; nothing is scored
    until a report is made.
-2. **Ground truth**: zone by zone and recording by recording, the zone's frames of that recording play in a
-   loop; click each mite to cycle it through *moving*, *still*, *not a mite* (a false detection) and back to
-   unlabelled; clicking on past a *not a mite* you just set brings back the mite's labels. <kbd>↑</kbd>
+2. **Ground truth**: zone by zone and recording by recording, the zone's frames of that recording play
+   (once, or in a loop with *Loop* ticked); click each mite to cycle it through *moving*, *still*, *not a
+   mite* (a false detection) and back to unlabelled; clicking on past a *not a mite* you just set brings back
+   the mite's labels. <kbd>↑</kbd>
    <kbd>↓</kbd> change recording, <kbd>←</kbd> <kbd>→</kbd> change zone. The detector's own call is hidden so
    it cannot bias you. Every label is saved as it is set, by position in `ground_truth.json` next to the
    recordings, so they survive a change in detector settings.

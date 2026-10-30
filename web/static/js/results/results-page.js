@@ -321,12 +321,12 @@ class ResultsPage {
 
   // --- the recording on screen
 
-  // A figure playing the recording shown, with the recording slider above it; the
-  // clip goes in the element with `id`, its loading status below it.
+  // A figure playing the recording shown, with the recording slider and the
+  // player's controls above it; the clip goes in the element with `id`, its loading status below it.
   clipFigure(id, number, title, caption, extraClass = "") {
     return `<figure class="fig">
       <div class="fig-title">${title}</div>
-      <div class="rec-bar">${RecordingSlider.html({ times: this.results.times, current: ctx.shown })}</div>
+      <div class="rec-bar">${RecordingSlider.html({ times: this.results.times, current: ctx.shown })}${player.controls()}</div>
       <div id="${id}" class="${extraClass}"></div>
       <p class="hint clip-status"></p>
       <figcaption><b>Fig. ${number}.</b> ${caption}</figcaption>
@@ -343,8 +343,7 @@ class ResultsPage {
       const clip = await player.load(url, this.frameUrl());
       if (!clip) return;
       wrap.classList.remove("loading");
-      status.textContent = `Recording at ${this.shownTime()}: ${clip.frames.length} frames, looped in real time.`;
-      player.playing = true;
+      status.textContent = `Recording at ${this.shownTime()}: ${clip.frames.length} frames, played back in real time.`;
       player.start(clip, place(clip));
     } catch (error) {
       wrap.classList.remove("loading");
