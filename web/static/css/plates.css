@@ -88,6 +88,9 @@
 .label-mite.added { border-color: #ffd23f; }
 /* The frame the labelling page shows, of a run that added mites. */
 .label-steps { flex-wrap: wrap; margin-bottom: 8px; }
+.label-mite.by-hand { border-style: dashed; border-color: #5ad1ff; }
+/* Placing a mite by hand: a click on a plate puts one there. */
+.plate.placing, .plate.placing .zone, .plate.placing .text-zone { cursor: crosshair; }
 .label-mite.rejected {
   border-color: #ff5a5a; box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.55);
   background:
@@ -100,3 +103,14 @@
   border-radius: 50%; border: 1px solid #fff; pointer-events: none;
 }
 
+
+/* Placing mites by hand, on the label page's side panel. */
+.hand-mites-option { margin-top: 12px; }
+.hand-mites-option .hint { margin-top: 0; }
+
+/* --- a clip's Play/Pause button and Loop box (ClipPlayer.controls) ------------------ */
+
+.clip-controls { display: inline-flex; align-items: center; gap: 10px; }
+.clip-status + .clip-controls { margin: 0 0 6px; }
+.clip-controls label { display: inline-flex; align-items: center; gap: 4px; font-size: 13px; color: var(--muted); cursor: pointer; }
+.clip-controls input { margin: 0; accent-color: var(--ink); }

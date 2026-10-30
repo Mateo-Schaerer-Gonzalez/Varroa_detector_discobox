@@ -254,8 +254,8 @@ threshold over the old (`app_config._band_moved()`, the user's request of 2026-1
 
 **Storage.** `recordings/<name>/` holds each session: frames (or `first_frame.png` +
 `rois/`), `labels.json`/`controls.json` (`labels_2.json`/`controls_2.json` for two zones per
-plate), `ground_truth.json`, `poke_test.json`, `corrections.json`, `.settings.txt`,
-`run.json`, and a `scores/` cache. `results/<name>/` holds the latest analysis (workbook,
+plate), `ground_truth.json`, `poke_test.json`, `corrections.json`, `mites_by_hand.json`,
+`.settings.txt`, `run.json`, and a `scores/` cache. `results/<name>/` holds the latest analysis (workbook,
 figures, `run_settings.json`, `clips/`, `kept/`, `calibration/`). `run_settings.json`
 (`pipeline/run_settings.py`, written with the workbook, which shows it as its `settings`
 sheet; the workbook also has a `group <name>` sheet per group) records the settings that
@@ -291,11 +291,25 @@ sample_data takes 17.5 MB as ROIs against 574 MB as BMP): `first_frame.png`,
 `rois/mite_NNN.mkv` per mite (lossless so scores stay identical); bursts go to
 `rois/parts/<recording>/` and are stitched on at the end. The ROI is the box ± 32 px, at
 least ± 40 round the centre, with even sizes (the FFV1 writer crops odd ones). Old BMP
-folders stay readable; dropped/uploaded BMP folders are converted on upload
-(`classes/storage/roi_conversion.py`); folders opened by typed path are only converted when
+folders stay readable; dropped/uploaded BMP folders are converted at their first analysis or
+calibration (`classes/storage/roi_conversion.py`, `uploads.shrink_pending()`); folders opened by typed path are only converted when
 calibrated. Zone, plate and fly-off clips don't exist for ROI sessions; mite clips and the
 still frame do. Results say `frames: "rois" | "whole" | "none"`. The sibling worktree
 `Varroa_detector_discobox_video` (branch `video-storage`) is an older, different attempt.
+
+**Mites placed by hand** (label page, 2026-10-30, the user's request: "implement once, use
+everywhere the detector is used"): kept as points `{x, y, size}` in `mites_by_hand.json`
+(`pipeline/hand_mites.py`). `plate_zones.zones_of()` and `live_runs.live_zone_manager()` put
+them on the ZoneManager (`by_hand`), and `ZoneManager.assign_mites()` adds those not within
+10 px of a detection (`classes/plate/hand_mites.py`), so every detection on whole frames
+(label page, analysis, calibration, ROI conversion, a live run's first frame) has them. They
+are merged there and not in `detect_mites()` because `motion_analysis.py` and `mite.py` are
+hashed by the kept scores. A session saved as ROIs gets none from the file (its boxes hold
+them) and can't take more: no frames elsewhere. So a dropped folder is no longer shrunk on
+upload (the user's choice of 2026-10-30): `finish_upload` leaves `shrink_pending.txt`, and
+`uploads.shrink_pending()` shrinks it at its first `run_analysis` or calibration; recordings
+added to a folder shrunk already are still shrunk on upload. During a live run they join *Add mites*'s
+found mites (`add_mites.live_hand_mite`).
 
 **Zones and IDs.** `coords_pixel.txt` (one zone per plate) and `coords_pixel_2.txt` (two)
 list `type x1 y1 x2 y2` (type 1 plate, 0 masked label area); the choice is saved per

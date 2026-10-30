@@ -13,6 +13,7 @@ const recordings = new RecordingsList();
 const sessionLabels = new SessionLabels();
 const labelReader = new LabelReader();
 const labelPage = new LabelPage();
+const handMites = new HandMites();
 const analysis = new AnalysisMode();
 const resultsView = new ResultsView();
 

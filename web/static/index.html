@@ -9,14 +9,14 @@
      the ones before it, so the cascade depends on it. -->
 <link rel="stylesheet" href="css/base.css?v=25">
 <link rel="stylesheet" href="css/start-pages.css?v=25">
-<link rel="stylesheet" href="css/plates.css?v=25">
+<link rel="stylesheet" href="css/plates.css?v=26">
 <link rel="stylesheet" href="css/labels.css?v=25">
-<link rel="stylesheet" href="css/results.css?v=25">
+<link rel="stylesheet" href="css/results.css?v=26">
 <link rel="stylesheet" href="css/charts.css?v=25">
 <link rel="stylesheet" href="css/calibration.css?v=25">
 <link rel="stylesheet" href="css/narrow-screens.css?v=25">
 <link rel="stylesheet" href="css/live.css?v=25">
-<link rel="stylesheet" href="css/recordings.css?v=25">
+<link rel="stylesheet" href="css/recordings.css?v=26">
 </head>
 <body>
 
@@ -111,6 +111,14 @@
         Each detection has a ring. Click one that is not a mite to cross it out and
         leave it out of the analysis; click it again to keep it.
       </p>
+      <!-- Of a folder of whole frames, of a test run until it starts, and while mites are added to one. -->
+      <div id="hand-mites-option" class="hand-mites-option" hidden>
+        <p class="hint">
+          A mite the detector missed: click <i>Place a mite by hand</i>, then on the
+          mite. Its ring is dashed; click it to take it away.
+        </p>
+        <button id="place-mite-btn" type="button" class="secondary wide" aria-pressed="false">Place a mite by hand</button>
+      </div>
       <div id="zone-editor-slot" class="zone-editor-slot"></div>
       <ul id="group-list" class="group-list"></ul>
       <div class="read-option">
@@ -284,7 +292,7 @@
       <div id="truth-check"></div>
       <div class="rec-bar">
         <div id="rec-tabs" class="rec-tabs"></div>
-        <button id="play-btn" type="button" class="secondary small">Pause</button>
+        <span id="truth-clip-controls"></span>
       </div>
       <div class="truth-labels">
         <button type="button" class="secondary small" data-truth="moving"><span class="truth-key moving" aria-hidden="true">●</span>moving <kbd>M</kbd></button>
@@ -409,6 +417,7 @@
 <script src="js/labels/zone-editor.js"></script>
 <script src="js/labels/label-reader.js"></script>
 <script src="js/labels/label-page.js"></script>
+<script src="js/labels/hand-mites.js"></script>
 <script src="js/results/results-page.js"></script>
 <script src="js/results/results-view.js"></script>
 <script src="js/results/overview-page.js"></script>

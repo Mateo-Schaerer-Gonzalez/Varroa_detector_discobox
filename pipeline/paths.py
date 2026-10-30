@@ -29,6 +29,10 @@ LABELS_FILENAME = "labels.json"
 CONTROLS_FILENAME = "controls.json"  # the zones ticked as negative controls
 GROUND_TRUTH_FILENAME = "ground_truth.json"
 POKE_FILENAME = "poke_test.json"  # which mites answered a poke, round by round
+HAND_MITES_FILENAME = "mites_by_hand.json"  # mites placed by hand where the detector missed them
+# In a folder dropped into the page: its frames are still whole, to be shrunk to the
+# mites' surroundings when it is first analysed or calibrated (uploads.shrink_pending()).
+SHRINK_PENDING_NAME = "shrink_pending.txt"
 SETTINGS_FILENAME = settings_file.FILENAME  # the recordings' Discobox settings, with the app's own lines
 PREVIEW_NAME = "preview.jpg"
 CALIBRATION_SESSION_NAME = "calibration_session.json"

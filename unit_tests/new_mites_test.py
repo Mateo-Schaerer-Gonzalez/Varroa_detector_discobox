@@ -11,6 +11,7 @@ import cv2
 import pytest
 
 import pipeline
+from pipeline import uploads
 import reference
 from classes import app_config
 from classes.storage.data_loader import DataLoader
@@ -94,7 +95,8 @@ def test_a_folder_shrunk_keeps_them_and_gives_the_same_results(tmp_path):
     folder = painted(tmp_path / "small")
     copy = reference.linked_copy(folder, tmp_path / "uploads" / "small")
     before = reference.run_folder(folder, tmp_path / "before")["results"]
-    assert pipeline.finish_upload(copy.name, copy.parent)["converted"] == 3
+    pipeline.finish_upload(copy.name, copy.parent)  # shrunk when first analysed
+    assert uploads.shrink_pending(copy, copy.parent.parent / "results") == 3
     index = json.loads((copy / ROI_DIRNAME / INDEX_NAME).read_text())
     assert [mite.get("from", 0) for mite in index["mites"]].count(1) == 3
     assert (copy / pipeline.ADDED_FRAMES_DIRNAME / "from_1.jpg").is_file()

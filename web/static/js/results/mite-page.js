@@ -53,9 +53,8 @@ class MitePage extends ResultsPage {
 
     <div class="grid-mite">
       ${this.clipFigure("mite-crop", 1, "Close-up",
-        `The recording at ${this.shownTime()}, looped, 56 × 56 px around the mite: ${this.callBadge(mite, ctx.shown)} in it. The dots round the mite are darker where its outline changes more over the frames, and the arrow points to the side most of that change lies on: the longer, the more one-sided; green when the mite is called moving, orange when still.
-        Where that is wrong, click the mite to step through moving, still, gone in this recording (e.g. fallen off) and gone from this recording on,
-        or choose one in the table below.${review.ask(mite)}`, "crop-wrap square")}
+        `The recording at ${this.shownTime()}, 56 × 56 px around the mite: ${this.callBadge(mite, ctx.shown)} in it. The frame is green when the mite is called moving, orange when still, grey when gone, dashed when the call was corrected by hand. The dots round the mite are darker where its outline changes more over the frames.
+        Where that is wrong, click the mite to switch it between moving and still, or choose a call in the table below.${review.ask(mite)}`, "crop-wrap square")}
       ${figure("chart-mite", 2, "Motion score over time",
         `${movingBadge(true)} at or above the threshold, ${movingBadge(false)} below it. ${ResultsPage.MOVING_NOTE}${review.review ? ` The shaded band, ${review.bandText()}, holds the scores too close to the threshold to trust.` : ""} Click a time to show that recording.${this.stillToCome()}`)}
     </div>
@@ -118,15 +117,16 @@ class MitePage extends ResultsPage {
   drawCloseUp(mite, zone) {
     const size = 56;
     const crop = this.crop(mite.x - size / 2, mite.y - size / 2, size, size);
-    // A click steps the mite to its next state in the recording shown, as on the ground-truth page.
-    const { STATES, STATE_NAMES } = ResultsPage;
-    const next = STATES[(STATES.indexOf(this.callState(mite, ctx.shown)) + 1) % STATES.length];
+    // A click turns the mite's call in the recording shown from moving to still or back
+    // (a gone one to moving); gone is set in the table, the tracking finds fly-offs itself.
+    const next = this.callState(mite, ctx.shown) === "moving" ? "still" : "moving";
     this.miteMarker(crop, mite, 22, {
       withLabel: false,
-      onClick: () => this.correctCall(mite),
-      hint: `Click: change to ${STATE_NAMES[next]}`,
+      onClick: () => this.correctCall(mite, ctx.shown, next),
+      hint: `Click: change to ${next}`,
     });
     $("mite-crop").appendChild(crop);
+    ResultsPage.frameCall($("mite-crop"), this.shownState(mite), mite.corrected[ctx.shown]);
     this.drawOutlines(crop, zone.id);
     this.playClip(this.miteClipUrl(mite, ctx.shown), $("mite-crop"), $("mite-crop").nextElementSibling,
       (clip) => {

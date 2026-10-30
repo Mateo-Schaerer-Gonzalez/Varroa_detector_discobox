@@ -356,13 +356,13 @@ median of the dataset's still recordings. Data: `results/scripts/noise_floor.csv
 ### 3.8 How the app displays the score
 
 The mite page draws the profile over the mite's clip: a dot per direction, darker where the
-outline varies more, and an arrow for the vector sum, green when the mite is called moving
-and orange when still.
+outline varies more, and frames the clip green when the mite is called moving and orange
+when still.
 
 ![The app's outline view, moving and still](images/mite_outline_app.png)
 
 *The dots are shaded relative to the mite's own largest value, so a still mite's noise
-looks dark all round. That is exactly why its arrow stays short.*
+looks dark all round: what tells it from a moving mite is that the dark dots are not on one side.*
 
 ---
 

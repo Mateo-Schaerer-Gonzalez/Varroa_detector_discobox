@@ -51,8 +51,8 @@ def playback_sheet(session_id: str, recording: int, zone_id: int):
 
 @router.get("/api/session/{session_id}/outline/{recording}/{zone_id}")
 def analysis_outlines(session_id: str, recording: int, zone_id: int):
-    """What the score sees of each mite of one zone in one recording: the dots and
-    the arrow the result pages draw over the mites. Cached on first request."""
+    """What the score sees of each mite of one zone in one recording: the dots
+    the result pages draw round the mites. Cached on first request."""
     session, results = played(session_id, "the outlines cannot be drawn")
     with refused():
         return pipeline.analysis_outlines(session["data_dir"], session["out_dir"], recording, zone_id, results)

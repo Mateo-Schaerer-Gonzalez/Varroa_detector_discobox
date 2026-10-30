@@ -36,7 +36,7 @@ class OverviewPage extends ResultsPage {
 
     <div class="clip-block">
       ${this.clipFigure("result-plate", 1, `Plate map · recording at ${this.shownTime()}`,
-        `The recording at ${this.shownTime()}, looped, with every detected mite ${movingBadge(true)} or ${movingBadge(false)} in it.
+        `The recording at ${this.shownTime()}, with every detected mite ${movingBadge(true)} or ${movingBadge(false)} in it.
         Choose a recording above, or click a time in a chart. Select a zone to open it.`, "plate")}
     </div>
 

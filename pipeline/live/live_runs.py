@@ -25,7 +25,7 @@ from typing import Optional
 
 from classes.live import camera as live_camera
 from classes.live.progress import RunProgress
-from pipeline import plate_zones
+from pipeline import hand_mites, plate_zones
 
 _logger = logging.getLogger(__name__)
 
@@ -74,7 +74,10 @@ open_runs_lock = threading.Lock()
 
 
 def live_zone_manager(run):
-    return plate_zones.build_zone_manager(run.coords_file or run.layout.coords_file)
+    """The zones of a live run, with the mites placed by hand in its folder."""
+    zone_manager = plate_zones.build_zone_manager(run.coords_file or run.layout.coords_file)
+    zone_manager.by_hand = hand_mites.points(run.run_dir)
+    return zone_manager
 
 
 def get_live(live_id):

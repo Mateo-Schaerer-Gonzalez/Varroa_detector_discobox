@@ -138,8 +138,9 @@ class FolderPicker {
       }
     };
     await Promise.all([worker(), worker(), worker(), worker()]);
-    // The server keeps only the mites' surroundings of the frames: a moment per recording.
-    text.textContent = `Copied “${name}”. Keeping only the mites' surroundings…`;
+    // The server keeps only the mites' surroundings of the frames once the folder is
+    // first analysed or calibrated; recordings added to one shrunk already, now.
+    text.textContent = `Copied “${name}”…`;
     const finished = await post(`/api/uploads/${encodeURIComponent(name)}/finish`);
     text.textContent = `${finished.converted ? `Shrunk ${finished.converted} recordings to the mites' surroundings. ` : ""}Opening…`;
     await this.open(finished.data_dir);

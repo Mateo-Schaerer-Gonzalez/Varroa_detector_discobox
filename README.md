@@ -128,10 +128,10 @@ harmonic of the profile.
 
 ![The vector sum](docs/images/walk_7_vector_sum.png)
 
-In the app, every mite's page draws this over its picture, the outline coloured by change and the arrow
-from its centre:
+In the app, every mite's page draws the outline over its picture, coloured by change, and frames the
+picture in the colour of the call:
 
-<p align="center"><img src="docs/images/mite_outline_app.png" width="560" alt="Outline and score arrow on a moving and a still mite"></p>
+<p align="center"><img src="docs/images/mite_outline_app.png" width="560" alt="Outline on a moving and a still mite, framed in the colour of the call"></p>
 
 ### 7. One threshold: moving or still
 
@@ -320,7 +320,9 @@ sequenceDiagram
    until every mite is dead*, which this replaced, is read without it). *On/Off* switches the fan to check
    it; the sliders set the intensity of the fan and of the LEDs.
 2. **Plate labels**: the same page as for a folder, on the camera's newest frame, with the LEDs on. *Zones per
-   plate* (1 or 2) is chosen here. *Start test run* switches the LEDs off and starts recording; from then on
+   plate* (1 or 2) is chosen here, and mites the detector missed are placed by hand (see *Placing a mite by
+   hand* under *Analysing recordings*): the run finds them on its first frame with the detector's and follows
+   them. *Start test run* switches the LEDs off and starts recording; from then on
    the run switches them.
 3. **Live results**: the result pages of a folder, with a panel above them: a circle per zone with mites,
    filled as its mites die (dead of those seen moving, under it), the frame rate, dropped frames, the fan and
@@ -350,7 +352,8 @@ square in the playback are cut round where it was in that recording, with its ri
 **Adding mites.** *Add mites* on the panel lights the plates between two recordings (it is refused while one
 is being captured or is about to start; the run waits meanwhile; the camera is given 10 s to follow the
 LEDs), detects the mites and shows those not followed yet on the label page, over that frame, as before the
-run: a ring each, all kept; click one to leave it out, and name a plate a new mite is on. Then *Add N mites*
+run: a ring each, all kept; click one to leave it out, place one it missed by hand (*Place a mite by hand*,
+then a click on it; a dashed ring, which a click takes away), and name a plate a new mite is on. Then *Add N mites*
 (or *Cancel*). They are followed from the next recording on, numbered after the mites of their zone, those
 added together in reading order (left to right, line by line, as the first frame's) (mite `13.7` after
 `13.6`). Before then they count as not there (censored, as a mite marked gone), and their survival is counted
@@ -438,8 +441,10 @@ with the app, so check the movement threshold on a live recording (Calibration) 
 
 **1. Recordings.** Pick one of the previous recordings, or drag the session folder (the one holding the
 `..._fps-30` folders) onto the page, or click *Choose folder*. The images are copied to
-`recordings/<folder name>/`, then shrunk to what a live run saves, the mites' surroundings (about a thirtieth
-of the space, the same results; your own folder is left as it is). Its labels, ground truth and poke test
+`recordings/<folder name>/` and, when the folder is first analysed or calibrated, shrunk to what a live run
+saves, the mites' surroundings (about a thirtieth of the space, the same results; your own folder is left as
+it is). Until then its frames are whole, so mites the detector missed can be placed by hand (below); the
+first analysis takes a moment per recording longer. Its labels, ground truth and poke test
 come along. Dropping the same folder again only sends files that changed (no frames already shrunk; new
 recordings join the others), and keeps the labels you already typed. You can also type a path instead, and
 then labels are saved next to the recordings.
@@ -448,6 +453,19 @@ then labels are saved next to the recordings.
 to the next plate. Labels are saved to `labels.json` automatically. Tick *negative control* under the name of
 the control plates; they are saved to `controls.json`. Each detection has a ring: click one that is not a
 mite to cross it out (*not a mite*).
+
+**Placing a mite by hand.** A mite the detector missed can be added: click *Place a mite by hand*, then on
+the mite (<kbd>Esc</kbd> or *Done placing mites* ends it). The ring goes on the dark spot nearest the click,
+within 8 px, so it need not be exact, and the mite's box is the size of the detector's on that frame; a click
+off the plates, on a plate's label or within 10 px of another mite is refused. Its ring is dashed: click it
+to take it away. The mites placed by hand are saved with the recordings (`mites_by_hand.json`, by position)
+and found with the detector's wherever the mites are found: in the analysis, its calibration, and when the
+frames are shrunk to the mites' surroundings, which then keep theirs too. A detector that later finds the
+same mite (other settings) counts it once. The results list them in `run_settings.json` (`detector`). A
+folder dropped into the page takes them until it is first analysed or calibrated, a folder opened by typed
+path always, and a test run until it starts; during a run, they are placed among the mites found by *Add
+mites*. A recording kept only as the mites' surroundings (a dropped folder once analysed, a saved test run)
+has no frames elsewhere, so there the button is not shown: place the mites before the first analysis.
 
 <details>
 <summary>Reading the hand-written names with Google Gemini (optional)</summary>
@@ -503,19 +521,25 @@ and downloads as SVG or PNG. The browser's back button works throughout. When co
 *Scores on one scale per mite* below), the scores of a folder are normalised over the run, and the pages'
 headings say by what.
 
+Every recording shown (plate, zone, mite, ground truth, the calibration report's last recording) plays once
+and stops on its last frame; *Play* plays it again. Tick *Loop* under any of them to play them over and over,
+which the browser remembers; a loop is off by default, as its jump from the last frame back to the first can
+look like movement.
+
 <p align="center"><img src="docs/images/app_zone_top.png" width="800" alt="A zone with its mites, each ringed and numbered, green when moving and orange when still"></p>
 
-A mite's page plays its close-up with the outline coloured by change and the arrow of its score, and charts
+A mite's page plays its close-up with the outline coloured by change, framed in the colour of the call
+(green moving, orange still, grey gone; dashed when corrected by hand), as the playback frames its squares, and charts
 its score in every recording:
 
-<p align="center"><img src="docs/images/app_mite.png" width="800" alt="A mite's page: close-up with outline and score arrow, score over time, a call per recording"></p>
+<p align="center"><img src="docs/images/app_mite.png" width="800" alt="A mite's page: close-up with outline framed by the call, score over time, a call per recording"></p>
 
 **4. Playback.** Every mite's whole video, its recordings one after the other, laid out by zone (a box per
 zone, a square per mite in it, the fly-offs at the end of theirs), all on one timer at the top of the page:
 play or pause, a slider over every frame of the run, a speed of 1× (real time) to 16×, and the time,
 recording and frame shown. Each square is the mite's box (the detector's `mite.radius` round its centre) and
-4 pixels more, as recorded, so the mite fills it, its edge the mite's call in the recording playing (green
-moving, orange still, grey gone or set aside); click it to open the mite. The server cuts, per recording and
+4 pixels more, as recorded, so the mite fills it, its frame the mite's call in the recording playing (green
+moving, orange still, grey gone or set aside, dashed when corrected by hand); click it to open the mite. The server cuts, per recording and
 zone, one picture with a row per mite and a column per frame (`pipeline.playback_sheet`, kept in
 `results/<name>/clips/`; a recording of more than 100 frames is thinned to 100), and the page fetches the
 recording playing and the two after it. Of a run saved as the mites' ROIs, a square is the mite's own ROI. A
@@ -526,7 +550,7 @@ live run has it too when it saves its recordings.
 **Correcting a call.** A call the detector got wrong can be corrected by hand on the result pages, of a
 folder and of a live run alike: on the mite's page, click the mite in the recording shown, or the button of
 a recording in the table, and its call changes from *moving* to *still* or back. Every number and chart
-follows at once, and the mite's ring is dashed; the workbook (its `corrected` column) and the figures are
+follows at once, and the frame round the mite's close-up is dashed; the workbook (its `corrected` column) and the figures are
 written again once the corrections pause for half a minute, and at once when the workbook is downloaded or
 the app is closed. Clicking again brings back the detector's call. A mite that is not there any more, e.g.
 one that fell off the plate, can be marked *gone* the same way, in one recording or from a recording on: it
@@ -652,9 +676,10 @@ In *Calibration* you mark by eye which mites move in each recording and compare 
 1. **Calibration data**: pick *Calibrate the threshold* or *Test the threshold*, then drop the folder, or
    *Calibrate* one of the previous recordings. The mites are found on its first frame; nothing is scored
    until a report is made.
-2. **Ground truth**: zone by zone and recording by recording, the zone's frames of that recording play in a
-   loop; click each mite to cycle it through *moving*, *still*, *not a mite* (a false detection) and back to
-   unlabelled; clicking on past a *not a mite* you just set brings back the mite's labels. <kbd>↑</kbd>
+2. **Ground truth**: zone by zone and recording by recording, the zone's frames of that recording play
+   (once, or in a loop with *Loop* ticked); click each mite to cycle it through *moving*, *still*, *not a
+   mite* (a false detection) and back to unlabelled; clicking on past a *not a mite* you just set brings back
+   the mite's labels. <kbd>↑</kbd>
    <kbd>↓</kbd> change recording, <kbd>←</kbd> <kbd>→</kbd> change zone. The detector's own call is hidden so
    it cannot bias you. Every label is saved as it is set, by position in `ground_truth.json` next to the
    recordings, so they survive a change in detector settings.
@@ -842,7 +867,7 @@ It prints a line per recording analysed; the recordings go to `recordings/<run n
 
 | Folder | Contents |
 | --- | --- |
-| `recordings/<name>/` | Every recording session: each live test run, and each folder dropped into the page or calibrated. Its frames (the mites' surroundings), labels, *not a mite* marks, ground truth, poke test, `.settings.txt` and, for a live run, `run.json`; `scores/` caches the scores (and outline changes) calibration reports computed. |
+| `recordings/<name>/` | Every recording session: each live test run, and each folder dropped into the page or calibrated. Its frames (the mites' surroundings), labels, *not a mite* marks, mites placed by hand, ground truth, poke test, `.settings.txt` and, for a live run, `run.json`; `scores/` caches the scores (and outline changes) calibration reports computed. |
 | `results/<name>/` | The last analysis of that recording, replaced when it is analysed again (files below). `clips/` holds the frames the result pages play, and `kept/` the scores, so that analysing the same recordings again, with the same metric and the same scoring code, takes a moment instead of scoring every frame again; `kept/new_mites.json` the mites a folder of frames had put on after its first recording; all can be deleted at any time. `calibration/` holds its calibration session and report, `calibration.xlsx`. |
 | `results/pooled/<date time>/` | A calibration report pooled over saved ground truth alone: its `calibration.xlsx`. Those that made no report are removed at the next start. |
 | `results/scripts/` | What the scripts in `scripts/` write: tables, optuna studies. |
@@ -851,7 +876,7 @@ Each analysis writes to `results/<recording>/`:
 
 | File | Contents |
 | --- | --- |
-| `results.xlsx` | `mites` (one row per mite: when it last moved, in minutes from the start of the first recording), `scores` (every score: one row per mite, one column per recording), `mite_map` (the plate with each mite's ID drawn on it, to find a mite of the sheets in the video), `measurements` (one row per mite per recording, with `moving`, position and the `brightness` of the mite's patch; with normalised scores, `raw_score` holds them as scored), `group_summary`, `moving` (fraction of mites moving per group and per zone at each recording), one sheet per group, `group <name>` (its mites only: zone, when each last moved and its score in every recording), and `settings` (the settings of `run_settings.json`, one row each: section, parameter, value) |
+| `results.xlsx` | `mites` (one row per mite: when it last moved, in minutes from the start of the first recording), `scores` (every score: one row per mite, one column per recording), `mite_map` (the plate with each mite's ID drawn on it, to find a mite of the sheets in the video), `measurements` (one row per mite per recording, with `moving`, position and the `brightness` of the mite's patch; with normalised scores, `raw_score` holds them as scored), `group_summary` (per group: mites, observations, how often moving, score statistics; below it, the percent of each group alive in every recording, as the survival chart shows it with the run's saved death time), `moving` (fraction of mites moving per group and per zone at each recording), one sheet per group, `group <name>` (its mites only: zone, when each last moved and its score in every recording), and `settings` (the settings of `run_settings.json`, one row each: section, parameter, value) |
 | `moving_by_group.png` | Fraction of each group's mites moving in each recording |
 | `distribution_by_group.png` | Score distribution per group, box plot with raw points |
 | `score_over_time.png` | Each mite's score across the session |

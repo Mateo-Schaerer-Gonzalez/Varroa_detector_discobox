@@ -69,19 +69,16 @@
 .mite-marker.still .ring { stroke: #ffb52e; }
 .mite-marker text { fill: #fff; font-weight: 600; paint-order: stroke; stroke: #000; stroke-width: 3px; font-family: var(--sans); pointer-events: none; }
 .mite-marker:hover .ring { stroke-width: 4.5; }
-/* What the score sees of the mite, in place of its ring: dots round its outline and
-   an arrow to the side the outline changes on, in the colour of the call. */
+/* What the score sees of the mite, in place of its ring: dots round its outline. */
 .mite-marker.outlined .ring { stroke: transparent; }
 .mite-outline { pointer-events: none; }
 .mite-outline circle { stroke: rgba(0, 0, 0, 0.25); stroke-width: 0.5; vector-effect: non-scaling-stroke; }
-.mite-outline .arrow { stroke-width: 2.5; stroke-linecap: round; vector-effect: non-scaling-stroke; }
-.mite-marker.moving .mite-outline .arrow { stroke: #3fdc8f; }
-.mite-marker.moving .mite-outline .arrow-head { fill: #3fdc8f; }
-.mite-marker.still .mite-outline .arrow { stroke: #ffb52e; }
-.mite-marker.still .mite-outline .arrow-head { fill: #ffb52e; }
-.mite-marker.gone .mite-outline .arrow { stroke: #b9bdc2; }
-.mite-marker.gone .mite-outline .arrow-head { fill: #b9bdc2; }
-.mite-marker.corrected .mite-outline .arrow { stroke-dasharray: 5 3; }
+/* A mite's picture framed in the colour of its call (ResultsPage.frameCall: the
+   close-up, the playback squares), so nothing is drawn over the mite. */
+.call-frame { border: 3px solid var(--rule); border-radius: 3px; box-sizing: border-box; }
+.call-frame[data-call="moving"] { border-color: var(--moving); }
+.call-frame[data-call="still"] { border-color: var(--still); }
+.call-frame[data-corrected] { border-style: dashed; }
 /* A call corrected by hand: the ring dashed, "corrected" beside the call. */
 .mite-marker.corrected .ring { stroke-dasharray: 6 3; }
 /* A mite marked gone in the recording shown, e.g. fallen off. */

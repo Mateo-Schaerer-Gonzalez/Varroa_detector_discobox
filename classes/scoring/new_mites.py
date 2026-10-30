@@ -9,6 +9,7 @@ one by one, so a zone's new detections are taken only when at least `least` of
 them appear in one recording.
 """
 
+from classes.plate import hand_mites
 from classes.scoring.motion_analysis import DETECTION_LOCK
 
 # Pixels round a known mite's box in which a detection is that mite.
@@ -35,11 +36,14 @@ class NewMites:
     one's first frame given in turn (search())."""
 
     def __init__(self, zone_manager, analyzer, known, least):
-        """`known`: the boxes of the mites found on the first frame; `least`:
-        the fewest new detections in a zone in one recording to take them."""
+        """`known`: the boxes of the mites found on the first frame (those
+        placed by hand, `zone_manager.by_hand`, are known too); `least`: the
+        fewest new detections in a zone in one recording to take them."""
         self.zone_manager = zone_manager
         self.analyzer = analyzer
         self.known = [tuple(box) for box in known]
+        self.known += [hand_mites.box_at(point["x"], point["y"], point["size"])
+                       for point in getattr(zone_manager, "by_hand", [])]
         self.least = least
         self.found = []  # (recording, box) of every mite taken, in order
 

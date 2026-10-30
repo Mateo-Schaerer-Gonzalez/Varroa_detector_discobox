@@ -1,6 +1,7 @@
 // The label page, of the analysis and of a live run: the plates over the first
 // frame, each named by clicking it (ZoneEditor), every detection a ring that can
-// be clicked away as "not a mite", and the groups listed beside. Its button runs
+// be clicked away as "not a mite", mites the detector missed placed by hand
+// (HandMites), and the groups listed beside. Its button runs
 // the analysis of a folder, or starts a live test run. During a run it also shows
 // the mites found to add (AddMites), and its button adds those kept.
 
@@ -76,6 +77,7 @@ class LabelPage {
     box.querySelectorAll("button").forEach((button) => button.addEventListener("click", () => {
       ctx.session.step = Number(button.dataset.step);
       this.editor.close();
+      if (ctx.session.step !== 0 && handMites.placing) handMites.setPlacing(false);  // placed on the first frame only
       this.draw();
     }));
   }
@@ -105,6 +107,7 @@ class LabelPage {
     this.drawGroupList();
     this.refreshSuggestions();
     this.drawRunButton();
+    handMites.draw();
     if (this.editor.zoneId != null) this.editor.start(this.editor.zoneId);
   }
 
@@ -158,18 +161,21 @@ class LabelPage {
     return [box, text];
   }
 
-  // A detection's ring, crossed out once it is marked "not a mite".
+  // A detection's ring, crossed out once it is marked "not a mite"; dashed for a
+  // mite placed by hand, which a click takes away.
   miteMarker(mite, place) {
     const marker = document.createElement("div");
+    const byHand = this.placedByHand(mite);
     marker.className = "label-mite";
     marker.dataset.miteId = mite.id;
     marker.classList.toggle("rejected", mite.rejected);
+    marker.classList.toggle("by-hand", byHand);
     marker.tabIndex = 0;
     marker.setAttribute("role", "button");
-    marker.setAttribute("aria-pressed", String(mite.rejected));
-    marker.title = mite.rejected
-      ? `Mite ${mite.id}: marked as not a mite, left out of the analysis. Click to keep it.`
-      : `Mite ${mite.id}: click if this is not a mite, to leave it out of the analysis.`;
+    if (!byHand) marker.setAttribute("aria-pressed", String(mite.rejected));
+    marker.title = byHand ? `Mite ${mite.id}: placed by hand. Click to take it away.`
+      : mite.rejected ? `Mite ${mite.id}: marked as not a mite, left out of the analysis. Click to keep it.`
+        : `Mite ${mite.id}: click if this is not a mite, to leave it out of the analysis.`;
     marker.setAttribute("aria-label", marker.title);
     // Placed by its centre; its size is fixed on screen (see .label-mite), since
     // a mite is only a few pixels across once the plate is scaled down.
@@ -190,9 +196,18 @@ class LabelPage {
     return marker;
   }
 
+  // A mite placed by hand that can still be taken away: not one of a run under way.
+  placedByHand(mite) {
+    return Boolean(mite.by_hand && handMites.offered);
+  }
+
   // A mite found to add is only left out of those added, not marked in the ground truth.
   toggleMite(mite, refocus = false) {
     this.editor.close();
+    if (this.placedByHand(mite)) {
+      handMites.remove(mite);
+      return;
+    }
     const changed = () => {
       this.draw();
       this.showLoadedStatus();

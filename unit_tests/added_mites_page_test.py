@@ -5,7 +5,7 @@ added in, and are shown on the frame they were found on, not on the first."""
 import json
 
 import pipeline
-from pipeline import scoring
+from pipeline import scoring, uploads
 import reference
 from classes.storage.roi_recordings import INDEX_NAME, ROI_DIRNAME
 
@@ -16,7 +16,8 @@ def saved_run(tmp_path, added):
     were found on."""
     small = reference.make_small_session(tmp_path / "small")
     folder = reference.linked_copy(small, tmp_path / "uploads" / "run")
-    assert pipeline.finish_upload(folder.name, folder.parent)["converted"] == 3
+    pipeline.finish_upload(folder.name, folder.parent)  # shrunk when first analysed
+    assert uploads.shrink_pending(folder, folder.parent.parent / "results") == 3
     index_path = folder / ROI_DIRNAME / INDEX_NAME
     index = json.loads(index_path.read_text())
     mites = index["mites"]
