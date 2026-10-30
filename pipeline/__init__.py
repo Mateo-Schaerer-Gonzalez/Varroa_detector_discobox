@@ -17,7 +17,9 @@ call; scripts may also import a module for its helpers.
     pipeline/plate_labels.py                         group names of the plates (typed or read by Gemini), negative controls
     pipeline/ground_truth.py                         a folder's ground_truth.json, its "not a mite" marks
     pipeline/detections.py                           marking a detection "not a mite" from the label page
+    pipeline/hand_mites.py                           mites placed by hand where the detector missed them
     pipeline/preview_images.py                       the pictures of the plate the pages draw on
+    pipeline/new_mites.py                            mites put on a folder's plates after its first recording
     pipeline/scoring.py                              detect and score: from frames to a run and its table
     pipeline/output_files.py                         the workbook and figures, written in the background
     pipeline/run_settings.py                         run_settings.json: how the app was set for a run's results
@@ -47,9 +49,10 @@ call; scripts may also import a module for its helpers.
 # raised by read_labels() without a key or the internet, which the server answers apart
 from classes.plate.label_reader import LabelReadError
 from pipeline.paths import (
-    LABELS_FILENAME, CONTROLS_FILENAME, GROUND_TRUTH_FILENAME, POKE_FILENAME, SETTINGS_FILENAME, PREVIEW_NAME,
+    LABELS_FILENAME, CONTROLS_FILENAME, GROUND_TRUTH_FILENAME, POKE_FILENAME, HAND_MITES_FILENAME, SETTINGS_FILENAME,
+    PREVIEW_NAME,
     CALIBRATION_SESSION_NAME, RECORDINGS_ROOT, RESULTS_ROOT, SCRIPTS_OUTPUT, CALIBRATION_REPORT_NAME,
-    SCORES_DIRNAME, ADDED_FRAMES_DIRNAME, results_dir, calibration_dir, new_pooled_report_dir,
+    SCORES_DIRNAME, ADDED_FRAMES_DIRNAME, NEW_MITES_NAME, results_dir, calibration_dir, new_pooled_report_dir,
     remove_empty_pooled_reports, dataset_id,
 )
 from pipeline.plate_zones import DEFAULT_COORDS_FILE, zones_per_plate
@@ -64,7 +67,9 @@ from pipeline.run_results import (
     review_mites, save_review_mites, death_minutes, death_minutes_range, save_death_minutes, describe_movement,
     describe_survival,
 )
-from pipeline.folder_analysis import open_session, save_zones_per_plate, run_analysis, correct_call, review_again
+from pipeline.folder_analysis import (
+    open_session, place_mite, save_zones_per_plate, save_min_new_mites, run_analysis, correct_call, review_again,
+)
 from pipeline.clips import CLIP_MARGIN, MITE_CLIP_REACH, analysis_outlines, analysis_clip, analysis_mite_clip
 from pipeline.playback import playback_reach, playback_timeline, playback_sheet
 from pipeline.uploads import plan_upload, finish_upload
@@ -88,11 +93,11 @@ from pipeline.live.live_settings import (
     LIVE_SETTINGS_FILE, live_options, print_cameras, default_run_name, save_live_settings, live_plan,
 )
 from pipeline.live.live_setup import (
-    open_live, set_live_options, live_preview, live_read_labels, set_live_light, live_frame, close_live,
-    close_all_live,
+    open_live, set_live_options, live_preview, live_place_mite, live_read_labels, set_live_light, live_frame,
+    close_live, close_all_live,
 )
 from pipeline.live.live_capture import (
     start_live, live_correct_call, live_refresh, pause_live, resume_live, stop_live,
 )
-from pipeline.live.add_mites import live_find_mites, live_add_mites
+from pipeline.live.add_mites import live_find_mites, live_hand_mite, live_add_mites
 from pipeline.live.live_calibration import open_live_calibration, grow_live_calibration

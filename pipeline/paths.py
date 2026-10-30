@@ -29,6 +29,10 @@ LABELS_FILENAME = "labels.json"
 CONTROLS_FILENAME = "controls.json"  # the zones ticked as negative controls
 GROUND_TRUTH_FILENAME = "ground_truth.json"
 POKE_FILENAME = "poke_test.json"  # which mites answered a poke, round by round
+HAND_MITES_FILENAME = "mites_by_hand.json"  # mites placed by hand where the detector missed them
+# In a folder dropped into the page: its frames are still whole, to be shrunk to the
+# mites' surroundings when it is first analysed or calibrated (uploads.shrink_pending()).
+SHRINK_PENDING_NAME = "shrink_pending.txt"
 SETTINGS_FILENAME = settings_file.FILENAME  # the recordings' Discobox settings, with the app's own lines
 PREVIEW_NAME = "preview.jpg"
 CALIBRATION_SESSION_NAME = "calibration_session.json"
@@ -38,6 +42,9 @@ RUN_INFO_NAME = "run.json"  # in a live run's folder: how the run was made, and 
 # In a live run's folder: the frame mites were added on, from_<recording>.jpg, the
 # recording they were added in (live_add_mites(), preview_images.added_previews()).
 ADDED_FRAMES_DIRNAME = "added_frames"
+# In a results folder's kept/: the mites a folder of frames had put on after its first
+# recording, as pipeline/new_mites.py found them.
+NEW_MITES_NAME = "new_mites.json"
 
 # The app's folders, one for each kind of file it keeps:
 APP_DIR = Path(__file__).resolve().parent.parent

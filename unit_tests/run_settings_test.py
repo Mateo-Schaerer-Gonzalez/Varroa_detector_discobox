@@ -6,6 +6,7 @@ import json
 
 import cv2
 import pandas as pd
+import pytest
 
 import pipeline
 import reference
@@ -52,7 +53,23 @@ def test_the_workbook_has_a_sheet_per_group_and_the_settings(tmp_path):
     assert settings["analysis", "threshold"] == get_default_config().mite.motion_threshold
     assert settings["code", "commit"] == pipeline.COMMIT
     assert settings["detector", "min_circularity"] == get_default_config().detector.min_circularity
-    assert len(settings) < 60
+    assert len(settings) < 62
+
+
+def test_the_group_summary_has_the_percent_alive_the_page_shows(tmp_path):
+    session = reference.make_small_session(tmp_path / "session")
+    pipeline.save_death_minutes(session, 20)
+    out = tmp_path / "out"
+    results = pipeline.run_analysis(session, out, {"4": "control", "7": "venom: 2x"})
+
+    sheet = pd.read_excel(out / "results.xlsx", sheet_name="group_summary", header=None)
+    title = next(row for row in range(len(sheet)) if str(sheet.iat[row, 0]).startswith("Percent alive"))
+    assert "20 min" in sheet.iat[title, 0]
+    alive = pd.read_excel(out / "results.xlsx", sheet_name="group_summary", skiprows=title + 1)
+    assert len(alive) == len(results["times"])
+    for group in pipeline.describe_survival(results, 20)["groups"]:
+        expected = [float("nan") if value is None else value for value in group["alive"]]
+        assert alive[group["group"]].tolist() == pytest.approx(expected, nan_ok=True)
 
 
 def test_group_sheet_names_are_ones_excel_takes():

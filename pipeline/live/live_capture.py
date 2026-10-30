@@ -13,7 +13,7 @@ from classes.live.progress import ZoneProgress
 from classes.live.recorder import Recorder
 from classes.storage.roi_recordings import RoiVideo
 from classes.scoring.score_normalizer import ScoreNormalizer
-from pipeline import output_files, paths, plate_labels, preview_images, run_results, scoring
+from pipeline import hand_mites, output_files, paths, plate_labels, preview_images, run_results, scoring
 from pipeline.live import live_runs
 
 _logger = logging.getLogger(__name__)
@@ -119,6 +119,7 @@ def start_live(live_id, labels=None):
         raise ValueError("This test run has already been started.")
     run.source.settings.check_death_time()
     run.analysis.follow = run.source.settings.follow_px or None
+    run.analysis.zone_manager.by_hand = hand_mites.points(run.run_dir)  # those placed since it was opened
     if labels is not None:
         plate_labels.save_labels(run.run_dir, labels)
     (run.run_dir / paths.SETTINGS_FILENAME).write_text(run.source.settings_text, encoding="utf-8")

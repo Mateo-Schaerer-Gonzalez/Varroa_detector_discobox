@@ -40,7 +40,8 @@ def over(a, m, col, al):
     rgba = np.zeros((h, w, 4)); rgba[m] = (*matplotlib.colors.to_rgb(col), al); a.imshow(rgba, interpolation="nearest")
 
 fig = plt.figure(figsize=(14, 7.6))
-gs = fig.add_gridspec(2, 4, hspace=0.45, wspace=0.42)
+# left and right margins small: the title is at the left edge, panel 1 starts there too
+gs = fig.add_gridspec(2, 4, hspace=0.45, wspace=0.42, left=0.02, right=0.98)
 # a. mean frame
 a = fig.add_subplot(gs[0, 0]); a.imshow(crop.mean(axis=0), cmap="gray", vmin=0, vmax=255); over(a, rim, RIM, 0.2)
 a.contour(~rim, levels=[0.5], colors=[RIM], linewidths=1.8)
@@ -50,7 +51,8 @@ clean(a, f"1. mean of the frames (box + {PAD} px)\nblue rim, {_RIM} px: bare pla
 a = fig.add_subplot(gs[0, 1]); im = a.imshow(still, cmap="magma_r", vmin=0, vmax=still.max())
 a.contour((still > cut) & ~rim, levels=[0.5], colors=[CUT], linewidths=1.8); a.axhline(row, color=INK, lw=0.8, ls="--")
 cb = fig.colorbar(im, ax=a, fraction=0.046, pad=0.03); cb.ax.axhline(cut, color=CUT, lw=2)
-clean(a, f"2. darkness: 0 = plate; darkest {top:.2f}\n(mean of the {DARKEST_N} darkest within the rim)\n"
+darkest_is = "the darkest pixel" if DARKEST_N == 1 else f"mean of the {DARKEST_N} darkest"
+clean(a, f"2. darkness: 0 = plate; darkest {top:.2f}\n({darkest_is} inside the rim)\n"
          f"orange line: {BODY_SHARE} × {top:.2f} = {cut:.2f}")
 # c. profile
 a = fig.add_subplot(gs[0, 2:])
@@ -63,7 +65,7 @@ a.axhline(cut, color=CUT, lw=1.5, ls="--"); a.text(0.5, cut + 0.015, f"cut-off {
 plate_px = still[~rim & ~body]
 if plate_px.size:
     a.axhspan(0, np.percentile(plate_px, 99), color=PLATE, alpha=0.12, lw=0)
-    a.text(w - 0.5, np.percentile(plate_px, 99) + 0.012, ha="right", s=f"bare plate: 99 % below {np.percentile(plate_px, 99):.2f}", fontsize=8.5, color=PLATE)
+    a.text(0.5, np.percentile(plate_px, 99) + 0.012, ha="left", s=f"bare plate: 99 % below {np.percentile(plate_px, 99):.2f}", fontsize=8.5, color=PLATE)
 a.axvspan(-0.5, _RIM - 0.5, color=RIM, alpha=0.15, lw=0); a.axvspan(w - _RIM - 0.5, w - 0.5, color=RIM, alpha=0.15, lw=0)
 a.set_xlim(-0.5, w - 0.5); a.set_ylim(0, max(top, prof.max()) * 1.45); a.set_xlabel("pixel along the line"); a.set_ylabel("darkness")
 a.spines["top"].set_visible(False); a.spines["right"].set_visible(False)

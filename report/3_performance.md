@@ -1,17 +1,22 @@
 # Varroa detector for the Discobox: performance against the original software
 
-*Agroscope · status of 26 October 2026 · part 3 of 3*
+*Agroscope · status of 30 October 2026 · part 3 of 3*
 
 *Part 1 (`1_user_manual.md`) explains how to use the app, part 2 (`2_how_it_works.md`) what
-it computes. This part compares the app with the Discobox's original analysis software:
-how well each calls moving and still against labels made by eye, and how fast, how much
-memory and how much disk each takes.*
+it computes, with each step run on one real mite. This part compares the app with the Discobox's original analysis software: how well each calls
+moving and still against labels made by eye, and how fast, how much memory and how much
+disk each takes.*
 
-Both were run on the same mite-recordings on 26 October 2026: the app with its current code,
-the original with its own code and constants (`classes/scoring/benchmark.py`). **The app
-uses one threshold, 0.091**, the best F0.5 on the poke run (part 2, §6). The poke run was
-used only to set it, so it is not among the datasets the methods are compared on. The
-original uses its fixed threshold of 25.
+Both were run on the same mite-recordings: the app with its code of 30 October 2026, the
+original with its own code and constants (`classes/scoring/benchmark.py`). **The app uses
+one threshold, 0.091**, its default, the best on the poke run by F0.25 (part 2, section 6).
+The poke run was used only to set it, so it is not among the datasets the methods are
+compared on. The original uses its fixed threshold of 25.
+
+The calls are judged by **F0.25**, the score the app's calibration chooses its threshold on:
+it weighs a still recording called moving sixteen times as much as a moving one called
+still, because a single false *moving* brings a dead mite back to life (part 2, section 6).
+The speed, memory and storage of section 6 were measured on 26 October 2026.
 
 
 ## 1. The data
@@ -48,7 +53,7 @@ touches the mite's box.
 | Finds the mites | no, counts changed spots | yes, on the first frame |
 | Measure | frame-to-first difference, OR, threshold 25 | variance on the outline, vector sum, ÷ noise floor |
 | Shake and flicker | not handled | per-mite stabilisation, lamp correction, vector sum |
-| Threshold | fixed at 25 | 0.091, calibrated on the poke run (best F0.5) |
+| Threshold | fixed at 25 | 0.091, calibrated on the poke run (best F0.25) |
 | Output | spots per recording ("mites alive") | moving/still per mite, survival per group |
 
 ---
@@ -57,32 +62,35 @@ touches the mite's box.
 
 ![Wrong calls per dataset](images/benchmark_bars.png)
 
-| Dataset | Method | Accuracy | Precision | Recall | Still called moving | Moving called still | F0.5 |
+| Dataset | Method | Accuracy | Precision | Recall | Still called moving | Moving called still | F0.25 |
 |---|---|---:|---:|---:|---:|---:|---:|
-| 2025 sessions | **app, 0.091** | **0.996** | **0.996** | 0.996 | **1** | 1 | **0.996** |
-| | original (25) | 0.963 | 0.922 | 1.000 | 19 | 0 | 0.937 |
-| GT_oct_2 | **app, 0.091** | **0.969** | 1.000 | **0.884** | 0 | **20** | **0.975** |
-| | original (25) | 0.949 | 1.000 | 0.809 | 0 | 33 | 0.955 |
-| Long run | **app, 0.091** | **0.996** | **0.927** | **0.999** | **66** | **1** | **0.941** |
-| | original (25) | 0.947 | 0.476 | 0.949 | 879 | 43 | 0.529 |
-| **Sum of the three** | **app** | | | | **67** | **22** | |
+| 2025 sessions | **app, 0.091** | **0.998** | **0.996** | 1.000 | **1** | 0 | **0.996** |
+| | original (25) | 0.963 | 0.922 | 1.000 | 19 | 0 | 0.926 |
+| GT_oct_2 | **app, 0.091** | **0.969** | 1.000 | **0.884** | 0 | **20** | **0.992** |
+| | original (25) | 0.949 | 1.000 | 0.809 | 0 | 33 | 0.986 |
+| Long run | **app, 0.091** | **0.996** | **0.926** | **0.999** | **67** | **1** | **0.930** |
+| | original (25) | 0.947 | 0.476 | 0.949 | 879 | 43 | 0.491 |
+| **Sum of the three** | **app** | | | | **68** | **21** | |
 | | original (25) | | | | 898 | 76 | |
 
 *Precision: of the recordings called moving, the share labelled moving. Recall: of the
-recordings labelled moving, the share called moving. F0.5 weighs a still recording called
-moving four times as much as a moving one called still.*
+recordings labelled moving, the share called moving. F0.25 weighs a still recording called
+moving sixteen times as much as a moving one called still, so it rewards precision far more
+than recall: on `GT_oct_2`, where neither method calls a still recording moving, both score
+close to 1 although the original misses 13 more movements.*
 
 **Is the difference more than chance?** The observations aren't independent (a hard mite is
 hard in every recording), so the mites were resampled with replacement 2,000 times, the
-threshold staying at 0.091. The app's F0.5 minus the original's, median and 95 % interval:
+threshold staying at 0.091. The app's F0.25 minus the original's, median and 95 % interval:
 
-| Dataset | Difference in F0.5 |
+| Dataset | Difference in F0.25 |
 |---|---|
-| 2025 sessions | +0.058 (+0.032 to +0.087) |
-| GT_oct_2 | +0.019 (+0.007 to +0.034) |
-| Long run | +0.412 (+0.322 to +0.504) |
+| 2025 sessions | +0.068 (+0.039 to +0.102) |
+| GT_oct_2 | +0.006 (+0.002 to +0.011) |
+| Long run | +0.440 (+0.346 to +0.532) |
 
-Every interval excludes 0.
+Every interval excludes 0. The gain is largest where the original calls still recordings
+moving (the long run), which F0.25 punishes most.
 
 
 
@@ -95,7 +103,7 @@ death by the labels: mean distance in recordings, and the mites exact.
 
 | Dataset | App at 0.091 | Original (25) |
 |---|---|---|
-| 2025 sessions (86 mites) | **0.02** (85 / 86 exact) | 0.09 (81 / 86) |
+| 2025 sessions (86 mites) | **0.02** (85 / 86 exact, 1 late) | 0.09 (81 / 86, 5 late) |
 | GT_oct_2 (21) | **0.24** (19 / 21, 2 early) | 0.71 (17 / 21, 4 early) |
 | Long run (59) | **3.4** (50 / 59, 9 late) | 199.6 (3 / 59, 56 late) |
 
@@ -125,17 +133,17 @@ centre shifts).*
 The original takes raw differences to the first frame. A shake of a fifth of a pixel slides
 every dark mite edge across its pixels by enough to pass 25 grey levels, and the grown spot
 touches the mite's box. The app follows each mite's centre and holds its patch still
-(part 2, §2), and calls no still recording moving once the plate shakes more than 0.15 px.
+(part 2, section 2), and calls no still recording moving once the plate shakes more than 0.15 px.
 In the calmest recordings (below 0.05 px) the app calls slightly more still recordings
 moving than the original (1.0 % against 0.5 %).
 
 
-### 5.3 Short recordings
+### 5.2 Short recordings
 
 With 10 frames there are fewer chances for a leg to move by more than 25 grey levels from
 the first frame: the original misses 33 of 173 moving recordings in `GT_oct_2`, the app 20.
 
-### 5.4 No mites, only spots
+### 5.3 No mites, only spots
 
 The original reports spots per recording as mites alive, so it can't follow a mite, give a
 time of death, or compute survival per group. The comparison above had to ask it about each

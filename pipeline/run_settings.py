@@ -6,7 +6,8 @@ the same in its settings sheet.
     code         git commit, files changed but not committed, Python and OpenCV
     recording    how the recordings were made (their .settings.txt): number,
                  interval, frames, frame rate, fan and LEDs, following (live)
-    detector     how the mites were found on the first frame (config's detector)
+    detector     how the mites were found on the first frame (config's detector),
+                 and the mites placed by hand where it missed them
     analysis     how each recording was scored and called: metric, its
                  parameters and constants, stabilizer, threshold, death rule,
                  zones per plate, mites whose calls were corrected by hand
@@ -27,7 +28,7 @@ from classes.scoring import analyzer, plate_stabilizer
 from classes.scoring.analyzer import Analyzer
 from classes.storage import settings_file
 from classes.storage.files import write_json
-from pipeline import paths, plate_zones
+from pipeline import hand_mites, paths, plate_zones
 
 NAME = "run_settings.json"
 # The lines of .settings.txt that say how the recordings were made.
@@ -103,7 +104,8 @@ def describe(run, normalizer):
         "written": datetime.now().isoformat(timespec="seconds"),
         "code": code(),
         "recording": recording(run, data_dir),
-        "detector": dataclasses.asdict(config.detector),
+        "detector": {**dataclasses.asdict(config.detector),
+                     "mites_placed_by_hand": [[point["x"], point["y"]] for point in hand_mites.saved(data_dir)]},
         "analysis": analysis(config.mite, normalizer, data_dir),
     }
 

@@ -207,6 +207,7 @@ def calibration_folder(data_dir, recordings_root=paths.RECORDINGS_ROOT):
     if not data_dir.is_dir():
         raise FileNotFoundError(f"Recording folder not found: {data_dir}")
     if data_dir.resolve().parent == Path(recordings_root).resolve():
+        uploads.shrink_pending(data_dir)  # a folder dropped into the page, its mites placed
         return data_dir
     origin = os.path.normcase(str(data_dir.resolve()))
     for folder in sorted(Path(recordings_root).glob(f"*/{ORIGIN_NAME}")):

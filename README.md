@@ -27,7 +27,7 @@ The app runs a test on the Discobox from start to finish, or analyses recordings
 - **Stabilization.** Each mite's patch is held still to a tenth of a pixel before scoring, so a
   shaking plate is not mistaken for a moving mite.
 - **Calibration.** A labelling interface for ground truth by eye, a precision-recall report, the
-  threshold with the best F0.5, and a poke test to check the calls against the mites' response.
+  threshold with the best F0.25, and a poke test to check the calls against the mites' response.
 - **Statistics.** Kaplan–Meier survival with 95 % confidence intervals, LT50 and log-rank tests
   against negative controls, shown in an interactive web interface and written to an Excel workbook.
 - **Testing.** Regression tests compare results, every workbook sheet, figure contents and pixels
@@ -53,7 +53,7 @@ by eye that were not used to set the app's threshold:
 
 - [How it works](#how-it-works): the pipeline, step by step, on real mites
 - [How well it works](#how-well-it-works): the benchmark against the original software
-- [Reports](#reports): the user manual, how it works, the performance report
+- [Reports](#reports): the user manual (with a calibration guide), how it works, step by step, the performance report
 - [Quick start](#quick-start)
 - [User manual](#user-manual): [Live](#live-from-the-discobox) · [Analysis](#analysing-recordings) · [Calibration](#calibration)
 - [Architecture](#architecture) · [Command line](#command-line) · [Files](#where-files-go) · [Tests](#tests) · [References](#references)
@@ -67,11 +67,11 @@ flowchart LR
     A["Find the mites<br/>first frame"] --> B["Cut each mite's<br/>patch, every frame"]
     B --> C["Stabilize<br/>per mite"]
     C --> D["Lamp correction<br/>+ noise floor"]
-    D --> E["128 rays → outline<br/>variance profile"]
+    D --> E["64 rays → outline<br/>variance profile"]
     E --> F["Vector sum<br/>= motion score"]
     F --> G{"score ≥ T ?"}
     G -->|moving / still| H["Death rule →<br/>Kaplan–Meier"]
-    L["Labels by eye"] -.->|"best F0.5"| G
+    L["Labels by eye"] -.->|"best F0.25"| G
 ```
 
 Below, the steps run on real data, a live run of 14 mites with 95 recordings of 90 frames over 15.7 h.
@@ -101,16 +101,16 @@ over the frames (right) shows what changed: a few bright spots where the legs mo
 
 Plate shake is the main source of false movement. A shift of a fifth of a pixel, too small to see, slides the dark edge of every
 mite across its pixels and lights up the whole outline (top left). The stabilizer follows the centre
-of each mite's darkness, frame by frame, and cuts the patch shifted back by it (bilinear). The ring
+of each mite's darkness, frame by frame, and cuts the patch shifted back by it (Lanczos). The ring
 largely disappears, but a moving mite's legs stay (bottom), because only a shift of the whole mite is removed.
 
 ![What stabilizing changes](docs/images/walk_3_stabilizer_effect.png)
 
-### 4. Read the outline along 128 rays
+### 4. Read the outline along 64 rays
 
-Every frame is scaled so that the plate has the same light, which cancels lamp flicker. From the mite's centre, 128 rays
+Every frame is scaled so that the plate has the same light, which cancels lamp flicker. From the mite's centre, 64 rays
 are sampled every 0.5 px. Along each ray the app finds where the body ends (orange) and measures
-the variance over the frames in a ±1.04 px band round that edge. The legs show up as bright blobs on
+the variance over the frames in a ±1.5 px band round that edge. The legs show up as bright blobs on
 the band.
 
 ![Rays, edge and variance](docs/images/walk_5_rays.png)
@@ -118,8 +118,8 @@ the band.
 ### 5. One number per direction, in units of noise
 
 Each direction gets one value: the variance on its stretch of the outline, divided by the noise floor,
-which is the variance of the bare plate at the patch's rim in the same recording. A still mite is flat at about 0.4. The
-moving mite has peaks of up to 9× the noise, all on one side.
+which is the variance of the bare plate at the patch's rim in the same recording. A still mite is flat at about 0.3. The
+moving mite has peaks of up to 7× the noise, all on one side.
 
 ![The outline profile](docs/images/walk_6_profile.png)
 
@@ -132,10 +132,10 @@ harmonic of the profile.
 
 ![The vector sum](docs/images/walk_7_vector_sum.png)
 
-In the app, every mite's page draws this over its picture, the outline coloured by change and the arrow
-from its centre:
+In the app, every mite's page draws the outline over its picture, coloured by change, and frames the
+picture in the colour of the call:
 
-<p align="center"><img src="docs/images/mite_outline_app.png" width="560" alt="Outline and score arrow on a moving and a still mite"></p>
+<p align="center"><img src="docs/images/mite_outline_app.png" width="560" alt="Outline on a moving and a still mite, framed in the colour of the call"></p>
 
 ### 7. One threshold: moving or still
 
@@ -147,8 +147,8 @@ score drops tenfold and stays there.
 ### 8. Where the threshold comes from
 
 The threshold is calibrated against labels made by eye. The labelled scores barely overlap (average
-precision 0.999). The app picks the threshold with the best F0.5, which counts a still recording called
-*moving* four times as heavily as the opposite error, because one false "moving" can bring a dead mite back to life
+precision 0.9995). The app picks the threshold with the best F0.25, which counts a still recording called
+*moving* sixteen times as heavily as the opposite error, because one false "moving" can bring a dead mite back to life
 hours after it died.
 
 ![Calibration](docs/images/walk_9_calibration.png)
@@ -162,8 +162,9 @@ death time. Pooled per treatment, that gives Kaplan–Meier survival curves with
 ![Calls, deaths, Kaplan–Meier](docs/images/walk_10_survival.png)
 
 > The constants of the stabilizer and the score (rays, band width, body edge,
-> interpolation, …) were chosen by a 600-trial Optuna search on four labelled datasets, with the mites
-> split into tune and test halves ([`scripts/pipeline_optuna.py`](scripts/pipeline_optuna.py)).
+> interpolation, …) were tested against a 600-trial Optuna search on four labelled datasets, with the mites
+> split into tune and test halves ([`scripts/pipeline_optuna.py`](scripts/pipeline_optuna.py)). The
+> search's constants separated the tune mites better but not the test mites, so the app keeps its own.
 >
 > Every figure in this section is drawn by [`scripts/visual_walkthrough.py`](scripts/visual_walkthrough.py) with the
 > app's own functions; the full walk-through, with the code of each step, is
@@ -212,7 +213,7 @@ Longer write-ups, in [`report/`](report/):
 
 | Report | What it covers |
 |---|---|
-| [User manual](report/1_user_manual.md) | Using the app: a live test on the Discobox, analysing recordings, calibrating the threshold, the files it writes |
+| [User manual](report/1_user_manual.md) | Using the app: a live test on the Discobox, analysing recordings, the files it writes, and a guide to calibrating the threshold: when, with what data, how to read the reports and test the result |
 | [How it works](report/2_how_it_works.md) | What the app computes, with the reasoning: detection, the stabilizer, the motion score, the threshold, survival statistics, calibration |
 | [How it works, step by step on one mite](report/visual_how_it_works.md) | The same pipeline run on real data, with the code of each step and a figure of what it did |
 | [Performance](report/3_performance.md) | The app against the Discobox's original software: calls, time of death, speed, memory, storage (26 October 2026) |
@@ -324,7 +325,9 @@ sequenceDiagram
    until every mite is dead*, which this replaced, is read without it). *On/Off* switches the fan to check
    it; the sliders set the intensity of the fan and of the LEDs.
 2. **Plate labels**: the same page as for a folder, on the camera's newest frame, with the LEDs on. *Zones per
-   plate* (1 or 2) is chosen here. *Start test run* switches the LEDs off and starts recording; from then on
+   plate* (1 or 2) is chosen here, and mites the detector missed are placed by hand (see *Placing a mite by
+   hand* under *Analysing recordings*): the run finds them on its first frame with the detector's and follows
+   them. *Start test run* switches the LEDs off and starts recording; from then on
    the run switches them.
 3. **Live results**: the result pages of a folder, with a panel above them: a circle per zone with mites,
    filled as its mites die (dead of those seen moving, under it), the frame rate, dropped frames, the fan and
@@ -354,7 +357,8 @@ square in the playback are cut round where it was in that recording, with its ri
 **Adding mites.** *Add mites* on the panel lights the plates between two recordings (it is refused while one
 is being captured or is about to start; the run waits meanwhile; the camera is given 10 s to follow the
 LEDs), detects the mites and shows those not followed yet on the label page, over that frame, as before the
-run: a ring each, all kept; click one to leave it out, and name a plate a new mite is on. Then *Add N mites*
+run: a ring each, all kept; click one to leave it out, place one it missed by hand (*Place a mite by hand*,
+then a click on it; a dashed ring, which a click takes away), and name a plate a new mite is on. Then *Add N mites*
 (or *Cancel*). They are followed from the next recording on, numbered after the mites of their zone, those
 added together in reading order (left to right, line by line, as the first frame's) (mite `13.7` after
 `13.6`). Before then they count as not there (censored, as a mite marked gone), and their survival is counted
@@ -398,7 +402,7 @@ Only what the analysis reads of the recordings is saved, to `recordings/<run nam
 |---|---|
 | `first_frame.png` | The first frame of the first recording, whole: the mites are found and the zones labelled on it |
 | `rois/mite_000.mkv` ... | Per mite, its surroundings (its box and 32 px round it, at least 40 px round its centre) in every frame of every recording it was followed in, one recording after the other: one lossless (FFV1) grey video, its region moving with the mite |
-| `added_frames/from_<n>.jpg` | The lit frame mites were added on, `n` the recording they were added in: the result pages (plate map, zone and mite crops), the ground-truth and the poke-test pages draw the plate from that recording on with it, so the mites added are seen where they are drawn, and a mite has no ring before it is there |
+| `added_frames/from_<n>.jpg` | The lit frame mites were added on, `n` the recording they were added in: the label page (when the run is opened again), the result pages (plate map, zone and mite crops), the ground-truth and the poke-test pages draw the plate from that recording on with it, so the mites added are seen where they are drawn, and a mite has no ring before it is there |
 | `rois/index.json` | Where each mite was found (and from which recording, for one added), and per recording its name, frame rate, number of frames, where each mite was in it (none once it counted as dead) and the blobs found on its whole first and last frame (fly-offs, see below) |
 
 While the run goes on, each recording is saved as its own short videos in `rois/parts/`; once it is over,
@@ -412,7 +416,11 @@ to the last digit. The live results go to `results/<run name>/`.
 Since only the mites' surroundings are saved, the pages of such a session play only a mite's own clip (its
 page, the ground truth, the playback): the plate map and the zones show the first frame, and a fly-off is
 seen leaving its place, not its walk across the plate. The mites are those found when the run started and
-added during it; the detector's settings changed later find no others there. Untick *Save the recordings*
+added during it; the detector's settings changed later find no others there. Opened again, its label page
+lists the mites added with the ids the results give them, and offers above the plate *First recording* and
+one *Added at recording N* per frame mites were added on: each shows that frame, with the rings of the
+mites there by then, those added on it in yellow. It opens on the first frame with mites on it, so a run
+whose mites were all added later does not open on empty plates. Untick *Save the recordings*
 for long runs; the results are the same, but there is then no clip to play and nothing to open again.
 Folders of BMPs opened by path, from the Discobox app or from runs before this, are read as before; folders
 dropped onto the page are shrunk (classes/storage/roi_conversion.py).
@@ -438,8 +446,10 @@ with the app, so check the movement threshold on a live recording (Calibration) 
 
 **1. Recordings.** Pick one of the previous recordings, or drag the session folder (the one holding the
 `..._fps-30` folders) onto the page, or click *Choose folder*. The images are copied to
-`recordings/<folder name>/`, then shrunk to what a live run saves, the mites' surroundings (about a thirtieth
-of the space, the same results; your own folder is left as it is). Its labels, ground truth and poke test
+`recordings/<folder name>/` and, when the folder is first analysed or calibrated, shrunk to what a live run
+saves, the mites' surroundings (about a thirtieth of the space, the same results; your own folder is left as
+it is). Until then its frames are whole, so mites the detector missed can be placed by hand (below); the
+first analysis takes a moment per recording longer. Its labels, ground truth and poke test
 come along. Dropping the same folder again only sends files that changed (no frames already shrunk; new
 recordings join the others), and keeps the labels you already typed. You can also type a path instead, and
 then labels are saved next to the recordings.
@@ -448,6 +458,19 @@ then labels are saved next to the recordings.
 to the next plate. Labels are saved to `labels.json` automatically. Tick *negative control* under the name of
 the control plates; they are saved to `controls.json`. Each detection has a ring: click one that is not a
 mite to cross it out (*not a mite*).
+
+**Placing a mite by hand.** A mite the detector missed can be added: click *Place a mite by hand*, then on
+the mite (<kbd>Esc</kbd> or *Done placing mites* ends it). The ring goes on the dark spot nearest the click,
+within 8 px, so it need not be exact, and the mite's box is the size of the detector's on that frame; a click
+off the plates, on a plate's label or within 10 px of another mite is refused. Its ring is dashed: click it
+to take it away. The mites placed by hand are saved with the recordings (`mites_by_hand.json`, by position)
+and found with the detector's wherever the mites are found: in the analysis, its calibration, and when the
+frames are shrunk to the mites' surroundings, which then keep theirs too. A detector that later finds the
+same mite (other settings) counts it once. The results list them in `run_settings.json` (`detector`). A
+folder dropped into the page takes them until it is first analysed or calibrated, a folder opened by typed
+path always, and a test run until it starts; during a run, they are placed among the mites found by *Add
+mites*. A recording kept only as the mites' surroundings (a dropped folder once analysed, a saved test run)
+has no frames elsewhere, so there the button is not shown: place the mites before the first analysis.
 
 <details>
 <summary>Reading the hand-written names with Google Gemini (optional)</summary>
@@ -458,6 +481,29 @@ read by Google Gemini and filled in, to be checked (`classes/plate/label_reader.
 each label area to Google, so it takes the internet and a free API key from aistudio.google.com/apikey: put
 it in a file `.env` in the app's folder as `GEMINI_API_KEY=...` (the file is this machine's own, not in git)
 and start the app again. Without one the box is greyed out and names are typed as before.
+
+</details>
+
+<details>
+<summary>Mites put on the plates after the first recording</summary>
+
+The mites are found on the first frame. Mites put on after the recording started are looked for too, on the
+first frame of every later recording (`classes/scoring/new_mites.py`): a detection not within 4 px of a mite
+already known, in a zone, is a new mite, but only when at least *Least new mites per zone* (on the label
+page; `detector.min_new_mites` in `config.yaml`, 3 by default, 0 to look for none) appear in that zone in
+the same recording. Mites are put on several at once; debris, or a mite that walked away from where it was
+found, turns up alone, so it is left out. A zone that gets only one or two mites later needs the setting
+lowered for that analysis.
+
+The mites found so are treated as a live run treats the mites added during it: numbered after their zone's
+mites, on their own clock from the recording they appeared in, and censored before it. The label page shows
+them in yellow on that recording's first frame (*Added at recording N* above the plate) and says how many came;
+the results overview lists them under *Mites put on later*, each opening on the recording it came in. Check
+each one, and mark one that is not a mite *not a mite* on the label page. Each recording's first frame is
+read once (about 0.1 s each); what was found is kept in `results/<name>/kept/new_mites.json` until the
+recordings, the zones or the detector's settings change. A folder dropped onto the page is searched before
+its frames are shrunk, and keeps the mites found as a live run keeps its added mites (`"from"` in
+`rois/index.json`, the frame in `added_frames/`).
 
 </details>
 
@@ -480,19 +526,25 @@ and downloads as SVG or PNG. The browser's back button works throughout. When co
 *Scores on one scale per mite* below), the scores of a folder are normalised over the run, and the pages'
 headings say by what.
 
+Every recording shown (plate, zone, mite, ground truth, the calibration report's last recording) plays once
+and stops on its last frame; *Play* plays it again. Tick *Loop* under any of them to play them over and over,
+which the browser remembers; a loop is off by default, as its jump from the last frame back to the first can
+look like movement.
+
 <p align="center"><img src="docs/images/app_zone_top.png" width="800" alt="A zone with its mites, each ringed and numbered, green when moving and orange when still"></p>
 
-A mite's page plays its close-up with the outline coloured by change and the arrow of its score, and charts
+A mite's page plays its close-up with the outline coloured by change, framed in the colour of the call
+(green moving, orange still, grey gone; dashed when corrected by hand), as the playback frames its squares, and charts
 its score in every recording:
 
-<p align="center"><img src="docs/images/app_mite.png" width="800" alt="A mite's page: close-up with outline and score arrow, score over time, a call per recording"></p>
+<p align="center"><img src="docs/images/app_mite.png" width="800" alt="A mite's page: close-up with outline framed by the call, score over time, a call per recording"></p>
 
 **4. Playback.** Every mite's whole video, its recordings one after the other, laid out by zone (a box per
 zone, a square per mite in it, the fly-offs at the end of theirs), all on one timer at the top of the page:
 play or pause, a slider over every frame of the run, a speed of 1× (real time) to 16×, and the time,
 recording and frame shown. Each square is the mite's box (the detector's `mite.radius` round its centre) and
-4 pixels more, as recorded, so the mite fills it, its edge the mite's call in the recording playing (green
-moving, orange still, grey gone or set aside); click it to open the mite. The server cuts, per recording and
+4 pixels more, as recorded, so the mite fills it, its frame the mite's call in the recording playing (green
+moving, orange still, grey gone or set aside, dashed when corrected by hand); click it to open the mite. The server cuts, per recording and
 zone, one picture with a row per mite and a column per frame (`pipeline.playback_sheet`, kept in
 `results/<name>/clips/`; a recording of more than 100 frames is thinned to 100), and the page fetches the
 recording playing and the two after it. Of a run saved as the mites' ROIs, a square is the mite's own ROI. A
@@ -503,7 +555,7 @@ live run has it too when it saves its recordings.
 **Correcting a call.** A call the detector got wrong can be corrected by hand on the result pages, of a
 folder and of a live run alike: on the mite's page, click the mite in the recording shown, or the button of
 a recording in the table, and its call changes from *moving* to *still* or back. Every number and chart
-follows at once, and the mite's ring is dashed; the workbook (its `corrected` column) and the figures are
+follows at once, and the frame round the mite's close-up is dashed; the workbook (its `corrected` column) and the figures are
 written again once the corrections pause for half a minute, and at once when the workbook is downloaded or
 the app is closed. Clicking again brings back the detector's call. A mite that is not there any more, e.g.
 one that fell off the plate, can be marked *gone* the same way, in one recording or from a recording on: it
@@ -598,13 +650,13 @@ over the frames of the bare plate at the patch's edge in the same recording (`An
 that is 0, which only frames without noise or a black plate give, the score is left undivided and a
 `NoNoiseWarning` flags it: it is then off the threshold's scale). That needs no other recording, so it holds
 in a live run too. On sample_data the floor is 3.1 to 3.8 grey levels squared. The constants of the score
-and the stabilizer (128 rays of 11.4 px, the body's edge at 0.226 of its darkest, a ±1.04 px outline band, a
-bilinear stabilizer, …) were chosen by an Optuna search on the labelled recordings on 2026-10-27
-(`scripts/pipeline_optuna.py`, `notebooks/pipeline_optuna.ipynb`); they are read from `config.default.yaml`
-and the code, never from a machine's `config.yaml`. The search also divided the score by its outline's mean
-variance to the power 0.491 (`relative`); that was taken out the same day, as it changed no call on the
-labelled recordings. The default threshold (0.074) is the best F0.5 threshold of the poke run (3 s at 30 fps)
-on that scale. A threshold saved before then is on another scale: save one again from a calibration report.
+and the stabilizer (64 rays of 13 px, the body's edge at 0.5 of its darkest, a ±1.5 px outline band, a
+Lanczos stabilizer, …) are read from `config.default.yaml` and the code, never from a machine's `config.yaml`.
+An Optuna search on the labelled recordings chose others on 2026-10-27 (`scripts/pipeline_optuna.py`,
+`notebooks/pipeline_optuna.ipynb`); they separated moving from still better only on the mites they were
+tuned on, and the constants before them were restored on 2026-10-29. The default threshold (0.091) is the
+best threshold of the poke run (3 s at 30 fps) by F0.5 and F0.25 alike. A threshold saved between
+2026-10-27 and 2026-10-29 is on the search's scale: save one again from a calibration report.
 
 Two further normalisations put the scores of a finished run on one scale
 (`classes/scoring/score_normalizer.py`); both keep the scores on about the scale they had.
@@ -629,24 +681,27 @@ In *Calibration* you mark by eye which mites move in each recording and compare 
 1. **Calibration data**: pick *Calibrate the threshold* or *Test the threshold*, then drop the folder, or
    *Calibrate* one of the previous recordings. The mites are found on its first frame; nothing is scored
    until a report is made.
-2. **Ground truth**: zone by zone and recording by recording, the zone's frames of that recording play in a
-   loop; click each mite to cycle it through *moving*, *still*, *not a mite* (a false detection) and back to
-   unlabelled; clicking on past a *not a mite* you just set brings back the mite's labels. <kbd>↑</kbd>
-   <kbd>↓</kbd> change recording, <kbd>←</kbd> <kbd>→</kbd> change zone. The detector's own call is hidden so
-   it cannot bias you. Every label is saved as it is set, by position in `ground_truth.json` next to the
+2. **Ground truth**: one mite in one recording at a time, its clip playing (once, or in a loop with *Loop*
+   ticked) beside a picture of where its pixels change over the frames. Label it *moving* <kbd>M</kbd>,
+   *still* <kbd>S</kbd>, *not a mite* <kbd>N</kbd> (a false detection, in every recording) or *unlabelled*
+   <kbd>U</kbd>; a label moves on to the mite's next recording, and after its last to the next mite still to
+   label. *Dead from here on* <kbd>D</kbd> labels the mite still in this recording and every later one not
+   labelled yet; another label after *not a mite* brings the mite's labels back. <kbd>←</kbd> <kbd>→</kbd>
+   change recording, <kbd>↑</kbd> <kbd>↓</kbd> change mite, <kbd>P</kbd> plays or pauses. The detector's own
+   call is hidden so it cannot bias you. Every label is saved as it is set, by position in `ground_truth.json` next to the
    recordings, so they survive a change in detector settings.
 3. **Report**: every labelled (mite, recording) is compared with the detector's call there, moving when that
-   recording's score reaches the threshold. *Calibration* suggests the threshold with the largest F0.5 of the
-   calls moving, mite-recording by mite-recording (1.25 × moving called moving over 1.25 × moving called
-   moving + 0.25 × moving called still + still called moving): a still recording called moving costs four
+   recording's score reaches the threshold. *Calibration* suggests the threshold with the largest F0.25 of the
+   calls moving, mite-recording by mite-recording (1.0625 × moving called moving over 1.0625 × moving called
+   moving + 0.0625 × moving called still + still called moving): a still recording called moving costs sixteen
    times a moving one called still, because one such call can bring a dead mite back to life hours after its
    death, while a live mite called still moves again later. It can save the threshold to `config.yaml`. The
    close calls it gets wrong are the ones the results page asks to check by eye (see *Close calls to check by
    eye* above). For the suggested threshold and the one in use it reports the share called right, the moving
-   recordings called still, the still ones called moving, F0.5 and the death-time error: the mean distance,
+   recordings called still, the still ones called moving, F0.25 and the death-time error: the mean distance,
    in recordings, between each mite's death by the detector and by the labels (a mite dies at the recording
    after its last movement), which is reported but not chosen on. Its precision-recall curve marks both
-   thresholds, with the curve of the points as good by F0.5 as the better of them. Its confusion matrix
+   thresholds, with the curve of the points as good by F0.25 as the better of them. Its confusion matrix
    switches between the suggested threshold and the one in use. *Test* shows the confusion matrix at the
    threshold in use, the precision-recall curve with its average precision, and where on the plate the
    errors are. Both show the fraction of mites moving per recording by the ground truth against the
@@ -654,7 +709,9 @@ In *Calibration* you mark by eye which mites move in each recording and compare 
    the outline change between recordings (see *Outline change between recordings* below). The report is the
    one picked on the first page; to see the other, go back and pick it there.
 
-Test a threshold on a different recording from the one it was calibrated on.
+Test a threshold on a different recording from the one it was calibrated on. When to calibrate, what data to
+label, and how to read both reports and decide whether to save are in the
+[user manual, section 4](report/1_user_manual.md#4-calibration-setting-and-checking-the-threshold).
 
 <details>
 <summary><b>The report in detail: wrong calls, pooling, metric choice, calibration.xlsx</b></summary>
@@ -819,8 +876,8 @@ It prints a line per recording analysed; the recordings go to `recordings/<run n
 
 | Folder | Contents |
 | --- | --- |
-| `recordings/<name>/` | Every recording session: each live test run, and each folder dropped into the page or calibrated. Its frames (the mites' surroundings), labels, *not a mite* marks, ground truth, poke test, `.settings.txt` and, for a live run, `run.json`; `scores/` caches the scores (and outline changes) calibration reports computed. |
-| `results/<name>/` | The last analysis of that recording, replaced when it is analysed again (files below). `clips/` holds the frames the result pages play, and `kept/` the scores, so that analysing the same recordings again, with the same metric and the same scoring code, takes a moment instead of scoring every frame again; both can be deleted at any time. `calibration/` holds its calibration session and report, `calibration.xlsx`. |
+| `recordings/<name>/` | Every recording session: each live test run, and each folder dropped into the page or calibrated. Its frames (the mites' surroundings), labels, *not a mite* marks, mites placed by hand, ground truth, poke test, `.settings.txt` and, for a live run, `run.json`; `scores/` caches the scores (and outline changes) calibration reports computed. |
+| `results/<name>/` | The last analysis of that recording, replaced when it is analysed again (files below). `clips/` holds the frames the result pages play, and `kept/` the scores, so that analysing the same recordings again, with the same metric and the same scoring code, takes a moment instead of scoring every frame again; `kept/new_mites.json` the mites a folder of frames had put on after its first recording; all can be deleted at any time. `calibration/` holds its calibration session and report, `calibration.xlsx`. |
 | `results/pooled/<date time>/` | A calibration report pooled over saved ground truth alone: its `calibration.xlsx`. Those that made no report are removed at the next start. |
 | `results/scripts/` | What the scripts in `scripts/` write: tables, optuna studies. |
 
@@ -828,7 +885,7 @@ Each analysis writes to `results/<recording>/`:
 
 | File | Contents |
 | --- | --- |
-| `results.xlsx` | `mites` (one row per mite: when it last moved, in minutes from the start of the first recording), `scores` (every score: one row per mite, one column per recording), `mite_map` (the plate with each mite's ID drawn on it, to find a mite of the sheets in the video), `measurements` (one row per mite per recording, with `moving`, position and the `brightness` of the mite's patch; with normalised scores, `raw_score` holds them as scored), `group_summary`, `moving` (fraction of mites moving per group and per zone at each recording), one sheet per group, `group <name>` (its mites only: zone, when each last moved and its score in every recording), and `settings` (the settings of `run_settings.json`, one row each: section, parameter, value) |
+| `results.xlsx` | `mites` (one row per mite: when it last moved, in minutes from the start of the first recording), `scores` (every score: one row per mite, one column per recording), `mite_map` (the plate with each mite's ID drawn on it, to find a mite of the sheets in the video), `measurements` (one row per mite per recording, with `moving`, position and the `brightness` of the mite's patch; with normalised scores, `raw_score` holds them as scored), `group_summary` (per group: mites, observations, how often moving, score statistics; below it, the percent of each group alive in every recording, as the survival chart shows it with the run's saved death time), `moving` (fraction of mites moving per group and per zone at each recording), one sheet per group, `group <name>` (its mites only: zone, when each last moved and its score in every recording), and `settings` (the settings of `run_settings.json`, one row each: section, parameter, value) |
 | `moving_by_group.png` | Fraction of each group's mites moving in each recording |
 | `distribution_by_group.png` | Score distribution per group, box plot with raw points |
 | `score_over_time.png` | Each mite's score across the session |
@@ -888,5 +945,5 @@ test of the hardware itself.
 2. **Allied Vision, *Vimba X SDK* and *vmbpy*,** the camera's driver and Python API, installed as the
    Discobox's own instructions describe.
 3. Statistics: Kaplan–Meier survival with Greenwood's confidence intervals on the log-log scale, and the
-   log-rank test (`scipy.stats.logrank`); motion-score constants tuned with **Optuna** (Akiba et al.,
+   log-rank test (`scipy.stats.logrank`); the search of the motion-score constants with **Optuna** (Akiba et al.,
    *Optuna: A Next-generation Hyperparameter Optimization Framework*, KDD 2019).

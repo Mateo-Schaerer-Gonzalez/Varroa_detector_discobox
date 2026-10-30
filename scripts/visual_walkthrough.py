@@ -1,4 +1,4 @@
-"""The figures of report/visual_how_it_works.md: every step of the analysis, run
+"""The worked example of report/2_how_it_works.md: every step of the analysis, run
 with the app's own functions on one mite of the poke run, drawn.
 
 The moving example is mite 7.1 in recording 8, the still one mite 7.3 in
@@ -9,6 +9,7 @@ frame, the binarised frames of the blob detector), and those are marked.
 
     python scripts/visual_walkthrough.py                      # the poke run in %TEMP%/zzrc/gt
     python scripts/visual_walkthrough.py --root <folder holding poke_test_oct>
+    python scripts/visual_walkthrough.py --long-run %TEMP%/zzrc/perf/long_run   # a copy of the long run
 
 Writes report/images/walk_*.png and results/scripts/visual_walkthrough.json
 (the numbers the text quotes). Reads only.
@@ -51,6 +52,8 @@ NUMBERS = pipeline.SCRIPTS_OUTPUT / "visual_walkthrough.json"
 DATASET = "poke_test_oct"
 LONG_RUN = "test_run_2026-09-08_Mathis_last_dsRNA"
 MOVING, STILL = ("7.1", 8), ("7.3", 19)
+INTERPOLATION = {cv2.INTER_LINEAR: "bilinear", cv2.INTER_LANCZOS4: "Lanczos"}.get(plate_stabilizer.INTERPOLATION, "?")
+F_NAME = f"F{calibration.F_BETA:g}"
 GREEN, ORANGE, BLUE, GREY, INK = "#1b9e77", "#d95f02", "#2a78d6", "#c3c2b7", "#52514e"
 plt.rcParams.update({"figure.dpi": 110, "savefig.dpi": 130, "font.size": 9, "axes.titlesize": 9.5,
                      "axes.spines.top": False, "axes.spines.right": False})
@@ -126,7 +129,7 @@ def frames_of(dataset, data_dir, mite_id, recording):
 
 
 # ---------------------------------------------------------------- 2. frames, 3. stabilizer
-def step_frames_and_stabilizer(dataset, data_dir):
+def step_frames_and_stabilizer(dataset, data_dir, long_run_dir):
     out = {}
     for name, (mite_id, recording) in (("moving", MOVING), ("still", STILL)):
         frames, box, pad = frames_of(dataset, data_dir, mite_id, recording)
@@ -189,7 +192,7 @@ def step_frames_and_stabilizer(dataset, data_dir):
     # shakiest still-labelled recording (the shifts scripts/interpolation.py measured).
     table = pd.read_csv(pipeline.SCRIPTS_OUTPUT / "interpolation.csv.gz", dtype={"mite": str})
     pick = table[(table["dataset"] == LONG_RUN) & table["labelled"] & ~table["moving"]].nlargest(1, "shake").iloc[0]
-    long_run = dataset_library.read_dataset(LONG_RUN)
+    long_run = dataset_library.read_dataset(long_run_dir.name, long_run_dir.parent)
     mite_id, recording = pick["mite"], int(pick["recording"])
     frames, box, pad = frames_of(long_run, Path(long_run["data_dir"]), mite_id, recording)
     shifts = PlateStabilizer().shifts(frames, [box])[0]
@@ -208,7 +211,7 @@ def step_frames_and_stabilizer(dataset, data_dir):
         v_fixed, v_stab = e["fixed"].var(axis=0), e["roi"].var(axis=0)
         top = np.percentile(np.concatenate([v_fixed.ravel(), v_stab.ravel()]), 99.5)
         for ax, v, title in ((row[0], v_fixed, "not stabilized: cut at the box"),
-                             (row[1], v_stab, "PlateStabilizer.cut(): each frame moved back by −s_t (bilinear)")):
+                             (row[1], v_stab, f"PlateStabilizer.cut(): each frame moved back by −s_t ({INTERPOLATION})")):
             im = ax.imshow(v, cmap="magma", vmin=0, vmax=top)
             ax.set_title(f"{key} mite {e['mite']}, rec. {e['recording']}\n{title}"), ax.set_xticks([]), ax.set_yticks([])
         fig.colorbar(im, ax=row[1], fraction=0.046, label="variance (grey levels²)")
@@ -380,7 +383,7 @@ def step_run(dataset, data_dir, rows):
     ax.legend(frameon=False, ncol=3, loc="lower left")
     save(fig, "8_threshold")
 
-    # 9. calibration: scores of the labels, precision-recall, F0.5
+    # 9. calibration: scores of the labels, precision-recall, the F-score
     recall, precision, f05, thresholds = calibration.precision_recall_curve(score[use], moving[use])
     fig, axes = plt.subplots(1, 3, figsize=(15, 3.6))
     bins = np.logspace(np.log10(max(score[use].min(), 1e-3)), np.log10(score[use].max()), 30)
@@ -396,7 +399,7 @@ def step_run(dataset, data_dir, rows):
                 title=f"b. calibration.precision_recall_curve(), AP = {numbers['average_precision']:.3f}")
     axes[2].plot(thresholds, f05, color=BLUE)
     axes[2].axvline(threshold, color=INK, ls="--")
-    axes[2].set(xscale="log", xlabel="threshold T", ylabel="F0.5", title=f"c. best_f05_threshold() = {threshold:.3f}")
+    axes[2].set(xscale="log", xlabel="threshold T", ylabel=F_NAME, title=f"c. best_f05_threshold() = {threshold:.3f}")
     save(fig, "9_calibration")
 
     # 10. calls -> deaths -> Kaplan-Meier
@@ -442,12 +445,14 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--root", type=Path, default=Path(tempfile.gettempdir()) / "zzrc" / "gt",
                         help="the folder holding poke_test_oct")
+    parser.add_argument("--long-run", type=Path, default=pipeline.RECORDINGS_ROOT / LONG_RUN,
+                        help="the long run's folder (or a copy of it)")
     args = parser.parse_args()
     IMAGES.mkdir(parents=True, exist_ok=True)
     dataset = dataset_library.read_dataset(DATASET, args.root)
     data_dir = Path(dataset["data_dir"])
     print("1. detection"); step_detection(data_dir, MOVING[0])
-    print("2-3. frames, stabilizer"); out = step_frames_and_stabilizer(dataset, data_dir)
+    print("2-3. frames, stabilizer"); out = step_frames_and_stabilizer(dataset, data_dir, args.long_run)
     print("4-7. score"); rows = step_score(out)
     print("8-10. over the run"); step_run(dataset, data_dir, rows)
     NUMBERS.parent.mkdir(parents=True, exist_ok=True)

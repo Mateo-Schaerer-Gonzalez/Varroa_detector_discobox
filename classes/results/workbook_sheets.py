@@ -1,11 +1,14 @@
 """Sheets of a run's workbook beyond the tables of reporting.py: one per group,
-and the settings the results were made with (pipeline/run_settings.py).
+the settings the results were made with (pipeline/run_settings.py), and the
+percent of each group alive by recording under the group summary.
 """
 
 import json
 import re
 
 import pandas as pd
+
+from classes.results.survival import Calls, SurvivalAnalysis
 
 SETTINGS_SHEET = "settings"
 GROUP_PREFIX = "group "
@@ -37,6 +40,34 @@ def group_tables(last_moved, scores):
     table.insert(2, "last_moved_min", table.pop("last_moved_min"))
     return {group: rows.drop(columns="group").reset_index(drop=True)
             for group, rows in sorted(table.groupby("group", sort=False), key=lambda item: str(item[0]))}
+
+
+def alive_table(mite_data, death_minutes=0, starts=None):
+    """The percent of each group's mites alive in every recording, as the result
+    pages' survival chart shows it (classes/results/survival.py): one row per
+    recording, its time and a column per group. Mites never seen moving are left
+    out; one marked gone is censored. `starts`: {mite id: the recording a live
+    run added it in}, for those added after the first."""
+    times = sorted(mite_data["time"].unique())
+    analysis = SurvivalAnalysis(times, death_minutes)
+    starts = starts or {}
+    table = pd.DataFrame({"time": times})
+    for group, rows in sorted(mite_data.groupby("group"), key=lambda item: str(item[0])):
+        movings = []
+        for mite_id, mite in rows.groupby("mite_ID"):
+            mite = mite.sort_values("time")
+            gone = mite["censored"].to_numpy(dtype=bool) if "censored" in mite else [False] * len(mite)
+            calls = [None if out else bool(moving) for moving, out in zip(mite["moving"], gone)]
+            movings.append(Calls(calls, starts.get(str(mite_id), 0)))
+        table[group] = analysis.alive_percent(SurvivalAnalysis.study(movings))
+    return table
+
+
+def alive_title(death_minutes):
+    """The line above alive_table() in the workbook: the death rule it was made with."""
+    rule = (f"dead once still for {death_minutes} min after its last movement" if death_minutes
+            else "dead from the recording after its last movement")
+    return f"Percent alive by recording (time in minutes; a mite counts as {rule}; mites never seen moving left out)"
 
 
 def _rows(value, path):

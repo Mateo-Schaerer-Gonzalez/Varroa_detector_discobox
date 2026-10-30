@@ -18,7 +18,7 @@ from classes.storage.kept_scores import KeptScores
 from classes.scoring.motion_analysis import MotionAnalysis
 from classes.scoring.score_normalizer import ScoreNormalizer
 from classes.scoring.unusual_activity import UnusualActivity
-from pipeline import ground_truth, plate_zones
+from pipeline import ground_truth, new_mites, plate_zones
 
 
 # Pixels read around the scored patches when the plate is stabilized: a mite's
@@ -37,13 +37,12 @@ def detect_and_score(data_dir, coords_file, labels=None, reject=True, score=True
     the scores are kept there, and read back instead of worked out when these
     very frames were scored there before, by this code (classes/storage/kept_scores.py).
     With `names`, only the recordings of those names (FolderSource). A session
-    saved as the mites' ROIs has its mites and blobs saved with them (RoiSource).
+    saved as the mites' ROIs has its mites and blobs saved with them (RoiSource);
+    a folder of frames has the mites put on after its first recording found
+    (pipeline/new_mites.py, kept in `kept_in`).
     """
-    source = open_source(data_dir, names)
+    source, analysis = _analysis_of(data_dir, coords_file, names, kept_in)
     rois = isinstance(source, RoiSource)
-    analysis = MotionAnalysis(plate_zones.zones_of(data_dir, coords_file), score=False,
-                              boxes=source.boxes if rois else None, known_blobs=source.blobs() if rois else None,
-                              starts=source.starts if rois else None, placements=source.placements if rois else None)
     if rois and score:
         mite = analysis.analyzer.config.mite
         source.loader.check_margin(metric_pad(mite) + (STABILIZE_MARGIN if mite.stabilize_plate else 0))
@@ -66,6 +65,34 @@ def detect_and_score(data_dir, coords_file, labels=None, reject=True, score=True
                 kept.keep(key, analysis.mites, analysis.blobs)
     arrange(analysis, data_dir, labels, reject)
     return run_view(analysis, "rois" if rois else "whole", data_dir)
+
+
+def _analysis_of(data_dir, coords_file, names=None, keep_in=None):
+    """The frames of `data_dir` (a FrameSource) and the MotionAnalysis to run
+    over them, not scoring yet; a session saved as the mites' ROIs gives it its
+    mites, when each was added, where each was and its blobs (RoiSource). A
+    folder of frames whose mites were partly put on later has those found
+    (new_mites.found(), kept in `keep_in`); without, it finds its mites itself."""
+    source = open_source(data_dir, names)
+    zone_manager = plate_zones.zones_of(data_dir, coords_file)
+    if isinstance(source, RoiSource):
+        analysis = MotionAnalysis(zone_manager, score=False, boxes=source.boxes, known_blobs=source.blobs(),
+                                  starts=source.starts, placements=source.placements)
+    else:
+        later = new_mites.found(data_dir, coords_file, names, keep_in)
+        boxes, starts = later if later is not None else (None, None)
+        analysis = MotionAnalysis(zone_manager, score=False, boxes=boxes, starts=starts)
+    return source, analysis
+
+
+def counted_analysis(data_dir, coords_file=None, keep_in=None):
+    """The mites of `data_dir` as an analysis numbers them, those added after
+    the first recording included (from the recording they were added in,
+    `Mite.start`), and the recordings counted, none decoded but the first: a
+    MotionAnalysis."""
+    source, analysis = _analysis_of(data_dir, coords_file, keep_in=keep_in)
+    analysis.run(source.events(decode=source.FIRST))
+    return analysis
 
 
 def arrange(analysis, data_dir, labels, reject):

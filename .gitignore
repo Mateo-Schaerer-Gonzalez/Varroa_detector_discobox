@@ -23,18 +23,21 @@ output/
 outputs/
 uploads/
 
-# the reports: the four in report/, their scripts and the images they show are in git;
+# the reports: the three in report/, their scripts and the images they show are in git;
 # drafts, PDFs, the archive and the Fourier/Brownian-motion notes stay on the dev laptop
 /report/*
 !/report/1_user_manual.md
 !/report/2_how_it_works.md
 !/report/3_performance.md
-!/report/visual_how_it_works.md
 !/report/scripts/
 /report/scripts/eval/
 !/report/images/
 /report/images/*
 !/report/images/app_calibration_open.png
+!/report/images/app_calibration_report.png
+!/report/images/app_calibration_test_errors.png
+!/report/images/app_calibration_test_top.png
+!/report/images/app_calibration_truth.png
 !/report/images/app_labels.png
 !/report/images/app_live_setup.png
 !/report/images/app_playback.png

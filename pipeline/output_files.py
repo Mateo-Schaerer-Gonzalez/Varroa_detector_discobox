@@ -10,6 +10,7 @@ from pathlib import Path
 import cv2
 
 from classes.results import reporting
+from classes.scoring.follow_up import FollowUp
 from classes.storage.deferred_files import DeferredFiles
 from pipeline import paths, run_settings, scoring
 
@@ -35,7 +36,8 @@ def write_files(annotated, out_dir, mite_data, run, normalizer):
     what was written."""
     with _files_lock:
         settings = run_settings.write(run, out_dir, normalizer)
-        return reporting.write_outputs(mite_data, annotated, out_dir, settings)
+        starts = FollowUp.of(run.zone_manager.mites).starts
+        return reporting.write_outputs(mite_data, annotated, out_dir, settings, starts)
 
 
 def write_files_later(run, out_dir, corrections, normalizer, delay=None):

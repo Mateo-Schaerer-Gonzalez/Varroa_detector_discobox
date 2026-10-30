@@ -16,10 +16,12 @@ takes. **App screenshots show only the 2025 test sessions** (sample_data, ground
 ground_truth_90min), taken from a copy of the app holding only them (the user's rule of
 2026-10-27): the other runs are real experiments and the page (group names, the handwriting on
 the plates, the recordings list) shows what they test. Analysis figures may use any run. The
-four reports in `report/` (manual, how it works, step by step, performance), their scripts
+three reports in `report/` (manual, how it works with its worked example, performance), their scripts
 (`report/scripts/`, with an index of which draws which figure) and the images they show are in
 git; the rest of `report/` (drafts, PDFs, archive, the Fourier/Brownian-motion notes) stays on
 this laptop, as does `notebooks/`. Every figure's code is in the repository (the user's request).
+Never use the § sign, in the reports or anywhere else: write "section 4.2" (the user's rule of
+2026-10-30).
 
 ## Commands
 
@@ -138,6 +140,14 @@ The user's choices for live runs (2026-10-20), not to be undone:
   `FRAME_COUNT`, `FIXED`), not settings: `scripts/recording_length.py` showed length matters
   far more than frame rate, and a threshold only fits the length it was calibrated on.
   Don't reintroduce fps or frame_count as settings.
+**Mites put on a folder's plates later** (the user's choice of 2026-10-30): a folder of frames is
+searched on each later recording's first frame (`classes/scoring/new_mites.py`, `pipeline/new_mites.py`,
+kept in `results/<name>/kept/new_mites.json`); a zone's new detections are taken only when at least
+`detector.min_new_mites` (default 3, set on the label page, 0 = off) appear in one recording, which keeps
+out debris and walked mites. They go into `MotionAnalysis` as `boxes`/`starts` like a saved live run's
+added mites (no scoring code changed; boxes stay fixed), and an upload's conversion saves them with
+`"from"` and `added_frames/`. The label page shows any session's added mites on the frame they came on
+(`steps`), with the analysis's ids; the overview lists them under *Mites put on later*.
 `classes/live/` holds the camera (vmbpy, Vimba X), fan/LEDs over serial (pyserial), the
 schedule and the live session; those libraries are imported only for a live run.
 `classes/discobox/camera_utils.py` is copied unchanged from the Discobox app.
@@ -159,27 +169,26 @@ labelled datasets it changed no call (rank correlation ≥ 0.998, d′ within ±
 scale; what it did was pull an unstabilised shake down (`detector_test`'s shake test now
 stabilises first). Don't reintroduce it.
 
-**The constants of the stabilizer and the score were chosen by Optuna** (the user's choice
-of 2026-10-27, against my recommendation): `scripts/pipeline_optuna.py` copies the chain
-with every constant a parameter (identical to the app at its values), searched 600 trials
-on the labelled poke run and three 30-frame datasets, mites split into a tune and a test
-half (`notebooks/pipeline_optuna.ipynb`). Trial 228, rounded to three decimals: stabilizer
-pad 4, rim 8, body 0.241 of the darkest grown 4 px (replaced on 2026-10-29, the user's
-choice, by pad 8, rim 4, body 0.3 grown 2 px: the search's pad and rim left a 5 px square of a
-13 px box to search, so the mask was a square; the new ones score the same, d′ 5.73 against
-5.63 on the test mites, and at 0.241 the mask took in a dark leg), bilinear cut; score rim 3, body 0.355
-not grown, edge 0.226, "the darkest" = mean of 8 pixels (`plate_stabilizer.DARKEST_N`),
-128 rays of 11.4 px every 0.5 px, band ±1.04 px (and `relative` 0.491, taken out since,
-see above; `pipeline_optuna.APP` has it at 0, as the search can still try it). It raised the
-separation (d′ of log scores) on the tune mites by 15 % but not on the test mites (5.45
-against 5.53 for the constants before, 5.34 for the 0.3 edge tried the same day); F0.5 is
-at its ceiling (0.995 against 0.992 on the test half). Before: pad 8, rim 6, body 0.3 of
-the single darkest grown 2 px, edge 0.5 of the mean of the 30 darkest, 64 rays of 13 px,
-band ±1.5, Lanczos cut. Rerun the search (`build`, `run`, `export`) when a
-larger 3 s / 30 fps ground truth exists. The default threshold 0.074 is the F0.5 threshold
-of the poke run (3 s / 30 fps) without `relative` (0.106 with it); the 30-frame datasets'
-own are 0.11–0.13. Every machine's saved threshold is on an old scale and must be saved
-again from a calibration report.
+**The constants of the stabilizer and the score are those from before an Optuna search**,
+set back on 2026-10-29 (the user's choice: every parameter as at commit bd5a9c3, so the reports'
+numbers hold; raw scores on sample_data are bit-identical to that commit's): stabilizer pad 8,
+rim 6, body 0.3 of the single darkest pixel (`plate_stabilizer.DARKEST_N` 1) grown 2 px, Lanczos
+cut; score rim 6, body 0.3 of the darkest pixel away from the edge grown 2 px, edge 0.5 of the
+mean of the 30 darkest (`EDGE_DARKEST_N`), 64 rays of 13 px every 0.5 px, band ±1.5 px. The
+search (2026-10-27, the user's choice then, against my recommendation): `scripts/pipeline_optuna.py`
+copies the chain with every constant a parameter (identical to the app at its values), searched
+600 trials on the labelled poke run and three 30-frame datasets, mites split into a tune and a
+test half (`notebooks/pipeline_optuna.ipynb`). Its trial 228 (stabilizer pad 4, rim 8, body
+0.241 of the 8 darkest grown 4 px, bilinear; score rim 3, body 0.355 not grown, edge 0.226,
+128 rays of 11.4 px, band ±1.04, `relative` 0.491) raised the separation (d′ of log scores) on
+the tune mites by 15 % but not on the test mites (5.45 against 5.53 for the constants now in
+use); F0.5 was at its ceiling either way. It was in use from 2026-10-27 to 2026-10-29. Rerun the
+search (`build`, `run`, `export`) when a larger 3 s / 30 fps ground truth exists. The default
+threshold 0.091 is the poke run's best by F0.5 and F0.25 alike (the calibration report, which
+rounds scores to 3 decimals, puts it at 0.0915; `scripts/visual_walkthrough.py`'s folder-analysis
+scores put it at 0.087, with the same calls: any threshold between 0.082 and 0.092 makes them).
+A threshold a machine saved between 2026-10-27 and 2026-10-29 is on the search's scale and must
+be saved again from a calibration report.
 
 **The detector's settings were chosen by Optuna** (the user's choice of 2026-10-30):
 `scripts/detector_optuna.py` copies the app's detection exactly (`check`) and searched the
@@ -197,7 +206,7 @@ before stay the same size on 2025 frames (median 0 px), and mites with the same 
 to the bit; a saved ROI run's mites are its saved boxes, so the long run is unchanged.
 
 The stabilizer (`classes/scoring/plate_stabilizer.py`) moves each mite's patch back by its own
-centre's shift within the recording (bilinear since 2026-10-27), capped at `MARGIN` minus bilinear's 1 px reach (15 px; 12 px for Lanczos's 4 until 2026-10-29); a
+centre's shift within the recording (Lanczos; bilinear from 2026-10-27 to 2026-10-29), capped at `MARGIN` minus Lanczos's 4 px reach (12 px); a
 mite whose centre is lost takes the median of the others'. That is the user's choice of
 2026-10-16. Before, every mite took the plate's median ECC shift, which
 `scripts/centre_stabilization.py` keeps as `ecc_shifts()` (`notebooks/centre_stabilization.ipynb`):
@@ -219,7 +228,7 @@ parallel already. The frame-rate and memory limits are measured by
 **Reads stay inside the saved ROI.** A saved live run keeps only `roi_recordings.ROI_MARGIN`
 (32) px round each mite's box: the metric's pad (16) plus `plate_stabilizer.MARGIN` (16, the
 source of `pipeline.scoring.STABILIZE_MARGIN`). A shift is followed at most `MARGIN` minus the
-1 px bilinear reach (15 px) so a cut never reads further, and `RoiRecordings.check_margin` refuses a
+4 px Lanczos reach (12 px) so a cut never reads further, and `RoiRecordings.check_margin` refuses a
 pad that would. Anything new that reads round a mite must stay within that, or a saved run
 stops scoring like the live one.
 
@@ -237,9 +246,10 @@ of one dataset differ slightly between this Windows laptop and the Discobox's Li
 the same code (2026-10-08: 56% of values, 0.009 median, 0.23 at most; likely the OpenCV
 build).
 
-**Calibration** suggests the threshold with the largest F0.5 of the calls moving
-(`calibration.best_f05_threshold()`, `F_BETA`: a still recording called moving costs four
-times a moving one called still), the user's choice of 2026-10-26, replacing the threshold
+**Calibration** suggests the threshold with the largest F0.25 of the calls moving
+(`calibration.best_f05_threshold()`, `F_BETA` 0.25: a still recording called moving costs sixteen
+times a moving one called still; F0.25 since 2026-10-29, the user's choice, F0.5 from 2026-10-26).
+Choosing on an F-score was the user's choice of 2026-10-26, replacing the threshold
 with the smallest death-time error and the review band chosen on it (`suggested_band.py`
 deleted). The same day Youden's J was tried, then F1 ("as we are flagging the ones close to
 threshold anyways"), then F0.5: on `poke_test_oct` (labels two-thirds moving, first 3.5 h, no
@@ -261,8 +271,8 @@ threshold over the old (`app_config._band_moved()`, the user's request of 2026-1
 
 **Storage.** `recordings/<name>/` holds each session: frames (or `first_frame.png` +
 `rois/`), `labels.json`/`controls.json` (`labels_2.json`/`controls_2.json` for two zones per
-plate), `ground_truth.json`, `poke_test.json`, `corrections.json`, `.settings.txt`,
-`run.json`, and a `scores/` cache. `results/<name>/` holds the latest analysis (workbook,
+plate), `ground_truth.json`, `poke_test.json`, `corrections.json`, `mites_by_hand.json`,
+`.settings.txt`, `run.json`, and a `scores/` cache. `results/<name>/` holds the latest analysis (workbook,
 figures, `run_settings.json`, `clips/`, `kept/`, `calibration/`). `run_settings.json`
 (`pipeline/run_settings.py`, written with the workbook, which shows it as its `settings`
 sheet; the workbook also has a `group <name>` sheet per group) records the settings that
@@ -298,11 +308,25 @@ sample_data takes 17.5 MB as ROIs against 574 MB as BMP): `first_frame.png`,
 `rois/mite_NNN.mkv` per mite (lossless so scores stay identical); bursts go to
 `rois/parts/<recording>/` and are stitched on at the end. The ROI is the box ± 32 px, at
 least ± 40 round the centre, with even sizes (the FFV1 writer crops odd ones). Old BMP
-folders stay readable; dropped/uploaded BMP folders are converted on upload
-(`classes/storage/roi_conversion.py`); folders opened by typed path are only converted when
+folders stay readable; dropped/uploaded BMP folders are converted at their first analysis or
+calibration (`classes/storage/roi_conversion.py`, `uploads.shrink_pending()`); folders opened by typed path are only converted when
 calibrated. Zone, plate and fly-off clips don't exist for ROI sessions; mite clips and the
 still frame do. Results say `frames: "rois" | "whole" | "none"`. The sibling worktree
 `Varroa_detector_discobox_video` (branch `video-storage`) is an older, different attempt.
+
+**Mites placed by hand** (label page, 2026-10-30, the user's request: "implement once, use
+everywhere the detector is used"): kept as points `{x, y, size}` in `mites_by_hand.json`
+(`pipeline/hand_mites.py`). `plate_zones.zones_of()` and `live_runs.live_zone_manager()` put
+them on the ZoneManager (`by_hand`), and `ZoneManager.assign_mites()` adds those not within
+10 px of a detection (`classes/plate/hand_mites.py`), so every detection on whole frames
+(label page, analysis, calibration, ROI conversion, a live run's first frame) has them. They
+are merged there and not in `detect_mites()` because `motion_analysis.py` and `mite.py` are
+hashed by the kept scores. A session saved as ROIs gets none from the file (its boxes hold
+them) and can't take more: no frames elsewhere. So a dropped folder is no longer shrunk on
+upload (the user's choice of 2026-10-30): `finish_upload` leaves `shrink_pending.txt`, and
+`uploads.shrink_pending()` shrinks it at its first `run_analysis` or calibration; recordings
+added to a folder shrunk already are still shrunk on upload. During a live run they join *Add mites*'s
+found mites (`add_mites.live_hand_mite`).
 
 **Zones and IDs.** `coords_pixel.txt` (one zone per plate) and `coords_pixel_2.txt` (two)
 list `type x1 y1 x2 y2` (type 1 plate, 0 masked label area); the choice is saved per
@@ -349,7 +373,7 @@ The temporary label-overlap check page was deleted on 2026-10-22 at the user's r
   (79 recordings of 10 frames, 30 min apart) has a real one: 24 mites moved when poked after
   recording 29, 21 did not in rounds after 30 to 44. From the first poke on its plates shake
   about ten times more within a recording and 57 % of the dead recordings score above 0.074
-  (`notebooks/outline_fourier.ipynb`, 2026-10-27). `poke_test_oct`'s "unmoved" mites often
+  (`notebooks/outline_fourier.ipynb`, 2026-10-27, with the search's constants and threshold). `poke_test_oct`'s "unmoved" mites often
   moved again later, so they are not deaths.
 - The scripts' cut patches of the long run are cached in `%TEMP%\varroa_death_time_patches`
   (4.4 GB), so the `alive_dead_*` notebooks run in seconds.

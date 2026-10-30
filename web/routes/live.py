@@ -45,6 +45,13 @@ class AddMitesRequest(BaseModel):
     boxes: list[list[float]]  # [x1, y1, x2, y2] each, as find-mites gave them
 
 
+class HandMiteRequest(BaseModel):
+    x: float  # where it is clicked, in image pixels
+    y: float
+    mites: list[dict]  # the mites found to add, as find-mites gave them
+    remove: bool = False  # take out the mite placed by hand there
+
+
 @router.get("/api/live/options")
 def live_options():
     """The cameras, serial ports and saved test-run settings, and any run still open."""
@@ -117,6 +124,14 @@ def add_live_mites(session_id: str, request: AddMitesRequest):
     """Follow the mites chosen of those found from the next recording on."""
     live_session(session_id)
     return answer(pipeline.live_add_mites, session_id, request.boxes)
+
+
+@router.post("/api/live/{session_id}/hand-mite")
+def place_live_hand_mite(session_id: str, request: HandMiteRequest):
+    """Place a mite the detector missed by hand among those found to add, or
+    take one placed so out: the zones and the mites found, numbered again."""
+    live_session(session_id)
+    return answer(pipeline.live_hand_mite, session_id, request.x, request.y, request.mites, request.remove)
 
 
 @router.post("/api/live/{session_id}/calibration")

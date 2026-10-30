@@ -1,7 +1,7 @@
 """A folder of whole frames dropped into the page is shrunk to the mites'
-surroundings (classes/storage/roi_conversion.py): the results stay those of the whole
-frames, a conversion cut short carries on, and nothing is lost where there are
-no mites to keep."""
+surroundings (classes/storage/roi_conversion.py) when it is first analysed or
+calibrated: the results stay those of the whole frames, a conversion cut short
+carries on, and nothing is lost where there are no mites to keep."""
 
 import os
 import shutil
@@ -11,6 +11,7 @@ import numpy as np
 import pytest
 
 import pipeline
+from pipeline import uploads
 from pipeline.calibration import dataset_library, score_cache
 import reference
 from classes.storage.data_loader import DataLoader
@@ -21,7 +22,20 @@ linked_copy = reference.linked_copy
 
 
 def convert(folder):
-    return pipeline.finish_upload(folder.name, folder.parent)["converted"]
+    """Recordings shrunk once the folder is dropped (those added to a folder
+    shrunk already) and once it is analysed (the rest)."""
+    now = pipeline.finish_upload(folder.name, folder.parent)["converted"]
+    return now + uploads.shrink_pending(folder, folder.parent.parent / "results")
+
+
+def test_a_dropped_folder_keeps_its_whole_frames_until_it_is_analysed(tmp_path):
+    small = reference.make_small_session(tmp_path / "small")
+    folder = linked_copy(small, tmp_path / "recordings" / "small")
+    assert pipeline.finish_upload(folder.name, folder.parent)["converted"] == 0
+    assert not is_roi_session(folder) and (folder / pipeline.paths.SHRINK_PENDING_NAME).is_file()
+    pipeline.run_analysis(folder, tmp_path / "results" / "small")
+    assert is_roi_session(folder) and not list(folder.rglob("*.bmp"))
+    assert not (folder / pipeline.paths.SHRINK_PENDING_NAME).exists()
 
 
 @pytest.mark.slow
@@ -65,7 +79,7 @@ def test_ground_truth_and_a_poke_test_stay_as_they_were(tmp_path):
     before = reference.run_folder(folder, tmp_path / "before")
     assert mites[1]["id"] not in {mite["id"] for mite in before["results"]["mites"]}
 
-    assert pipeline.finish_upload(folder.name, folder.parent)["converted"] == 3
+    assert convert(folder) == 3
 
     assert (folder / pipeline.GROUND_TRUTH_FILENAME).is_file() and (folder / pipeline.POKE_FILENAME).is_file()
     again = tmp_path / "calibration_again"

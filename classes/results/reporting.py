@@ -114,23 +114,38 @@ def _add_mite_map(writer, image_path):
     writer.sheets["mite_map"].add_image(picture, "A3")
 
 
-def write_excel(mite_data, out_dir, mite_map=None, settings=None):
+def _add_group_summary(writer, mite_data, death_minutes, starts):
+    """The per-group summary and, below it, the percent of each group alive by
+    recording (workbook_sheets.alive_table())."""
+    summary = summarise_by_group(_observed(mite_data))
+    summary.to_excel(writer, sheet_name="group_summary", index=False)
+    below = len(summary) + 2  # a blank row after the summary and its header
+    pd.DataFrame(columns=[workbook_sheets.alive_title(death_minutes)]).to_excel(
+        writer, sheet_name="group_summary", index=False, startrow=below)
+    workbook_sheets.alive_table(mite_data, death_minutes, starts).to_excel(
+        writer, sheet_name="group_summary", index=False, startrow=below + 1)
+
+
+def write_excel(mite_data, out_dir, mite_map=None, settings=None, starts=None):
     """Write when each mite last moved, every score, the picture `mite_map` (a
     file with the mite ids drawn on the plate, if given), the long-form
-    measurements, the per-group summary, movement over time, a sheet per group
-    (its mites' last movement and scores) and, with `settings` (a dict, see
-    pipeline/run_settings.py), a sheet of every setting the results were made
-    with; all but the scores and the measurements without the recordings in
-    which a mite was marked gone."""
+    measurements, the per-group summary with the percent alive by recording,
+    movement over time, a sheet per group (its mites' last movement and scores)
+    and, with `settings` (a dict, see pipeline/run_settings.py), a sheet of
+    every setting the results were made with; all but the scores and the
+    measurements without the recordings in which a mite was marked gone. The
+    percent alive goes by the settings' death_minutes (0 without) and `starts`
+    ({mite id: the recording a live run added it in})."""
     path = Path(out_dir) / EXCEL_NAME
     last_moved, scores = last_moved_table(_observed(mite_data)), scores_table(mite_data)
+    death_minutes = ((settings or {}).get("analysis") or {}).get("death_minutes") or 0
     with pd.ExcelWriter(path, engine="openpyxl") as writer:
         last_moved.to_excel(writer, sheet_name="mites", index=False)
         scores.to_excel(writer, sheet_name="scores", index=False)
         if mite_map is not None:
             _add_mite_map(writer, mite_map)
         mite_data.to_excel(writer, sheet_name="measurements", index=False)
-        summarise_by_group(_observed(mite_data)).to_excel(writer, sheet_name="group_summary", index=False)
+        _add_group_summary(writer, mite_data, death_minutes, starts)
         moving_table(_observed(mite_data)).to_excel(writer, sheet_name="moving", index=False)
         tables = workbook_sheets.group_tables(last_moved, scores)
         names = workbook_sheets.group_sheet_names(tables, taken=[*writer.sheets, workbook_sheets.SETTINGS_SHEET])
@@ -233,11 +248,13 @@ def describe_groups(mite_data, times):
     ]
 
 
-def write_outputs(mite_data, annotated_image, out_dir, settings=None):
+def write_outputs(mite_data, annotated_image, out_dir, settings=None, starts=None):
     """Write every artefact for one analysis run and describe it in plain data.
 
     The returned dict contains only filenames and numbers, so it can cross into the
-    web layer unchanged. `settings` (a dict) becomes the workbook's settings sheet.
+    web layer unchanged. `settings` (a dict) becomes the workbook's settings sheet;
+    `starts` ({mite id: the recording a live run added it in}) puts the mites
+    added later on their own clock in the percent alive.
     """
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -247,7 +264,7 @@ def write_outputs(mite_data, annotated_image, out_dir, settings=None):
     cv2.imwrite(str(out_dir / DETECTIONS_NAME), annotated_image)
 
     return {
-        "excel": write_excel(mite_data, out_dir, out_dir / DETECTIONS_NAME, settings),
+        "excel": write_excel(mite_data, out_dir, out_dir / DETECTIONS_NAME, settings, starts),
         "figures": write_figures(mite_data, out_dir),
         "detections": DETECTIONS_NAME,
         "summary": _summary(mite_data),
