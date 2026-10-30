@@ -303,19 +303,103 @@
      [
       "unlabeled",
       30,
-      90,
-      21,
+      90.0,
+      21.0,
       0.2333333333333333,
-      9,
+      9.0,
       0.7296628296393334,
       1.667853608877492,
       0.02914794968284169,
       0.005878306359018275,
       7.442571230049862
+     ],
+     [
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null
+     ],
+     [
+      "Percent alive by recording (time in minutes; a mite counts as dead from the recording after its last movement; mites never seen moving left out)",
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null
+     ],
+     [
+      "time",
+      "unlabeled",
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null
+     ],
+     [
+      0,
+      100,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null
+     ],
+     [
+      5,
+      100,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null
+     ],
+     [
+      10,
+      69.23076923076923,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null
      ]
     ],
     "index": [
-     0
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6
     ]
    },
    "measurements": {

@@ -217,7 +217,7 @@ moving, orange while still, grey when gone or set aside. Click a square to open 
 
 | File in `results/<name>/` | Contents |
 |---|---|
-| `results.xlsx` | `mites` (one row per mite, when it last moved), `scores` (mite × recording), `mite_map` (the plate with every id), `measurements` (one row per mite and recording: moving, position, brightness, corrected), `group_summary`, `moving` (share moving per group and zone) |
+| `results.xlsx` | `mites` (one row per mite, when it last moved), `scores` (mite × recording), `mite_map` (the plate with every id), `measurements` (one row per mite and recording: moving, position, brightness, corrected), `group_summary` (with the percent of each group alive in every recording below it), `moving` (share moving per group and zone) |
 | `moving_by_group.png`, `distribution_by_group.png`, `score_over_time.png`, `score_distribution.png` | Figures |
 | `detections.jpg` | The first frame with zones, labels and mites |
 
