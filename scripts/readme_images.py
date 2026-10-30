@@ -26,7 +26,7 @@ WIDTH = 1440
 # (shot, top, bottom) of each picture: whole width, rows top to bottom
 README_SHOTS = {
     "app_labels": ("labels", 0, 820),
-    "app_results_top": ("results", 0, 1990),       # the counts, the close calls and the plate map
+    "app_results_top": ("results", 0, 1855),       # the counts, the close calls and the plate map
     "app_zone_top": ("zone", 0, 1060),
     "app_mite": ("mite", 0, 960),
     "app_playback": ("playback", 0, 1080),
@@ -49,8 +49,8 @@ REPORT_SHOTS = {
 # the close-up on a mite's page (left, top, right, bottom), and what it shows
 CLOSE_UPS = (("mite", (124, 380, 504, 762), "mite 7.1 at 25 min: moving (score 4.3)"),
              ("mite_still", (124, 545, 504, 926), "mite 4.1 at 25 min: still (score 0.008)"))
-SHARED = ["walk_1_detection", "walk_2_frames", "walk_5_rays", "walk_6_profile", "walk_7_vector_sum",
-          "speed_memory_storage"]
+SHARED = ["walk_1_detection", "walk_2_frames", "walk_3_stabilizer_effect", "walk_5_rays", "walk_6_profile",
+          "walk_7_vector_sum", "walk_8_threshold", "walk_9_calibration", "walk_10_survival", "speed_memory_storage"]
 
 
 def screenshot(image, path):

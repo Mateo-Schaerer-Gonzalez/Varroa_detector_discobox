@@ -27,7 +27,7 @@ The app runs a test on the Discobox from start to finish, or analyses recordings
 - **Stabilization.** Each mite's patch is held still to a tenth of a pixel before scoring, so a
   shaking plate is not mistaken for a moving mite.
 - **Calibration.** A labelling interface for ground truth by eye, a precision-recall report, the
-  threshold with the best F0.5, and a poke test to check the calls against the mites' response.
+  threshold with the best F0.25, and a poke test to check the calls against the mites' response.
 - **Statistics.** Kaplan–Meier survival with 95 % confidence intervals, LT50 and log-rank tests
   against negative controls, shown in an interactive web interface and written to an Excel workbook.
 - **Testing.** Regression tests compare results, every workbook sheet, figure contents and pixels
@@ -53,7 +53,7 @@ by eye that were not used to set the app's threshold:
 
 - [How it works](#how-it-works): the pipeline, step by step, on real mites
 - [How well it works](#how-well-it-works): the benchmark against the original software
-- [Reports](#reports): the user manual, how it works, the performance report
+- [Reports](#reports): the user manual (with a calibration guide), how it works, step by step, the performance report
 - [Quick start](#quick-start)
 - [User manual](#user-manual): [Live](#live-from-the-discobox) · [Analysis](#analysing-recordings) · [Calibration](#calibration)
 - [Architecture](#architecture) · [Command line](#command-line) · [Files](#where-files-go) · [Tests](#tests) · [References](#references)
@@ -67,11 +67,11 @@ flowchart LR
     A["Find the mites<br/>first frame"] --> B["Cut each mite's<br/>patch, every frame"]
     B --> C["Stabilize<br/>per mite"]
     C --> D["Lamp correction<br/>+ noise floor"]
-    D --> E["128 rays → outline<br/>variance profile"]
+    D --> E["64 rays → outline<br/>variance profile"]
     E --> F["Vector sum<br/>= motion score"]
     F --> G{"score ≥ T ?"}
     G -->|moving / still| H["Death rule →<br/>Kaplan–Meier"]
-    L["Labels by eye"] -.->|"best F0.5"| G
+    L["Labels by eye"] -.->|"best F0.25"| G
 ```
 
 Below, the steps run on real data, a live run of 14 mites with 95 recordings of 90 frames over 15.7 h.
@@ -97,16 +97,16 @@ over the frames (right) shows what changed: a few bright spots where the legs mo
 
 Plate shake is the main source of false movement. A shift of a fifth of a pixel, too small to see, slides the dark edge of every
 mite across its pixels and lights up the whole outline (top left). The stabilizer follows the centre
-of each mite's darkness, frame by frame, and cuts the patch shifted back by it (bilinear). The ring
+of each mite's darkness, frame by frame, and cuts the patch shifted back by it (Lanczos). The ring
 largely disappears, but a moving mite's legs stay (bottom), because only a shift of the whole mite is removed.
 
 ![What stabilizing changes](docs/images/walk_3_stabilizer_effect.png)
 
-### 4. Read the outline along 128 rays
+### 4. Read the outline along 64 rays
 
-Every frame is scaled so that the plate has the same light, which cancels lamp flicker. From the mite's centre, 128 rays
+Every frame is scaled so that the plate has the same light, which cancels lamp flicker. From the mite's centre, 64 rays
 are sampled every 0.5 px. Along each ray the app finds where the body ends (orange) and measures
-the variance over the frames in a ±1.04 px band round that edge. The legs show up as bright blobs on
+the variance over the frames in a ±1.5 px band round that edge. The legs show up as bright blobs on
 the band.
 
 ![Rays, edge and variance](docs/images/walk_5_rays.png)
@@ -114,8 +114,8 @@ the band.
 ### 5. One number per direction, in units of noise
 
 Each direction gets one value: the variance on its stretch of the outline, divided by the noise floor,
-which is the variance of the bare plate at the patch's rim in the same recording. A still mite is flat at about 0.4. The
-moving mite has peaks of up to 9× the noise, all on one side.
+which is the variance of the bare plate at the patch's rim in the same recording. A still mite is flat at about 0.3. The
+moving mite has peaks of up to 7× the noise, all on one side.
 
 ![The outline profile](docs/images/walk_6_profile.png)
 
@@ -143,8 +143,8 @@ score drops tenfold and stays there.
 ### 8. Where the threshold comes from
 
 The threshold is calibrated against labels made by eye. The labelled scores barely overlap (average
-precision 0.999). The app picks the threshold with the best F0.5, which counts a still recording called
-*moving* four times as heavily as the opposite error, because one false "moving" can bring a dead mite back to life
+precision 0.9995). The app picks the threshold with the best F0.25, which counts a still recording called
+*moving* sixteen times as heavily as the opposite error, because one false "moving" can bring a dead mite back to life
 hours after it died.
 
 ![Calibration](docs/images/walk_9_calibration.png)
@@ -158,8 +158,9 @@ death time. Pooled per treatment, that gives Kaplan–Meier survival curves with
 ![Calls, deaths, Kaplan–Meier](docs/images/walk_10_survival.png)
 
 > The constants of the stabilizer and the score (rays, band width, body edge,
-> interpolation, …) were chosen by a 600-trial Optuna search on four labelled datasets, with the mites
-> split into tune and test halves ([`scripts/pipeline_optuna.py`](scripts/pipeline_optuna.py)).
+> interpolation, …) were tested against a 600-trial Optuna search on four labelled datasets, with the mites
+> split into tune and test halves ([`scripts/pipeline_optuna.py`](scripts/pipeline_optuna.py)). The
+> search's constants separated the tune mites better but not the test mites, so the app keeps its own.
 >
 > Every figure in this section is drawn by [`scripts/visual_walkthrough.py`](scripts/visual_walkthrough.py) with the
 > app's own functions; the full walk-through, with the code of each step, is
@@ -208,7 +209,7 @@ Longer write-ups, in [`report/`](report/):
 
 | Report | What it covers |
 |---|---|
-| [User manual](report/1_user_manual.md) | Using the app: a live test on the Discobox, analysing recordings, calibrating the threshold, the files it writes |
+| [User manual](report/1_user_manual.md) | Using the app: a live test on the Discobox, analysing recordings, the files it writes, and a guide to calibrating the threshold: when, with what data, how to read the reports and test the result |
 | [How it works](report/2_how_it_works.md) | What the app computes, with the reasoning: detection, the stabilizer, the motion score, the threshold, survival statistics, calibration |
 | [How it works, step by step on one mite](report/visual_how_it_works.md) | The same pipeline run on real data, with the code of each step and a figure of what it did |
 | [Performance](report/3_performance.md) | The app against the Discobox's original software: calls, time of death, speed, memory, storage (26 October 2026) |
@@ -618,13 +619,13 @@ over the frames of the bare plate at the patch's edge in the same recording (`An
 that is 0, which only frames without noise or a black plate give, the score is left undivided and a
 `NoNoiseWarning` flags it: it is then off the threshold's scale). That needs no other recording, so it holds
 in a live run too. On sample_data the floor is 3.1 to 3.8 grey levels squared. The constants of the score
-and the stabilizer (128 rays of 11.4 px, the body's edge at 0.226 of its darkest, a ±1.04 px outline band, a
-bilinear stabilizer, …) were chosen by an Optuna search on the labelled recordings on 2026-10-27
-(`scripts/pipeline_optuna.py`, `notebooks/pipeline_optuna.ipynb`); they are read from `config.default.yaml`
-and the code, never from a machine's `config.yaml`. The search also divided the score by its outline's mean
-variance to the power 0.491 (`relative`); that was taken out the same day, as it changed no call on the
-labelled recordings. The default threshold (0.074) is the best F0.5 threshold of the poke run (3 s at 30 fps)
-on that scale. A threshold saved before then is on another scale: save one again from a calibration report.
+and the stabilizer (64 rays of 13 px, the body's edge at 0.5 of its darkest, a ±1.5 px outline band, a
+Lanczos stabilizer, …) are read from `config.default.yaml` and the code, never from a machine's `config.yaml`.
+An Optuna search on the labelled recordings chose others on 2026-10-27 (`scripts/pipeline_optuna.py`,
+`notebooks/pipeline_optuna.ipynb`); they separated moving from still better only on the mites they were
+tuned on, and the constants before them were restored on 2026-10-29. The default threshold (0.091) is the
+best threshold of the poke run (3 s at 30 fps) by F0.5 and F0.25 alike. A threshold saved between
+2026-10-27 and 2026-10-29 is on the search's scale: save one again from a calibration report.
 
 Two further normalisations put the scores of a finished run on one scale
 (`classes/scoring/score_normalizer.py`); both keep the scores on about the scale they had.
@@ -649,25 +650,27 @@ In *Calibration* you mark by eye which mites move in each recording and compare 
 1. **Calibration data**: pick *Calibrate the threshold* or *Test the threshold*, then drop the folder, or
    *Calibrate* one of the previous recordings. The mites are found on its first frame; nothing is scored
    until a report is made.
-2. **Ground truth**: zone by zone and recording by recording, the zone's frames of that recording play
-   (once, or in a loop with *Loop* ticked); click each mite to cycle it through *moving*, *still*, *not a
-   mite* (a false detection) and back to unlabelled; clicking on past a *not a mite* you just set brings back
-   the mite's labels. <kbd>↑</kbd>
-   <kbd>↓</kbd> change recording, <kbd>←</kbd> <kbd>→</kbd> change zone. The detector's own call is hidden so
-   it cannot bias you. Every label is saved as it is set, by position in `ground_truth.json` next to the
+2. **Ground truth**: one mite in one recording at a time, its clip playing (once, or in a loop with *Loop*
+   ticked) beside a picture of where its pixels change over the frames. Label it *moving* <kbd>M</kbd>,
+   *still* <kbd>S</kbd>, *not a mite* <kbd>N</kbd> (a false detection, in every recording) or *unlabelled*
+   <kbd>U</kbd>; a label moves on to the mite's next recording, and after its last to the next mite still to
+   label. *Dead from here on* <kbd>D</kbd> labels the mite still in this recording and every later one not
+   labelled yet; another label after *not a mite* brings the mite's labels back. <kbd>←</kbd> <kbd>→</kbd>
+   change recording, <kbd>↑</kbd> <kbd>↓</kbd> change mite, <kbd>P</kbd> plays or pauses. The detector's own
+   call is hidden so it cannot bias you. Every label is saved as it is set, by position in `ground_truth.json` next to the
    recordings, so they survive a change in detector settings.
 3. **Report**: every labelled (mite, recording) is compared with the detector's call there, moving when that
-   recording's score reaches the threshold. *Calibration* suggests the threshold with the largest F0.5 of the
-   calls moving, mite-recording by mite-recording (1.25 × moving called moving over 1.25 × moving called
-   moving + 0.25 × moving called still + still called moving): a still recording called moving costs four
+   recording's score reaches the threshold. *Calibration* suggests the threshold with the largest F0.25 of the
+   calls moving, mite-recording by mite-recording (1.0625 × moving called moving over 1.0625 × moving called
+   moving + 0.0625 × moving called still + still called moving): a still recording called moving costs sixteen
    times a moving one called still, because one such call can bring a dead mite back to life hours after its
    death, while a live mite called still moves again later. It can save the threshold to `config.yaml`. The
    close calls it gets wrong are the ones the results page asks to check by eye (see *Close calls to check by
    eye* above). For the suggested threshold and the one in use it reports the share called right, the moving
-   recordings called still, the still ones called moving, F0.5 and the death-time error: the mean distance,
+   recordings called still, the still ones called moving, F0.25 and the death-time error: the mean distance,
    in recordings, between each mite's death by the detector and by the labels (a mite dies at the recording
    after its last movement), which is reported but not chosen on. Its precision-recall curve marks both
-   thresholds, with the curve of the points as good by F0.5 as the better of them. Its confusion matrix
+   thresholds, with the curve of the points as good by F0.25 as the better of them. Its confusion matrix
    switches between the suggested threshold and the one in use. *Test* shows the confusion matrix at the
    threshold in use, the precision-recall curve with its average precision, and where on the plate the
    errors are. Both show the fraction of mites moving per recording by the ground truth against the
@@ -675,7 +678,9 @@ In *Calibration* you mark by eye which mites move in each recording and compare 
    the outline change between recordings (see *Outline change between recordings* below). The report is the
    one picked on the first page; to see the other, go back and pick it there.
 
-Test a threshold on a different recording from the one it was calibrated on.
+Test a threshold on a different recording from the one it was calibrated on. When to calibrate, what data to
+label, and how to read both reports and decide whether to save are in the
+[user manual, section 4](report/1_user_manual.md#4-calibration-setting-and-checking-the-threshold).
 
 <details>
 <summary><b>The report in detail: wrong calls, pooling, metric choice, calibration.xlsx</b></summary>
@@ -909,5 +914,5 @@ test of the hardware itself.
 2. **Allied Vision, *Vimba X SDK* and *vmbpy*,** the camera's driver and Python API, installed as the
    Discobox's own instructions describe.
 3. Statistics: Kaplan–Meier survival with Greenwood's confidence intervals on the log-log scale, and the
-   log-rank test (`scipy.stats.logrank`); motion-score constants tuned with **Optuna** (Akiba et al.,
+   log-rank test (`scipy.stats.logrank`); the search of the motion-score constants with **Optuna** (Akiba et al.,
    *Optuna: A Next-generation Hyperparameter Optimization Framework*, KDD 2019).
