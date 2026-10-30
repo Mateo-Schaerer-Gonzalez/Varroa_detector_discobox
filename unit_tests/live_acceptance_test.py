@@ -60,6 +60,16 @@ def assert_live_equals_folder(live, folder_run):
     assert_same(folder_run["pixels"], live["pixels"], "The live images")
 
 
+def without_alive(excel):
+    """The workbooks' sheets with group_summary cut above its percent alive, which
+    goes by the run's death time: a live run has one, the reference's folder none."""
+    sheets = dict(excel[reporting.EXCEL_NAME])
+    summary = sheets["group_summary"]
+    end = next(row for row, values in enumerate(summary["data"]) if str(values[0]).startswith("Percent alive"))
+    sheets["group_summary"] = {**summary, "data": summary["data"][:end], "index": summary["index"][:end]}
+    return {**excel, reporting.EXCEL_NAME: sheets}
+
+
 @pytest.mark.slow
 def test_a_live_run_gives_folder_mode_results_and_the_reference(tmp_path, live_run):
     if any((reference.SAMPLE_DATA / name).exists() for name in ("labels.json", "ground_truth.json", "corrections.json")):
@@ -73,7 +83,7 @@ def test_a_live_run_gives_folder_mode_results_and_the_reference(tmp_path, live_r
     expected = reference.load("folder_sample_data")
     # a folder of whole frames, against the mites' ROIs the live run saved
     assert_same({**expected["results"], "frames": "rois"}, live["results"], "The live results, against the reference,")
-    assert_same(expected["excel"], live["excel"], "The live results.xlsx, against the reference,")
+    assert_same(without_alive(expected["excel"]), without_alive(live["excel"]), "The live results.xlsx, against the reference,")
     assert_same(expected["figures"], live["figures"], "The live figures, against the reference,")
 
 
