@@ -1,6 +1,6 @@
 # How it works, step by step on one mite
 
-*Agroscope · 27 October 2026 · a visual companion to part 2 (`2_how_it_works.md`)*
+*Agroscope · status of 30 October 2026 · part 3 of 4, a visual companion to part 2 (`2_how_it_works.md`)*
 
 This walks through the whole analysis on real data: the poke run `poke_test_oct` (a live
 run of 22–23 October 2026, 3 s at 30 fps = 90 frames per recording, 14 mites, 95 recordings
@@ -14,18 +14,19 @@ All figures and numbers come from one script, which calls the app's own function
 re-implements nothing but two pictures (marked *picture only*):
 
 ```bash
-python scripts/visual_walkthrough.py        # reads the poke run in %TEMP%/zzrc/gt; writes report/images/walk_*.png
+python scripts/visual_walkthrough.py --long-run %TEMP%/zzrc/perf/long_run   # reads the poke run in %TEMP%/zzrc/gt; writes report/images/walk_*.png
 ```
 
 **Check that the steps are the app's.** The score this walk-through builds up step by step
 is identical to the score the app's own analysis of the run gives
-(`scoring.detect_and_score()`): 0.815525 for the moving example and 0.017919 for the still
+(`scoring.detect_and_score()`): 0.617032 for the moving example and 0.010960 for the still
 one, difference 0.0 for both.
 
-All of it uses the constants the app has had since 27 October 2026, chosen by an Optuna
-search (`notebooks/pipeline_optuna.ipynb`): 128 rays of 11.4 px, the body's edge at 0.226 of
-its darkest, a ±1.04 px outline band and a bilinear stabilizer with its own body mask (0.3, grown 2 px, since 29 October; the search's 0.241 grown 4 px masked a square). The search also divided the score by the profile's mean to the power
-0.491; that was taken out the same day, so the score is the vector sum alone (step 7).
+All of it uses the constants the app has run on since 29 October 2026: 64 rays of 13 px, the
+body's edge at 0.5 of its darkest, a ±1.5 px outline band and a Lanczos stabilizer. They are
+the constants from before an Optuna search of 27 October (`notebooks/pipeline_optuna.ipynb`),
+whose own constants did not separate the held-back test mites better and were set back. The
+score is the vector sum alone (step 7).
 
 ```mermaid
 flowchart LR
@@ -92,16 +93,15 @@ computed from this stack of 90 small images.
 
 ```python
 shifts = PlateStabilizer().shifts(frames, [box])[0]     # (90, 2): how far the mite moved since frame 1
-roi    = PlateStabilizer.cut(frames, box, 16, shifts)   # every frame moved back by -s_t (bilinear)
+roi    = PlateStabilizer.cut(frames, box, 16, shifts)   # every frame moved back by -s_t (Lanczos)
 ```
 
 ![How the stabilizer finds the mite's centre](images/walk_3_stabilizer_centre.png)
 
-**a.** A crop of the box + 8 px; its outer 4 px (blue) are bare plate and give the
+**a.** A crop of the box + 8 px; its outer 6 px (blue) are bare plate and give the
 plate's light in each frame. **b.** Each pixel's *darkness*, the share of the plate's
-light it takes away. **c.** The body mask: at least 0.3 as dark as the darkest (the mean of the 8 darkest
-pixels), grown by 2 px
-(orange); the green dots are the centre of darkness in each of the 90 frames, all on top of
+light it takes away. **c.** The body mask: at least 0.3 as dark as the darkest pixel,
+grown by 2 px (orange); the green dots are the centre of darkness in each of the 90 frames, all on top of
 each other. **d.** The shift $s_t = c_t - c_1$ per frame: for this still mite at most
 0.03 px, only noise.
 
@@ -109,13 +109,12 @@ each other. **d.** The shift $s_t = c_t - c_1$ per frame: for this still mite at
 
 **Top:** the poke run hardly shakes, so this row uses the **long run's** shakiest
 still-labelled recording (mite 12.10, recording 278, 10 frames), whose plate moved by up to
-**0.19 px** (as the stabilizer measures it). Cut at the box (left), the whole outline lights
+**0.29 px** (as the stabilizer measures it). Cut at the box (left), the whole outline lights
 up: a shift far too small to see moves the dark edge across its pixels. Moved back by its
 shift (middle), most of the ring is gone (the 99th percentile of the variance drops from 7.6
-to 5.2 grey levels²), but **the score hardly changes: 0.0343 → 0.0292**. With the constants
-before 27 October the same recording dropped from 0.0144 to 0.0020: the new constants
-(chosen on recordings that barely shake) take less of a shake out.
-**Bottom:** the moving mite. Its centre moves by up to 0.11 px (its legs pull it), and the
+to 5.6 grey levels²), and **the score drops sevenfold: 0.0144 → 0.0020**, far below the
+threshold.
+**Bottom:** the moving mite. Its centre moves by up to 0.14 px (its legs pull it), and the
 legs' changes stay: stabilizing removes a shift of the whole mite, not a leg moving.
 
 ---
@@ -129,11 +128,11 @@ sigma2      = Analyzer.plate_noise(roi) # median over the rim of each pixel's va
 
 ![Lamp correction and noise floor](images/walk_4_lamp_noise.png)
 
-**a.** The rim $R$: the outer 3 px of the patch (504 pixels), bare plate. **b.** The plate's
+**a.** The rim $R$: the outer 6 px of the patch (936 pixels), bare plate. **b.** The plate's
 light per frame $P_t$ (the median of the rim). Here the lamp is steady to a quarter of a
 grey level; each frame is scaled by $L/P_t$ anyway, so a flickering lamp would change
 nothing. **c.** The variance over the frames of each rim pixel; their median is the
-**noise floor** $\sigma^2 = 2.69$ grey levels²: how much a pixel changes from noise alone in
+**noise floor** $\sigma^2 = 2.82$ grey levels²: how much a pixel changes from noise alone in
 this recording, at this mite.
 
 ---
@@ -142,15 +141,15 @@ this recording, at this mite.
 
 ```python
 variance, edge, step, centre = Analyzer._outline_rays(roi)
-# variance: (128, 23) = V(k, r), the variance over the frames at each point of each ray
-# edge:     (128,)    = e_k, where each ray leaves the body (darkness < 0.226 × the darkest)
+# variance: (64, 26) = V(k, r), the variance over the frames at each point of each ray
+# edge:     (64,)    = e_k, where each ray leaves the body (darkness < 0.5 × the darkest, the mean of the 30 darkest)
 ```
 
 ![Rays, edge and variance](images/walk_5_rays.png)
 
-**a.** From the mite's centre in each frame, 128 rays (every fourth drawn), sampled every
-0.5 px out to 11.4 px with bilinear interpolation. Orange: the body's edge $e_k$ on each
-ray; dotted: the outline band ±1.04 px round it. **b.** *(picture only)* The mean frame
+**a.** From the mite's centre in each frame, 64 rays (every fourth drawn), sampled every
+0.5 px out to 13 px with bilinear interpolation. Orange: the body's edge $e_k$ on each
+ray; dotted: the outline band ±1.5 px round it. **b.** *(picture only)* The mean frame
 unrolled: ray $k$ is a row, distance along it a column; the body is the dark part on the
 left, the edge the orange line. **c.** What the score uses: $V(k,r)$, the variance over the
 90 frames at every point. The bright patches sit on the edge band between 0° and 70° (right of
@@ -161,16 +160,16 @@ the mite, a little below) and around 180° (left): the legs.
 ## 6. One number per direction: the outline profile
 
 ```python
-v = Analyzer.outline_variability_profile(roi)   # (128,): mean of V(k, r) within 1.04 px of e_k
+v = Analyzer.outline_variability_profile(roi)   # (64,): mean of V(k, r) within 1.5 px of e_k
 a = v / Analyzer.plate_noise(roi)               # in multiples of the noise floor
 ```
 
 ![The outline profile](images/walk_6_profile.png)
 
 **a.** $v_k$, the mean variance in each ray's outline band, in grey levels². **b.** Divided
-by the noise floor (2.69 and 2.76): $a_k$. The still mite is flat at about 0.41 (a dark body
+by the noise floor (2.82 for both): $a_k$. The still mite is flat at about 0.33 (a dark body
 is less noisy than the bright plate, so it sits below 1). The moving mite has peaks at about
-5°, 30°, 65° and 355°, up to 9 times the noise, and a small one at 185°. **c.** The same values drawn round the mite: the
+5°, 30°, 65° and 355°, up to 7 times the noise, and a small one at 185°. **c.** The same values drawn round the mite: the
 moving mite's change is all on one side, to the right and below.
 
 ---
@@ -179,18 +178,18 @@ moving mite's change is all on one side, to the right and below.
 
 ```python
 score = Analyzer._motion_score(roi, "outline_variability")
-# inside: direction = exp(2j·π·k/128);  score = |mean(a · direction)|
+# inside: direction = exp(2j·π·k/64);  score = |mean(a · direction)|
 ```
 
 ![The vector sum](images/walk_7_vector_sum.png)
 
 Each $a_k$ becomes an arrow of that length pointing in direction $k$; laid tip to tail they
 make a walk. **a.** The moving mite's arrows walk away from the start: the black arrow is
-0.816 long, and that is the score, **0.816**. **b.** The still mite's arrows are all about equally long and go round a
-circle back to almost where they started: the black arrow is 0.018, although the mean value
-(0.41) is far from 0: score **0.018**.
+0.617 long, and that is the score, **0.617**. **b.** The still mite's arrows are all about equally long and go round a
+circle back to almost where they started: the black arrow is 0.011, although the mean value
+(0.33) is far from 0: score **0.011**.
 **c.** The same thing as a Fourier transform: the black arrow is exactly harmonic 1 of the
-profile (`np.fft.rfft(a)[1] / 128` gives 0.816 and 0.018). Harmonic 0 (the mean, change the
+profile (`np.fft.rfft(a)[1] / 64` gives 0.617 and 0.011). Harmonic 0 (the mean, change the
 same all round) is the largest bar for both, and the vector sum cancels it.
 
 ---
@@ -205,9 +204,9 @@ moving = score >= T                                  # Mite.moving: one call per
 ![One mite's scores over the run](images/walk_8_threshold.png)
 
 Mite 7.1's score in each recording it was followed in, on a log scale. Green: at or above
-the threshold $T = 0.074$, called moving; orange: below, called still. Squares: recordings
-labelled by eye. It moves on and off for 5.5 h, then its scores drop about tenfold, to
-about 0.01, and stay there: still for good. The live run stopped saving it once it counted as dead (step 10),
+the threshold $T = 0.087$ (step 9), called moving; orange: below, called still. Squares: recordings
+labelled by eye. It moves on and off for 5.5 h, then its scores drop more than tenfold, to
+0.01 and below, and stay there: still for good. The live run stopped saving it once it counted as dead (step 10),
 which is why its line ends at 9.2 h.
 
 ---
@@ -215,7 +214,7 @@ which is why its line ends at 9.2 h.
 ## 9. Where $T$ comes from: calibration on labels
 
 ```python
-T  = calibration.best_f05_threshold(scores, labels)      # the threshold with the best F0.5
+T  = calibration.best_f05_threshold(scores, labels)      # the threshold with the best F0.25
 AP = calibration.average_precision(scores, labels)
 ```
 
@@ -223,10 +222,11 @@ AP = calibration.average_precision(scores, labels)
 
 **a.** The scores of the 304 labelled (mite, recording)s of this run: 204 moving (green),
 100 still (orange). They barely overlap. **b.** Precision against recall over every
-threshold: average precision 0.9993. **c.** F0.5 at every threshold (a still recording
-called moving costs four times a moving one called still); its maximum is at **0.074**,
-which calls 0 still recordings moving and 2 moving ones still. That is the app's default
-threshold.
+threshold: average precision 0.9995. **c.** F0.25 at every threshold (a still recording
+called moving costs sixteen times a moving one called still); its maximum is at **0.087**,
+which calls 0 still recordings moving and 4 moving ones still. Any threshold between the
+highest still score below it (0.082) and the lowest moving score above it (0.092) makes the
+same calls; the app's default threshold, 0.091, lies in that gap too.
 
 ---
 

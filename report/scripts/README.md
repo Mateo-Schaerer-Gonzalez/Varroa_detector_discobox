@@ -1,7 +1,7 @@
 # The code behind the reports' figures
 
 The reports in `report/` draw their figures with these scripts, kept as they were run
-(23–27 October 2026), with only the repository's path made relative. They read copies of
+(23–30 October 2026), with only the repository's path made relative. They read copies of
 the recordings in `%TEMP%\zzrc\perf\<dataset>` (hard links of the frames, see CLAUDE.md),
 never `recordings/` itself. Each figure script runs on its own from any folder
 (`python report/scripts/fig_mask.py`): it draws into `report/images` (or the folder given as
@@ -10,8 +10,8 @@ missing (`figure_kit.py`). The figures draw with the app's constants as they are
 
 | Figure (`report/images/`) | Report | Made by |
 |---|---|---|
-| `walk_*.png` | `visual_how_it_works.md` | `scripts/visual_walkthrough.py` |
-| `app_*.png`, `mite_outline_app.png` | `1_user_manual.md`, `2_how_it_works.md` | `scripts/readme_screenshots.mjs`, then `scripts/readme_images.py` (the 2025 test sessions only) |
+| `walk_*.png` | `visual_how_it_works.md` | `scripts/visual_walkthrough.py --long-run %TEMP%\zzrc\perf\long_run` (the poke run from `%TEMP%\zzrc\gt`) |
+| `app_*.png` (`app_calibration_*` too), `mite_outline_app.png` | `1_user_manual.md`, `2_how_it_works.md` | `scripts/readme_screenshots.mjs`, then `scripts/readme_images.py` (the 2025 test sessions only; the calibration pages calibrate on `ground_truth_60min` and test on `ground_truth_90min`). `readme_images.py` also writes `docs/images/`: check those out again (`git checkout -- docs/images`) to leave README.md's pictures as they are |
 | `detector_steps.png` | `2_how_it_works.md` | `figures2.py` |
 | `outline_unrolled.png`, `outline_vector_sum.png` | `2_how_it_works.md` | `outline_data.py` (the data), then `fig_outline.py` |
 | `body_mask.png` | `2_how_it_works.md` | `stab_data.py` (the data), then `fig_mask.py` |

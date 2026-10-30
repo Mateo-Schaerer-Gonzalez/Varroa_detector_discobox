@@ -14,7 +14,8 @@
 //
 //   node scripts/readme_screenshots.mjs <out dir> <the copy's recordings\sample_data>
 //
-// Writes <out dir>/<page>.png, whole pages 1440 px wide; scripts/readme_images.py
+// Writes <out dir>/<page>.png, whole pages 1440 px wide (cal_* the calibration pages,
+// which need ground_truth_60min and ground_truth_90min); scripts/readme_images.py
 // cuts them into docs/images/ and report/images/. Analysing the folder writes
 // results/sample_data/ in the copy, never in this app.
 import { spawn } from "node:child_process";
@@ -72,5 +73,15 @@ await go("#/zone/7"); await shot("zone");
 await go("#/mite/7.1"); await shot("mite");            // moving in the last recording
 await go("#/mite/4.1"); await shot("mite_still");      // a negative control, still
 await go("#/playback"); await sleep(4000); await shot("playback");
+// Calibration as the manual walks through it: calibrate on ground_truth_60min, then
+// test the threshold on another recording, ground_truth_90min. Nothing is saved.
+await go("#/cal/open");
+await run(`cal.setMode("calibrate")`);
+await run(`datasetLibrary.open("ground_truth_60min")`); await sleep(3000); await shot("cal_truth", false);
+await run("cal.evaluate()"); await sleep(3000); await shot("cal_report");
+await run("cal.quit()"); await sleep(1500);
+await run(`cal.setMode("test")`);
+await run(`datasetLibrary.open("ground_truth_90min")`); await sleep(3000);
+await run("cal.evaluate()"); await sleep(5000); await shot("cal_test");
 ws.close();
 chrome.kill();

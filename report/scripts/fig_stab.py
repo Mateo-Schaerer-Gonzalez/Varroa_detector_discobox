@@ -67,11 +67,12 @@ ign = np.zeros((hh, ww), bool); ign[:m8] = ign[-m8:] = True; ign[:, :m8] = True;
 # body for the score: as Analyzer._outline_rays
 plate = np.median(roi[:, edge_mask], axis=1); light = plate.mean(); lit = roi * (light / plate)[:, None, None]
 dark = np.clip(1 - lit / light, 0, None); still = dark.mean(axis=0)
-near = ~(ign | edge_mask); darkest = np.sort(still.ravel())[-analyzer.DARKEST_N:].mean()
+near = ~(ign | edge_mask); darkest = still[near].max()   # the darkest pixel away from the edge
 de = (still > analyzer.BODY_SHARE * darkest) & near
 pieces = cv2.connectedComponents(de.astype(np.uint8))[1]
 yy, xx = np.mgrid[:hh, :ww]; fm = np.hypot(yy - (hh - 1) / 2, xx - (ww - 1) / 2)
 bodym = pieces == pieces.ravel()[np.where(de, fm, np.inf).argmin()]
+bodym = cv2.dilate(bodym.astype(np.uint8), np.ones((3, 3), np.uint8), iterations=analyzer.BODY_GROW).astype(bool)
 ang = np.arange(analyzer.ANGLES) * 2 * np.pi / analyzer.ANGLES
 fig, ax = plt.subplots(1, 3, figsize=(13, 4.6), gridspec_kw={"width_ratios": [1, 1, 1.1]})
 a = ax[0]; a.imshow(mean, cmap="gray", vmin=0, vmax=255)
@@ -80,7 +81,7 @@ a.add_patch(Rectangle((P - 0.5, P - 0.5), box[2] - box[0], box[3] - box[1], fill
 clean(a, f"a. the score's patch: box (dashed) + {P} px")
 a.legend(handles=[Patch(color=RIM, alpha=0.6, label=rf"rim, {analyzer.RIM} px: lamp light $P_t$ and noise floor $\sigma^2$"),
                   Patch(color=IGN, alpha=0.5, label=f"up to {m8} px from the edge (rim included): not searched for the body"),
-                  Patch(color=BODY, alpha=0.5, label=f"body: darker than {analyzer.BODY_SHARE} of the darkest ({analyzer.DARKEST_N} px), not grown")],
+                  Patch(color=BODY, alpha=0.5, label=f"body: darker than {analyzer.BODY_SHARE} of the darkest pixel, grown {analyzer.BODY_GROW} px")],
          loc="upper center", bbox_to_anchor=(0.5, -0.02), frameon=False, fontsize=8)
 a = ax[1]; a.imshow(mean, cmap="gray", vmin=0, vmax=255)
 for k in range(0, analyzer.ANGLES, 2):

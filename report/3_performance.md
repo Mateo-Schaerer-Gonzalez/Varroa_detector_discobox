@@ -1,15 +1,16 @@
 # Varroa detector for the Discobox: performance against the original software
 
-*Agroscope · status of 26 October 2026 · part 3 of 3*
+*Agroscope · status of 26 October 2026 · part 4 of 4*
 
 *Part 1 (`1_user_manual.md`) explains how to use the app, part 2 (`2_how_it_works.md`) what
-it computes. This part compares the app with the Discobox's original analysis software:
+it computes, and part 3 (`visual_how_it_works.md`) runs it step by step on one mite. This part compares the app with the Discobox's original analysis software:
 how well each calls moving and still against labels made by eye, and how fast, how much
 memory and how much disk each takes.*
 
 Both were run on the same mite-recordings on 26 October 2026: the app with its current code,
 the original with its own code and constants (`classes/scoring/benchmark.py`). **The app
-uses one threshold, 0.091**, the best F0.5 on the poke run (part 2, §6). The poke run was
+uses one threshold, 0.091**, the best on the poke run by F0.5 and by F0.25 alike (part 2, §6), the
+app's default. The poke run was
 used only to set it, so it is not among the datasets the methods are compared on. The
 original uses its fixed threshold of 25.
 

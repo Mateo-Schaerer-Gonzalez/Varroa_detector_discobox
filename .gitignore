@@ -35,6 +35,10 @@ uploads/
 !/report/images/
 /report/images/*
 !/report/images/app_calibration_open.png
+!/report/images/app_calibration_report.png
+!/report/images/app_calibration_test_errors.png
+!/report/images/app_calibration_test_top.png
+!/report/images/app_calibration_truth.png
 !/report/images/app_labels.png
 !/report/images/app_live_setup.png
 !/report/images/app_playback.png
