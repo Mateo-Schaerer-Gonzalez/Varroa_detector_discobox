@@ -500,7 +500,7 @@ live run has it too when it saves its recordings.
 **Correcting a call.** A call the detector got wrong can be corrected by hand on the result pages, of a
 folder and of a live run alike: on the mite's page, click the mite in the recording shown, or the button of
 a recording in the table, and its call changes from *moving* to *still* or back. Every number and chart
-follows at once, and the mite's ring is dashed; the workbook (its `corrected` column) and the figures are
+follows at once, and the frame round the mite's close-up is dashed; the workbook (its `corrected` column) and the figures are
 written again once the corrections pause for half a minute, and at once when the workbook is downloaded or
 the app is closed. Clicking again brings back the detector's call. A mite that is not there any more, e.g.
 one that fell off the plate, can be marked *gone* the same way, in one recording or from a recording on: it

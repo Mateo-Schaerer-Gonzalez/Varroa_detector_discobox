@@ -34,8 +34,9 @@ class ResultsPage {
 
   // What a mite is in a recording, set by hand on its page: "moving" or "still"
   // (its call), "gone" (not there in this recording, e.g. fallen off: censored) or
-  // "gone_from" (the recording from which it is gone for good). A click on the
-  // mite steps through them in this order, the server's (classes/results/call_corrections.py).
+  // "gone_from" (the recording from which it is gone for good), in the server's
+  // order (classes/results/call_corrections.py). The table offers them all; a click
+  // on the mite only switches it between moving and still.
   static STATES = ["moving", "still", "gone", "gone_from"];
   static STATE_NAMES = { moving: "moving", still: "still", gone: "gone in this recording", gone_from: "gone from this recording on" };
 
