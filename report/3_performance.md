@@ -138,12 +138,12 @@ In the calmest recordings (below 0.05 px) the app calls slightly more still reco
 moving than the original (1.0 % against 0.5 %).
 
 
-### 5.3 Short recordings
+### 5.2 Short recordings
 
 With 10 frames there are fewer chances for a leg to move by more than 25 grey levels from
 the first frame: the original misses 33 of 173 moving recordings in `GT_oct_2`, the app 20.
 
-### 5.4 No mites, only spots
+### 5.3 No mites, only spots
 
 The original reports spots per recording as mites alive, so it can't follow a mite, give a
 time of death, or compute survival per group. The comparison above had to ask it about each

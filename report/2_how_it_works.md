@@ -563,7 +563,7 @@ Mite 7.1's score in each recording it was followed in, on a log scale. Green: at
 the threshold $T = 0.087$ (the run's own best, section 6), called moving; orange: below,
 called still. Squares: recordings labelled by eye. It moves on and off for 5.5 h, then its
 scores drop more than tenfold, to 0.01 and below, and stay there: still for good. The live
-run stopped saving it once it counted as dead (section 5.5), which is why its line ends at
+run stopped saving it once it counted as dead (section 5.4), which is why its line ends at
 9.2 h.
 
 ---
@@ -591,18 +591,12 @@ call from then on and is censored at its last recording.
 
 ### 5.2 Kaplan–Meier survival
 
-With the deaths at distinct times $\tau_1 < \tau_2 < \dots$, $d_j$ deaths at $\tau_j$ and
-$n_j$ mites at risk just before it (not yet dead or censored):
-
-$$\hat S(t) = \prod_{\tau_j \le t}\left(1 - \frac{d_j}{n_j}\right).$$
-
 The 95 % confidence interval uses Greenwood's variance on the log-log scale, which keeps it
-inside 0–100 % (`scipy.stats.ecdf(...).sf.confidence_interval(method="log-log")`):
-
-$$\hat V = \sum_{\tau_j\le t} \frac{d_j}{n_j(n_j - d_j)}, \qquad
-\hat S(t)^{\exp\left(\pm 1.96\,\sqrt{\hat V}\,/\,\ln \hat S(t)\right)}.$$
+inside 0–100 % (`scipy.stats.ecdf(...).sf.confidence_interval(method="log-log")`).
 
 Where it is undefined (everyone alive or everyone dead) the interval is the estimate itself.
+
+The comparison to the negative control is performed using a log-rank test.
 
 ### 5.3 LT50
 
@@ -610,27 +604,14 @@ LT50 is the first recording time at which $\hat S \le 50\,\%$. Its 95 % interval
 the first time the lower bound reaches 50 % to the first time the upper bound does. Each is
 "not reached" if it doesn't happen by the end of the run.
 
-### 5.4 Log-rank test against the negative control
-
-Each group (all zones with the same label, pooled) is tested against the zones ticked as
-negative control. At each death time $\tau_j$ (pooled over both), with $d_j$ deaths among
-$n_j$ at risk, of which $n_{1j}$ in the tested group, the expected deaths in the tested
-group are
-
-$$E = \sum_j d_j\,\frac{n_{1j}}{n_j},$$
-
-against the observed $O$. The statistic is scipy's log-rank $Z$, and
-$\chi^2 = Z^2$ with one degree of freedom gives the p value. The table shows $O$, $E$,
-$\chi^2$ and $p$.
-
-### 5.5 A live run stops itself
+### 5.4 A live run stops itself
 
 After each recording, a mite that counts as dead by section 5.1 (a never-moved one too, once
 still for $D$ from its start) is no longer followed, scored or saved. A zone is done when
 every mite in it that was seen moving is dead or gone. Zones with no mite seen moving
 don't count. The run stops when every counting zone is done.
 
-### 5.6 On the example run
+### 5.5 On the example run
 
 ```python
 analysis = SurvivalAnalysis(times, death_minutes=200)
@@ -679,25 +660,15 @@ with the largest $F_{0.25}$, the highest is taken, and it is placed halfway into
 down to the next lower score, as far as possible from the scores on either side.
 
 **Precision-recall curve and average precision.** The report draws precision against
-recall over all thresholds and gives the average precision
+recall over all thresholds and gives the average precision.
 
-$$AP = \sum_n (R_n - R_{n-1})\,P_n,$$
-
-the precision averaged over recall: 1 when every moving label scores above every still
-label, and the share of moving labels when the score tells nothing.
-
-**Death-time error** (reported, not chosen on). For each mite seen moving, its death by the
-detector (the recording after its last call of moving) is compared with its death by the
-labels. The report gives the mean absolute difference in recordings and how many mites are
+**Death-time error** (reported, not chosen on). For each mite seen moving, its death by the detector (the recording after its last call of moving) is compared with its death by the labels. The report gives the mean absolute difference in recordings and how many mites are
 exact.
 
 **Poke test.** A poked mite that moves was alive; one that doesn't is dead from that poke.
 The report draws the Kaplan–Meier curve of the poked mites by the pokes (dead at the first
 poke not answered; censored at the last poke for one that answered every poke) with the
 detector's curve over it.
-
-**Saving.** Saving a threshold writes it to `config.yaml`, and scales the review band in
-use by $T_\text{new}/T_\text{old}$, so the band keeps its shape.
 
 **On the example run.**
 
