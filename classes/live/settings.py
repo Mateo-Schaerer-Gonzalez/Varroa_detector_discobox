@@ -74,7 +74,7 @@ class Settings:
     vent: int = 255
     led1: int = 255
     led2: int = 255
-    zone_mask: str = zone_masks.DEFAULT
+    zone_mask: str = zone_masks.NEW
 
     @classmethod
     def from_dict(cls, values):

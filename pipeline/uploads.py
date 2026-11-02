@@ -9,6 +9,9 @@ from pathlib import Path
 from classes.storage.files import write_jpeg
 from classes.storage.roi_conversion import RoiConversion
 from classes.storage.roi_recordings import RoiRecordings, is_roi_session
+from classes.plate import zone_masks
+from classes.plate.zone_layout import ZoneLayout
+from classes.storage import settings_file
 from classes.storage.upload_plan import UploadPlan
 from pipeline import paths, plate_zones
 
@@ -30,8 +33,10 @@ def plan_upload(name, files, uploads_root=paths.RECORDINGS_ROOT):
     return {"name": plan.name, "data_dir": str(folder), "missing": plan.missing(size_of, converted)}
 
 
-def finish_upload(name, uploads_root=paths.RECORDINGS_ROOT):
-    """Once every file of a dropped folder is in. A folder of whole frames is
+def finish_upload(name, uploads_root=paths.RECORDINGS_ROOT, results_root=paths.RESULTS_ROOT):
+    """Once every file of a dropped folder is in. A new folder gets the
+    automatic zone mask (zone_masks.NEW): one with a mask saved, or opened in
+    the app before (its plate labels go by its zones), keeps its own. A folder of whole frames is
     marked to be shrunk to what a live run saves, the mites' surroundings
     (classes/storage/roi_conversion.py), when it is first analysed or calibrated
     (shrink_pending()): until then mites can be placed by hand on it. Recordings
@@ -41,12 +46,23 @@ def finish_upload(name, uploads_root=paths.RECORDINGS_ROOT):
     folder = Path(uploads_root) / name
     if not folder.is_dir():
         raise FileNotFoundError(f"Nothing was copied to {folder}.")
+    if _new(folder, results_root):
+        ZoneLayout(zone_masks.NEW).save(folder)
     if not is_roi_session(folder):
         (folder / paths.SHRINK_PENDING_NAME).write_text(
             "Dropped into the page: shrunk to the mites' surroundings when first analysed or calibrated.\n",
             encoding="utf-8")
         return {"data_dir": str(folder), "converted": 0}
     return {"data_dir": str(folder), "converted": convert_folder(folder)}
+
+
+def _new(folder, results_root):
+    """Whether a dropped folder is new to the app: no zone mask saved with it,
+    no plate labels and never opened (no results folder)."""
+    saved = settings_file.of_folder(folder)
+    return (not any(key in saved for key in (ZoneLayout.SETTING, ZoneLayout.OLD_SETTING))
+            and not any(folder.glob("labels*.json")) and not any(folder.glob("controls*.json"))
+            and not paths.results_dir(folder, results_root).exists())
 
 
 def shrink_pending(folder, results_root=paths.RESULTS_ROOT):

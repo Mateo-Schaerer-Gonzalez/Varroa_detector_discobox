@@ -30,6 +30,7 @@ CONTROLS_FILENAME = "controls.json"  # the zones ticked as negative controls
 GROUND_TRUTH_FILENAME = "ground_truth.json"
 POKE_FILENAME = "poke_test.json"  # which mites answered a poke, round by round
 HAND_MITES_FILENAME = "mites_by_hand.json"  # mites placed by hand where the detector missed them
+AUTO_ZONES_NAME = "zones_auto.txt"  # the zones of the automatic mask, found on the first frame (auto_zones.py)
 # In a folder dropped into the page: its frames are still whole, to be shrunk to the
 # mites' surroundings when it is first analysed or calibrated (uploads.shrink_pending()).
 SHRINK_PENDING_NAME = "shrink_pending.txt"

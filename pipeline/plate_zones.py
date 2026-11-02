@@ -1,7 +1,8 @@
 """The plates and their zones, and the mites in them as the pages know them.
 
 A recording's zones are those of the zone mask saved with it (one zone per
-plate, coords_pixel.txt, two, coords_pixel_2.txt, or one made on the Zones page;
+plate, coords_pixel.txt, two, coords_pixel_2.txt, one made on the Zones page,
+or the automatic one, found on the recordings' first frame, pipeline/auto_zones.py;
 classes/plate/zone_layout.py, classes/plate/zone_masks.py).
 """
 
@@ -10,7 +11,7 @@ from pathlib import Path
 from classes.plate import zone_masks
 from classes.plate.zone_layout import ZoneLayout
 from classes.plate.zones import Zone, ZoneManager
-from pipeline import hand_mites
+from pipeline import auto_zones, hand_mites
 
 
 # Zone type ids as they appear in the coordinates file.
@@ -31,8 +32,12 @@ def build_zone_manager(coords_file):
 
 def coords_file_of(data_dir, coords_file=None):
     """The zones of the recordings in `data_dir`: those of the mask saved with
-    them, unless a `coords_file` is given."""
-    return coords_file or ZoneLayout.of_folder(data_dir).coords_file
+    them (the automatic one's found on their first frame, once), unless a
+    `coords_file` is given."""
+    if coords_file:
+        return coords_file
+    layout = ZoneLayout.of_folder(data_dir)
+    return auto_zones.coords_file(data_dir) if layout.mask == zone_masks.AUTO else layout.coords_file
 
 
 def zones_of(data_dir, coords_file=None):

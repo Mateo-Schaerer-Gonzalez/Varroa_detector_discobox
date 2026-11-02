@@ -451,7 +451,9 @@ saves, the mites' surroundings (about a thirtieth of the space, the same results
 it is). Until then its frames are whole, so mites the detector missed can be placed by hand (below); the
 first analysis takes a moment per recording longer. Its labels, ground truth and poke test
 come along. Dropping the same folder again only sends files that changed (no frames already shrunk; new
-recordings join the others), and keeps the labels you already typed. You can also type a path instead, and
+recordings join the others), and keeps the labels you already typed and the settings chosen here (its zone
+mask, its death time). A folder dropped for the first time gets the automatic zone mask (see *Zone
+coordinates*). You can also type a path instead, and
 then labels are saved next to the recordings.
 
 **2. Plate labels.** Click a plate and type its group (e.g. the venom extract). <kbd>Tab</kbd> saves and moves
@@ -921,11 +923,26 @@ the number the analysis will give it, and each text zone the plate whose name is
 as `masks/<name>.txt`, in the format above; its name is letters, digits, `-` and `_`, with a letter. The
 built-in masks cannot be changed or deleted.
 
+**The automatic mask** ("Found on the first frame (automatic)") is what new recordings get: a folder dropped
+into the page and a live run. It finds each glass slide in use on the recording's first frame, from its
+frosted end, where the name is written: that end hides the holder's 3D-print lines, which show through clear
+glass, and the glass is on the side with the mites (the right of a slide with none yet). The written zone (a
+text zone) is the frosted end and any writing past it; the rest of the slide is the plate (a mite zone). Only
+the slides written on or with at least 3 mites become zones, so a session's plates are numbered among those
+alone, and mites put on a slide with neither later have no zone (choose mask "1" for such a session). The zones are found once and kept with
+the recordings as `zones_auto.txt`, in the format above; a live run finds them again on the lit frame each
+time the label page shows it, until it starts, as slides can still be moved. Where no slide is found the
+zones are those of mask "1". On 128 labelled frames of the 2025 test sessions it found all 951 slides in use
+and 18 more, each written on with no mites yet, and the detector found 97.9 % of the labelled mites in its zones against 99.4 % in mask "1",
+which is a whole slot wide (`notebooks/auto_zones.ipynb`). If the zones found are wrong, choose mask "1" (or
+another) on the label page: that is the fall-back to the zones drawn by hand. Folders of earlier versions, and
+folders dropped before that were opened or labelled, keep their mask.
+
 *Zone mask* chooses the mask: on the label page, for a folder and for a live run until it starts. The choice
 is saved with the recordings, as the `zone_mask` line of their `.settings.txt` (a `zones_per_plate=1` or `2`
 line of earlier versions reads as mask "1" or "2"), so every later analysis and calibration of them uses the
 same zones (`classes/plate/zone_layout.py`, `classes/plate/zone_masks.py`). A recording whose mask was deleted
-uses mask "1", and a mask changed after a run gives its recordings the new zones at their next analysis
+uses mask "1" (a live run's settings, the automatic one), and a mask changed after a run gives its recordings the new zones at their next analysis
 (`run_settings.json` keeps the zones a run used). A zone id is another plate in another mask, so the labels
 and negative controls of each mask but "1" are kept apart, in `labels_<mask>.json` and `controls_<mask>.json`
 (`labels_2.json` for two zones per plate).

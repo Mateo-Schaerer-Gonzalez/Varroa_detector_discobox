@@ -5,8 +5,11 @@ before detection, where a plate's name is read), one coordinates file each.
 A coordinates file has one line per zone, `type x1 y1 x2 y2` in image pixels:
 type 1 a mite zone, 0 a text zone. Two masks are built in, next to the app and
 in git: "1", one zone per plate (coords_pixel.txt), and "2", each plate cut into
-its upper and lower half (coords_pixel_2.txt); they cannot be changed. The masks
-made on the Zones page are masks/<name>.txt (DISCOBOX_MASKS sets another folder;
+its upper and lower half (coords_pixel_2.txt); they cannot be changed. The mask
+"auto" is found on each recording's own first frame (classes/plate/slide_finder.py,
+pipeline/auto_zones.py): it is the mask new recordings get (NEW), and has no file
+here (coords_file() gives FALLBACK's, which its recordings use where no slide is
+found). The masks made on the Zones page are masks/<name>.txt (DISCOBOX_MASKS sets another folder;
 the tests use their own). A name is letters, digits, - and _, with a letter in
 it, so it is never one of the built-in ones and makes a file name everywhere.
 """
@@ -18,7 +21,10 @@ from pathlib import Path
 from classes.storage import files
 
 APP_DIR = Path(__file__).resolve().parent.parent.parent
-DEFAULT = "1"
+DEFAULT = "1"   # recordings without a mask saved with them, those of earlier versions
+AUTO = "auto"   # found on each recording's first frame
+NEW = AUTO      # the mask new recordings get: uploaded folders and live runs
+FALLBACK = "1"  # the zones of the automatic mask where no slide is found
 # name -> (title, its coordinates file next to the app)
 BUILT_IN = {"1": ("One zone per plate", "coords_pixel.txt"),
             "2": ("Two zones per plate (upper and lower half)", "coords_pixel_2.txt")}
@@ -42,16 +48,18 @@ def made():
 
 
 def names():
-    """Every mask: the built-in ones first."""
-    return [*BUILT_IN, *made()]
+    """Every mask: the automatic one, the built-in ones, then those made."""
+    return [AUTO, *BUILT_IN, *made()]
 
 
 def exists(name):
-    return str(name) in BUILT_IN or (NAME.match(str(name)) is not None and _made_file(name).is_file())
+    return str(name) in (AUTO, *BUILT_IN) or (NAME.match(str(name)) is not None and _made_file(name).is_file())
 
 
 def title(name):
     """What the pages call the mask `name`."""
+    if name == AUTO:
+        return "Found on the first frame (automatic)"
     return BUILT_IN[name][0] if name in BUILT_IN else name
 
 
@@ -64,8 +72,11 @@ def check(name):
 
 
 def coords_file(name):
-    """The coordinates file of the mask `name`, which must exist (check())."""
+    """The coordinates file of the mask `name`, which must exist (check()); for
+    the automatic mask, whose zones each recording keeps itself, FALLBACK's."""
     name = check(name)
+    if name == AUTO:
+        name = FALLBACK
     return APP_DIR / BUILT_IN[name][1] if name in BUILT_IN else _made_file(name)
 
 
@@ -88,6 +99,8 @@ def save(name, zones):
     `name`, a new one or one made before: never a built-in one. At least one
     mite zone, each with its corners in order."""
     name = str(name or "").strip()
+    if name == AUTO:
+        raise ValueError("The automatic mask is found on each recording's first frame; save yours under another name.")
     if name in BUILT_IN:
         raise ValueError(f"The built-in mask {name!r} cannot be changed; save it under another name.")
     if not NAME.match(name):
@@ -114,7 +127,7 @@ def delete(name):
     """Remove the mask `name` made on the Zones page. The recordings that used it
     go back to the default mask."""
     name = check(name)
-    if name in BUILT_IN:
+    if name in (AUTO, *BUILT_IN):
         raise ValueError(f"The built-in mask {name!r} cannot be deleted.")
     _made_file(name).unlink()
 

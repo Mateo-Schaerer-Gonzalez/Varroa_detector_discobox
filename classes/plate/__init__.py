@@ -4,6 +4,7 @@ beside the plates.
     zones.py         the zones of the plates and the mites in each; mite ids (mite_ids())
     zone_masks.py    the zone masks: built in, and made on the Zones page; their coordinates files
     zone_layout.py   the zone mask a recording uses, saved with it
+    slide_finder.py  finds the slides and the zone where their writing is (the automatic mask)
     mite.py          one detected mite: its box, scores and calls
     hand_mites.py    mites placed by hand where the detector missed them
     rect.py          a box in image pixels

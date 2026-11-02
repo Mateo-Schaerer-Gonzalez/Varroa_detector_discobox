@@ -118,6 +118,8 @@ def start_live(live_id, labels=None):
     if run.session.state != "ready":
         raise ValueError("This test run has already been started.")
     run.source.settings.check_death_time()
+    if not (run.run_dir / paths.AUTO_ZONES_NAME).is_file():
+        live_runs.find_auto_zones(run)  # on the automatic mask, never looked at on the label page
     run.analysis.follow = run.source.settings.follow_px or None
     run.analysis.zone_manager.by_hand = hand_mites.points(run.run_dir)  # those placed since it was opened
     if labels is not None:

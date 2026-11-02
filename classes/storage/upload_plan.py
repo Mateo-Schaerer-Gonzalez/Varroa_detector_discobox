@@ -8,7 +8,8 @@ ground truth, poke test, run.json) matter; everything else
 stays on the user's disk. A single recording folder (..._fps-30) dropped on its
 own becomes a one-recording session named after it. A file already on the
 server with the same size is not copied again, so dropping the same folder twice
-is instant, and the app's labels, controls and ground truth already on the
+is instant, and the app's labels, controls, ground truth and settings
+(.settings.txt, with the zone mask and death time chosen here) already on the
 server are never replaced: they hold what was entered in this app, which is
 newer than the copy in the dropped folder. Once copied, the frames are shrunk
 to the mites' surroundings (classes/storage/roi_conversion.py); dropping the folder
@@ -20,7 +21,7 @@ from pathlib import PurePosixPath
 
 # the app's files a folder on the server keeps as it has them, when dropped again;
 # labels_<mask>.json and controls_<mask>.json: those of another zone mask (classes/plate/zone_layout.py)
-KEPT = re.compile(r"^((labels|controls)(_[A-Za-z0-9_-]+)?|ground_truth|corrections|poke_test|mites_by_hand)\.json$")
+KEPT = re.compile(r"^(((labels|controls)(_[A-Za-z0-9_-]+)?|ground_truth|corrections|poke_test|mites_by_hand)\.json|\.settings\.txt)$")
 FRAME = re.compile(r"\.bmp$", re.IGNORECASE)
 # a session saved as the mites' ROIs: its index says it is one
 ROI_INDEX = re.compile(r"^rois/index\.json$")

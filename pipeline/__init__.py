@@ -15,6 +15,7 @@ call; scripts may also import a module for its helpers.
     pipeline/refusals.py                             the refusals every part makes alike
     pipeline/plate_zones.py                          the plates, their zones, and the mites as the pages know them
     pipeline/zone_masks.py                           the Zones page: zone masks made by hand, the pictures to draw them on
+    pipeline/auto_zones.py                           the automatic zone mask: slides found on the first frame, kept
     pipeline/plate_labels.py                         group names of the plates (typed or read by Gemini), negative controls
     pipeline/ground_truth.py                         a folder's ground_truth.json, its "not a mite" marks
     pipeline/detections.py                           marking a detection "not a mite" from the label page

@@ -14,11 +14,19 @@ import pipeline
 from pipeline import uploads
 from pipeline.calibration import dataset_library, score_cache
 import reference
+from classes.plate import zone_masks
 from classes.storage.data_loader import DataLoader
 from classes.storage.roi_recordings import FIRST_FRAME_NAME, RoiRecordings, is_roi_session
 
 
 linked_copy = reference.linked_copy
+
+
+@pytest.fixture(autouse=True)
+def copies_keep_their_zones(monkeypatch):
+    """A folder dropped here is a copy of one whose results it must give: it
+    keeps that folder's zones (mask "1"), not the automatic mask new uploads get."""
+    monkeypatch.setattr(zone_masks, "NEW", zone_masks.DEFAULT)
 
 
 def convert(folder):

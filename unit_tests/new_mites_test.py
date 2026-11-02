@@ -14,6 +14,8 @@ import pipeline
 from pipeline import uploads
 import reference
 from classes import app_config
+from classes.plate import zone_masks
+from classes.plate.zone_layout import ZoneLayout
 from classes.storage.data_loader import DataLoader
 from classes.storage.roi_recordings import INDEX_NAME, ROI_DIRNAME
 
@@ -95,6 +97,7 @@ def test_a_folder_shrunk_keeps_them_and_gives_the_same_results(tmp_path):
     folder = painted(tmp_path / "small")
     copy = reference.linked_copy(folder, tmp_path / "uploads" / "small")
     before = reference.run_folder(folder, tmp_path / "before")["results"]
+    ZoneLayout(zone_masks.DEFAULT).save(copy)  # its folder's zones: no slide is where the mites are put on
     pipeline.finish_upload(copy.name, copy.parent)  # shrunk when first analysed
     assert uploads.shrink_pending(copy, copy.parent.parent / "results") == 3
     index = json.loads((copy / ROI_DIRNAME / INDEX_NAME).read_text())

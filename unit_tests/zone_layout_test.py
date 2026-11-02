@@ -71,7 +71,8 @@ def test_a_mask_saved_that_is_not_there_reads_as_the_default(tmp_path):
     assert pipeline.zone_mask(tmp_path) == "1"
     settings = tmp_path / "settings.txt"
     settings.write_text("zone_mask=deleted_since\nfollow_px=20\n")
-    assert (Settings.from_file(settings).zone_mask, Settings.from_file(settings).follow_px) == ("1", 20)
+    # a live run's: the mask new runs get
+    assert (Settings.from_file(settings).zone_mask, Settings.from_file(settings).follow_px) == ("auto", 20)
     settings.write_text("zones_per_plate=2\n")
     assert Settings.from_file(settings).zone_mask == "2"
 
@@ -135,7 +136,7 @@ def test_a_dropped_folder_brings_the_labels_of_every_mask():
 def test_the_mask_saved_is_that_of_the_next_session(tmp_path, two_plates):
     data_dir, out_dir = one_frame_folder(tmp_path), tmp_path / "out"
     opened = pipeline.open_session(data_dir, out_dir)
-    assert opened["zone_mask"] == "1" and [mask["name"] for mask in opened["zone_masks"]] == ["1", "2", two_plates]
+    assert opened["zone_mask"] == "1" and [mask["name"] for mask in opened["zone_masks"]] == ["auto", "1", "2", two_plates]
 
     halved = pipeline.save_zone_mask(data_dir, out_dir, "2")
     assert halved["zone_mask"] == "2" and len(halved["zones"]) == 2 * len(opened["zones"])
@@ -190,7 +191,7 @@ def test_a_live_run_takes_the_mask_of_its_settings_and_the_label_page_can_change
         run_dir = Path(status["run_dir"])
         assert pipeline.zone_mask(run_dir) == "2" and pipeline.load_labels(run_dir) == {"4": "venom"}
         preview = pipeline.live_preview("zones-test")
-        assert preview["zone_mask"] == "2" and [mask["name"] for mask in preview["zone_masks"]] == ["1", "2"]
+        assert preview["zone_mask"] == "2" and [mask["name"] for mask in preview["zone_masks"]] == ["auto", "1", "2"]
         halves = len(plate_zones.build_zone_manager(ZoneLayout("2").coords_file).labelled_zones)
         assert len(preview["zones"]) == halves
 

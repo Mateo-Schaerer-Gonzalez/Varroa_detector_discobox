@@ -25,7 +25,9 @@ from typing import Optional
 
 from classes.live import camera as live_camera
 from classes.live.progress import RunProgress
-from pipeline import hand_mites, plate_zones
+from classes.plate import zone_masks
+from classes.scoring.motion_analysis import MotionAnalysis
+from pipeline import auto_zones, hand_mites, plate_zones
 
 _logger = logging.getLogger(__name__)
 
@@ -74,10 +76,30 @@ open_runs_lock = threading.Lock()
 
 
 def live_zone_manager(run):
-    """The zones of a live run, with the mites placed by hand in its folder."""
-    zone_manager = plate_zones.build_zone_manager(run.coords_file or run.layout.coords_file)
+    """The zones of a live run, with the mites placed by hand in its folder. On
+    the automatic mask, those found last (find_auto_zones())."""
+    coords = run.coords_file or (auto_zones.kept(run.run_dir) if run.layout.mask == zone_masks.AUTO
+                                 else run.layout.coords_file)
+    zone_manager = plate_zones.build_zone_manager(coords)
     zone_manager.by_hand = hand_mites.points(run.run_dir)
     return zone_manager
+
+
+def find_auto_zones(run, frame=None):
+    """For a run on the automatic mask not started yet: find its slides on
+    `frame` (by default the newest, lit) and start its analysis again on their
+    zones, as a new mask does. Found again each time, as slides may still be
+    moved until the run starts. Nothing for any other run."""
+    if run.coords_file or run.layout.mask != zone_masks.AUTO or run.session.state != "ready":
+        return
+    if frame is None:
+        light_for_labelling(run)
+        _count, frame = run.source.latest.get()
+        if frame is None:
+            return
+    auto_zones.find(run.run_dir, frame)
+    with run.session.lock:
+        run.analysis = run.session.analysis = MotionAnalysis(live_zone_manager(run))
 
 
 def get_live(live_id):

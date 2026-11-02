@@ -277,7 +277,7 @@ threshold over the old (`app_config._band_moved()`, the user's request of 2026-1
 **Storage.** `recordings/<name>/` holds each session: frames (or `first_frame.png` +
 `rois/`), `labels.json`/`controls.json` (`labels_<mask>.json`/`controls_<mask>.json` for another zone mask, e.g. two zones per
 plate), `ground_truth.json`, `poke_test.json`, `corrections.json`, `mites_by_hand.json`,
-`.settings.txt`, `run.json`, and a `scores/` cache. `results/<name>/` holds the latest analysis (workbook,
+`.settings.txt`, `run.json`, `zones_auto.txt` (the automatic mask's zones), and a `scores/` cache. `results/<name>/` holds the latest analysis (workbook,
 figures, `run_settings.json`, `clips/`, `kept/`, `calibration/`). `run_settings.json`
 (`pipeline/run_settings.py`, written with the workbook, which shows it as its `settings`
 sheet; the workbook also has a `group <name>` sheet per group) records the settings that
@@ -342,7 +342,17 @@ the folder, the tests' conftest a temporary one). The choice is saved per record
 `zone_mask` in `.settings.txt` (`zones_per_plate=1|2` of earlier versions still reads; a
 deleted mask reads as "1"; `classes/plate/zone_layout.py`), and in a live run's settings as
 `zone_mask`. Recordings refer to a mask by name, so changing one changes their next analysis;
-`run_settings.json` keeps the zones used. Plates are
+`run_settings.json` keeps the zones used. **The automatic mask "auto"** (the user's choice of 2026-11-02:
+"implement this as the default but allow the user to fall back to hand coded zones") is what new recordings
+get (`zone_masks.NEW`: live runs' default setting, and `uploads.finish_upload()` for a folder never opened or
+labelled); folders without a `zone_mask` line still read as "1", so earlier sessions, their labels and the
+reference snapshots keep their zones (`folder_camera.open_live` gives a replayed folder its own mask). It finds
+each slide in use on the first frame from its frosted end (`classes/plate/slide_finder.py`; its evaluation,
+`scripts/auto_zones.py` and `notebooks/auto_zones.ipynb`, stays on this laptop, out of git, the user's choice,
+and gives the same slides bit for bit), once, kept as
+`zones_auto.txt` in the recording folder (`pipeline/auto_zones.py`); a live run finds them again at each
+`live_preview` until it starts (`live_runs.find_auto_zones()`). No slide found: mask "1"'s zones. The fall-back
+is choosing mask "1" on the label page. Plates are
 numbered 0-14 in reading order; mite `13.4` is the fourth mite of plate 13. Ids come only
 from `zones.mite_ids()` (first-frame mites and mites added mid-run alike), the zone of a box
 only from `ZoneManager.zone_of()`.

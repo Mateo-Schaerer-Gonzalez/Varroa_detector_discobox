@@ -133,7 +133,9 @@ def open_live(monkeypatch, live_id, out_dir, run_name, data_dir, gap=0.0, **kwar
     data_dir = Path(data_dir)
     # A live run needs a time to count a mite as dead; one longer than any run
     # here follows every mite to the end, as folder mode scores them.
-    kwargs["settings"] = {"death_minutes": DEAD_AFTER, **(kwargs.get("settings") or {})}
+    # It takes the folder's zone mask too, not the automatic one new runs get.
+    kwargs["settings"] = {"death_minutes": DEAD_AFTER, "zone_mask": ZoneLayout.of_folder(data_dir).mask,
+                          **(kwargs.get("settings") or {})}
     monkeypatch.setattr(live_setup.live_camera, "choose_camera", lambda camera_id: "FOLDER")
     monkeypatch.setattr(live_setup, "open_lights", lambda port: NoLights())
     monkeypatch.setattr(live_setup, "CameraSource", lambda _id, settings, lights: FolderCamera(data_dir, settings, lights, gap))

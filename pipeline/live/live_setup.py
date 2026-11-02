@@ -148,6 +148,7 @@ def live_preview(live_id, out_dir=None):
     the frame the run's results come from once it has one."""
     run = live_runs.get_live(live_id)
     frame = _labelling_frame(run)
+    live_runs.find_auto_zones(run, frame)
     out_dir = Path(out_dir or run.out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
     preview_images.write_preview(frame, out_dir)

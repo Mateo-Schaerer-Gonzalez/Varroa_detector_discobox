@@ -13,10 +13,13 @@ from pipeline import paths, plate_zones
 
 
 def list_masks():
-    """Every zone mask, the built-in ones first: [{name, title, built_in,
-    n_mite_zones, n_text_zones}]."""
+    """Every zone mask with zones of its own, the built-in ones first: [{name,
+    title, built_in, n_mite_zones, n_text_zones}]. Not the automatic one, whose
+    zones each recording finds itself (pipeline/auto_zones.py)."""
     masks = []
     for name in zone_masks.names():
+        if name == zone_masks.AUTO:
+            continue
         zones = zone_masks.read(name)
         masks.append({"name": name, "title": zone_masks.title(name), "built_in": name in zone_masks.BUILT_IN,
                       "n_mite_zones": sum(zone["type"] == "mite" for zone in zones),
@@ -28,6 +31,8 @@ def read_mask(name):
     """The mask `name` with its zones ([{type, x1, y1, x2, y2}]) and how the
     analysis numbers them (number_mask())."""
     name = zone_masks.check(name)
+    if name == zone_masks.AUTO:
+        raise FileNotFoundError("The automatic mask's zones are found on each recording's first frame.")
     zones = zone_masks.read(name)
     return {"name": name, "title": zone_masks.title(name), "built_in": name in zone_masks.BUILT_IN,
             "zones": zones, **number_mask(zones)}
