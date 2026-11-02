@@ -91,7 +91,10 @@ def test_a_text_zone_names_one_plate_at_most():
               {"type": "text", "x1": 100, "y1": 200, "x2": 290, "y2": 400}]
     numbers = pipeline.number_mask(halves)
     assert numbers["ids"] == [0, 1, None]
-    assert numbers["text_of"] == [2, None, None]  # the first in reading order has it, the other none
+    assert numbers["text_of"] == [2, None, None]  # the first drawn has it, the other none
+    # first come, first served: drawn first, the lower half has it
+    numbers = pipeline.number_mask([halves[1], halves[0], halves[2]])
+    assert numbers["ids"] == [1, 0, None] and numbers["text_of"] == [2, None, None]
     # a second label area beside the lower half is its own
     numbers = pipeline.number_mask([*halves, {"type": "text", "x1": 100, "y1": 310, "x2": 290, "y2": 390}])
     assert numbers["text_of"][:2] == [2, 3]

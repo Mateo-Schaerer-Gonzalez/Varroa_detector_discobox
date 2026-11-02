@@ -202,28 +202,31 @@ class ZoneManager:
         an exclusion zone sharing at least half the height of the shorter of the
         two. Each label area names one plate at most, and each plate has one at
         most: a name read from an area shared by two plates would go to both.
-        The pairs are taken nearest first (the gap between their nearest edges),
-        a tie going to the plate first in reading order; a plate left without
-        one has no label area.
+        First come, first served: the plates in the order of the mask's file
+        (the order they were drawn in), each taking the nearest area in its row
+        (the gap between their nearest edges) that no plate before it took; a
+        plate left without one has no label area.
         """
         return self.text_zones().get(id(zone))
 
     def text_zones(self):
         """{id(plate): its label area} of every plate that has one (text_zone_for())."""
-        pairs = []
-        for order, zone in enumerate(self.labelled_zones):
+        paired, taken = {}, set()
+        for zone in self.valid_zones:
+            best, best_gap = None, None
             for candidate in self.exclusion_zones:
+                if id(candidate) in taken:
+                    continue
                 overlap = min(zone.y2, candidate.y2) - max(zone.y1, candidate.y1)
                 shorter = min(zone.y2 - zone.y1, candidate.y2 - candidate.y1)
                 if shorter <= 0 or overlap < shorter / 2:
                     continue  # not in the same row
                 gap = max(candidate.x1 - zone.x2, zone.x1 - candidate.x2, 0)
-                pairs.append((gap, order, zone, candidate))
-        paired, taken = {}, set()
-        for _gap, _order, zone, candidate in sorted(pairs, key=lambda pair: pair[:2]):
-            if id(zone) not in paired and id(candidate) not in taken:
-                paired[id(zone)] = candidate
-                taken.add(id(candidate))
+                if best_gap is None or gap < best_gap:
+                    best, best_gap = candidate, gap
+            if best is not None:
+                paired[id(zone)] = best
+                taken.add(id(best))
         return paired
 
     def apply_labels(self, labels):
