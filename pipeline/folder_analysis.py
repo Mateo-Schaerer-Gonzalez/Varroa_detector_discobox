@@ -21,13 +21,14 @@ _runs = {}
 _runs_lock = threading.Lock()
 
 
-def save_zones_per_plate(data_dir, out_dir, zones):
-    """Cut each plate of the recordings in `data_dir` into `zones` zones (1 or 2),
-    for this and every later analysis of them: saved in their .settings.txt.
-    Returns the session as open_session() does, with the new zones and the mites
-    found in them. The last run of `out_dir` is of the other zones, so its calls
-    can no longer be corrected; run the analysis again."""
-    ZoneLayout(zones).save(data_dir)
+def save_zone_mask(data_dir, out_dir, mask):
+    """Cut the plates of the recordings in `data_dir` into the zones of the mask
+    `mask` (classes/plate/zone_masks.py), for this and every later analysis of
+    them: saved in their .settings.txt. Returns the session as open_session()
+    does, with the new zones and the mites found in them. The last run of
+    `out_dir` is of the other zones, so its calls can no longer be corrected;
+    run the analysis again."""
+    ZoneLayout(mask).save(data_dir)
     with _runs_lock:
         _runs.pop(paths.folder_key(out_dir), None)
     return open_session(data_dir, out_dir)
@@ -53,7 +54,7 @@ def open_session(data_dir, out_dir, coords_file=None):
     in it -- detection only needs that first frame, so the UI can offer only the
     zones with mites for labelling. Drawing is left to the caller: the UI gets
     numbers, not a picture with boxes burnt into it. The zones are those of the
-    layout saved with the recordings (one or two per plate), unless a
+    mask saved with the recordings, unless a
     `coords_file` is given.
     """
     data_dir = Path(data_dir)
@@ -147,8 +148,7 @@ def session_view(zone_manager, frame, data_dir, n_recordings, previews=None, pla
         "new_mites": new_mites.setting(data_dir),
         "image": {"width": int(frame.shape[1]), "height": int(frame.shape[0])},
         "n_recordings": n_recordings,
-        "zones_per_plate": plate_zones.zones_per_plate(data_dir),
-        "zone_layouts": ZoneLayout.choices(),
+        **plate_zones.mask_choices(data_dir),
         "label_reading": plate_labels.label_reading(),
         "zones": zones,
         "mites": mites,

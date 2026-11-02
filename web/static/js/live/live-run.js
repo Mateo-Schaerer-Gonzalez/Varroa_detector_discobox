@@ -222,19 +222,19 @@ class LiveRun {
     labelReader.read(this.workspace);
   }
 
-  // The label page's "Zones per plate", until the run starts: saved as the test
+  // The label page's "Zone mask", until the run starts: saved as the test
   // run's setting. The server finds the mites again in the new zones, whose
   // plates are labelled anew.
-  async setZonesPerPlate(zones) {
+  async setZoneMask(mask) {
     const { id } = this;
     const status = $("run-status");
     labelPage.editor.close();
-    $("zones-per-plate").disabled = true;
+    $("zone-mask").disabled = true;
     Hint.busy(status, `Finding the mites in the new zones…`);
     try {
-      const preview = await post(`/api/session/${id}/zones`, { zones_per_plate: zones });
+      const preview = await post(`/api/session/${id}/zones`, { mask });
       if (this.id !== id) return;  // disconnected meanwhile
-      if (this.options) this.options.settings.zones_per_plate = zones;
+      if (this.options) this.options.settings.zone_mask = mask;
       this.takePreview(preview);
     } catch (error) {
       if (this.id !== id) return;

@@ -73,9 +73,9 @@ def describe_recording(data_dir, results_root=paths.RESULTS_ROOT):
     workbook = paths.results_dir(data_dir, results_root) / reporting.EXCEL_NAME
     started = DataLoader.parse_start_time(first)
     # as the Discobox app saved them; None for a folder without .settings.txt
-    # the zones per plate are the analysis's, told apart below
+    # the zone mask is the analysis's, told apart below
     settings = {name: loader.settings[name] for name in ("recording_count", *SETTING_RANGES, *FIXED_SETTINGS)
-                if name in loader.settings and name != ZoneLayout.SETTING} or None
+                if name in loader.settings} or None
     return {
         "name": data_dir.name,
         "path": str(data_dir.resolve()),
@@ -88,7 +88,8 @@ def describe_recording(data_dir, results_root=paths.RESULTS_ROOT):
         "frames": frames,
         "fps": fps,
         "settings": settings,
-        "zones_per_plate": plate_zones.zones_per_plate(data_dir),
+        "zone_mask": plate_zones.zone_mask(data_dir),
+        "zone_mask_title": ZoneLayout.of_folder(data_dir).title,
         "lights": RecordingInfo.lights(settings),
         "run": run,
         "n_labelled_plates": len(groups),

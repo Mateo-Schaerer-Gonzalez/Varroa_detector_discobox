@@ -10,7 +10,7 @@ the same in its settings sheet.
                  and the mites placed by hand where it missed them
     analysis     how each recording was scored and called: metric, its
                  parameters and constants, stabilizer, threshold, death rule,
-                 zones per plate, mites whose calls were corrected by hand
+                 zone mask and its zones, mites whose calls were corrected by hand
 
 A number inside the code that is not here is fixed by the commit.
 """
@@ -92,7 +92,11 @@ def analysis(mite, normalizer, data_dir):
         "normalize_brightness": bool(normalizer is not None and normalizer.brightness),
         # as run_results.death_minutes() reads it (0: dead from the last movement on)
         "death_minutes": None if data_dir is None else settings_file.whole_number(data_dir, "death_minutes", 0),
-        "zones_per_plate": None if data_dir is None else plate_zones.zones_per_plate(data_dir),
+        # the mask's name and its zones, `type x1 y1 x2 y2` (classes/plate/zone_masks.py): a mask made
+        # on the Zones page may be changed or deleted after the run
+        "zone_mask": None if data_dir is None else plate_zones.zone_mask(data_dir),
+        "zone_mask_zones": None if data_dir is None
+        else plate_zones.coords_file_of(data_dir).read_text(encoding="utf-8").splitlines(),
         "mites_corrected_by_hand": 0 if data_dir is None else len(CallCorrections(data_dir).entries()),
     }
 

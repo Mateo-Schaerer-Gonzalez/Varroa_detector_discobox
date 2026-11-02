@@ -23,8 +23,8 @@ from classes.storage import settings_file
 from classes.storage.files import remove_tree
 
 
-# With two zones per plate these are labels_2.json and controls_2.json: a zone id
-# is another plate there.
+# With another zone mask than the default these are labels_<mask>.json and
+# controls_<mask>.json, e.g. labels_2.json: a zone id is another plate there.
 LABELS_FILENAME = "labels.json"
 CONTROLS_FILENAME = "controls.json"  # the zones ticked as negative controls
 GROUND_TRUTH_FILENAME = "ground_truth.json"

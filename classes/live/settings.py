@@ -12,8 +12,10 @@ not be 0 for that. Between two
 recordings a mite is followed at most `follow_px` pixels (0: not at all; see
 classes/scoring/motion_analysis.py). Each recording is a burst of FRAME_COUNT frames
 at FPS, with the fan (`vent`) and the two LEDs switched on at their intensity
-(0-255) for their duration in seconds, ending with the burst. `zones_per_plate`
-is how many zones each plate is cut into for the analysis (classes/plate/zone_layout.py).
+(0-255) for their duration in seconds, ending with the burst. `zone_mask` is
+the zone mask the plates are cut into for the analysis (classes/plate/zone_masks.py),
+the only setting that is a name, not a number; a file of earlier versions gives
+`zones_per_plate` (1 or 2), the built-in mask of that name.
 
 The burst is fixed, not a setting: 3 s at 30 fps. A score's threshold only fits
 recordings of the length and frame rate it was calibrated on, and a longer
@@ -34,6 +36,8 @@ import math
 from dataclasses import asdict, dataclass, fields
 from pathlib import Path
 
+from classes.plate import zone_masks
+
 # Every recording: FRAME_COUNT frames at FPS (3 s). The camera (Mako G-319B) takes at most 33 fps.
 FPS = 30
 FRAME_COUNT = 90
@@ -51,8 +55,9 @@ RANGES = {
     "vent": ("Fan intensity", "", 0, 255),
     "led1": ("LED 1 intensity", "", 0, 255),
     "led2": ("LED 2 intensity", "", 0, 255),
-    "zones_per_plate": ("Zones per plate", "", 1, 2),
 }
+MASK = "zone_mask"
+OLD_MASK = "zones_per_plate"  # of earlier versions: 1 or 2
 
 
 @dataclass
@@ -69,15 +74,18 @@ class Settings:
     vent: int = 255
     led1: int = 255
     led2: int = 255
-    zones_per_plate: int = 1
+    zone_mask: str = zone_masks.DEFAULT
 
     @classmethod
     def from_dict(cls, values):
-        """Settings from `values` (name -> number), each checked against RANGES.
-        Names not given keep their default. `frame_count` and `fps` may only be
-        given at their fixed values (FIXED)."""
+        """Settings from `values` (name -> number), each checked against RANGES,
+        and the name of a zone mask there is. Names not given keep their default.
+        `frame_count` and `fps` may only be given at their fixed values (FIXED)."""
         checked = {}
         for name, value in values.items():
+            if name in (MASK, OLD_MASK):
+                checked[MASK] = zone_masks.check(value)
+                continue
             if name in FIXED:
                 if value != FIXED[name]:
                     raise ValueError(f"Every recording is {FRAME_COUNT} frames at {FPS} fps; {name} cannot be changed.")
@@ -115,7 +123,11 @@ class Settings:
                 values["run_minutes"] = max(0, count - 1) * every
             except ValueError:
                 pass
-        return cls.from_dict({key: value for key, value in values.items() if key in RANGES})
+        # a mask deleted since: the default one
+        for name in (MASK, OLD_MASK):
+            if name in values and not zone_masks.exists(values[name]):
+                del values[name]
+        return cls.from_dict({key: value for key, value in values.items() if key in (*RANGES, MASK, OLD_MASK)})
 
     def save(self, path):
         Path(path).write_text(str(self), encoding="utf-8")

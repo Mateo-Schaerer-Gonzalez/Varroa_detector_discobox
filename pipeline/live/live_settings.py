@@ -66,8 +66,8 @@ def save_live_settings(values, live_id=None, settings_path=LIVE_SETTINGS_FILE):
     settings.save(settings_path)
     if run is not None:
         run.source.settings = settings
-        if settings.zones_per_plate != run.layout.zones_per_plate:
-            _set_live_layout(run, ZoneLayout(settings.zones_per_plate))
+        if settings.zone_mask != run.layout.mask:
+            _set_live_layout(run, ZoneLayout(settings.zone_mask))
     return settings.as_dict()
 
 

@@ -28,5 +28,7 @@ const truthPage = new TruthPage();
 const pokePage = new PokePage();
 const reportPage = new ReportPage();
 
+const zoneMaker = new ZoneMaker();
+
 new ServerHeartbeat().start();
 router.route();

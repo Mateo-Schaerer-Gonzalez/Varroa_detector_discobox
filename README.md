@@ -900,7 +900,7 @@ Each analysis writes to `results/<recording>/`:
 | `score_over_time.png` | Each mite's score across the session |
 | `score_distribution.png` | Overall histogram |
 | `detections.jpg` | First frame with zones, labels and detected mites drawn on |
-| `run_settings.json` | The settings the recordings were made and analysed with, to publish with the results and make them again (the same as the workbook's `settings` sheet). `code`: git commit, any files changed but not committed, Python, OpenCV. `recording`: number of recordings and how they were made (interval, frames, frame rate, fan and LEDs, following). `detector`: how the mites were found. `analysis`: metric and its parameters, threshold, mite radius, the score's and the stabilizer's constants, normalisations, death rule, zones per plate, mites corrected by hand. A number in the code not listed here is fixed by the commit. Written again with the workbook, e.g. after a correction. |
+| `run_settings.json` | The settings the recordings were made and analysed with, to publish with the results and make them again (the same as the workbook's `settings` sheet). `code`: git commit, any files changed but not committed, Python, OpenCV. `recording`: number of recordings and how they were made (interval, frames, frame rate, fan and LEDs, following). `detector`: how the mites were found. `analysis`: metric and its parameters, threshold, mite radius, the score's and the stabilizer's constants, normalisations, death rule, zone mask (its name and its zones' lines), mites corrected by hand. A number in the code not listed here is fixed by the commit. Written again with the workbook, e.g. after a correction. |
 
 ### Zone coordinates
 
@@ -911,11 +911,24 @@ dot, and its own number on that plate, counted from 1 in the same reading order:
 plate 13.
 
 `coords_pixel_2.txt` cuts each plate, and its label area, into an upper and a lower half: two zones per plate.
-*Zones per plate* (1 or 2) chooses between the two files: on the label page, for a folder and for a live run
-until it starts. The choice is saved with the recordings, as the `zones_per_plate` line of their
-`.settings.txt`, so every later analysis and calibration of them uses the same zones
-(`classes/plate/zone_layout.py`). A zone id is another plate in the other layout, so the labels and negative
-controls of two zones per plate are kept apart, in `labels_2.json` and `controls_2.json`.
+These two are the built-in **zone masks** "1" and "2"; more are drawn on the **Zones** page (the *Zones* tab
+in the header). There you pick a picture, the first frame of any recording in `recordings/` or an image file
+from the computer (read by the browser, never sent), start from an empty mask or an existing one, and drag on
+the picture to draw *mite zones* (the plates) or *text zones* (their printed-label areas). A zone is moved by
+dragging it and resized by its corners; <kbd>Delete</kbd> removes the zone picked, the arrow keys move it by a
+pixel (<kbd>Shift</kbd>: ten), and *Duplicate below* copies it for the next plate of a column. Each plate shows
+the number the analysis will give it, and each text zone the plate whose name is read from it. A mask is saved
+as `masks/<name>.txt`, in the format above; its name is letters, digits, `-` and `_`, with a letter. The
+built-in masks cannot be changed or deleted.
+
+*Zone mask* chooses the mask: on the label page, for a folder and for a live run until it starts. The choice
+is saved with the recordings, as the `zone_mask` line of their `.settings.txt` (a `zones_per_plate=1` or `2`
+line of earlier versions reads as mask "1" or "2"), so every later analysis and calibration of them uses the
+same zones (`classes/plate/zone_layout.py`, `classes/plate/zone_masks.py`). A recording whose mask was deleted
+uses mask "1", and a mask changed after a run gives its recordings the new zones at their next analysis
+(`run_settings.json` keeps the zones a run used). A zone id is another plate in another mask, so the labels
+and negative controls of each mask but "1" are kept apart, in `labels_<mask>.json` and `controls_<mask>.json`
+(`labels_2.json` for two zones per plate).
 
 ---
 

@@ -55,7 +55,7 @@ class LiveRun:
     new_results: bool                 # out_dir was made for this run, so a rename moves it
     save_frames: bool                 # its recordings are saved (the mites' ROIs); else only analysed
     coords_file: Optional[str]        # its zones, when not those of `layout`
-    layout: "ZoneLayout"              # one zone per plate or two
+    layout: "ZoneLayout"              # the zone mask its plates are cut into
     analysis: "MotionAnalysis" = None  # the analysis core it feeds, set right after
     session: "LiveSession" = None     # capture and analysis in their threads, set right after
     feed: tuple = (None, None)        # ((frame count, width), JPEG) of the live feed last encoded
@@ -124,7 +124,7 @@ def live_status(live_id):
         "run_dir": str(run.run_dir),
         "out_dir": str(run.out_dir),
         "save_frames": run.save_frames,
-        "zones_per_plate": run.layout.zones_per_plate,
+        "zone_mask": run.layout.mask,
         "stop_reason": run.stop_reason,  # why the run stopped by itself, if it did
         "pending_mites": len(run.analysis._pending),  # mites to add when the next recording begins
     }

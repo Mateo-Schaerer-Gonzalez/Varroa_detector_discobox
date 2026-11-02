@@ -18,14 +18,14 @@ again sends none of the frames shrunk already.
 import re
 from pathlib import PurePosixPath
 
-# labels_2.json and controls_2.json: those of two zones per plate (classes/plate/zone_layout.py)
-KEPT = ("labels.json", "controls.json", "labels_2.json", "controls_2.json", "ground_truth.json", "corrections.json",
-        "poke_test.json", "mites_by_hand.json")
+# the app's files a folder on the server keeps as it has them, when dropped again;
+# labels_<mask>.json and controls_<mask>.json: those of another zone mask (classes/plate/zone_layout.py)
+KEPT = re.compile(r"^((labels|controls)(_[A-Za-z0-9_-]+)?|ground_truth|corrections|poke_test|mites_by_hand)\.json$")
 FRAME = re.compile(r"\.bmp$", re.IGNORECASE)
 # a session saved as the mites' ROIs: its index says it is one
 ROI_INDEX = re.compile(r"^rois/index\.json$")
 ROI_FILE = re.compile(r"^(first_frame\.png|rois/index\.json|rois/(parts/[^/]+(?<!\.part)/)?mite_\d+\.mkv)$")
-APP_FILE = re.compile(r"(^|/)(\.settings\.txt|(labels|controls)(_2)?\.json|(ground_truth|corrections|poke_test|run|mites_by_hand)\.json)$")
+APP_FILE = re.compile(r"(^|/)(\.settings\.txt|(labels|controls)(_[A-Za-z0-9_-]+)?\.json|(ground_truth|corrections|poke_test|run|mites_by_hand)\.json)$")
 SINGLE_RECORDING = re.compile(r"_fps-\d+")
 
 
@@ -72,7 +72,7 @@ class UploadPlan:
             if FRAME.search(file["target"]) and file["target"].split("/")[0] in converted:
                 continue
             size = size_of(file["target"])
-            if PurePosixPath(file["target"]).name in KEPT and size is not None:
+            if KEPT.match(PurePosixPath(file["target"]).name) and size is not None:
                 continue
             if size != file["size"]:
                 missing.append({"path": file["path"], "target": file["target"]})

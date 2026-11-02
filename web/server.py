@@ -13,6 +13,7 @@ part of the page:
     routes/playback.py      what the result pages play: clips, playback sheets, outlines
     routes/calibration.py   the calibration pages: ground truth, poke test, report
     routes/live.py          the live pages: camera, settings, run, adding mites, feed
+    routes/zones.py         the Zones page: zone masks drawn by hand on a picture
     page_watch.py           stopping the server when the last page closes
     page_sessions.py        the pages' sessions, and what several routes ask of them
     http_helpers.py         pipeline's refusals as HTTP errors, large replies, safe paths
@@ -29,7 +30,7 @@ from fastapi.staticfiles import StaticFiles
 
 import pipeline
 from web import page_watch
-from web.routes import analysis, calibration, live, playback, recordings
+from web.routes import analysis, calibration, live, playback, recordings, zones
 
 STATIC_DIR = Path(__file__).parent / "static"
 
@@ -44,7 +45,7 @@ async def lifespan(app):
 
 
 app = FastAPI(title="Varroa discobox", lifespan=lifespan)
-for routes in (analysis, recordings, playback, calibration, live, page_watch):
+for routes in (analysis, recordings, playback, calibration, live, zones, page_watch):
     app.include_router(routes.router)
 
 

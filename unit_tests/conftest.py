@@ -14,6 +14,8 @@ _config_dir = tempfile.mkdtemp(prefix="discobox_test_config_")
 atexit.register(shutil.rmtree, _config_dir, ignore_errors=True)
 os.environ["DISCOBOX_CONFIG"] = str(Path(_config_dir) / "config.yaml")
 shutil.copyfile(Path(__file__).resolve().parent.parent / "config.default.yaml", os.environ["DISCOBOX_CONFIG"])
+# The zone masks made in a test go to a folder of their own, not the app's masks/.
+os.environ["DISCOBOX_MASKS"] = str(Path(_config_dir) / "masks")
 
 import pipeline  # noqa: E402
 from pipeline import output_files, run_results  # noqa: E402

@@ -1,0 +1,26 @@
+/* --- the Zones page: a zone mask drawn on a picture ------------------------------ */
+
+.mask-plate { min-height: 120px; background: var(--wash); outline: none; user-select: none; touch-action: none; }
+.mask-plate:focus-visible { outline: 2px solid var(--link); outline-offset: 2px; }
+.mask-plate img { pointer-events: none; }
+.mask-svg { position: absolute; inset: 0; width: 100%; height: 100%; cursor: crosshair; }
+.mask-empty { line-height: 1.4; padding: 48px 16px; text-align: center; }
+
+.mask-zone rect { fill: transparent; stroke-width: 1.5px; cursor: move; }
+.mask-zone.mite rect { stroke: var(--series-1); }
+.mask-zone.text rect { stroke: var(--series-2); stroke-dasharray: 5 3; }
+.mask-zone:hover rect { fill: rgba(255, 255, 255, 0.12); }
+.mask-zone.selected rect { stroke-width: 3px; fill: rgba(255, 255, 255, 0.18); }
+.mask-zone text { font-family: var(--sans); font-weight: 600; pointer-events: none; paint-order: stroke; stroke: #fff; stroke-width: 3px; }
+.mask-zone.mite text { fill: var(--series-1); }
+.mask-zone.text text { fill: var(--series-2); }
+.mask-handle { fill: #fff; stroke: var(--ink); stroke-width: 1px; }
+.mask-handle.nw, .mask-handle.se { cursor: nwse-resize; }
+.mask-handle.ne, .mask-handle.sw { cursor: nesw-resize; }
+
+.mask-form select, .mask-select { width: 100%; min-width: 0; }
+.mask-form button { justify-self: start; margin-top: 4px; }
+.mask-tools { display: flex; align-items: center; gap: 10px; margin: 8px 0; }
+.mask-zone-buttons { margin-bottom: 4px; }
+#mask-save { margin-top: 4px; }
+#mask-delete { margin-top: 8px; }

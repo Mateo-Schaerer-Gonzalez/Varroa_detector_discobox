@@ -10,7 +10,7 @@ class LabelPage {
     this.editor = new ZoneEditor(this);
     $("run-btn").addEventListener("click", () => (ctx.mode === "live" ? live.startRun() : analysis.run()));
     $("label-cancel-btn").addEventListener("click", () => livePanel.adding.cancel());
-    $("zones-per-plate").addEventListener("change", (event) => (ctx.mode === "live" ? live : analysis).setZonesPerPlate(Number(event.target.value)));
+    $("zone-mask").addEventListener("change", (event) => (ctx.mode === "live" ? live : analysis).setZoneMask(event.target.value));
     $("min-new-mites").addEventListener("change", (event) => {
       const least = Number(event.target.value);
       if (Number.isInteger(least) && least >= 0) analysis.setMinNewMites(least);
@@ -232,13 +232,13 @@ class LabelPage {
     }
   }
 
-  // How many zones each plate is cut into: one, or two. Saved with the
-  // recording; a test run's can change until it starts.
+  // The zone mask the plates are cut into: built in, or made on the Zones page.
+  // Saved with the recording; a test run's can change until it starts.
   drawZonesOption(living) {
     const { session } = ctx;
-    const select = $("zones-per-plate");
-    select.innerHTML = session.zone_layouts.map((zones) => `<option value="${zones}">${zones}</option>`).join("");
-    select.value = String(session.zones_per_plate);
+    const select = $("zone-mask");
+    select.innerHTML = session.zone_masks.map((mask) => `<option value="${esc(mask.name)}">${esc(mask.title)}</option>`).join("");
+    select.value = String(session.zone_mask);
     select.disabled = living ? live.started : analysis.running;  // a run going on is of the zones it started with
   }
 

@@ -1,74 +1,70 @@
-"""How many zones each plate is cut into, and the coordinates file of each choice.
+"""The zone mask a recording's plates are cut into (classes/plate/zone_masks.py).
 
-A plate is one zone, or two: its upper and its lower half, each with its own half
-of the printed-label area. The choice is kept with the recordings, as the
-`zones_per_plate` line of their .settings.txt, so every later analysis of them
-uses the same zones. A folder without that line has one zone per plate.
+The choice is kept with the recordings, as the `zone_mask` line of their
+.settings.txt, so every later analysis of them uses the same zones. A folder
+without that line uses the default mask, one zone per plate; one with the
+`zones_per_plate` line of earlier versions (1 or 2) the built-in mask of that
+name; one whose mask was deleted since, the default mask.
 
 Plate labels and negative controls go by zone id, which means another plate in
-another layout, so each layout keeps its own: labels.json and controls.json for
-one zone per plate, labels_2.json and controls_2.json for two.
+another mask, so each mask keeps its own: labels.json and controls.json for the
+default mask, labels_<mask>.json and controls_<mask>.json for the others
+(labels_2.json for two zones per plate, as before).
 """
 
 from pathlib import Path
 
+from classes.plate import zone_masks
 from classes.storage import settings_file
-
-APP_DIR = Path(__file__).resolve().parent.parent.parent
 
 
 class ZoneLayout:
-    SETTING = "zones_per_plate"
-    DEFAULT = 1
-    # zones per plate -> its coordinates file, next to the app
-    COORDS_FILES = {1: "coords_pixel.txt", 2: "coords_pixel_2.txt"}
+    SETTING = "zone_mask"
+    # the line of earlier versions: 1 or 2 zones per plate, now the masks of those names
+    OLD_SETTING = "zones_per_plate"
+    DEFAULT = zone_masks.DEFAULT
 
-    def __init__(self, zones_per_plate=DEFAULT):
-        self.zones_per_plate = self.check(zones_per_plate)
+    def __init__(self, mask=DEFAULT):
+        self.mask = zone_masks.check(mask)
 
     @classmethod
     def choices(cls):
-        return list(cls.COORDS_FILES)
-
-    @classmethod
-    def check(cls, value):
-        """`value` as a number of zones per plate, or a ValueError naming the choices."""
-        choices = " or ".join(str(choice) for choice in cls.COORDS_FILES)
-        try:
-            number = int(value)
-        except (TypeError, ValueError):
-            raise ValueError(f"Zones per plate must be {choices}, not {value!r}.")
-        if number != value and str(number) != str(value).strip() or number not in cls.COORDS_FILES:
-            raise ValueError(f"Zones per plate must be {choices}, not {value!r}.")
-        return number
+        """Every mask, as the pages offer them: [{name, title}]."""
+        return [{"name": name, "title": zone_masks.title(name)} for name in zone_masks.names()]
 
     @classmethod
     def of_folder(cls, data_dir):
-        """The layout saved with the recordings in `data_dir`; one zone per plate
-        when none is, or what is saved is not one of the choices."""
+        """The mask saved with the recordings in `data_dir`; the default one when
+        none is, or the one saved is no longer there."""
         try:
-            return cls(settings_file.of_folder(data_dir).get(cls.SETTING, cls.DEFAULT))
+            saved = settings_file.of_folder(data_dir)
+            return cls(saved.get(cls.SETTING, saved.get(cls.OLD_SETTING, cls.DEFAULT)))
         except (OSError, ValueError):
             return cls()
 
     def save(self, data_dir):
-        """Keep this layout with the recordings in `data_dir`: the zones_per_plate
-        line of their .settings.txt, every other line kept as it is."""
-        settings_file.save(data_dir, self.SETTING, self.zones_per_plate)
+        """Keep this mask with the recordings in `data_dir`: the zone_mask line of
+        their .settings.txt, every other line kept as it is."""
+        settings_file.remove(data_dir, self.OLD_SETTING)
+        settings_file.save(data_dir, self.SETTING, self.mask)
 
     @property
     def coords_file(self):
-        return APP_DIR / self.COORDS_FILES[self.zones_per_plate]
+        return zone_masks.coords_file(self.mask)
+
+    @property
+    def title(self):
+        return zone_masks.title(self.mask)
 
     def filename(self, name):
-        """The file of this layout for what goes by zone id: `name` itself with
-        one zone per plate, e.g. labels.json, else labels_2.json."""
-        if self.zones_per_plate == self.DEFAULT:
+        """The file of this mask for what goes by zone id: `name` itself for the
+        default mask, e.g. labels.json, else e.g. labels_2.json."""
+        if self.mask == self.DEFAULT:
             return name
         path = Path(name)
-        return f"{path.stem}_{self.zones_per_plate}{path.suffix}"
+        return f"{path.stem}_{self.mask}{path.suffix}"
 
     @classmethod
     def filenames(cls, name):
-        """`name` in every layout, e.g. to copy a folder's plate labels."""
-        return [cls(choice).filename(name) for choice in cls.COORDS_FILES]
+        """`name` in every mask, e.g. to copy a folder's plate labels."""
+        return [cls(mask).filename(name) for mask in zone_masks.names()]

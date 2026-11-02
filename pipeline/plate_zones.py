@@ -1,13 +1,15 @@
 """The plates and their zones, and the mites in them as the pages know them.
 
-A recording's zones are those of the layout saved with it (one zone per plate,
-coords_pixel.txt, or two, coords_pixel_2.txt; classes/plate/zone_layout.py).
+A recording's zones are those of the zone mask saved with it (one zone per
+plate, coords_pixel.txt, two, coords_pixel_2.txt, or one made on the Zones page;
+classes/plate/zone_layout.py, classes/plate/zone_masks.py).
 """
 
 from pathlib import Path
 
+from classes.plate import zone_masks
 from classes.plate.zone_layout import ZoneLayout
-from classes.plate.zones import ZoneManager
+from classes.plate.zones import Zone, ZoneManager
 from pipeline import hand_mites
 
 
@@ -15,7 +17,7 @@ from pipeline import hand_mites
 ZONE_TYPES = {"0": "label", "1": "mite"}
 EXCLUDED_TYPES = ["label"]
 
-# One zone per plate. Which file a recording uses is saved with it (classes/plate/zone_layout.py).
+# One zone per plate. Which mask a recording uses is saved with it (classes/plate/zone_layout.py).
 DEFAULT_COORDS_FILE = "coords_pixel.txt"
 
 
@@ -28,13 +30,13 @@ def build_zone_manager(coords_file):
 
 
 def coords_file_of(data_dir, coords_file=None):
-    """The zones of the recordings in `data_dir`: those of the layout saved with
+    """The zones of the recordings in `data_dir`: those of the mask saved with
     them, unless a `coords_file` is given."""
     return coords_file or ZoneLayout.of_folder(data_dir).coords_file
 
 
 def zones_of(data_dir, coords_file=None):
-    """The ZoneManager of the recordings in `data_dir`: the zones of the layout
+    """The ZoneManager of the recordings in `data_dir`: the zones of the mask
     saved with them, unless a `coords_file` is given; no mites in them yet, but
     the mites placed by hand there, which the detection finds with its own."""
     zone_manager = build_zone_manager(coords_file_of(data_dir, coords_file))
@@ -42,13 +44,36 @@ def zones_of(data_dir, coords_file=None):
     return zone_manager
 
 
-def zones_per_plate(data_dir):
-    """How many zones each plate of the recordings in `data_dir` is cut into."""
-    return ZoneLayout.of_folder(data_dir).zones_per_plate
+def zone_mask(data_dir):
+    """The name of the zone mask the recordings in `data_dir` are cut into."""
+    return ZoneLayout.of_folder(data_dir).mask
+
+
+def mask_numbers(zones):
+    """How the analysis numbers the zones of a mask drawn on the Zones page:
+    `zones` [{type ("mite" or "text"), x1, y1, x2, y2}] -> {ids: per zone its id
+    (a mite zone's, in reading order; None for a text zone), text_of: per zone
+    the index of the text zone its plate's name is read from (None for a text
+    zone, or a mite zone without one)}. As build_zone_manager() reads the file."""
+    built = [Zone(int(float(zone["x1"])), int(float(zone["y1"])), int(float(zone["x2"])), int(float(zone["y2"])),
+                  type=ZONE_TYPES[zone_masks.TYPES[zone["type"]]]) for zone in zones]
+    zone_manager = ZoneManager(zones=list(built), excluded_types=EXCLUDED_TYPES)
+    index = {id(zone): number for number, zone in enumerate(built)}
+    text_of = []
+    for zone in built:
+        area = None if zone.id is None else zone_manager.text_zone_for(zone)
+        text_of.append(None if area is None else index[id(area)])
+    return {"ids": [zone.id for zone in built], "text_of": text_of}
 
 
 def layout_file(data_dir, name):
     return Path(data_dir) / ZoneLayout.of_folder(data_dir).filename(name)
+
+
+def mask_choices(data_dir):
+    """The zone mask of the recordings in `data_dir` and every mask they can
+    take, as the label page offers them."""
+    return {"zone_mask": zone_mask(data_dir), "zone_masks": ZoneLayout.choices()}
 
 
 def describe_zones(zone_manager, labels):

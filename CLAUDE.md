@@ -275,7 +275,7 @@ threshold over the old (`app_config._band_moved()`, the user's request of 2026-1
 `DISCOBOX_AUTO_STOP=1` (set by the start scripts) stops the server once the last tab closes.
 
 **Storage.** `recordings/<name>/` holds each session: frames (or `first_frame.png` +
-`rois/`), `labels.json`/`controls.json` (`labels_2.json`/`controls_2.json` for two zones per
+`rois/`), `labels.json`/`controls.json` (`labels_<mask>.json`/`controls_<mask>.json` for another zone mask, e.g. two zones per
 plate), `ground_truth.json`, `poke_test.json`, `corrections.json`, `mites_by_hand.json`,
 `.settings.txt`, `run.json`, and a `scores/` cache. `results/<name>/` holds the latest analysis (workbook,
 figures, `run_settings.json`, `clips/`, `kept/`, `calibration/`). `run_settings.json`
@@ -333,9 +333,16 @@ upload (the user's choice of 2026-10-30): `finish_upload` leaves `shrink_pending
 added to a folder shrunk already are still shrunk on upload. During a live run they join *Add mites*'s
 found mites (`add_mites.live_hand_mite`).
 
-**Zones and IDs.** `coords_pixel.txt` (one zone per plate) and `coords_pixel_2.txt` (two)
-list `type x1 y1 x2 y2` (type 1 plate, 0 masked label area); the choice is saved per
-recording as `zones_per_plate` in `.settings.txt` (`classes/plate/zone_layout.py`). Plates are
+**Zones and IDs.** A zone mask lists `type x1 y1 x2 y2` (type 1 plate, 0 masked label area).
+The built-in masks "1" (`coords_pixel.txt`, one zone per plate) and "2" (`coords_pixel_2.txt`,
+two) are read only; the Zones page (`#/zones`, `web/static/js/zones/zone-maker.js`, the user's
+request of 2026-11-02, replacing the 1-or-2 choice) draws more on a recording's first frame or
+an image file, kept as `masks/<name>.txt` (`classes/plate/zone_masks.py`; `DISCOBOX_MASKS` sets
+the folder, the tests' conftest a temporary one). The choice is saved per recording as
+`zone_mask` in `.settings.txt` (`zones_per_plate=1|2` of earlier versions still reads; a
+deleted mask reads as "1"; `classes/plate/zone_layout.py`), and in a live run's settings as
+`zone_mask`. Recordings refer to a mask by name, so changing one changes their next analysis;
+`run_settings.json` keeps the zones used. Plates are
 numbered 0-14 in reading order; mite `13.4` is the fourth mite of plate 13. Ids come only
 from `zones.mite_ids()` (first-frame mites and mites added mid-run alike), the zone of a box
 only from `ZoneManager.zone_of()`.

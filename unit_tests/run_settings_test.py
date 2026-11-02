@@ -32,7 +32,7 @@ def test_an_analysis_writes_its_settings(tmp_path):
     assert analysis["threshold"] == float(get_default_config().mite.motion_threshold)
     assert analysis["edge_share"] == analyzer.EDGE_SHARE
     assert analysis["stabilizer_interpolation"] == "lanczos"
-    assert analysis["zones_per_plate"] == 1
+    assert analysis["zone_mask"] == "1"
     assert analysis["mites_corrected_by_hand"] == 0
 
 
@@ -53,7 +53,7 @@ def test_the_workbook_has_a_sheet_per_group_and_the_settings(tmp_path):
     assert settings["analysis", "threshold"] == get_default_config().mite.motion_threshold
     assert settings["code", "commit"] == pipeline.COMMIT
     assert settings["detector", "min_circularity"] == get_default_config().detector.min_circularity
-    assert len(settings) < 62
+    assert len(settings) < 63
 
 
 def test_the_group_summary_has_the_percent_alive_the_page_shows(tmp_path):

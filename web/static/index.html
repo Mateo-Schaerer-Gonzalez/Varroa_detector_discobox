@@ -17,6 +17,7 @@
 <link rel="stylesheet" href="css/narrow-screens.css?v=25">
 <link rel="stylesheet" href="css/live.css?v=25">
 <link rel="stylesheet" href="css/recordings.css?v=26">
+<link rel="stylesheet" href="css/zones.css?v=1">
 </head>
 <body>
 
@@ -30,6 +31,7 @@
       <a id="live-link" href="#/live/open" data-mode="live">Live</a>
       <a id="analysis-link" href="#/open" data-mode="analysis">Analysis</a>
       <a id="cal-link" href="#/cal/open" data-mode="cal">Calibration</a>
+      <a id="zones-link" href="#/zones" data-mode="zones">Zones</a>
     </nav>
     <!-- Quits what the mode shown has open: a folder, a calibration, a test run. -->
     <button id="quit-btn" type="button" class="secondary small quit-btn" hidden>&larr; Back</button>
@@ -126,10 +128,10 @@
       </div>
       <!-- Of a folder, and of a test run until it starts. -->
       <div id="zones-option" class="zones-option">
-        <label for="zones-per-plate">Zones per plate</label>
-        <select id="zones-per-plate" class="number-input"></select>
-        <p class="hint">Analyse each plate as one zone, or as two: its upper and its lower half.
-          Saved with this recording, for every later analysis of it.</p>
+        <label for="zone-mask">Zone mask</label>
+        <select id="zone-mask" class="mask-select"></select>
+        <p class="hint">Where the plates and their label areas are: one zone per plate, two (upper and lower half),
+          or a mask drawn on the <a href="#/zones">Zones</a> page. Saved with this recording, for every later analysis of it.</p>
       </div>
       <!-- Of a folder of frames: mites put on the plates after the first recording. -->
       <div id="new-mites-option" class="zones-option" hidden>
@@ -383,6 +385,55 @@
   </div>
 </section>
 
+<!-- Zones: draw a zone mask by hand ============================================== -->
+<section id="view-zones" class="view" hidden>
+  <div class="split">
+    <div class="split-main">
+      <div id="mask-plate" class="plate mask-plate" tabindex="0" aria-label="The picture with the zones of the mask"></div>
+      <p class="caption">
+        Drag on the picture to draw a zone of the kind chosen. Click a zone to pick it, then drag it to move it or
+        drag a corner to resize it; <kbd>Delete</kbd> removes it, the arrow keys move it by a pixel
+        (<kbd>Shift</kbd>: ten). Each plate shows the number the analysis gives it, in reading order; a text zone
+        shows the plate whose name is read from it.
+      </p>
+    </div>
+    <aside class="split-side panel">
+      <h2>Zone masks</h2>
+      <p class="hint">A mask says where the plates are on the picture: <b>mite zones</b>, where mites are found and
+        scored, and <b>text zones</b>, the printed-label areas beside them, left out of the detection and where a
+        plate's name is read. Choose it for a recording on its label page.</p>
+      <div class="live-form mask-form">
+        <label for="mask-picture">Picture</label>
+        <select id="mask-picture" class="mask-select"></select>
+        <button id="mask-file-btn" type="button" class="secondary small">Use an image file&hellip;</button>
+        <input id="mask-file" type="file" accept="image/*" hidden>
+        <label for="mask-open">Start from</label>
+        <select id="mask-open" class="mask-select"></select>
+      </div>
+      <div class="mask-tools">
+        <span class="hint">Draw</span>
+        <div id="mask-kind" class="segmented" role="group" aria-label="Kind of zone drawn">
+          <button type="button" class="small" data-kind="mite" aria-pressed="true">Mite zone</button>
+          <button type="button" class="secondary small" data-kind="text" aria-pressed="false">Text zone</button>
+        </div>
+      </div>
+      <div class="row mask-zone-buttons">
+        <button id="mask-duplicate" type="button" class="secondary small" disabled>Duplicate below</button>
+        <button id="mask-remove" type="button" class="secondary small" disabled>Remove zone</button>
+        <button id="mask-clear" type="button" class="secondary small">Remove all</button>
+      </div>
+      <p id="mask-count" class="hint"></p>
+      <div class="live-form mask-form">
+        <label for="mask-name">Name</label>
+        <input id="mask-name" type="text" spellcheck="false" maxlength="40" placeholder="e.g. two_rows_2026">
+      </div>
+      <button id="mask-save" type="button" class="wide">Save mask</button>
+      <button id="mask-delete" type="button" class="wide secondary" hidden>Delete this mask</button>
+      <p id="mask-status" class="hint"></p>
+    </aside>
+  </div>
+</section>
+
 <!-- 3 · the report: calibration or test ------------------------------------------ -->
 <section id="view-cal-report" class="view" hidden>
   <div id="report-body"></div>
@@ -441,6 +492,7 @@
 <script src="js/calibration/last-recording.js"></script>
 <script src="js/calibration/wrong-calls.js"></script>
 <script src="js/calibration/report-page.js"></script>
+<script src="js/zones/zone-maker.js"></script>
 <script src="js/main.js"></script>
 </body>
 </html>

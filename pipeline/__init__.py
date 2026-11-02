@@ -14,6 +14,7 @@ call; scripts may also import a module for its helpers.
     pipeline/paths.py                                where everything is kept, and the names of the files
     pipeline/refusals.py                             the refusals every part makes alike
     pipeline/plate_zones.py                          the plates, their zones, and the mites as the pages know them
+    pipeline/zone_masks.py                           the Zones page: zone masks made by hand, the pictures to draw them on
     pipeline/plate_labels.py                         group names of the plates (typed or read by Gemini), negative controls
     pipeline/ground_truth.py                         a folder's ground_truth.json, its "not a mite" marks
     pipeline/detections.py                           marking a detection "not a mite" from the label page
@@ -55,7 +56,8 @@ from pipeline.paths import (
     SCORES_DIRNAME, ADDED_FRAMES_DIRNAME, NEW_MITES_NAME, results_dir, calibration_dir, new_pooled_report_dir,
     remove_empty_pooled_reports, dataset_id,
 )
-from pipeline.plate_zones import DEFAULT_COORDS_FILE, zones_per_plate
+from pipeline.plate_zones import DEFAULT_COORDS_FILE, zone_mask
+from pipeline.zone_masks import list_masks, read_mask, save_mask, delete_mask, number_mask, recording_picture
 from pipeline.plate_labels import (
     load_labels, save_labels, save_label_reading, read_labels, load_controls, save_controls,
 )
@@ -68,7 +70,7 @@ from pipeline.run_results import (
     describe_survival,
 )
 from pipeline.folder_analysis import (
-    open_session, place_mite, save_zones_per_plate, save_min_new_mites, run_analysis, correct_call, review_again,
+    open_session, place_mite, save_zone_mask, save_min_new_mites, run_analysis, correct_call, review_again,
 )
 from pipeline.clips import CLIP_MARGIN, MITE_CLIP_REACH, analysis_outlines, analysis_clip, analysis_mite_clip
 from pipeline.playback import playback_reach, playback_timeline, playback_sheet

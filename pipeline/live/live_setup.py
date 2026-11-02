@@ -66,7 +66,7 @@ def open_live(live_id, out_dir, run_name, camera_id=None, serial_port="auto", sa
         out_dir = paths.results_dir(run_dir, results_root) if own_results else Path(out_dir)
         new_results = not out_dir.exists()
         paths.clear_clips(out_dir)
-        layout = ZoneLayout(settings.zones_per_plate)
+        layout = ZoneLayout(settings.zone_mask)
         # With the run's folder from the start: its plate labels go by the layout.
         layout.save(run_dir)
         run = live_runs.LiveRun(live_id=live_id, source=source, lights=lights, run_dir=run_dir, out_dir=out_dir,

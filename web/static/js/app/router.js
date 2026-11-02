@@ -6,6 +6,7 @@
 //   #/open  #/label  #/results  #/zone/<id>  #/mite/<id>  #/playback
 // and calibration (Calibration):
 //   #/cal/open  #/cal/truth/<zone id>/<recording>  #/cal/poke  #/cal/report
+// The Zones page (ZoneMaker), where zone masks are drawn, is #/zones.
 // The recordings kept (RecordingsList) are listed on each mode's first page.
 
 class Router {
@@ -16,6 +17,7 @@ class Router {
       live: { page: "#/live/open", folder: "", path: "", title: "Live", quit: "Close this test run and go back to the camera" },
       analysis: { page: "#/open", folder: "", path: "", title: "Analysis", quit: "Close this folder and go back to the recordings" },
       cal: { page: "#/cal/open", folder: "", path: "", title: "Calibration", quit: "Close this calibration and go back to the calibration data" },
+      zones: { page: "#/zones", folder: "", path: "", title: "Zones", quit: "" },
     };
     this.home = this.modes.live.page;
     this.shownMode = null;
@@ -35,7 +37,7 @@ class Router {
   }
 
   static modeOf(hash) {
-    return hash.startsWith("#/cal") ? "cal" : hash.startsWith("#/live") ? "live" : "analysis";
+    return hash.startsWith("#/cal") ? "cal" : hash.startsWith("#/live") ? "live" : hash.startsWith("#/zones") ? "zones" : "analysis";
   }
 
   // A page of the mode not on screen, e.g. the results of a run that finished
@@ -109,12 +111,13 @@ class Router {
     // The app opens on the camera.
     if (!/^#\/./.test(location.hash)) { location.replace(this.home); return; }
     const [, view = "open", id, ...rest] = location.hash.split("/");
-    const mode = view === "cal" ? "cal" : view === "live" ? "live" : "analysis";
+    const mode = Router.modeOf(location.hash);
     player.stop();
     this.modes[mode].page = location.hash || this.modes[mode].page;
     this.drawModeLinks();
     this.setMode(mode);
     if (view === "cal") { cal.route(id, ...rest); return; }
+    if (view === "zones") { this.showView("zones"); zoneMaker.show(); return; }
     workspaces.use(mode);
     if (view === "live") { live.route(id, ...rest); return; }
     this.routeAnalysis(view);

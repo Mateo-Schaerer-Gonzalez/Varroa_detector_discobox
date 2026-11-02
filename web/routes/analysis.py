@@ -1,5 +1,5 @@
 """A folder opened for analysis: the label page (labels, controls, "not a mite"
-marks, zones per plate), the run, and the result pages' changes (corrected
+marks, zone mask), the run, and the result pages' changes (corrected
 calls, death time, mites to check); and the files of any session."""
 
 from pathlib import Path
@@ -38,7 +38,7 @@ class DeathRequest(BaseModel):
 
 
 class ZonesRequest(BaseModel):
-    zones_per_plate: int  # 1 or 2
+    mask: str  # a zone mask's name (pipeline.list_masks())
 
 
 class NewMitesRequest(BaseModel):
@@ -164,17 +164,17 @@ def save_death_minutes(session_id: str, request: DeathRequest):
 
 
 @router.post("/api/session/{session_id}/zones")
-def save_zones_per_plate(session_id: str, request: ZonesRequest):
-    """Cut each plate into one zone or two, saved with the recordings for every
-    later analysis of them. The label page gets the session again, with the new
+def save_zone_mask(session_id: str, request: ZonesRequest):
+    """Cut the plates into the zones of another zone mask, saved with the
+    recordings for every later analysis of them. The label page gets the session again, with the new
     zones and their mites; the results of the other zones are let go. A test run
     not started yet takes them too, and keeps them as its setting."""
     session = get_session(session_id)
     if session.get("live"):
-        answer(pipeline.save_live_settings, {"zones_per_plate": request.zones_per_plate}, session_id)
+        answer(pipeline.save_live_settings, {"zone_mask": request.mask}, session_id)
         return label_live_plates(session_id)
     with refused():
-        opened = pipeline.save_zones_per_plate(session["data_dir"], session["out_dir"], request.zones_per_plate)
+        opened = pipeline.save_zone_mask(session["data_dir"], session["out_dir"], request.mask)
     session["mites"] = opened["mites"]
     session.pop("results", None)
     return {"session_id": session_id, "results_dir": str(session["out_dir"]), **opened}

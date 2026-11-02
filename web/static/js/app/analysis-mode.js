@@ -70,17 +70,17 @@ class AnalysisMode {
     router.go("#/label");
   }
 
-  // The label page's "Zones per plate": saved with the recordings, for every
+  // The label page's "Zone mask": saved with the recordings, for every
   // later analysis of them. The server finds the mites again in the new zones;
   // the results shown are of the other zones, so they go.
-  async setZonesPerPlate(zones) {
+  async setZoneMask(mask) {
     const { workspace } = this;
     const { sessionId } = workspace;
     labelPage.editor.close();
-    $("zones-per-plate").disabled = true;
+    $("zone-mask").disabled = true;
     this.status("hint", `<span class="spinner"></span> Finding the mites in the new zones…`);
     try {
-      const opened = await post(`/api/session/${sessionId}/zones`, { zones_per_plate: zones });
+      const opened = await post(`/api/session/${sessionId}/zones`, { mask });
       if (workspace.sessionId !== sessionId) return;  // the folder was closed meanwhile
       opened.zones.forEach((zone) => { zone.label = zone.label || ""; });
       Object.assign(workspace, { session: opened, results: null, runStamp: Date.now(), labelsChanged: false });
@@ -101,7 +101,7 @@ class AnalysisMode {
     const buttons = document.querySelectorAll(".run-trigger, #run-btn");
     buttons.forEach((b) => { b.disabled = true; });
     this.running = true;
-    $("zones-per-plate").disabled = true;  // the run is of the zones it starts with
+    $("zone-mask").disabled = true;  // the run is of the zones it starts with
     this.status("hint", `<span class="spinner"></span> Running… the frames are being decoded, this takes a while.`);
 
     const { workspace } = this;
