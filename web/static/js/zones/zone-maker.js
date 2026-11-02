@@ -189,8 +189,9 @@ class ZoneMaker {
       let tag = "";
       if (zone.type === "mite" && ids[index] != null) tag = String(ids[index]);
       if (zone.type === "text") {
-        const plates = textOf.map((text, plate) => (text === index ? ids[plate] : null)).filter((id) => id != null);
-        tag = plates.length ? `name of ${plates.join(", ")}` : "no plate";
+        // a text zone names one plate at most (ZoneManager.text_zone_for())
+        const plate = textOf.indexOf(index);
+        tag = plate >= 0 && ids[plate] != null ? `name of ${ids[plate]}` : "no plate";
       }
       const font = 13 * scale;
       // a plate's number at its top, a text zone's at its bottom: apart where they lie side by side

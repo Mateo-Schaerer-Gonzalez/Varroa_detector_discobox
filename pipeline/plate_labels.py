@@ -55,7 +55,7 @@ def read_zone_labels(zone_manager, data_dir, out_dir, mites):
         raise FileNotFoundError("There is no picture of the plates to read the names from; open the folder again.")
     saved = {str(key): str(value).strip() for key, value in load_labels(data_dir).items()}
     with_mites = {mite["zone_id"] for mite in mites}
-    areas = {}  # a label area and the zones it names: the two halves of a plate share one
+    areas = {}  # a label area and the zone it names (one at most: ZoneManager.text_zone_for())
     for zone in zone_manager.labelled_zones:
         area = zone_manager.text_zone_for(zone)
         if zone.id in with_mites and not saved.get(str(zone.id)) and area is not None:

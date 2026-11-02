@@ -919,7 +919,7 @@ from the computer (read by the browser, never sent), start from an empty mask or
 the picture to draw *mite zones* (the plates) or *text zones* (their printed-label areas). A zone is moved by
 dragging it and resized by its corners; <kbd>Delete</kbd> removes the zone picked, the arrow keys move it by a
 pixel (<kbd>Shift</kbd>: ten), and *Duplicate below* copies it for the next plate of a column. Each plate shows
-the number the analysis will give it, and each text zone the plate whose name is read from it. A mask is saved
+the number the analysis will give it, and each text zone the plate whose name is read from it. A text zone names one plate at most, and a plate has one text zone at most: the nearest pairs are taken first, a tie going to the plate first in reading order, and a plate left over has no name read from the glass. A mask is saved
 as `masks/<name>.txt`, in the format above; its name is letters, digits, `-` and `_`, with a letter. The
 built-in masks cannot be changed or deleted.
 

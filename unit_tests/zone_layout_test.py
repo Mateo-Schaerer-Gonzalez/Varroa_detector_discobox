@@ -84,6 +84,19 @@ def test_each_coordinates_file_halves_or_keeps_the_plates():
     assert all(two.text_zone_for(zone) is not None for zone in two.labelled_zones)
 
 
+def test_a_text_zone_names_one_plate_at_most():
+    # the two halves of a plate beside one label area, as near to it as each other
+    halves = [{"type": "mite", "x1": 300, "y1": 200, "x2": 700, "y2": 300},
+              {"type": "mite", "x1": 300, "y1": 300, "x2": 700, "y2": 400},
+              {"type": "text", "x1": 100, "y1": 200, "x2": 290, "y2": 400}]
+    numbers = pipeline.number_mask(halves)
+    assert numbers["ids"] == [0, 1, None]
+    assert numbers["text_of"] == [2, None, None]  # the first in reading order has it, the other none
+    # a second label area beside the lower half is its own
+    numbers = pipeline.number_mask([*halves, {"type": "text", "x1": 100, "y1": 310, "x2": 290, "y2": 390}])
+    assert numbers["text_of"][:2] == [2, 3]
+
+
 def test_a_mask_drawn_is_kept_numbered_and_deleted(two_plates):
     saved = pipeline.read_mask(two_plates)
     # the upper plate is 0, the lower 1, whose name is read from the text zone beside it

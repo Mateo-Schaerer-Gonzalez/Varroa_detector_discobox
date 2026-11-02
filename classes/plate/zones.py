@@ -198,20 +198,33 @@ class ZoneManager:
     def text_zone_for(self, zone):
         """The printed-label area that belongs to a plate, or None.
 
-        On the discobox each plate's label area sits beside it in the same row, so
-        this is the exclusion zone that shares most of the plate's height and whose
-        nearest edge is closest to the plate.
+        On the discobox each plate's label area sits beside it in the same row:
+        an exclusion zone sharing at least half the height of the shorter of the
+        two. Each label area names one plate at most, and each plate has one at
+        most: a name read from an area shared by two plates would go to both.
+        The pairs are taken nearest first (the gap between their nearest edges),
+        a tie going to the plate first in reading order; a plate left without
+        one has no label area.
         """
-        best, best_gap = None, None
-        for candidate in self.exclusion_zones:
-            overlap = min(zone.y2, candidate.y2) - max(zone.y1, candidate.y1)
-            shorter = min(zone.y2 - zone.y1, candidate.y2 - candidate.y1)
-            if shorter <= 0 or overlap < shorter / 2:
-                continue  # not in the same row
-            gap = max(candidate.x1 - zone.x2, zone.x1 - candidate.x2, 0)
-            if best_gap is None or gap < best_gap:
-                best, best_gap = candidate, gap
-        return best
+        return self.text_zones().get(id(zone))
+
+    def text_zones(self):
+        """{id(plate): its label area} of every plate that has one (text_zone_for())."""
+        pairs = []
+        for order, zone in enumerate(self.labelled_zones):
+            for candidate in self.exclusion_zones:
+                overlap = min(zone.y2, candidate.y2) - max(zone.y1, candidate.y1)
+                shorter = min(zone.y2 - zone.y1, candidate.y2 - candidate.y1)
+                if shorter <= 0 or overlap < shorter / 2:
+                    continue  # not in the same row
+                gap = max(candidate.x1 - zone.x2, zone.x1 - candidate.x2, 0)
+                pairs.append((gap, order, zone, candidate))
+        paired, taken = {}, set()
+        for _gap, _order, zone, candidate in sorted(pairs, key=lambda pair: pair[:2]):
+            if id(zone) not in paired and id(candidate) not in taken:
+                paired[id(zone)] = candidate
+                taken.add(id(candidate))
+        return paired
 
     def apply_labels(self, labels):
         """Assign user-supplied group names to zones, keyed by zone id.
