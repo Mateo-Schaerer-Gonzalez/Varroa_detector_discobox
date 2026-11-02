@@ -587,6 +587,15 @@ bring in other mites. Opening a mite shows the recording and asks *Moving* or *S
 shows the mite moving, the earlier ones no longer matter and are asked for no more. The band changes no
 number by itself: a call stays what the threshold makes it until it is answered. A saved shape the threshold
 is no longer in, as after a threshold was set in `config.yaml` by hand, is not used.
+
+Beside the band's close calls, the peaks of a mite's score below the threshold are asked about
+(`classes/results/score_peaks.py`): a weak last movement often scores below the band too, but on the mite's
+score graph it stands out as a peak. A recording after the mite's last movement is asked about when it is
+higher than the recordings either side, at least two spreads above where the mite's score sits once it is
+still (the median of its log scores after its last movement, the spread from their median absolute
+deviation), and at least half the threshold. The number of mites to check fits the band only; the peaks come
+on top (none with 0 mites to check). On the labelled datasets they took the deaths put early from 0.10 to
+0.025 recordings per mite for 0.04 checks per mite. The mite's score graph rings every recording to check.
 `scripts/optuna_death_time.py` chooses the threshold and the band by where they put each mite's death, on
 the saved ground truth split into train and test mites, and `notebooks/death_time_calibration.ipynb` shows
 what it found.

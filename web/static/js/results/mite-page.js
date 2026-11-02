@@ -56,7 +56,7 @@ class MitePage extends ResultsPage {
         `The recording at ${this.shownTime()}, 56 × 56 px around the mite: ${this.callBadge(mite, ctx.shown)} in it. The frame is green when the mite is called moving, orange when still, grey when gone, dashed when the call was corrected by hand. The dots round the mite are darker where its outline changes more over the frames.
         Where that is wrong, click the mite to switch it between moving and still, or choose a call in the table below.${review.ask(mite)}`, "crop-wrap square")}
       ${figure("chart-mite", 2, "Motion score over time",
-        `${movingBadge(true)} at or above the threshold, ${movingBadge(false)} below it. ${ResultsPage.MOVING_NOTE}${review.review ? ` The shaded band, ${review.bandText()}, holds the scores too close to the threshold to trust.` : ""} Click a time to show that recording.${this.stillToCome()}`)}
+        `${movingBadge(true)} at or above the threshold, ${movingBadge(false)} below it. ${ResultsPage.MOVING_NOTE}${review.hasBand() ? ` The shaded band, ${review.bandText()}, holds the scores too close to the threshold to trust.` : ""}${mite.to_check.length ? " The ringed points are to check by eye." : ""} Click a time to show that recording.${this.stillToCome()}`)}
     </div>
 
     ${section("Recordings", `<div class="table-wrap"><table class="clickable" id="recording-table">
@@ -100,16 +100,17 @@ class MitePage extends ResultsPage {
       yLabel: "Motion score",
       noDirectLabels: true,
       threshold: { value: results.threshold, label: "threshold" },
-      range: review.review,
+      range: review.hasBand() ? review.review : null,
       series: [{
         name: `Mite ${mite.id}`,
         values: mite.scores,
         color: token("--ink"),
         width: 1.5,
         pointColors: mite.moving.map((moving, i) => token(mite.censored[i] ? "--muted" : moving ? "--moving" : "--still")),
+        rings: mite.to_check,
       }],
       tooltipExtra: (i) => `<div class="tip-note">${this.unfollowed(mite, i) || (mite.censored[i] ? "gone" : mite.moving[i] ? "moving" : "still")}${
-        mite.corrected[i] ? ", corrected by hand" : mite.to_check.includes(i) ? ", to check" : ""}${clock.start ? ` · at ${minutes(results.times[i])} of the run` : ""}</div>`,
+        mite.corrected[i] ? ", corrected by hand" : mite.to_check.includes(i) ? (mite.peaks.includes(i) ? ", a peak to check" : ", to check") : ""}${clock.start ? ` · at ${minutes(results.times[i])} of the run` : ""}</div>`,
     });
   }
 

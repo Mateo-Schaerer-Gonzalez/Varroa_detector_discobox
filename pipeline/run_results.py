@@ -9,6 +9,7 @@ from classes.storage import settings_file
 from classes.live.settings import RANGES as SETTING_RANGES
 from classes.results.movement_stats import MovementReport
 from classes.results.review_band import ReviewBand
+from classes.results.score_peaks import ScorePeaks
 from classes.results.survival import SurvivalReport
 from pipeline import new_mites, output_files, paths, plate_zones, preview_images, refusals, scoring
 
@@ -16,12 +17,17 @@ from pipeline import new_mites, output_files, paths, plate_zones, preview_images
 def review_calls(run, mite_data, changes, data_dir):
     """The calls to check by eye (ReviewBand.describe()): those of the narrowest
     band around the threshold, shaped as config.yaml's, that asks about the
-    mites to check for the recordings in `data_dir` (review_mites()); None when
-    it asks about none."""
+    mites to check for the recordings in `data_dir` (review_mites()), and the
+    peaks below the threshold (ScorePeaks) beside them; None with no mites to
+    check, or when neither asks about any."""
     mite = get_default_config().mite
-    band = ReviewBand.fitted(mite_data, run.analyzer.config.mite.motion_threshold, review_mites(data_dir),
-                             mite.review_band_for(mite.metric))
-    return band.describe(mite_data, changes) if band is not None else None
+    threshold = run.analyzer.config.mite.motion_threshold
+    n_mites = review_mites(data_dir)
+    if n_mites <= 0:
+        return None
+    band = ReviewBand.fitted(mite_data, threshold, n_mites, mite.review_band_for(mite.metric))
+    review = (band or ReviewBand(threshold, threshold)).describe(mite_data, changes, ScorePeaks(threshold))
+    return review if review["n_asked"] else None
 
 
 def change_call(zone_manager, corrections, mite_id, recording, state, detected=None, checked=False):

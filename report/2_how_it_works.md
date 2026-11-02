@@ -540,6 +540,13 @@ from $T$ (so the band stays within $[0, 2T]$). Only close calls after the mite's
 *settled* movement count: a score at or above the band, or a call set by hand. They are
 asked latest first. The band changes no call by itself.
 
+**Score peaks.** Beside the band, the app asks about the peaks of each mite's score below $T$
+after its last movement (`classes/results/score_peaks.py`). On log scores $x_t$, the mite's
+still level is the median $m$ of $x_t$ after its last movement, and its spread
+$s = 1.4826\,\mathrm{median}|x_t - m|$. A recording is asked about when $x_t$ is higher than
+its neighbours, $x_t - m \ge 2s$, and its score is at least $T/2$. The band's $n$ mites do not
+count them.
+
 **Set aside.** A recording in which another mite walked into this mite's patch
 (`classes/scoring/unusual_activity.py`) is censored: it counts neither as moving nor as
 still. A mite whose place stays empty for 3 recordings in a row (no blob within 6 px and its

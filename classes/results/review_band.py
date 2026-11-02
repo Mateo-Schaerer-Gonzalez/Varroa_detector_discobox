@@ -20,6 +20,11 @@ band, or when the user set the call by hand (classes/results/call_corrections.py
 close calls after it are to check, the latest first: once one is seen to be a
 movement, the earlier ones no longer matter and are asked for no more.
 
+The band's close calls are not all: describe() also asks, beside them, about the
+peaks of a mite's score below the threshold after its last movement
+(classes/results/score_peaks.py), as a weak last movement often scores below the
+band too. The number of mites to check fits the band only; the peaks come on top.
+
 The detector's call stays what the threshold makes it until the user sets it,
 so the band changes no number by itself; it only says where to look.
 """
@@ -115,20 +120,29 @@ class ReviewBand:
         close = (scores >= self.low) & (scores < self.high) & there & ~checked
         return [int(recording) for recording in np.flatnonzero(close)[::-1] if recording > last]
 
-    def describe(self, mite_data, changes=None):
+    def describe(self, mite_data, changes=None, peaks=None):
         """For the result pages, from the mite score table (the calls corrected by
         hand in it) and what the corrections changed (CallCorrections.apply()):
 
             {low, high, to_check: {mite id: [recording, ...] the latest first},
-             n_recordings, n_mites, n_asked, n_done}
+             peaks: {mite id: [recording, ...]}, n_recordings, n_mites, n_asked, n_done}
 
-        n_asked is how many mites the band asks about at all, with nothing set
-        by hand yet, and n_done how many of them have nothing left to check: how
-        far the checking has got.
+        With `peaks` (a ScorePeaks, classes/results/score_peaks.py) its peaks are
+        to check beside the band's close calls, and `peaks` says which of those
+        to check they are; a band from the threshold to itself asks for peaks
+        only. n_asked is how many mites are asked about at all, with nothing
+        set by hand yet, and n_done how many of them have nothing left to check:
+        how far the checking has got.
         """
         changes = changes or {}
-        to_check = {}
+        to_check, peaks_to_check = {}, {}
         n_asked = 0
+
+        def asked(scores, moving, checked=None, censored=None):
+            band = self.to_check(scores, moving, checked, censored)
+            found = peaks.to_check(scores, moving, checked, censored) if peaks is not None else []
+            return sorted(set(band) | set(found), reverse=True), found
+
         for mite_id, rows in mite_data.groupby("mite_ID"):
             times = rows["time"].to_numpy()
             if not (times[1:] > times[:-1]).all():  # in the order of their times already, most often
@@ -136,13 +150,15 @@ class ReviewBand:
             set_by_hand = set(changes.get("corrections", {}).get(str(mite_id), [])) | set(
                 changes.get("checked", {}).get(str(mite_id), []))
             censored = rows["censored"] if "censored" in rows else None
-            recordings = self.to_check(
+            recordings, found = asked(
                 rows["motion_score"], rows["moving"],
                 checked=[recording in set_by_hand for recording in range(len(rows))], censored=censored)
             if recordings:
                 to_check[str(mite_id)] = recordings
-            n_asked += bool(recordings or (set_by_hand and self.to_check(rows["motion_score"], rows["moving"],
-                                                                         censored=censored)))
-        return {"low": self.low, "high": self.high, "to_check": to_check,
+            if found:
+                peaks_to_check[str(mite_id)] = found
+            n_asked += bool(recordings or (set_by_hand and asked(rows["motion_score"], rows["moving"],
+                                                                 censored=censored)[0]))
+        return {"low": self.low, "high": self.high, "to_check": to_check, "peaks": peaks_to_check,
                 "n_recordings": sum(len(recordings) for recordings in to_check.values()), "n_mites": len(to_check),
                 "n_asked": n_asked, "n_done": n_asked - len(to_check)}

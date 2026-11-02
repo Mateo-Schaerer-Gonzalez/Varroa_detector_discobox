@@ -91,7 +91,9 @@ class MovementReport:
                            recording from which it is gone for good, or None);
                            checked (per recording: the user set the call by hand) and
                            to_check (the recordings to check by eye, the latest
-                           first; see classes/results/review_band.py); for a mite a live run
+                           first; see classes/results/review_band.py) and peaks
+                           (those of them that are peaks below the threshold,
+                           classes/results/score_peaks.py); for a mite a live run
                            added later, start (the recording it was added in) and
                            own_times (the time of each recording from then on,
                            in minutes since it was added: its own timer)
@@ -129,6 +131,7 @@ class MovementReport:
             "corrected": [recording in corrected for recording in range(len(mite["moving"]))],
             "checked": [recording in checked for recording in range(len(mite["moving"]))],
             "to_check": list((self.results.get("review") or {}).get("to_check", {}).get(mite["id"], [])),
+            "peaks": list((self.results.get("review") or {}).get("peaks", {}).get(mite["id"], [])),
             "censored": self.groups.censored(mite),
             "gone_from": self.results.get("gone_from", {}).get(mite["id"]),
             "n_moving": MovementStats.moving_count(mite["moving"]),

@@ -4,7 +4,8 @@
  * options:
  *   x           shared x values (time in minutes)
  *   series      [{ name, values, color, width, step, faint, markers, pointColors,
- *                  legend, tooltip, onClick, band }]
+ *                  rings, legend, tooltip, onClick, band }]
+ *               rings: indices of points to ring, e.g. those to check by eye
  *               band: { low, high }, e.g. a confidence interval, shaded in the
  *               series' colour beneath every line and given in the tooltip
  *   yLabel, xLabel, yMin, yMax, height
@@ -176,6 +177,7 @@ class LineChart {
             cx: xs[i], cy: y, r: 3.5, fill: s.pointColors ? s.pointColors[i] : s.color,
             class: `marker${enter != null && i >= enter ? " enter-mark" : ""}`,
           }, g);
+          if (s.rings && s.rings.includes(i)) el("circle", { cx: xs[i], cy: y, r: 7, class: "ring" }, g);
         });
       }
 

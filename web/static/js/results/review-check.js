@@ -3,6 +3,8 @@
 // fits the narrowest band around the threshold that asks about that many: a score
 // in it is too close to trust, and it lists, per mite, the ones its time of death
 // depends on, the latest first (results.review, mite.to_check; classes/results/review_band.py).
+// Beside them, the peaks of a mite's score below the threshold after its last movement
+// (mite.peaks, classes/results/score_peaks.py): a weak last movement often scores below the band.
 // The overview lists the mites to check and sets their number; a mite's page asks about the recording shown,
 // keeps the answer (the buttons, or M and S) and goes on to the next close call, of
 // this mite or of the next one, whose clip is fetched ahead. A bar says how far
@@ -19,6 +21,18 @@ class ReviewCheck {
 
   bandText() {
     return `${score(this.review.low)} to ${score(this.review.high)}`;
+  }
+
+  // Whether a band asks about anything: one from the threshold to itself is only there for the peaks.
+  hasBand() {
+    return !!this.review && this.review.low < this.review.high;
+  }
+
+  // Why the recording is to check, for the texts.
+  why(mite, recording) {
+    return mite.peaks.includes(recording)
+      ? "a peak below the threshold, standing out of this mite's still level"
+      : "in the band, too close to the threshold to trust";
   }
 
   // The mites with calls left to check, those with the most first.
@@ -48,8 +62,10 @@ class ReviewCheck {
         ? `No motion score is close enough to the threshold of ${score(results.threshold)} to need checking by eye.`
         : `No mites are to be checked by eye. With a number below, the motion scores closest to the threshold of ${score(results.threshold)}
           that a mite's time of death depends on are listed here to check.`)
-      : `To ask about ${plural(wanted.mites, "mite")} at most, a motion score from ${this.bandText()} is taken as too close to the threshold
-        of ${score(results.threshold)} to trust: the narrowest band that does.
+      : `${this.hasBand() ? `To ask about ${plural(wanted.mites, "mite")} at most, a motion score from ${this.bandText()} is taken as too close to the threshold
+        of ${score(results.threshold)} to trust: the narrowest band that does. ` : ""}A weak last movement often scores below the
+        threshold${this.hasBand() ? " and the band" : ""}, but stands out on the mite's score graph as a peak: the peaks after a mite's last movement,
+        well above where its score sits when still, are asked about too${this.hasBand() ? ", beside the band's" : ""}.
         A mite dies after its last movement, so the close calls after its last clear movement decide when it died.
         ${mites.length
           ? `<b>${plural(review.n_recordings, "recording")} of ${plural(review.n_mites, "mite")}</b> ${review.n_recordings === 1 ? "is" : "are"} left to check, the latest of each mite first:
@@ -125,7 +141,8 @@ class ReviewCheck {
     const { times } = this.page.results;
     if (mite.to_check.length) {
       return `<div class="banner review-note"><span><b>${plural(mite.to_check.length, "close call")}</b> ${mite.to_check.length === 1 ? "decides" : "decide"} when this mite died:
-        a score from ${this.bandText()} after its last clear movement. Check the latest first.</span>
+        ${this.hasBand() ? `a score from ${this.bandText()} after its last clear movement, or ` : ""}a peak of its score below the threshold after its last movement.
+        Check the latest first.</span>
         <span class="review-times">${mite.to_check.map((recording) =>
           `<button type="button" class="small secondary${recording === ctx.shown ? " current" : ""}" data-check-recording="${recording}">${minutes(times[recording])}</button>`).join("")}</span>
         ${mite.to_check.includes(ctx.shown) ? `<span class="review-now">Is the mite moving at ${minutes(times[ctx.shown])}? ${this.answerButtons()}</span>` : ""}
@@ -143,7 +160,7 @@ class ReviewCheck {
   // above the page asks it too, where it is on screen without scrolling.
   ask(mite) {
     if (!mite.to_check.includes(ctx.shown)) return "";
-    return `<span class="review-ask"><b>Close call:</b> the score here, ${score(mite.scores[ctx.shown])}, is in the band. Is the mite moving in this recording?
+    return `<span class="review-ask"><b>Close call:</b> the score here, ${score(mite.scores[ctx.shown])}, is ${this.why(mite, ctx.shown)}. Is the mite moving in this recording?
       ${this.answerButtons()}</span>`;
   }
 
@@ -154,7 +171,7 @@ class ReviewCheck {
 
   // "to check" or "checked" beside a recording's call in the mite's table.
   mark(mite, recording) {
-    if (mite.to_check.includes(recording)) return ` <span class="check-mark to-check" title="Close to the threshold, and the mite's time of death depends on it">to check</span>`;
+    if (mite.to_check.includes(recording)) return ` <span class="check-mark to-check" title="${mite.peaks.includes(recording) ? "A peak below the threshold" : "Close to the threshold"}, and the mite's time of death depends on it">to check</span>`;
     return mite.checked[recording] && !mite.corrected[recording]
       ? ` <span class="check-mark" title="Checked by eye: the detector's call stands">checked</span>` : "";
   }

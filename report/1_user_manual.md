@@ -256,8 +256,11 @@ later analysis keeps them. They don't change the calibration's ground truth.
 A mite dies at the recording after its last movement, so a single wrong call can move its
 death by hours. Under **To check by eye** you choose how many mites to check (20 by
 default, 0 for none). The app picks the scores closest to the threshold that a mite's time
-of death depends on and asks about them one by one. Click the recordings it suggests and
-label each *Moving* or *Still* (<kbd>M</kbd>, <kbd>S</kbd>).
+of death depends on and asks about them one by one. It also asks about the peaks of a
+mite's score below the threshold after its last movement: a weak last twitch often scores
+below the threshold but stands out on the mite's score graph, where every recording to check
+is ringed. Click the recordings it suggests and label each *Moving* or *Still*
+(<kbd>M</kbd>, <kbd>S</kbd>).
 
 ### 3.8 Playback
 

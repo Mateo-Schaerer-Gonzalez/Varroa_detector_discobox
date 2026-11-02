@@ -9,5 +9,6 @@ corrected by hand and the calls to check by eye.
     result_groups.py     the zones of the results by group, as the pages list them
     call_corrections.py  the calls corrected by hand on the result pages
     review_band.py       the calls too close to the threshold, to check by eye
+    score_peaks.py       the peaks of a mite's score below the threshold, to check beside them
     error_map.py         where on the plate a calibration report's calls go wrong
 """

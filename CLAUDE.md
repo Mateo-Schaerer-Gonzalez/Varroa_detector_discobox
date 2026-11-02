@@ -260,6 +260,11 @@ run's shake is not the cause: the per-mite centre stabilization holds up to 0.24
 accuracy, moving called still and still called moving for both thresholds. Both report
 tabs draw a precision-recall curve with average precision, not the ROC curve and AUC (the
 user's choice of 2026-10-26, "more informative"); `roc_curve`/`auc` stay for the scripts.
+The result pages also ask, beside the band's close calls, about each mite's score peaks below the
+threshold after its last movement (`classes/results/score_peaks.py`, the user's choice of 2026-11-02:
+"implement the peaks as well as band"). On the five labelled datasets 94 % of the death error is
+deaths put late (still recordings called moving, mostly the poke-shaken `Ground_truth_oct_26_final`),
+which neither peaks nor band fix cheaply; the peaks fixed most of the small early part.
 `classes/ground_truth/death_calibration.py` stays only for the scripts' searches, and
 `calibration.best_threshold()` (Youden's J) for theirs.
 
