@@ -63,7 +63,7 @@ class RecordingsList {
       : !list.length ? `<p class="muted">Nothing recorded yet. A test run appears here once its first recording is saved.</p>`
         : `<div class="table-wrap"><table class="recordings">
             <thead><tr><th>Recording</th><th>Recorded</th><th class="num">Recordings</th><th>Settings</th>
-              <th>Plates</th><th>Results</th><th></th></tr></thead>
+              <th>Slides</th><th>Results</th><th></th></tr></thead>
             <tbody>${list.map((r) => this.row(r)).join("")}</tbody>
           </table></div>`}`;
   }
@@ -141,7 +141,7 @@ class RecordingsList {
 
   // The plate labels, the "not a mite" marks and the ground truth kept with it.
   platesText(r) {
-    const main = r.n_labelled_plates ? `${plural(r.n_labelled_plates, "plate")} labelled` : `<span class="muted">not labelled</span>`;
+    const main = r.n_labelled_plates ? `${plural(r.n_labelled_plates, "slide")} labelled` : `<span class="muted">not labelled</span>`;
     const sub = [];
     if (r.groups.length) {
       const groups = r.groups.join(", ");

@@ -49,7 +49,7 @@ def where(zone_manager, image, x, y, others):
     x, y = hand_mites.centre_near(image, float(x), float(y))
     size = hand_mites.box_size(zone_manager.mites, mite.radius)
     if zone_manager.zone_of(hand_mites.box_at(x, y, size)) is None or zone_manager.is_excluded(x, y):
-        raise ValueError("A mite is placed inside a plate, clear of its edge and of its label.")
+        raise ValueError("A mite is placed inside a slide, clear of its edge and of its label.")
     if not positions.away_from_all({"x": x, "y": y}, [{"x": ox, "y": oy} for ox, oy in others]):
         raise ValueError("There is a mite there already.")
     return {"x": x, "y": y, "size": size}

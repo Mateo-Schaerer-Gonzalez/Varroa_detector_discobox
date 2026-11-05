@@ -26,8 +26,8 @@ AUTO = "auto"   # found on each recording's first frame
 NEW = AUTO      # the mask new recordings get: uploaded folders and live runs
 FALLBACK = "1"  # the zones of the automatic mask where no slide is found
 # name -> (title, its coordinates file next to the app)
-BUILT_IN = {"1": ("One zone per plate", "coords_pixel.txt"),
-            "2": ("Two zones per plate (upper and lower half)", "coords_pixel_2.txt")}
+BUILT_IN = {"1": ("One zone per slide", "coords_pixel.txt"),
+            "2": ("Two zones per slide (upper and lower half)", "coords_pixel_2.txt")}
 NAME = re.compile(r"^(?=.*[A-Za-z])[A-Za-z0-9_-]{1,40}$")
 # a zone's type as the pages name it -> as the coordinates file writes it
 TYPES = {"mite": "1", "text": "0"}

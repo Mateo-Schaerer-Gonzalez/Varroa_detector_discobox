@@ -137,7 +137,7 @@ class LabelPage {
     // An unnamed plate shows nothing here, so the writing on the glass stays
     // readable; the area itself is what is clicked.
     const control = zone.control ? "<small>negative control</small>" : "";
-    text.title = label ? "" : `Click to name zone ${zone.id}`;
+    text.title = label ? "" : `Click to label zone ${zone.id}`;
     text.innerHTML = label
       ? `<span class="text-tag">${esc(label)}${control}</span>`
       : control && `<span class="text-tag empty">${control}</span>`;

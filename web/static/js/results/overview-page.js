@@ -35,7 +35,7 @@ class OverviewPage extends ResultsPage {
     ${this.laterSection()}
 
     <div class="clip-block">
-      ${this.clipFigure("result-plate", 1, `Plate map · recording at ${this.shownTime()}`,
+      ${this.clipFigure("result-plate", 1, `Glass slide map · recording at ${this.shownTime()}`,
         `The recording at ${this.shownTime()}, with every detected mite ${movingBadge(true)} or ${movingBadge(false)} in it.
         Choose a recording above, or click a time in a chart. Select a zone to open it.`, "plate")}
     </div>
@@ -75,7 +75,7 @@ class OverviewPage extends ResultsPage {
     ${activity.html(6)}
 
     ${section("Files", `<ul class="files">
-        <li><a href="${ctx.fileUrl(results.excel)}" download>${esc(results.excel)}</a> <span class="muted">when each mite last moved, every score, a picture of the plate with the mite IDs, and the group summaries</span></li>
+        <li><a href="${ctx.fileUrl(results.excel)}" download>${esc(results.excel)}</a> <span class="muted">when each mite last moved, every score, a picture of the slides with the mite IDs, and the group summaries</span></li>
       </ul>
       <p class="caption">${this.resultsFolderNote()}Every chart above can be downloaded as SVG or PNG from the buttons beside its title.</p>`)}`;
     this.wire(body);

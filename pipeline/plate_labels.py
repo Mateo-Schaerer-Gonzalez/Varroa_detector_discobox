@@ -52,7 +52,7 @@ def read_labels(data_dir, out_dir, mites, coords_file=None):
 def read_zone_labels(zone_manager, data_dir, out_dir, mites):
     frame = cv2.imread(str(Path(out_dir) / paths.PREVIEW_NAME))
     if frame is None:
-        raise FileNotFoundError("There is no picture of the plates to read the names from; open the folder again.")
+        raise FileNotFoundError("There is no picture of the slides to read the labels from; open the folder again.")
     saved = {str(key): str(value).strip() for key, value in load_labels(data_dir).items()}
     with_mites = {mite["zone_id"] for mite in mites}
     areas = {}  # a label area and the zone it names (one at most: ZoneManager.text_zone_for())

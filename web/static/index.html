@@ -9,13 +9,13 @@
      the ones before it, so the cascade depends on it. -->
 <link rel="stylesheet" href="css/base.css?v=25">
 <link rel="stylesheet" href="css/start-pages.css?v=25">
-<link rel="stylesheet" href="css/plates.css?v=26">
+<link rel="stylesheet" href="css/plates.css?v=27">
 <link rel="stylesheet" href="css/labels.css?v=25">
 <link rel="stylesheet" href="css/results.css?v=26">
 <link rel="stylesheet" href="css/charts.css?v=25">
 <link rel="stylesheet" href="css/calibration.css?v=25">
 <link rel="stylesheet" href="css/narrow-screens.css?v=25">
-<link rel="stylesheet" href="css/live.css?v=25">
+<link rel="stylesheet" href="css/live.css?v=26">
 <link rel="stylesheet" href="css/recordings.css?v=26">
 <link rel="stylesheet" href="css/zones.css?v=1">
 </head>
@@ -40,13 +40,13 @@
   <!-- The three stages of each mode. Each is a link, so the browser's back button works. -->
   <nav id="steps-live" class="steps" aria-label="Live stages">
     <a href="#/live/open" data-step="open"><span class="step-num">1</span> Camera</a>
-    <a href="#/live/label" data-step="label" class="disabled"><span class="step-num">2</span> Plate labels</a>
+    <a href="#/live/label" data-step="label" class="disabled"><span class="step-num">2</span> Slide labels</a>
     <a href="#/live/results" data-step="results" class="disabled"><span class="step-num">3</span> Live results</a>
     <a href="#/live/playback" data-step="playback" class="disabled"><span class="step-num">4</span> Playback</a>
   </nav>
   <nav id="steps-analysis" class="steps" aria-label="Analysis stages" hidden>
     <a href="#/open" data-step="open"><span class="step-num">1</span> Recordings</a>
-    <a href="#/label" data-step="label" class="disabled"><span class="step-num">2</span> Plate labels</a>
+    <a href="#/label" data-step="label" class="disabled"><span class="step-num">2</span> Slide labels</a>
     <a href="#/results" data-step="results" class="disabled"><span class="step-num">3</span> Results</a>
     <a href="#/playback" data-step="playback" class="disabled"><span class="step-num">4</span> Playback</a>
   </nav>
@@ -102,11 +102,11 @@
       <div id="label-plate" class="plate"></div>
     </div>
     <aside class="split-side panel">
-      <h2>Plate labels</h2>
+      <h2>Slide labels</h2>
       <p class="hint">
-        Click a plate to name its group, e.g. the venom extract. The name is typed
-        here, beside the picture, and the plate is outlined in the same colour.
-        <kbd>Enter</kbd> saves, <kbd>Tab</kbd> saves and moves to the next plate,
+        Click a slide to type its label, the group, e.g. the venom extract. The label is typed
+        here, beside the picture, and the slide is outlined in the same colour.
+        <kbd>Enter</kbd> saves, <kbd>Tab</kbd> saves and moves to the next slide,
         <kbd>Esc</kbd> cancels. Labels are saved automatically.
       </p>
       <p class="hint">
@@ -124,13 +124,13 @@
       <div id="zone-editor-slot" class="zone-editor-slot"></div>
       <ul id="group-list" class="group-list"></ul>
       <div class="read-option">
-        <label class="control-check"><input id="read-labels" type="checkbox"> Read the names from the plates</label>
+        <label class="control-check"><input id="read-labels" type="checkbox"> Read labels from glass slides</label>
       </div>
       <!-- Of a folder, and of a test run until it starts. -->
       <div id="zones-option" class="zones-option">
         <label for="zone-mask">Zone mask</label>
         <select id="zone-mask" class="mask-select"></select>
-        <p class="hint">Where the plates and their label areas are: one zone per plate, two (upper and lower half),
+        <p class="hint">Where the slides and their label areas are: found on the first frame (automatic), one zone per slide, two (upper and lower half),
           or a mask drawn on the <a href="#/zones">Zones</a> page. Saved with this recording, for every later analysis of it.</p>
       </div>
       <!-- Of a folder of frames: mites put on the plates after the first recording. -->
@@ -179,7 +179,7 @@
     </div>
     <aside class="split-side panel">
       <h2>Discobox</h2>
-      <p class="hint">Connecting finds the camera and the fan and LEDs by itself, and switches both LEDs on so the plates can be seen.
+      <p class="hint">Connecting finds the camera and the fan and LEDs by itself, and switches both LEDs on so the slides can be seen.
         The name and every setting below can still change after connecting, until the test run starts.</p>
       <div class="live-form">
         <label for="live-run-name">Test run name</label>
@@ -201,7 +201,7 @@
         <div id="live-lights" class="live-lights"></div>
         <p id="live-settings-status" class="hint"></p>
       </div>
-      <button id="live-label-btn" type="button" class="wide" disabled>Next: label the plates</button>
+      <button id="live-label-btn" type="button" class="wide" disabled>Next: label the slides</button>
     </aside>
   </div>
   <!-- filled by RecordingsList (js/app/recordings-list.js) -->
@@ -393,15 +393,15 @@
       <p class="caption">
         Drag on the picture to draw a zone of the kind chosen. Click a zone to pick it, then drag it to move it or
         drag a corner to resize it; <kbd>Delete</kbd> removes it, the arrow keys move it by a pixel
-        (<kbd>Shift</kbd>: ten). Each plate shows the number the analysis gives it, in reading order; a text zone
-        shows the plate whose name is read from it.
+        (<kbd>Shift</kbd>: ten). Each slide shows the number the analysis gives it, in reading order; a text zone
+        shows the slide whose label is read from it.
       </p>
     </div>
     <aside class="split-side panel">
       <h2>Zone masks</h2>
-      <p class="hint">A mask says where the plates are on the picture: <b>mite zones</b>, where mites are found and
+      <p class="hint">A mask says where the slides are on the picture: <b>mite zones</b>, where mites are found and
         scored, and <b>text zones</b>, the printed-label areas beside them, left out of the detection and where a
-        plate's name is read. Choose it for a recording on its label page.</p>
+        slide's label is read. Choose it for a recording on its label page.</p>
       <div class="live-form mask-form">
         <label for="mask-picture">Picture</label>
         <select id="mask-picture" class="mask-select"></select>

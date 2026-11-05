@@ -53,7 +53,7 @@
    colour marks the plate. */
 .text-zone.editing .text-tag { display: none; }
 .zone-editor-slot { min-height: 92px; margin-top: 18px; }
-.zone-editor-slot:empty::before { content: "No plate selected."; font-size: 13px; color: var(--muted); }
+.zone-editor-slot:empty::before { content: "No slide selected."; font-size: 13px; color: var(--muted); }
 .zone-editor {
   --zone-color: var(--ink);
   padding: 8px 10px;

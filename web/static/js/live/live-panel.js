@@ -26,7 +26,7 @@ class LivePanel {
       <button id="live-new-btn" type="button" class="secondary small" hidden>New test run</button>
     </div>
     <div class="row">
-      <button id="live-add-btn" type="button" class="secondary small" title="Light the plates between two recordings and follow mites not found so far">Add mites</button>
+      <button id="live-add-btn" type="button" class="secondary small" title="Light the slides between two recordings and follow mites not found so far">Add mites</button>
       <button id="live-truth-btn" type="button" class="secondary small">Ground truth</button>
       <button id="live-poke-btn" type="button" class="secondary small">Poke test</button>
     </div>

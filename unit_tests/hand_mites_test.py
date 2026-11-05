@@ -78,7 +78,7 @@ def test_placing_keeps_the_point_and_removing_forgets_it(tmp_path):
 
 def test_placing_is_refused_off_a_plate_and_on_a_mite(tmp_path):
     image, zone_manager = plate()
-    with pytest.raises(ValueError, match="inside a plate"):
+    with pytest.raises(ValueError, match="inside a slide"):
         hand_mites.place(tmp_path, zone_manager, image, 5, 5)
     zone_manager.assign_mites([Mite(55, 65, 66, 76)])
     with pytest.raises(ValueError, match="already"):

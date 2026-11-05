@@ -108,7 +108,7 @@ class LiveSetupPage {
       button.setAttribute("aria-pressed", String(Boolean(state && state.on)));
     });
     $("live-label-btn").disabled = !connected;
-    $("live-label-btn").textContent = live.started ? "Show the live results" : "Next: label the plates";
+    $("live-label-btn").textContent = live.started ? "Show the live results" : "Next: label the slides";
     $("live-feed-note").textContent = connected ? "" : "Connect to see the camera.";
     const shown = connected && $("live-feed").src;
     $("live-feed").hidden = !shown;

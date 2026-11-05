@@ -158,7 +158,7 @@ class LabelReader:
             text = "".join(part.get("text", "") for part in reply["candidates"][0]["content"]["parts"])
             names = json.loads(text)
         except (KeyError, IndexError, TypeError, ValueError, AttributeError):
-            raise LabelReadError("Google Gemini gave no names for the plates.")
+            raise LabelReadError("Google Gemini gave no labels for the slides.")
         if not isinstance(names, list) or len(names) != count:
-            raise LabelReadError(f"Google Gemini did not give one name for each of the {count} plates.")
+            raise LabelReadError(f"Google Gemini did not give one label for each of the {count} slides.")
         return [" ".join(str(name).split()) if name is not None else "" for name in names]

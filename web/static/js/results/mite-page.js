@@ -71,7 +71,7 @@ class MitePage extends ResultsPage {
             ${STATES.map((state) => `<option value="${state}"${state === this.callState(mite, i) ? " selected" : ""}>${STATE_NAMES[state]}</option>`).join("")}
           </select>`}</td></tr>`).join("")}</tbody>
       </table></div>
-      <p class="caption">A mite <i>gone</i> in a recording, e.g. one that fell off the plate, is censored there: it counts neither as moving nor as still.
+      <p class="caption">A mite <i>gone</i> in a recording, e.g. one that fell off the slide, is censored there: it counts neither as moving nor as still.
         One gone from a recording on leaves the survival numbers at the recording before, alive as far as is known, unless it counted as dead by then.</p>`)}`;
     this.wire(body);
     review.wireMite(body, mite);

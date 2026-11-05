@@ -31,7 +31,7 @@ class SurvivalTable {
       table.hidden = true;
       caption.innerHTML = test.controls.length
         ? "The zones ticked as negative control hold no mite seen moving, so there is nothing to compare with."
-        : `No zone is ticked as negative control. On the <a href="${ctx.href("label")}">label page</a>, click a plate and tick <i>negative control</i>
+        : `No zone is ticked as negative control. On the <a href="${ctx.href("label")}">label page</a>, click a slide and tick <i>negative control</i>
         to compare the survival of every group with it.`;
       return;
     }

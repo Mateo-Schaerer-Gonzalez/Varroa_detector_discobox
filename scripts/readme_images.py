@@ -7,7 +7,7 @@ the reports, copied and shrunk.
     python scripts/visual_walkthrough.py            # report/images/walk_*.png
     python scripts/readme_images.py <shots>
 
-The crops are at the places the pages had on 30 October 2026 (1440 px wide);
+The crops are at the places the pages had on 5 November 2026 (1440 px wide);
 look at the pictures after a change to the pages. Screenshots are cut to 256
 colours, which keeps them small and looks the same.
 
@@ -25,30 +25,33 @@ DOCS, REPORT = ROOT / "docs" / "images", ROOT / "report" / "images"
 WIDTH = 1440
 # (shot, top, bottom) of each picture: whole width, rows top to bottom
 README_SHOTS = {
-    "app_labels": ("labels", 0, 820),
-    "app_results_top": ("results", 0, 1855),       # the counts, the close calls and the plate map
+    "app_live_setup": ("live", 0, 560),
+    "app_labels": ("labels", 0, 840),
+    "app_results_top": ("results", 0, 2045),       # the counts, the close calls and the glass slide map
     "app_zone_top": ("zone", 0, 1060),
     "app_mite": ("mite", 0, 960),
     "app_playback": ("playback", 0, 1080),
     "app_calibration_open": ("cal_open", 0, 1380),
 }
 REPORT_SHOTS = {
-    "app_labels": ("labels", 0, 820),
-    "app_results_top": ("results", 0, 770),
-    "app_results_platemap": ("results", 775, 1855),
-    "app_results_survival": ("results", 1855, 3045),
-    "app_results_shake": ("results", 4160, 4555),
+    "app_live_setup": ("live", 0, 1100),
+    "app_labels": ("labels", 0, 840),
+    "app_results_top": ("results", 0, 1060),
+    "app_results_platemap": ("results", 1080, 2045),
+    "app_results_survival": ("results", 2062, 3100),
+    "app_results_shake": ("results", 4155, 4590),
     "app_zone_top": ("zone", 0, 1060),
     "app_playback": ("playback", 0, 1080),
+    "app_zones": ("zones", 0, 820),
     "app_calibration_open": ("cal_open", 0, 1380),
     "app_calibration_truth": ("cal_truth", 0, 980),
     "app_calibration_report": ("cal_report", 0, 1050),
     "app_calibration_test_top": ("cal_test", 0, 1140),
-    "app_calibration_test_errors": ("cal_test", 1140, 1985),
+    "app_calibration_test_errors": ("cal_test", 1130, 2070),
 }
 # the close-up on a mite's page (left, top, right, bottom), and what it shows
 CLOSE_UPS = (("mite", (124, 380, 504, 762), "mite 7.1 at 25 min: moving (score 4.3)"),
-             ("mite_still", (124, 545, 504, 926), "mite 4.1 at 25 min: still (score 0.008)"))
+             ("mite_still", (124, 577, 504, 959), "mite 4.1 at 25 min: still (score 0.008)"))
 SHARED = ["walk_1_detection", "walk_2_frames", "walk_3_stabilizer_effect", "walk_5_rays", "walk_6_profile",
           "walk_7_vector_sum", "walk_8_threshold", "walk_9_calibration", "walk_10_survival", "speed_memory_storage"]
 

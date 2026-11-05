@@ -144,7 +144,7 @@ class ReportPage {
     ${testing ? this.testReport(r) : this.calibrateReport(r)}
     ${testing ? section("Survival rate per group", `<div id="group-legend" class="legend"></div><div id="group-moving" class="group-cards"></div>
       <p class="caption">Each group's Kaplan–Meier survival rate, by the ground truth and as the detector's calls at the threshold in use${r.benchmark ? " and the benchmark's" : ""} would have it, as in Fig. 2;
-        the number is the group's mites in the study by the ground truth. Groups are the plate labels.${poolNote(r)}</p>`) : ""}
+        the number is the group's mites in the study by the ground truth. Groups are the slide labels.${poolNote(r)}</p>`) : ""}
     ${section("Files", `<ul class="files">
       <li><a href="${cal.fileUrl(r.excel)}" download>${esc(r.excel)}</a>
         <span class="muted">every labelled mite-recording with its score and outcome, the fraction moving per recording, the precision-recall curve and the summary</span></li></ul>`)}`;

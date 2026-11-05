@@ -73,6 +73,11 @@ await go("#/zone/7"); await shot("zone");
 await go("#/mite/7.1"); await shot("mite");            // moving in the last recording
 await go("#/mite/4.1"); await shot("mite_still");      // a negative control, still
 await go("#/playback"); await sleep(4000); await shot("playback");
+// The Zones page, on sample_data's first frame with the built-in mask "1" and a zone picked.
+await go("#/zones"); await sleep(1500);
+await run(`zoneMaker.usePicture("sample_data")`);
+await run(`zoneMaker.open("1")`);
+await run("zoneMaker.selected = 0; zoneMaker.draw()"); await shot("zones", false);
 // Calibration as the manual walks through it: calibrate on ground_truth_60min, then
 // test the threshold on another recording, ground_truth_90min. Nothing is saved.
 await go("#/cal/open");

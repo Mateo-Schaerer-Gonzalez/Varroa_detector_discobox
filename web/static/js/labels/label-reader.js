@@ -1,4 +1,4 @@
-// The label page's "Read the names from the plates": the server reads what is
+// The label page's "Read labels from glass slides": the server reads what is
 // written beside each plate (Google Gemini, pipeline.read_labels) and the names
 // are filled in where none is typed yet, for the user to check. A setting: off
 // until its box is ticked, and the tick is saved on the server (config.yaml). It
@@ -32,7 +32,7 @@ class LabelReader {
     $("read-labels").disabled = !available;
     // Why the box is greyed out, or what it does, shows when the pointer rests on it.
     $("read-labels").parentElement.title = available
-      ? "Google Gemini reads the writing beside each plate with no name yet (it takes the internet). Check what it read."
+      ? "Google Gemini reads the writing beside each slide with no label yet (it takes the internet). Check what it read."
       : "Takes a free Google Gemini API key (aistudio.google.com/apikey): put GEMINI_API_KEY=… in the file .env in the app's folder and start the app again.";
   }
 
@@ -42,7 +42,7 @@ class LabelReader {
     if (!session || !this.wanted(session) || this.reading === session) return;
     if (!workspace.labelZones().some((zone) => !zone.label.trim())) return;
     this.reading = session;
-    this.status(workspace, "hint", `<span class="spinner"></span> Reading the names on the plates…`);
+    this.status(workspace, "hint", `<span class="spinner"></span> Reading the labels on the slides…`);
     try {
       const { labels } = await post(`/api/session/${sessionId}/read-labels`);
       if (workspace.session !== session) return;  // another folder, or other zones, by now
@@ -53,11 +53,11 @@ class LabelReader {
       if (named.length) await post(`/api/session/${sessionId}/labels`, { labels: workspace.collectLabels() });
       if (workspace.session !== session) return;
       this.status(workspace, "hint", named.length
-        ? `${plural(named.length, "name")} read from the plates: check ${named.length === 1 ? "it" : "them"}.`
-        : "No name could be read from the plates.");
+        ? `${plural(named.length, "label")} read from the slides: check ${named.length === 1 ? "it" : "them"}.`
+        : "No label could be read from the slides.");
       if (ctx === workspace && named.length && location.hash.includes("/label")) labelPage.draw();
     } catch (error) {
-      if (workspace.session === session) this.status(workspace, "hint error", esc(`The names were not read: ${error.message}`));
+      if (workspace.session === session) this.status(workspace, "hint error", esc(`The labels were not read: ${error.message}`));
     } finally {
       if (this.reading === session) this.reading = null;
     }

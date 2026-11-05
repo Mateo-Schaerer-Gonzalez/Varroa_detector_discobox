@@ -103,7 +103,7 @@ class AddMites {
   draw() {
     const holder = this.holder;
     holder.hidden = !this.message && !this.busy && !this.active;
-    holder.innerHTML = this.busy && !this.active ? `<p class="hint"><span class="spinner"></span> Lighting the plates and looking for mites…</p>`
+    holder.innerHTML = this.busy && !this.active ? `<p class="hint"><span class="spinner"></span> Lighting the slides and looking for mites…</p>`
       : this.active ? `<p class="hint">Mites found that are not followed yet: <a href="#/live/label">choose those to add</a>.
           <button type="button" class="secondary small" data-add-action="cancel">Cancel</button></p>`
       : `<p class="hint">${esc(this.message)}</p>`;

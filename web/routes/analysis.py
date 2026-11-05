@@ -94,7 +94,7 @@ def save_labels(session_id: str, request: LabelsRequest):
 
 @router.post("/api/label-reading")
 def save_label_reading(request: LabelReadingRequest):
-    """The label page's box "Read the names from the plates", saved in config.yaml."""
+    """The label page's box "Read labels from glass slides", saved in config.yaml."""
     return pipeline.save_label_reading(request.enabled)
 
 

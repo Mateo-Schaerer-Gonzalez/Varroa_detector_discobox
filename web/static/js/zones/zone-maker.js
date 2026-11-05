@@ -191,7 +191,7 @@ class ZoneMaker {
       if (zone.type === "text") {
         // a text zone names one plate at most (ZoneManager.text_zone_for())
         const plate = textOf.indexOf(index);
-        tag = plate >= 0 && ids[plate] != null ? `name of ${ids[plate]}` : "no plate";
+        tag = plate >= 0 && ids[plate] != null ? `label of ${ids[plate]}` : "no slide";
       }
       const font = 13 * scale;
       // a plate's number at its top, a text zone's at its bottom: apart where they lie side by side
@@ -219,7 +219,7 @@ class ZoneMaker {
     const without = this.numbers ? this.zones.filter((z, i) => z.type === "mite" && this.numbers.text_of[i] == null).length : 0;
     const outside = this.picture ? this.zones.filter((z) => z.x2 > this.picture.width || z.y2 > this.picture.height).length : 0;
     const notes = [`${plural(mites, "mite zone")}, ${plural(texts, "text zone")}.`];
-    if (mites && without) notes.push(`${without} without a text zone beside it: its name cannot be read from the plate.`);
+    if (mites && without) notes.push(`${without} without a text zone beside it: its label cannot be read from the slide.`);
     if (outside) notes.push(`${plural(outside, "zone")} reach${outside === 1 ? "es" : ""} past this picture: is it of the same camera?`);
     $("mask-count").textContent = notes.join(" ");
     $("mask-duplicate").disabled = $("mask-remove").disabled = this.selected == null;
@@ -395,7 +395,7 @@ class ZoneMaker {
 
   async deleteMask() {
     const name = this.loaded;
-    if (!name || !confirm(`Delete the mask ${name}? The recordings that use it go back to one zone per plate.`)) return;
+    if (!name || !confirm(`Delete the mask ${name}? The recordings that use it go back to one zone per slide.`)) return;
     try {
       const response = await fetch(`/api/masks/${encodeURIComponent(name)}`, { method: "DELETE" });
       this.masks = (await readJson(response, "The mask could not be deleted")).masks;

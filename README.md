@@ -324,8 +324,8 @@ sequenceDiagram
    change them (an older file with a number of recordings is read as the duration they span; one with *Go on
    until every mite is dead*, which this replaced, is read without it). *On/Off* switches the fan to check
    it; the sliders set the intensity of the fan and of the LEDs.
-2. **Plate labels**: the same page as for a folder, on the camera's newest frame, with the LEDs on. *Zones per
-   plate* (1 or 2) is chosen here, and mites the detector missed are placed by hand (see *Placing a mite by
+2. **Slide labels**: the same page as for a folder, on the camera's newest frame, with the LEDs on. The *Zone
+   mask* (automatic by default, one or two zones per slide, or one drawn on the Zones page) is chosen here, and mites the detector missed are placed by hand (see *Placing a mite by
    hand* under *Analysing recordings*): the run finds them on its first frame with the detector's and follows
    them. *Start test run* switches the LEDs off and starts recording; from then on
    the run switches them.
@@ -350,7 +350,7 @@ Started from `start.bat` or `start.sh`, the server waits for a run to end before
 moves to the blob nearest it in its own zone, at most *Most a mite moves between recordings* away (nearest
 pairs first); a mite with no such blob stays where it was, and one off by less than 2 px stays put (the
 detector's jitter). Within a recording its box stays put, as the score needs. A mite is still known (labels,
-ground truth, corrections, its place on the plate map) by where it was found, but what is shown of it in a
+ground truth, corrections, its place on the glass slide map) by where it was found, but what is shown of it in a
 recording follows it: its clip, the picture of where its pixels change, its outline on the mite page and its
 square in the playback are cut round where it was in that recording, with its ring there.
 
@@ -367,7 +367,7 @@ beside them, the LT50s and the log-rank tests (and the calibration's survival) a
 was first followed: every mite runs on its own timer. Its lifeline starts at 0, its page shows only its own
 recordings, timed from when it was added (its score chart, its table, its last movement), and says "died 20
 min after it was added (at 80 min of the run)". A zone whose mites were all added during the run does the
-same: it is not on the plate map (nor in the playback) before its first mites were added, its page shows
+same: it is not on the glass slide map (nor in the playback) before its first mites were added, its page shows
 nothing for those recordings, and its charts, its survival rate (with its group's beside it, read on the
 same clock) and its card under *Movement per zone* start at 0 when they were added. Before it was added, and
 once it counts as dead, its recordings say *not added yet* / *dead, not followed* (in the playback too, where
@@ -402,7 +402,7 @@ Only what the analysis reads of the recordings is saved, to `recordings/<run nam
 |---|---|
 | `first_frame.png` | The first frame of the first recording, whole: the mites are found and the zones labelled on it |
 | `rois/mite_000.mkv` ... | Per mite, its surroundings (its box and 32 px round it, at least 40 px round its centre) in every frame of every recording it was followed in, one recording after the other: one lossless (FFV1) grey video, its region moving with the mite |
-| `added_frames/from_<n>.jpg` | The lit frame mites were added on, `n` the recording they were added in: the label page (when the run is opened again), the result pages (plate map, zone and mite crops), the ground-truth and the poke-test pages draw the plate from that recording on with it, so the mites added are seen where they are drawn, and a mite has no ring before it is there |
+| `added_frames/from_<n>.jpg` | The lit frame mites were added on, `n` the recording they were added in: the label page (when the run is opened again), the result pages (glass slide map, zone and mite crops), the ground-truth and the poke-test pages draw the plate from that recording on with it, so the mites added are seen where they are drawn, and a mite has no ring before it is there |
 | `rois/index.json` | Where each mite was found (and from which recording, for one added), and per recording its name, frame rate, number of frames, where each mite was in it (none once it counted as dead) and the blobs found on its whole first and last frame (fly-offs, see below) |
 
 While the run goes on, each recording is saved as its own short videos in `rois/parts/`; once it is over,
@@ -414,7 +414,7 @@ with the previous recordings, and analysed there it gives exactly the results th
 to the last digit. The live results go to `results/<run name>/`.
 
 Since only the mites' surroundings are saved, the pages of such a session play only a mite's own clip (its
-page, the ground truth, the playback): the plate map and the zones show the first frame, and a fly-off is
+page, the ground truth, the playback): the glass slide map and the zones show the first frame, and a fly-off is
 seen leaving its place, not its walk across the plate. The mites are those found when the run started and
 added during it; the detector's settings changed later find no others there. Opened again, its label page
 lists the mites added with the ids the results give them, and offers above the plate *First recording* and
@@ -456,8 +456,8 @@ mask, its death time). A folder dropped for the first time gets the automatic zo
 coordinates*). You can also type a path instead, and
 then labels are saved next to the recordings.
 
-**2. Plate labels.** Click a plate and type its group (e.g. the venom extract). <kbd>Tab</kbd> saves and moves
-to the next plate. Labels are saved to `labels.json` automatically. Tick *negative control* under the name of
+**2. Slide labels.** Click a slide and type its label, its group (e.g. the venom extract). <kbd>Tab</kbd> saves and moves
+to the next slide. Labels are saved to `labels.json` automatically. Tick *negative control* under the name of
 the control plates; they are saved to `controls.json`. Each detection has a ring: click one that is not a
 mite to cross it out (*not a mite*).
 
@@ -477,7 +477,7 @@ has no frames elsewhere, so there the button is not shown: place the mites befor
 <details>
 <summary>Reading the hand-written names with Google Gemini (optional)</summary>
 
-With *Read the names from the plates* ticked (a setting, off until you tick it and saved as
+With *Read labels from glass slides* ticked (a setting, off until you tick it and saved as
 `label_reader.enabled` in `config.yaml`), the names written by hand beside the plates with no name yet are
 read by Google Gemini and filled in, to be checked (`classes/plate/label_reader.py`). It sends a picture of
 each label area to Google, so it takes the internet and a free API key from aistudio.google.com/apikey: put
@@ -515,12 +515,12 @@ up to the last recording in which it moved; with a death time in the run's setti
 still that long does it count as dead from then on; for a folder it can be changed above the chart, and is
 saved to the folder's `.settings.txt`), a table with the log-rank test of each group's survival (every zone
 with that label pooled) against the negative controls, pooled, by the same alive rule, with its p value and
-each group's LT50 (the time by which half its mites are dead) with its 95% confidence interval, a plate map,
+each group's LT50 (the time by which half its mites are dead) with its 95% confidence interval, a glass slide map,
 one card per zone, every motion score by group, the scores of the moving mites alone by group (a box plot
 the many still recordings do not pull down), and per zone a ridgeline of the rests of a mite: the time
 between two movements with at least one still recording in between.
 
-<p align="center"><img src="docs/images/app_results_top.png" width="800" alt="Results overview: counts, the close calls to check by eye, and the plate map with every mite's call"></p>
+<p align="center"><img src="docs/images/app_results_top.png" width="800" alt="Results overview: counts, the close calls to check by eye, and the glass slide map with every mite's call"></p>
 
 Click a zone to see its mites, how many moved, how many are alive and their motion scores. Click a mite to
 see its close-up and score in each recording. Every chart has a tooltip, opens what it shows when clicked,
