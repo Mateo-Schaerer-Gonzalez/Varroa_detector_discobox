@@ -184,14 +184,22 @@ class ResultsPage {
     const wait = this.results.death_minutes || 0;
     return wait
       ? `A mite counts as dead once it has been still for ${minutes(wait)}, from the recording after its last movement on; until it has been still that long, it counts as alive, as it may yet move.
-      ${ResultsPage.LEFT_OUT_RULE}`
-      : `A mite counts as alive up to the last recording in which it moved, and as dead from the next one on. ${ResultsPage.LEFT_OUT_RULE}`;
+      ${this.leftOutRule()}`
+      : `A mite counts as alive up to the last recording in which it moved, and as dead from the next one on. ${this.leftOutRule()}`;
   }
 
   // --- in the study or left out
 
   static LEFT_OUT_RULE = `Only the mites seen moving at least once are in the survival numbers: a mite never seen moving
     may have been dead from the start, or no live mite at all, so it is left out, its id greyed out and struck through.`;
+
+  static INCLUDED_RULE = `The mites never seen moving are in the survival numbers too, as ticked: one that never moved
+    counts as dead from the start once it has been still for the death time, as it may have been dead from the start, or no live mite at all.`;
+
+  // The rule for the mites never seen moving, as the page's setting (results.include_never_moved) says.
+  leftOutRule() {
+    return this.results.include_never_moved ? ResultsPage.INCLUDED_RULE : ResultsPage.LEFT_OUT_RULE;
+  }
 
   // A mite's lifeline, the server's (results.survival.mites): {in_study, time, dead,
   // lost}, `time` on the mite's own timer; one added later also has `added` and
@@ -281,17 +289,33 @@ class ResultsPage {
   // In the analysis of a folder, the time a mite must be still to count as dead can
   // be changed on the page: it is saved with the recordings, and the server sends
   // the survival numbers again, with no need to run the analysis again. A live run
-  // takes it from its settings.
+  // takes it from its settings. The tick for the mites never seen moving is on both.
   deathControl() {
-    if (ctx.mode !== "analysis") return "";
-    const [lowest, highest] = this.results.death_range;
-    return `<label class="death-field">Dead when still for
+    const death = ctx.mode !== "analysis" ? "" : (() => {
+      const [lowest, highest] = this.results.death_range;
+      return `<label class="death-field">Dead when still for
       <input type="number" class="number-input" data-death min="${lowest}" max="${highest}" step="1" value="${this.results.death_minutes || 0}"
         title="0: a mite counts as dead from the recording after its last movement"> min</label>
     <span class="hint death-status"></span>`;
+    })();
+    return `${death}<label class="death-field">
+      <input type="checkbox" data-never-moved${this.results.include_never_moved ? " checked" : ""}> Count the mites never seen moving</label>
+    <span class="hint never-moved-status"></span>`;
   }
 
   wireDeathControl(body) {
+    body.querySelectorAll("[data-never-moved]").forEach((input) => input.addEventListener("change", async () => {
+      const status = input.closest(".fig-controls").querySelector(".never-moved-status");
+      const { results } = this;
+      try {
+        const saved = await post(`/api/session/${ctx.sessionId}/never-moved`, { include: input.checked });
+        results.include_never_moved = saved.include_never_moved;
+        if (saved.survival) results.survival = saved.survival;
+        if (ctx.results === results && /^#\/(live\/)?(results|zone|mite)/.test(location.hash)) resultsView.draw();
+      } catch (error) {
+        Hint.error(status, error.message, "never-moved-status");
+      }
+    }));
     body.querySelectorAll("[data-death]").forEach((input) => input.addEventListener("change", async () => {
       const status = input.closest(".fig-controls").querySelector(".death-status");
       const { results } = this;

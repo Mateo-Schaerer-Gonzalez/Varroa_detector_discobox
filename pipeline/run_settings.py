@@ -92,6 +92,8 @@ def analysis(mite, normalizer, data_dir):
         "normalize_brightness": bool(normalizer is not None and normalizer.brightness),
         # as run_results.death_minutes() reads it (0: dead from the last movement on)
         "death_minutes": None if data_dir is None else settings_file.whole_number(data_dir, "death_minutes", 0),
+        # whether the survival numbers count the mites never seen moving too (run_results.include_never_moved())
+        "include_never_moved": None if data_dir is None else bool(settings_file.whole_number(data_dir, "include_never_moved", 0)),
         # the mask's name and its zones, `type x1 y1 x2 y2` (classes/plate/zone_masks.py): a mask made
         # on the Zones page may be changed or deleted after the run
         "zone_mask": None if data_dir is None else plate_zones.zone_mask(data_dir),

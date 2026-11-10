@@ -37,6 +37,10 @@ class DeathRequest(BaseModel):
     minutes: float
 
 
+class NeverMovedRequest(BaseModel):
+    include: bool
+
+
 class ZonesRequest(BaseModel):
     mask: str  # a zone mask's name (pipeline.list_masks())
 
@@ -161,6 +165,17 @@ def save_death_minutes(session_id: str, request: DeathRequest):
     with refused():
         death = pipeline.save_death_minutes(session["data_dir"], request.minutes)
     return {"death_minutes": death, "survival": survival_now(session_id)}
+
+
+@router.post("/api/session/{session_id}/never-moved")
+def save_include_never_moved(session_id: str, request: NeverMovedRequest):
+    """Whether the mites never seen moving count in the survival numbers, saved with
+    the recordings (left out by default). The survival numbers of the results come
+    back with the change; a live run's results take it at once, as a new version."""
+    session = get_session(session_id)
+    included = pipeline.save_include_never_moved(session["data_dir"], request.include)
+    refresh_live(session_id)
+    return {"include_never_moved": included, "survival": survival_now(session_id)}
 
 
 @router.post("/api/session/{session_id}/zones")

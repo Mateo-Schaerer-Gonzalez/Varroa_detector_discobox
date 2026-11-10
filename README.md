@@ -332,8 +332,9 @@ sequenceDiagram
 3. **Live results**: the result pages of a folder, with a panel above them: a circle per zone with mites,
    filled as its mites die (dead of those seen moving, under it), the frame rate, dropped frames, the fan and
    LEDs, the countdown to the next recording, and *Pause* / *Stop* / *Add mites*. A zone none of whose mites
-   has been seen moving yet is drawn hollow and does not count; a zone is done once each of its mites seen
-   moving is dead (or marked gone). Once every zone that counts is done, the run stops by itself and the panel
+   has been seen moving yet is drawn hollow and does not count, unless *Count the mites never seen moving* is
+   ticked (above the live results, as in a folder's analysis, and saved with the run); a zone is done once each
+   of its mites that counts is dead (or marked gone). Once every zone that counts is done, the run stops by itself and the panel
    says why. The charts' time axis covers the whole run from the start, and each recording fills in its part;
    once the run is over, the axis is what was recorded. *Follow the latest recording* shows each new recording
    as it comes; choose an older one and the page stays on it. Labels and *not a mite* marks can still change;
@@ -380,7 +381,9 @@ during a run takes the mites added since, and those counted dead, as each record
 **Mites counted dead.** After each recording, every mite that counts as dead by the *Dead when still for*
 rule (a mite never seen moving too, once still that long from its start) is no longer followed: from the
 next recording on it is neither scored nor saved, and it shows as *dead, not followed*, still. A call
-corrected by hand later cannot bring back what was not saved.
+corrected by hand later cannot bring back what was not saved. Whether the mites never seen moving count in
+the survival numbers is the tick *Count the mites never seen moving*, left out by default; ticked during a run,
+they count at once, and the run then waits for them to die by the rule.
 
 **Ground truth and poke test during a run.** *Ground truth* and *Poke test* on the live panel open the
 calibration's pages on the run's recordings so far, once the first is analysed: label the mites as the
@@ -513,7 +516,8 @@ its frames are shrunk, and keeps the mites found as a live run keeps its added m
 its 95% confidence interval (Kaplan-Meier, Greenwood's formula on the log-log scale; a mite counts as alive
 up to the last recording in which it moved; with a death time in the run's settings, only once it has been
 still that long does it count as dead from then on; for a folder it can be changed above the chart, and is
-saved to the folder's `.settings.txt`), a table with the log-rank test of each group's survival (every zone
+saved to the folder's `.settings.txt`; the mites never seen moving are left out unless *Count the mites never
+seen moving* is ticked beside it, and then count as dead from the start once still for the death time), a table with the log-rank test of each group's survival (every zone
 with that label pooled) against the negative controls, pooled, by the same alive rule, with its p value and
 each group's LT50 (the time by which half its mites are dead) with its 95% confidence interval, a glass slide map,
 one card per zone, every motion score by group, the scores of the moving mites alone by group (a box plot

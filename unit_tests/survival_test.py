@@ -236,6 +236,9 @@ def test_the_live_page_fills_each_zones_circle_by_its_mites_dead():
     assert [zone["counts"] for zone in progress.zones()] == [True, False] and progress.all_done()
     # No zone that counts yet: the run goes on.
     assert not ZoneProgress(results_with({(1, ""): [NEVER]}), 5).all_done()
+    # With the tick on, zone 2's mite never seen moving counts too: it is dead by the rule, so the zone is done.
+    included = {zone["id"]: zone for zone in ZoneProgress(done, 5, include_never_moved=True).zones()}
+    assert (included[2]["counts"], included[2]["mites"], included[2]["done"]) == (True, 1, True)
 
 
 def test_the_mites_dead_are_no_longer_followed_never_moved_ones_too():
@@ -283,6 +286,18 @@ def test_a_mite_never_seen_moving_is_left_out():
     assert report["n_left_out"] == 1
     log_rank = SurvivalReport(RESULTS, controls=[3]).describe()["log_rank"]
     assert log_rank["rows"][0]["n_mites"] == 2  # venom
+
+
+def test_the_mites_never_seen_moving_count_when_the_tick_is_on():
+    # Zone 1 holds NEVER and FIRST_ONLY; NEVER counts as dead from the start (its rule), as in the study.
+    report = SurvivalReport(RESULTS, include_never_moved=True).describe()
+    assert report["include_never_moved"] is True
+    assert (report["zones"][1]["n_mites"], report["zones"][1]["n_left_out"]) == (2, 0)
+    assert report["zones"][1]["alive"] == [50.0, 0.0, 0.0]  # NEVER dead at 0, FIRST_ONLY dead at 10
+    assert report["n_left_out"] == 0
+    assert report["mites"]["0"]["in_study"] is True and report["mites"]["0"]["dead"] is True
+    # and the default still leaves it out
+    assert SurvivalReport(RESULTS).describe()["include_never_moved"] is False
 
 
 def test_each_mites_lifeline():

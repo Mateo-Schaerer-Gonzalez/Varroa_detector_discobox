@@ -137,7 +137,7 @@ def test_a_mite_gone_for_good_is_censored_where_it_was_last_there():
     assert survival.survival([True, False, None, None]) == (10, True)   # dead by then
     assert survival.survival([True, None, True, False]) == (30, True)   # a gap says nothing
     assert survival.survival([True, False, False, False]) == (10, True)
-    assert not SurvivalAnalysis.in_study([None, None, False, False])
+    assert not survival.in_study([None, None, False, False])
 
 
 def test_the_survival_rate_takes_a_lost_mite_out_of_the_count():

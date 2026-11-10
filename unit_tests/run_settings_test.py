@@ -53,7 +53,7 @@ def test_the_workbook_has_a_sheet_per_group_and_the_settings(tmp_path):
     assert settings["analysis", "threshold"] == get_default_config().mite.motion_threshold
     assert settings["code", "commit"] == pipeline.COMMIT
     assert settings["detector", "min_circularity"] == get_default_config().detector.min_circularity
-    assert len(settings) < 63
+    assert len(settings) < 64  # 63, and the mites never seen moving counted or not (2026-11-10): a parameter that changes the survival numbers
 
 
 def test_the_group_summary_has_the_percent_alive_the_page_shows(tmp_path):

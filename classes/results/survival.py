@@ -10,7 +10,10 @@ until then it may yet move, so it counts as alive.
 
 Only the mites seen moving at least once are in the study: one never seen
 moving may have been dead from the start, or no live mite at all, so it is left
-out of every survival number (SurvivalAnalysis.in_study).
+out of every survival number (SurvivalAnalysis.in_study). With
+`include_never_moved` (the user's choice of 2026-11-10) they are in it too, by
+the same rule: one that never moved counts as dead from the start once it has
+been still for the death time.
 
 A mite the user marked gone in a recording, e.g. fallen off the plate
 (classes/results/call_corrections.py), has None there instead of a call. It is followed
@@ -101,23 +104,23 @@ def death_after(calls):
 
 
 class SurvivalAnalysis:
-    def __init__(self, times, death_minutes=0):
-        """`times`: the recordings' times in minutes, in order."""
+    def __init__(self, times, death_minutes=0, include_never_moved=False):
+        """`times`: the recordings' times in minutes, in order. `include_never_moved`:
+        the mites never seen moving are in the study too (see in_study())."""
         self.times = list(times)
         self.death_minutes = death_minutes or 0
+        self.include_never_moved = bool(include_never_moved)
         # each recording's time on the clock the survival is read on: since the first recording
         self.clock = since_start(self.times, 0) if self.times else []
 
-    @staticmethod
-    def in_study(moving):
-        """Whether a mite counts in the survival numbers: only once it has been
-        seen moving, so it is known to have been alive."""
-        return any(moving)
+    def in_study(self, moving):
+        """Whether a mite counts in the survival numbers: once it has been seen
+        moving, so it is known to have been alive; any mite with include_never_moved."""
+        return self.include_never_moved or any(moving)
 
-    @classmethod
-    def study(cls, movings):
+    def study(self, movings):
         """The mites of `movings` in the study, see in_study()."""
-        return [moving for moving in movings if cls.in_study(moving)]
+        return [moving for moving in movings if self.in_study(moving)]
 
     @staticmethod
     def last_movement(moving):
@@ -316,16 +319,16 @@ class SurvivalAnalysis:
 
 
 class SurvivalReport:
-    def __init__(self, results, death_minutes=0, controls=()):
+    def __init__(self, results, death_minutes=0, controls=(), include_never_moved=False):
         """`results` as pipeline describes them for the pages; `controls` the ids
-        of the zones ticked as negative controls."""
-        self.analysis = SurvivalAnalysis(results["times"], death_minutes)
+        of the zones ticked as negative controls; `include_never_moved` as SurvivalAnalysis."""
+        self.analysis = SurvivalAnalysis(results["times"], death_minutes, include_never_moved)
         self.groups = ResultGroups(results)
         self.controls = sorted(set(controls))
 
     def movings(self, zone_ids):
         """The movement of the mites of the zones `zone_ids` in the study."""
-        return SurvivalAnalysis.study(self.all_movings(zone_ids))
+        return self.analysis.study(self.all_movings(zone_ids))
 
     def all_movings(self, zone_ids):
         return [self.groups.seen(mite) for mite in self.groups.mites_in(zone_ids)]
@@ -375,7 +378,8 @@ class SurvivalReport:
             "groups": groups,
             "zones": zones,
             "mites": {mite["id"]: self.lifeline(self.groups.seen(mite)) for mite in mites},
-            "n_left_out": sum(1 for mite in mites if not SurvivalAnalysis.in_study(self.groups.seen(mite))),
+            "n_left_out": sum(1 for mite in mites if not analysis.in_study(self.groups.seen(mite))),
+            "include_never_moved": analysis.include_never_moved,
             "log_rank": self.log_rank(),
         }
 
@@ -394,7 +398,7 @@ class SurvivalReport:
         from the start of its follow-up. A mite a live run added later also has
         `added`, the run's time of the recording it was added in, and `at`, the
         run's time of `time`."""
-        if not SurvivalAnalysis.in_study(moving):
+        if not self.analysis.in_study(moving):
             return {"in_study": False, "time": None, "dead": None, "lost": False}
         time, dead = self.analysis.survival(moving)
         lost = not dead and SurvivalAnalysis.followed(moving) < len(moving) - 1

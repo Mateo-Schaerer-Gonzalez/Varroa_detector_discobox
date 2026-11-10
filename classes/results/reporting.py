@@ -114,15 +114,15 @@ def _add_mite_map(writer, image_path):
     writer.sheets["mite_map"].add_image(picture, "A3")
 
 
-def _add_group_summary(writer, mite_data, death_minutes, starts):
+def _add_group_summary(writer, mite_data, death_minutes, starts, include_never_moved=False):
     """The per-group summary and, below it, the percent of each group alive by
     recording (workbook_sheets.alive_table())."""
     summary = summarise_by_group(_observed(mite_data))
     summary.to_excel(writer, sheet_name="group_summary", index=False)
     below = len(summary) + 2  # a blank row after the summary and its header
-    pd.DataFrame(columns=[workbook_sheets.alive_title(death_minutes)]).to_excel(
+    pd.DataFrame(columns=[workbook_sheets.alive_title(death_minutes, include_never_moved)]).to_excel(
         writer, sheet_name="group_summary", index=False, startrow=below)
-    workbook_sheets.alive_table(mite_data, death_minutes, starts).to_excel(
+    workbook_sheets.alive_table(mite_data, death_minutes, starts, include_never_moved).to_excel(
         writer, sheet_name="group_summary", index=False, startrow=below + 1)
 
 
@@ -134,18 +134,21 @@ def write_excel(mite_data, out_dir, mite_map=None, settings=None, starts=None):
     and, with `settings` (a dict, see pipeline/run_settings.py), a sheet of
     every setting the results were made with; all but the scores and the
     measurements without the recordings in which a mite was marked gone. The
-    percent alive goes by the settings' death_minutes (0 without) and `starts`
+    percent alive goes by the settings' death_minutes (0 without), whether the
+    mites never seen moving count in it (their setting, left out without), and `starts`
     ({mite id: the recording a live run added it in})."""
     path = Path(out_dir) / EXCEL_NAME
     last_moved, scores = last_moved_table(_observed(mite_data)), scores_table(mite_data)
-    death_minutes = ((settings or {}).get("analysis") or {}).get("death_minutes") or 0
+    analysis_settings = (settings or {}).get("analysis") or {}
+    death_minutes = analysis_settings.get("death_minutes") or 0
+    include_never_moved = bool(analysis_settings.get("include_never_moved"))
     with pd.ExcelWriter(path, engine="openpyxl") as writer:
         last_moved.to_excel(writer, sheet_name="mites", index=False)
         scores.to_excel(writer, sheet_name="scores", index=False)
         if mite_map is not None:
             _add_mite_map(writer, mite_map)
         mite_data.to_excel(writer, sheet_name="measurements", index=False)
-        _add_group_summary(writer, mite_data, death_minutes, starts)
+        _add_group_summary(writer, mite_data, death_minutes, starts, include_never_moved)
         moving_table(_observed(mite_data)).to_excel(writer, sheet_name="moving", index=False)
         tables = workbook_sheets.group_tables(last_moved, scores)
         names = workbook_sheets.group_sheet_names(tables, taken=[*writer.sheets, workbook_sheets.SETTINGS_SHEET])

@@ -44,7 +44,7 @@ def publish_live(run, write_files):
             preview_images.write_preview(run.analysis.first_frame, run.out_dir)
             run.preview_written = True
         _write_live_files_later(run)
-    progress = ZoneProgress(results, run_results.death_minutes(run.run_dir))
+    progress = ZoneProgress(results, run_results.death_minutes(run.run_dir), run_results.include_never_moved(run.run_dir))
     run.zones = progress.zones()
     if going:
         _follow_live(run, progress, len(results["times"]))
@@ -124,7 +124,9 @@ def start_live(live_id, labels=None):
     run.analysis.zone_manager.by_hand = hand_mites.points(run.run_dir)  # those placed since it was opened
     if labels is not None:
         plate_labels.save_labels(run.run_dir, labels)
+    included = run_results.include_never_moved(run.run_dir)  # ticked before the start: kept
     (run.run_dir / paths.SETTINGS_FILENAME).write_text(run.source.settings_text, encoding="utf-8")
+    run_results.save_include_never_moved(run.run_dir, included)
     if run.save_frames:
         RoiVideo.check_codec(run.run_dir)
     run.session.recorder = Recorder(run.run_dir) if run.save_frames else None

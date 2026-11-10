@@ -68,7 +68,7 @@ from pipeline.output_files import finish_files, results_file
 from pipeline.run_settings import COMMIT
 from pipeline.run_results import (
     review_mites, save_review_mites, death_minutes, death_minutes_range, save_death_minutes, describe_movement,
-    describe_survival,
+    describe_survival, include_never_moved, save_include_never_moved,
 )
 from pipeline.folder_analysis import (
     open_session, place_mite, save_zone_mask, save_min_new_mites, run_analysis, correct_call, review_again,

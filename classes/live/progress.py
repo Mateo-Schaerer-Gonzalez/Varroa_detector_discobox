@@ -16,9 +16,10 @@ from classes.results.survival import SurvivalAnalysis
 
 
 class ZoneProgress:
-    def __init__(self, results, death_minutes):
-        """`results` as pipeline describes them for the pages."""
-        self.analysis = SurvivalAnalysis(results["times"], death_minutes)
+    def __init__(self, results, death_minutes, include_never_moved=False):
+        """`results` as pipeline describes them for the pages; the mites never seen
+        moving count too with `include_never_moved` (SurvivalAnalysis.study())."""
+        self.analysis = SurvivalAnalysis(results["times"], death_minutes, include_never_moved)
         self.groups = ResultGroups(results)
         self.last = len(results["times"]) - 1
 
@@ -29,7 +30,7 @@ class ZoneProgress:
         it has mites in the study, so it holds the run up until `done`."""
         described = []
         for zone in self.groups.zones:
-            study = SurvivalAnalysis.study([self.groups.seen(mite) for mite in self.groups.mites_in([zone["id"]])])
+            study = self.analysis.study([self.groups.seen(mite) for mite in self.groups.mites_in([zone["id"]])])
             dead = sum(1 for moving in study if self.analysis.counts_dead(moving))
             gone = sum(1 for moving in study if SurvivalAnalysis.followed(moving) < self.last)
             described.append({

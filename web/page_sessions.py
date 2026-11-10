@@ -49,9 +49,11 @@ def refresh_live(session_id):
 
 def survival_of(session_id, results):
     """The survival numbers of `results`, by the time a mite must be still to count
-    as dead and the negative controls saved with the session's recordings."""
+    as dead, the negative controls and whether the mites never seen moving count,
+    all saved with the session's recordings."""
     data_dir = get_session(session_id)["data_dir"]
-    return pipeline.describe_survival(results, pipeline.death_minutes(data_dir), pipeline.load_controls(data_dir))
+    return pipeline.describe_survival(results, pipeline.death_minutes(data_dir), pipeline.load_controls(data_dir),
+                                      pipeline.include_never_moved(data_dir))
 
 
 def for_pages(session_id, results):
@@ -63,6 +65,7 @@ def for_pages(session_id, results):
     return {**pipeline.describe_movement(results), "death_minutes": pipeline.death_minutes(data_dir),
             "death_range": pipeline.death_minutes_range(),
             "review_mites": {"mites": pipeline.review_mites(data_dir), "default": pipeline.review_mites()},
+            "include_never_moved": pipeline.include_never_moved(data_dir),
             "controls": pipeline.load_controls(data_dir), "survival": survival_of(session_id, results)}
 
 

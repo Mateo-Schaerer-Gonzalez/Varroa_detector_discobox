@@ -131,6 +131,9 @@ The user's choices for live runs (2026-10-20), not to be undone:
   confirm) are followed from the next recording, numbered after the zone's mites in reading
   order. Each mite and zone runs on its own clock from when it was added (not
   left-truncation); a zone all of whose mites were added later is on its own clock too.
+- **Mites never seen moving** are left out of the survival numbers by default. A tick (`include_never_moved`
+  line of the recordings' `.settings.txt`, `pipeline.run_results`, the user's choice of 2026-11-10) counts them, in a
+  folder's analysis and in a live run's panel and stop rule; `SurvivalAnalysis.in_study()` is per instance for this.
 - **Dead mites** (by the death rule, never-moved ones too) are no longer scored or saved;
   a correction can't revive them. Live runs require `death_minutes` > 0.
 - **Zone circles** replace the run bar. A zone is done when all mites seen moving are dead

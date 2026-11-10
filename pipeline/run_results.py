@@ -80,6 +80,22 @@ def death_minutes_range():
     return [lowest, highest]
 
 
+INCLUDE_NEVER_MOVED = "include_never_moved"  # the line of a run's .settings.txt: 1 to count the mites never seen moving
+
+
+def include_never_moved(data_dir):
+    """Whether the survival numbers count the mites never seen moving too, from the
+    setting saved with the recordings; False (left out, as before) without it."""
+    return bool(settings_file.whole_number(data_dir, INCLUDE_NEVER_MOVED, 0))
+
+
+def save_include_never_moved(data_dir, included):
+    """Make the mites never seen moving count in the survival numbers of `data_dir`
+    (True) or not (False), saved with the recordings. Returns the setting now."""
+    settings_file.save(data_dir, INCLUDE_NEVER_MOVED, 1 if included else 0)
+    return include_never_moved(data_dir)
+
+
 def save_death_minutes(data_dir, minutes):
     """Make `minutes` the time a mite must be still to count as dead for the
     recordings in `data_dir`: the death_minutes line of their .settings.txt,
@@ -156,11 +172,12 @@ def describe_movement(results):
     return {**results, **MovementReport(results).describe()}
 
 
-def describe_survival(results, death_minutes=0, controls=()):
+def describe_survival(results, death_minutes=0, controls=(), include_never_moved=False):
     """The survival numbers of `results` (as run_analysis() returns them) for the
     result pages, with `death_minutes` the time a mite must be still to count as
-    dead and `controls` the zones ticked as negative controls: the mites alive
-    over time per group and per zone, and every group, its zones pooled, against
-    the controls by the log-rank test (see classes/results/survival.py). They change with
-    those two, with no need to run the analysis again."""
-    return SurvivalReport(results, death_minutes, controls).describe()
+    dead, `controls` the zones ticked as negative controls and `include_never_moved`
+    whether the mites never seen moving count too: the mites alive over time per
+    group and per zone, and every group, its zones pooled, against the controls by
+    the log-rank test (see classes/results/survival.py). They change with those,
+    with no need to run the analysis again."""
+    return SurvivalReport(results, death_minutes, controls, include_never_moved).describe()
