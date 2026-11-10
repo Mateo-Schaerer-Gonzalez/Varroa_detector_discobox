@@ -2,7 +2,7 @@
 
 *Agroscope · status of 30 October 2026 · part 2 of 3*
 
-*Part 1 (`1_user_manual.md`) explains how to use the app. Part 3 (`3_performance.md`) compares the app with the Discobox's original software in accuracy, speed, storage and memory use. This part guides the reader through the algorithm's steps, so that its results are easier to interpret. Every step names where in the code it is implemented, for readers who want to look at it, and ends with the same step run on one real mite.*
+*Part 1 (`1_user_manual.md`) explains how to use the app. Part 3 (`3_performance.md`) compares the app with the Discobox's original software in accuracy, speed, storage and memory use. This part guides the reader through the algorithm's steps, so that its results are easier to interpret. Every step names where in the code it is implemented, for readers who want to look at it, and ends with the same step run on one real mite recording.
 
 ```mermaid
 flowchart LR
@@ -17,10 +17,10 @@ flowchart LR
 ```
 *Flowchart of the analysis pipeline.*
 
-**Notation.** A *recording* is a short burst of $N$ grey frames $I_1,\dots,I_N$ ($N$ = `frame_count`, taken at `fps`; live runs
+**Notation.** A *recording* is a short burst of $N$ grey frames $I_1,\dots,I_N$ ($N$ = `frame_count`, taken at `fps`; live recordings were optimized and
 are fixed at 3 s × 30 fps, so 90 frames; older recordings have other numbers of frames). Grey levels
 run from 0 (black) to 255. $\operatorname{var}_t$ is the variance over the frames of a recording (of one pixel's value across the $N$ frames), $\operatorname{med}$ a median. All pixel distances are in
-pixels (px) of the 2064 × 1544 camera image.
+pixels (px) of the 2064 × 1544 full camera image. A run is a suite of X recordings, as programmed by the user.
 
 **Parameters.** The text refers to each setting by its name in the results workbook's
 `settings` sheet (and `run_settings.json`), such as `stabilizer_rim_px`, rather than by its
@@ -79,7 +79,7 @@ the still one, difference 0.0 for both.
 
 The mites are found once, on the first frame of the first recording.
 
-1. **Mask.** `coords_pixel.txt` divides the image into mite zones (the plates) and label zones (the hand-written names). The detector runs only on the mite zones, so the writing is never taken for a mite.
+1. **Mask.** `coords_pixel.txt` divides the image into mite zones (the slides) and label zones (the hand-written names). The detector runs only on the mite zones, so the writing is never identified as a mite.
 2. **Blob detection.** OpenCV's `SimpleBlobDetector` thresholds the masked image at every
    grey level from `min_threshold` to `max_threshold` in steps of `threshold_step`, finds the connected dark regions at each level,
    and keeps the regions whose centres agree across several levels. A region then has to
@@ -95,8 +95,8 @@ The mites are found once, on the first frame of the first recording.
 
 3. **Mite ROI.** The blob detector gives a centre $(x, y)$ and a diameter $s$. The mite's **ROI** is the
    square $[x - s/2,\, x + s/2] \times [y - s/2,\, y + s/2]$.
-4. **Zone and id.** A mite belongs to the zone (plate, or half-plate with two zones per
-   plate, `zones_per_plate`) that holds its whole box. Inside a zone the mites are sorted in reading order: mite `13.4` is the fourth mite of zone 13.
+4. **Zone and id.** A mite belongs to the zone (sldie, or half-slide with two zones per
+   slide, `zones_per_plate`) that holds its whole box. Inside a zone the mites are sorted in reading order: mite `13.4` is the fourth mite of zone 13.
 
 ![Detection in three steps on plates 6 and 7](images/detector_steps.png)
 
@@ -104,7 +104,7 @@ Labels, ground truth and corrections are saved **by position** (matched to a mit
 10 px, `classes/plate/positions.py`), not by id, so they survive a change to the detector.
 
 In a live run each mite is also *followed* (`classes/live/`, `motion_analysis.py`):
-before each recording the detector runs on its first frame, and each mite moves to the
+before each recording is the analysed the detector runs on the first frame, and each mite's identity/position is attributed to the
 nearest blob of its own zone at most `follow_px` away. A mite
 with no blob in reach, or one less than 2 px away, stays where it is.
 
@@ -120,8 +120,8 @@ zones.assign_mites(mites)                               # each mite to its zone;
 
 ![Detection on the whole image](images/walk_1_detection.png)
 
-**a.** The first frame. **b.** Only the plates are kept; the rest (the box, the hand-written
-labels) is painted white, so it can't be taken for a mite. **c.** The blob detector finds
+**a.** The first frame. **b.** Only the slides are kept; the rest (the box, the hand-written
+labels) is covered with white, so it can't be detected as a mite**c.** The blob detector finds
 10 mites, all on plate 7. (Plate 13's four mites were added during the run with the *Add
 mites* button: they are followed from recording 1 on.)
 
@@ -129,9 +129,9 @@ mites* button: they are followed from recording 1 on.)
 
 `SimpleBlobDetector` thresholds the image at 18 grey levels (30, 40, …, 200) and keeps
 the dark regions whose centre stays put across several levels and that pass the area,
-circularity, convexity and inertia filters of `config.yaml`. Three of the levels are shown:
-at 40 only the mites' darkest cores; at 80 the whole mites; at 110 the plate's texture
-starts to come through too, but those regions fail the filters. Right: the 10 mites kept,
+circularity, convexity and inertia filters of `config.yaml`. Three of the levels are shown (left):
+at 40 only the mites' darkest cores; at 80 the whole mites; at 110 the slide's texture
+starts to come through too, but those regions fail the filters. Right: the 10 mites are kept,
 numbered in reading order (two mite heights per line, then left to right).
 
 ---
@@ -141,21 +141,21 @@ numbered in reading order (two mite heights per line, then left to right).
 *Code: `classes/scoring/plate_stabilizer.py`.*
 
 For each recording, each mite gets a **patch**: its ROI plus $p$ = `metric_pad` px on every side,
-cut from every frame, giving a stack of $N$ small images. Everything after this point
+cut from every frame, giving a stack of $N$ small images. Every analysis after this point
 looks only at the patch. Before the patch is cut, the **stabiliser** (switched on by `stabilize_plate`) measures how far the
 mite moved as a whole in each frame and cuts each patch shifted back by that amount.
 
 ### 2.1 Why stabilisation is crucial
 
-The score looks for changes on the mite's outline. A shaking plate moves the mite, often by less than a pixel. Small as they are, such sub-pixel shifts change the pixels all along the outline, and left uncorrected they degrade the calls considerably.
+The score looks for changes on the mite's outline. A shaking plate moves the mite, often by less than a pixel. Small as they are, such sub-pixel shifts change the pixels all along the outline, and left uncorrected they degrade the accuracy considerably.
 
 
-The long run's plates shake by up to 0.24 px within a recording. Without stabilisation,
-the shaky recordings are where most still mites get called moving. If that happens late in a run, it pushes death times back by hours, which makes the calls useless.
+In the long runs of 2026 plates shake by up to 0.24 px within a recording. Without stabilisation,
+the shaky recordings are where most still mites get called moving. If shaking occurs late in a run, death times are pushed back by hours, which makes the calls useless.
 
 ### 2.2 Overview and rationale of the stabiliser's design
 
-Since the mites are glued onto the plates, the plate's shake is passed directly to the mite. Thus the shake can be measured directly on the mites: find where the mite is in each frame, and move each frame back so that the mite sits
+Since the mites are glued onto the slides, the slides and plate's shake are passed directly to the mite. Thus the shake can be measured directly on the mites: find where the mite is in each frame, and move each frame back so that the mite sits
 where it was in the first.
 
 To find the mite's position we use its "centre of darkness": the average position of its pixels weighted by their darkness, which is its centre of mass if darkness were density. This gives sub-pixel accuracy for two reasons: a shift of less than a pixel already shows in the changing intensities of the edge pixels (some get slightly lighter, others darker), and averaging over the whole body makes random pixel noise largely cancel out.
@@ -166,12 +166,12 @@ The main reason to stabilise each mite on its own, rather than with one shift pe
 
 ### 2.3 Step by step
 
-**Step 1: light of the plate.** Take a slightly larger crop, the box plus `stabilizer_pad_px` pixels. Its outer
-ring of `stabilizer_rim_px` pixels (the *rim*) is bare plate. In each frame $t$ the plate's light is
+**Step 1: light intensity of the slides.** Take a slightly larger crop, the box plus `stabilizer_pad_px` pixels. Its outer
+ring of `stabilizer_rim_px` pixels (the *rim*) is bare slide, with no mite. In each frame $t$ the slide's light intensity is
 
 $$P_t = \operatorname{med}_{\mathbf x \in \text{rim}} I_t(\mathbf x).$$
 
-**Step 2: darkness.** Each pixel's darkness is the share of the plate's median light it takes
+**Step 2: darkness.** Each pixel's darkness is the share of the slide's median light it takes
 away:
 
 $$D_t(\mathbf x) = \max\!\left(0,\; 1 - \frac{I_t(\mathbf x)}{P_t}\right).$$
@@ -203,7 +203,7 @@ c_{t,y} = \frac{\sum_{\mathbf x} w_t(\mathbf x)\,y}{\sum_{\mathbf x} w_t(\mathbf
 
 
 
-If some frame's centre is a whole pixel or more from the mean centre, the mask $B$ is moved
+If some frame's centre is a whole pixel away or more from the mean centre, the mask $B$ is moved
 by those whole pixels for that frame and the centre is computed again, so no part of the
 mite falls outside its mask.
 
@@ -214,7 +214,7 @@ $$\mathbf s_t = \mathbf c_t - \mathbf c_1 $$
 Each component is clipped to ±(`stabilizer_margin_px` − 4) px, 12 px: the Lanczos cut reads 4 px
 beyond the point it interpolates, and a saved run keeps only `stabilizer_margin_px` round the patch.
 Shifts that large usually belong to a mite that came unglued and walks, not to a shaking plate. A mite whose centre can't be found in some frame takes the
-plate's shift: the median of the other mites' shifts.
+slide's shift: the median of the other mites' shifts.
 
 **Step 6: cut.** Each frame's patch is cut shifted back by $-\mathbf s_t$: the value the
 stabilised frame has at position $\mathbf x$ is the one the original frame has where the mite
@@ -233,12 +233,11 @@ reaches past the image's edge, the image is mirrored in.
 ### 2.4 What it records, and what it doesn't handle
 
 The app records, per mite and recording, the largest shift (`shake`) and how far the
-mite's shift strayed from the plate's median (`stray`). The results page plots the median
-shake per recording, to spot a recording or a stretch of time in which the plate shook.
+mite's shift strayed from the support plate's median (`stray`). The results page plots the median
+shake per recording, to spot a recording or a stretch of time in which the support plate shook.
 
-A mite that walks more than `stabilizer_margin_px` px within a recording, or a plate displaced by many pixels
-*between* recordings, is beyond what the stabiliser follows. The second is handled in live
-runs by moving each mite's box to the mite before every recording.
+A mite that walks more than `stabilizer_margin_px` px within a recording, or a slide displaced by many pixels
+*between* recordings, is beyond what the stabiliser follows. The slide displacement is handled by the app moving each mite's Patch to the mite's newly detected position before every recording.
 
 ### 2.5 On the example mites
 
@@ -256,7 +255,7 @@ patch  = PlateStabilizer.cut(frames, box, pad=16, shifts=0)   # box + 16 px, eve
 The patch is the mite's box plus 16 px on every side, in all 90 frames. By eye the frames
 look the same; the **variance over the frames** (right) shows where pixels changed: a few
 bright spots on the mite's edge, where its legs moved. Everything after this point is
-computed from this stack of 90 small images.
+computed from this stack of 90 small images (patches).
 
 **Holding it still.**
 
@@ -267,9 +266,9 @@ roi    = PlateStabilizer.cut(frames, box, 16, shifts)   # every frame moved back
 
 ![How the stabilizer finds the mite's centre](images/walk_3_stabilizer_centre.png)
 
-**a.** A crop of the box + 8 px; its outer 6 px (blue) are bare plate and give the
-plate's light in each frame. **b.** Each pixel's *darkness*, the share of the plate's
-light it takes away. **c.** The body mask: at least 0.3 as dark as the darkest pixel,
+**a.** A crop of the box + 8 px; its outer 6 px (blue) are bare support plate and give the
+slides's light intensity in each frame. **b.** Each pixel's *darkness*, the share of the slides's
+light intensity it takes away. **c.** The body mask: at least 0.3 as dark as the darkest pixel,
 grown by 2 px (orange); the green dots are the centre of darkness in each of the 90
 frames, all on top of each other. **d.** The shift $\mathbf s_t = \mathbf c_t - \mathbf c_1$
 per frame: for this still mite at most 0.03 px, only noise.
@@ -282,13 +281,13 @@ still-labelled recording (mite 12.10, recording 278, 10 frames), whose plate mov
 up: a shift far too small to see moves the dark edge across its pixels. Moved back by its
 shift (middle), most of the ring is gone (the 99th percentile of the variance drops from 7.6
 to 5.6 grey levels²), and **the score drops sevenfold: 0.0144 → 0.0020**, far below the
-threshold.
-**Bottom:** the moving mite. Its centre moves by up to 0.14 px (its legs pull it), and the
-legs' changes stay: stabilising removes a shift of the whole mite, not a leg moving.
+threshold, restauring the still status of the mite.
+**Bottom:** a moving mite. Its centre moves by up to 0.14 px (its legs pull it), and the
+legs' changes stay after stabilising: stabilising removes a shift of the whole mite, not a leg moving.
 
 ---
 
-## 3. The motion score: outline variability
+## 3. The motion score: a mesure of outline variability
 
 *Code: `classes/scoring/analyzer.py`, `_outline_variability`, `outline_variability_profile`,
 `plate_noise`, `_lit`, `_outline_rays`.*
@@ -306,29 +305,29 @@ The score uses three regions of the patch:
 
 ![The regions of the score's patch](images/score_regions.png)
 
-*The same mite as in section 2, stabilised. a. Blue: the rim, the outermost 6 px, always bare plate.
-It gives the lamp's light in each frame (section 3.1) and the noise floor (section 3.6). Grey and blue: the
-outer 8 px, where the body isn't looked for, so a neighbour at the patch's edge isn't taken
-for the mite. Orange: the body mask (section 3.2). b. The 64 rays from the centre (section 3.3), the body's
+*The same mite as in section 2, stabilised. a. Blue: the rim, the outermost 6 px, always bare slide.
+It gives the LEDS's light in each frame (section 3.1) and the noise floor (section 3.6). Grey and blue: the
+outer 8 px, where the body isn't looked for, so a neighbouring mite at the patch's edge isn't taken
+for the focal mite. Orange: the body mask (section 3.2). b. The 64 rays from the centre (section 3.3), the body's
 edge on each (solid, section 3.4) and the outline band ±1.5 px round it (dotted, section 3.5). c. The noise
 floor: the variance over the frames of each of the rim's 936 pixels; their median is
-$\sigma^2$ (section 3.6). The median ignores the long right tail, where a neighbour or a speck
-changes a few rim pixels.*
+$\sigma^2$ (section 3.6). The median ignores the long right tail(c), where a neighbour or a speck would
+change a few rim pixels.*
 
 The example below is mite 7.1 in recording 8 of the poke run of 22 October 2026 (3 s,
 30 fps, 90 frames), labelled moving by eye.
 
 ![The outline unrolled into 64 rays](images/outline_unrolled.png)
 
-### 3.1 Even out the lamp
+### 3.1 Even out the light intensity variations
 
-The patch's outermost `outline_rim_px` are bare plate (the rim, $R$). Per frame, the plate's light is
+The patch's outermost `outline_rim_px` are bare slide (the rim, $R$). Per frame, the slide's light intensity is
 $P_t = \operatorname{med}_{\mathbf x\in R} I_t(\mathbf x)$, and its mean over the recording is
-$L = \frac{1}{N}\sum_t P_t$. Every frame is scaled to the same plate light:
+$L = \frac{1}{N}\sum_t P_t$. Every frame is scaled to the same slide light intensity:
 
 $$\tilde I_t(\mathbf x) = I_t(\mathbf x)\,\frac{L}{P_t}.$$
 
-A flickering lamp then changes nothing. (If the plate is black, $P_t \le 0$, the patch
+A flickering light from the LEDs then changes nothing. (If the plate is black, the patch
 gets no score.)
 
 ### 3.2 Find the body once, its centre in every frame
@@ -336,12 +335,12 @@ gets no score.)
 Darkness $D_t$, the body mask $B$ and the centre $\mathbf c_t$ are found as in the
 stabiliser, with these differences: the body is the piece darker than `body_share` $\cdot\,\delta$,
 with $\delta$ the single darkest value of $\bar D$ away from the patch's edge, grown by `body_grow_px`; the outer 8 px of
-the patch are left out of the mask, so a neighbour at the edge isn't taken for the mite; and the mask is not moved along for frames where
+the patch are left out of the mask, so a neighbouring mite at the edge isn't taken for the focal mite; and the mask is not moved along for frames where
 the centre strays a pixel or more. The mask is found once, on $\bar D$, and is the same in
-every frame; the centre is found in every frame.
+every frame; by contrast, the centre of the mite is found in every frame.
 
-If the mite or the plate moved a little within the recording, $\mathbf c_t$ moves with
-it, and the rays below start from where the mite is **in that frame**. Shake the stabiliser
+If the mite or the slide moved a little within the recording, $\mathbf c_t$ moves with
+it, and the rays below start from where the mite centre is **in that frame**. Shake the stabiliser
 left over then does not count as a change of outline.
 
 Why not simply threshold the darkness in each frame and take the centre of what is left?
@@ -397,7 +396,7 @@ below $10^{-6}$ (frames identical), the score is 0.
 ### 3.6 Divide by the recording's noise floor
 
 The camera's noise in this recording, at this mite, is the median over the rim's pixels of
-their variance over the frames (lamp-corrected as in 3.1):
+their variance over the frames (light variation-corrected as in 3.1):
 
 $$\sigma^2 = \operatorname{med}_{\mathbf x\in R}\; \operatorname{var}_t\,\tilde I_t(\mathbf x).$$
 
@@ -409,7 +408,7 @@ $$a_k = v_k / \sigma^2.$$
 This also makes the score robust to changes in plate colour and lighting, as camera noise grows with brightness.
 
 If $\sigma^2 = 0$ (frames with no noise at all, or a black plate), the profile is left
-undivided and the app raises a `NoNoiseWarning`: that score isn't on the threshold's scale.
+undivided and the app raises a `NoNoiseWarning`: that score isn't on the threshold's scale. (in a real recording this will never happen as there is always camera noise)
 
 ### 3.7 Add the $K$ values up as vectors
 
@@ -441,30 +440,30 @@ $$\text{score} = \big|X[1]\big|.$$
 ![The 64 values and their vector sum](images/outline_vector_sum.png)
 
 
-**Do still mites land on the same level?** 
+**are the scores of still mites comparable across different recordigns?** 
 
 ![Still recordings' noise floor and score, per dataset](images/still_noise_floor.png)
 
 *a. The noise floor at each mite. b. The still scores, in grey
-levels². c. The same score divided by the floor, as the app computes it now (log scales in
-b and c). Each dot is one mite's median over its still recordings; the black bar is the
+levels². c. The same score divided by the floor, as the app computes it (log scales in
+b and c). Each dot is one mite's median still score; the black line is the
 median of the dataset's still recordings. Data: `results/scripts/noise_floor.csv.gz`
 (`scripts/noise_floor.py`).*
 
 ### 3.8 How the app displays the score
 
-The mite page draws the profile over the mite's clip: a dot per direction, darker where the
-outline varies more, and frames the clip green when the mite is called moving and orange
+The mite page draws the profile over the mite's video: a dot per direction, darker where the
+outline varies more, and frames the video green when the mite is called moving and orange
 when still.
 
 ![The app's outline view, moving and still](images/mite_outline_app.png)
 
 *The dots are shaded relative to the mite's own largest value, so a still mite's noise
-looks dark all round: what tells it from a moving mite is that the dark dots are not on one side.*
+looks dark all round: what tells it from a moving mite is that the dark dots are not on one side.* (where the legs are)
 
 ### 3.9 On the example mites, in code
 
-**Lamp and noise floor** (sections 3.1 and 3.6):
+**Light source and noise floor** (sections 3.1 and 3.6):
 
 ```python
 lit, L, rim = Analyzer._lit(roi)        # every frame scaled so the plate has the same light L
@@ -473,8 +472,8 @@ sigma2      = Analyzer.plate_noise(roi) # median over the rim of each pixel's va
 
 ![Lamp correction and noise floor](images/walk_4_lamp_noise.png)
 
-**a.** The rim $R$: the outer 6 px of the patch (936 pixels), bare plate. **b.** The plate's
-light per frame $P_t$ (the median of the rim). Here the lamp is steady to a quarter of a
+**a.** The rim $R$: the outer 6 px of the patch (936 pixels), bare slide. **b.** The slide's
+light intensity per frame $P_t$ (the median of the rim). Here the light source is steady to a quarter of a
 grey level; each frame is scaled by $L/P_t$ anyway, so a flickering lamp would change
 nothing. **c.** The variance over the frames of each rim pixel; their median is the
 **noise floor** $\sigma^2 = 2.82$ grey levels²: how much a pixel changes from noise alone in
@@ -525,14 +524,14 @@ started: although the mean value (0.33) is far from 0, its score is **0.011**. A
 *Code: `classes/plate/mite.py`, `classes/app_config.py`.*
 
 $T$ (`threshold`) is `mite.metric_thresholds.outline_variability` in the machine's `config.yaml`
-(a new machine starts with the one in `config.default.yaml`, 0.091, the poke run's best
+(a new machine starts with the one in `config.default.yaml`, 0.091, the 2026 poke run's best
 threshold by F0.5 and F0.25 alike; a threshold saved between 27 and 29 October 2026, while
 the Optuna constants were in use, is on another scale and has to be saved again). It is chosen on the Calibration
 page. **A threshold fits only recordings as long as the ones it was calibrated on, which
 is why live recordings are fixed at 3 s / 30 fps.**
 
 **Close calls.** On the results page the app also draws a band $[T - \beta_-, T + \beta_+]$
-around $T$ (`classes/results/review_band.py`). A score inside it is a close call. The user
+around $T$ (`classes/results/review_band.py`). A score inside it is  identified as a close call. The user
 says how many mites to check by eye ($n$, 20 by default). The app takes the narrowest band
 of the configured shape (how far below $T$ against above, or symmetric) that contains close
 calls of $n$ mites whose time of death depends on them. Neither edge goes further than $T$
@@ -625,7 +624,7 @@ alive = analysis.alive_percent(movings)                           # Kaplan–Mei
 
 **a.** Every mite's call in every recording it was followed in (green moving, orange
 still). A mite **dies** at the recording after its last movement, once it has been still
-for 200 min (this run's *dead when still for*); × marks that. All 14 moved at least once,
+for 200 min (this run's *dead when still for* value); × marks that. All 14 moved at least once,
 so all are in the study, and all 14 died. After death the live run stopped following them.
 **b.** The Kaplan–Meier curve of the 14 with its 95 % interval: the first mite died after
 5.2 h, half were dead by about 8 h, the last at 12.5 h.
@@ -650,8 +649,7 @@ $$\text{precision} = \frac{TP}{TP + FP},\qquad \text{recall} = \frac{TP}{TP + FN
 $$F_\beta = \frac{(1+\beta^2)\,TP}{(1+\beta^2)\,TP + \beta^2\,FN + FP}, \qquad \beta = 0.25.$$
 
 With $\beta = 0.25$ one still recording called moving (FP) costs as much as sixteen moving
-recordings called still (FN, weight $\beta^2 = 0.0625$). Until 29 October 2026 the app used
-$\beta = 0.5$ (four times); on the poke run both give the same threshold. The reason is asymmetric: in a long
+recordings called still (FN, weight $\beta^2 = 0.0625$). The reason is asymmetric: in a long
 run a dead mite is scored hundreds of times, and a single FP after its death brings it back
 to life and moves its death by hours. A live mite called still once moves again in a later
 recording and loses nothing. TN counts for nothing, so the number of still labels doesn't
@@ -664,7 +662,7 @@ down to the next lower score, as far as possible from the scores on either side.
 **Precision-recall curve and average precision.** The report draws precision against
 recall over all thresholds and gives the average precision.
 
-**Death-time error** (reported, not chosen on). For each mite seen moving, its death by the detector (the recording after its last call of moving) is compared with its death by the labels. The report gives the mean absolute difference in recordings and how many mites are
+**Death-time error** (reported, not used to correct output). For each mite seen moving, its death by the detector (the recording after its last call of moving) is compared with its death by the labels (recordings labeled still or moving by eye). The report gives the mean absolute difference in recordings and how many mites are
 exact.
 
 **Poke test.** A poked mite that moves was alive; one that doesn't is dead from that poke.
@@ -682,7 +680,7 @@ AP = calibration.average_precision(scores, labels)
 ![Calibration](images/walk_9_calibration.png)
 
 **a.** The scores of the 304 labelled (mite, recording)s of this run: 204 moving (green),
-100 still (orange). They barely overlap. **b.** Precision against recall over every
+100 still (orange). They barely overlap, showing good separation between the two classes. **b.** Precision against recall over every
 threshold: average precision 0.9995. **c.** F0.25 at every threshold; its maximum is at
 **0.087**, which calls 0 still recordings moving and 4 moving ones still. Any threshold
 between the highest still score below it (0.082) and the lowest moving score above it
