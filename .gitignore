@@ -72,3 +72,6 @@ uploads/
 
 # the analysis notebooks: kept on the dev laptop, not on GitHub
 /notebooks/
+
+# the automatic-zones evaluation script: kept on the dev laptop, not on GitHub (the app does not use it)
+/scripts/auto_zones.py
