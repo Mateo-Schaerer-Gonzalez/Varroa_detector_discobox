@@ -135,22 +135,21 @@ so it works out of the box; to use your own, paste your key there instead.
 The results pages fill in after every recording so that the output is updated in real time. A panel at the top of the page shows:
 
 - **A circle per zone**, filling as its mites die. A zone with no mite seen moving yet is
-  hollow and doesn't count. When every counting zone is done, the run stops by itself and
+  hollow and doesn't will not prematurely stop the run until the min death time has elapsed. When every counting zone is done, the run stops by itself and
   the panel says why.
-- The camera's frame rate and any dropped frames (shown in red if there are any); whether
+- The camera's frame rate and any failed frames (shown in red if there are any); whether
   the fan, LED 1 and LED 2 are on or off at that moment (they come on before each recording
   for their durations, and are off in between; *No fan/LED controller* means the Arduino was
   not found and the run goes on without them); and the countdown to the next recording.
 
-The panel also has buttons to **pause** and **stop** the run, **add mites** (put on slides after the start of the run; they are detected by the app between two recordings, and can be placed by hand
-too), enter **ground truth** (label the mites observed moving or still by eye, section 4.3) and
+The panel also has buttons to **pause** and **stop** the run, **add mites** (put on slides after the start of the run; they are detected by the app between two recordings, and can be placed by hand before the next recording), enter **ground truth** (label the mites observed moving or still by eye, section 4.3) and
 enter a **poke test** between recordings (section 4.4). Closing the browser does **not**
 stop a run: open the page again to get back to it.
 
 ### 2.4 After the run
 
 The run is saved in `recordings/<run name>/` and listed with the previous recordings. Open
-it in *Analysis* to see the results again, or in *Calibration* to label it. Re-analysing it
+it in *Analysis* to see the results again, or in *Calibration* to manually label it. Re-analysing it
 gives exactly the same scores as the live run because the algorithm is deterministic.
 
 ---
@@ -165,10 +164,10 @@ The images are copied into the app. Your own folder is not changed, and dropping
 folder again only sends what changed.
 
 The first time the folder is analysed or calibrated, the frames are shrunk to just the mites' surroundings, with the same results (part 3 shows how much space this saves). Until then
-it keeps its whole frames, so before the first analysis is the moment to place any mite the detector missed
-(section 3.3): afterwards there is nothing left to place it on.
+it keeps its whole frames, so before the first analysis is the moment to add any mite the detector missed
+(section 3.3): afterwards there is nothing left to add the mites on, as only mite ROI's are kept.
 
-> Don't open a folder by typing its path if you want to keep it untouched: labels and
+> Don't open a folder by typing its path if you want to keep it untouched (this is important for old abilium recordings as these will be cut down to mite ROIs when analyzed). Labels and
 > corrections are then saved next to its recordings.
 
 ### 3.2 Label glass slides
@@ -183,7 +182,7 @@ nearest the click (within 8 px), so the click need not be exact. A click off the
 a slide's label, or within 10 px of another mite is refused. <kbd>Esc</kbd> or *Done
 placing mites* ends it.
 
-A mite placed by hand has a **dashed ring**; click it to take it away. It is saved with the
+A mite placed by hand has a **dashed ring**; (You can click the dahsed ring again to take it away) The added mite is saved with the
 recordings (`mites_by_hand.json`) and found with the detector's mites everywhere: in the
 analysis, in calibration and in a live run. The button is not shown for a session already
 shrunk to the mites' surroundings (a saved live run, or a dropped folder after its first
@@ -195,13 +194,15 @@ Mites put on after the first recording of a run are found too: the app looks at 
 every subsequent recording, and detects mites again in a zone only when at least **Least new
 mites per zone** (on the label page, 3 by default, 0 to switch it off) turn up there in the
 same recording. Mites are put on several at once, while debris or a mite that walked away
-turns up alone. Lower the setting for a zone that got only one or two mites later.
+turns up alone. Lower the setting for a zone that got only one or two mites later. 
 
 Each mite found this way is numbered after its zone's mites (in a zone with mites 13.1 to
 13.4, the next is 13.5) and runs on its own clock from
 the recording it appeared in. The label page shows them in yellow under *Added at recording
 N*, and the results list them under *Mites put on later*. Check each one, and mark any that
 isn't a mite *not a mite* on the label page.
+
+When clicking add mites between recordings the app will take you to the same page used to add mites at the start of the run.
 
 ### 3.5 Read the results
 
@@ -223,8 +224,8 @@ The overview shows, per group:
 ![Plate shake per recording](images/app_results_shake.png)
 
 *The shake chart of a relatively still recording: the shake is under a tenth of a pixel
-throughout. A recording or stretch that shakes much more than the rest is worth checking
-in the playback.*
+throughout. A recording or part of a run that shakes much more than the rest is worth checking
+in the playback videos. Depending on the extent and timing of the excessive shaking it might be worth considering to redo the affected run instead of visually checking the motion detector calls*
 
 Below that: a **glass slide map**, one card per zone, all motion scores by group, and the scores
 of the moving mites alone.
@@ -234,12 +235,12 @@ of the moving mites alone.
 ![Survival by group, movement per zone, group summary](images/app_results_survival.png)
 
 **Click** a zone to see its mites, click a mite to see its close-up video and score in every recording.
-Every chart has a tooltip, opens what it shows when clicked, and downloads as SVG or PNG.
+Every chart is interactive, opens what it shows when clicked, and downloads as SVG or PNG.
 The browser's back button works throughout.
 
 Every recording shown (slide, zone, mite, ground truth) **plays once** and stops on its
 last frame; **Play** plays it again. Tick **Loop** to play it over and over (the browser
-remembers the choice). Loop is off by default because it can bias the reading.
+remembers the choice). Loop is off by default because it can bias the reading of mite movement by eye.
 
 ![Zone 7 with its six mites](images/app_zone_top.png)
 
@@ -248,14 +249,13 @@ gone. The dots round the mite are darker where its outline changes more over the
 
 ![A moving and a still mite's close-up, framed by their calls](images/mite_outline_app.png)
 
+Note: the left mite is considered moving as the motion is concentrated around it's leg. On the right you see a still mite, whose motion is uniformly distributed around the body, this is mostly camera noise.
+
 ### 3.6 Correct a call
 
 On a mite's page, click the mite in the recording shown (or the recording's button in the
-table) to switch its call between *moving* and *still*. Every number follows at once and
+table) to switch its call between *moving* and *still*. Everything is recalculated accordingly and
 the frame round the close-up turns **dashed** to indicate the manual change. Clicking again restores the detector's call.
-A mite that is no longer there (fell off the slide) can be marked **gone** the same way, in
-one recording or from a recording on: it then counts as alive up to its last recording, and
-nothing is assumed after.
 
 Corrections are saved by mite position in `corrections.json` next to the recordings, so a
 later analysis keeps them. They don't change the calibration's ground truth in case the run was used for ground truthing.
@@ -288,7 +288,7 @@ Click a square to open the mite-specific display.
 | `moving_by_group.png`, `distribution_by_group.png`, `score_over_time.png`, `score_distribution.png` | Figures |
 | `detections.jpg` | The first frame with zones, labels and mites |
 
-The workbook and figures are rewritten half a minute after the last correction, and at
+The workbook and figures are rewritten half a minute after the last correction (changing motion detector calls, rerunning analysis), and at
 once when you download the workbook or close the app.
 
 ### 3.10 Draw your own zones (Zones)
@@ -394,16 +394,17 @@ Calibration needs ground truthing, whereby the user identifies moving and still 
 Labels are saved as you set them (`ground_truth.json`, by mite position, so they survive a
 change of detector settings). The bar on the right counts the mite-recordings labelled.
 
-During a live run, **Ground truth** on the live panel opens the same page on the
-recordings so far, so you can label as the run goes.
+Ground truthing can be done during a live run by clicking the **Ground truth**  button. This opens the page of the current recording, so you can label as the run goes on.
 
 ### 4.4 Step 2 (optional): enter a poke test
 
-
-**Note: the poke test is not used to calibrate the threshold; run one only if it is of interest to you. If you do decide to run a poke test ensure that the slides are moved as little as possible and align the support plate to the top right corner of the discobox each time it is placed in the box**
+**Note: the poke test is not used to calibrate the threshold; run one only if it is of interest to you. If you do decide to run a poke test ensure that the slides are moved as little as possible between the pokes and align the support plate to the top right corner of the discobox each time it is placed in the box**
 
 Poking a mite, e.g. approaching with the tip of a pencil (the static electricity should stimulate a live mite to move ahead of physical contact, pursue contact to confirm death) says whether it is alive: one that moves when poked was alive up to then, one
-that doesn't is dead from then on. During a live run, open *Poke test* on the live panel
+that doesn't is dead from then on. During a a live run, just after the recoding is finished, remove the slide you want to perform your poke test on, do your poke test, then put the slide back (make sure to align it the same way it was before you took it out). Then save the results of your poke test by clicking the **poke test** button. If you think the poke test will take longer than the interval between recordings, pause the run.
+
+
+During a live run, open *Poke test* on the live panel
 between two recordings, right after you poke; for recordings made earlier, click **Enter a
 poke test** on the ground-truth page. Then:
 
@@ -411,10 +412,11 @@ poke test** on the ground-truth page. Then:
 2. Choose what a click marks (*moved*, *did not move*, *not poked*) and click each mite you
    poked, or a zone's number for all its mites not marked yet.
 
-**Poke between two recordings, never during one**: a poked mite moves, and the detector
-would count it. The *Test* report (section 4.6) then draws survival by the pokes with the
+The *Test* report (section 4.6) then draws survival by the pokes with the
 detector's survival over it, as well as the outline change between recordings.
 
+
+**Do the poke test outside the discobox**: First it isn't practical, second it could interfere with the next recording.
 
 
 
@@ -553,7 +555,7 @@ datasets alone, and reopen or delete a dataset's ground truth (its recordings st
 | Folder | Contents |
 |---|---|
 | `recordings/<name>/` | Each session: `first_frame.png`, one video per mite in `rois/`, labels, *not a mite* marks, mites placed by hand, ground truth, poke test, corrections, settings, `run.json` (live runs) |
-| `results/<name>/` | The latest analysis: workbook, figures, `run_settings.json`, clips for the pages, `calibration/` |
+| `results/<name>/` | The latest analysis: workbook (excel out file), figures, `run_settings.json`, clips for the pages, `calibration/` |
 | `results/pooled/<date time>/` | Calibration reports pooled over several recordings |
 | `masks/` | The zone masks drawn on the *Zones* page (section 3.10) |
 | `config.yaml` | This machine's threshold and settings (created from `config.default.yaml`) |

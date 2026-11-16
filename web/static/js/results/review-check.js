@@ -94,7 +94,7 @@ class ReviewCheck {
           <input type="number" class="number-input" data-review-mites min="0" step="1" value="${wanted.mites}"></label>
         <button type="button" class="small" data-review-save>Save</button>
         ${wanted.mites !== wanted.default ? `<button type="button" class="small secondary" data-review-default>Default (${wanted.default})</button>` : ""}
-        <span class="hint band-status">For these recordings; the default, ${wanted.default}, is in config.yaml. A mite counts once it is asked about, answered or not.</span>
+        <span class="hint band-status">For these recordings; the default, ${wanted.default}, is in config.yaml. Unless manually corrected, the detectors call will be used.</span>
       </div>`);
   }
 
