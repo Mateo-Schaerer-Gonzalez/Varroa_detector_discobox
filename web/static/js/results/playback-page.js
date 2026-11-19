@@ -109,7 +109,7 @@ class PlaybackPage extends ResultsPage {
     this.zones = this.results.zones.filter((zone) => byZone.has(zone.id)).map((zone) => zone.id);
     grid.innerHTML = this.zones.map((zoneId) => {
       const zone = ctx.zone(zoneId);
-      const group = zone.label || "unlabeled";
+      const group = zone.label || UNLABELED;
       return `<section class="playback-zone" data-zone="${zoneId}">
         <div class="playback-zone-head"><a href="${ctx.href(`zone/${zoneId}`)}"><b>Zone ${zoneId}</b></a> ${Markup.groupTag(group, groupColor(group, groups))}</div>
         <div class="playback-mites">${byZone.get(zoneId).map((mite) => `

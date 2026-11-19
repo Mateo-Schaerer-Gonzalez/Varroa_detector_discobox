@@ -10,6 +10,8 @@ class ReportFigures {
 
   // The Discobox's original software, which the test report compares with (classes/scoring/benchmark.py).
   static BENCHMARK = "benchmark (Abilium)";
+  // The ground truth's survival curve: under the dashed curves of the calls, and thinner than them.
+  static TRUTH_WIDTH = 1.1;
 
   // The outline change between recordings (classes/scoring/outline_change.py).
   static OUTLINE = "outline change";
@@ -59,7 +61,7 @@ class ReportFigures {
   static callers(curves, marks) {
     return [
       ...marks.map((mark) => ({ key: mark.key, name: `detector, ${mark.name}`, value: ReportPage.thr(mark.value), color: mark.color })),
-      ...(curves.benchmark ? [{ key: "benchmark", name: ReportFigures.BENCHMARK, value: "", color: token("--series-7") }] : []),
+      ...(curves.benchmark ? [{ key: "benchmark", name: ReportFigures.BENCHMARK, value: "", color: token("--series-5") }] : []),
       ...(curves.outline ? [{ key: "outline", name: ReportFigures.OUTLINE, value: "", color: token("--series-2") }] : []),
     ];
   }
@@ -67,18 +69,19 @@ class ReportFigures {
   // The Kaplan-Meier curve of the ground truth (black, with its confidence band)
   // against those of the detector's calls, one per threshold, and of the
   // benchmark's (the server's, calibration.survival_curves). The labels' curve
-  // comes last so it is drawn on top where the curves coincide.
+  // comes first, under the others and thinner (TRUTH_WIDTH), so a dashed curve
+  // that lies on it shows on top of it (the user's request of 2026-11-17).
   survivalSeries(curves, marks, { legend = true } = {}) {
     return [
+      {
+        name: "ground truth", values: curves.truth.alive, band: { low: curves.truth.low, high: curves.truth.high },
+        color: token("--ink"), width: ReportFigures.TRUTH_WIDTH, step: true, markers: false, legend,
+      },
       ...ReportFigures.callers(curves, marks).map((caller) => ({
         name: `${caller.name} ${caller.value}`.trim(),
         values: curves[caller.key].alive,
         color: caller.color, dashed: true, step: true, markers: false, legend,
       })),
-      {
-        name: "ground truth", values: curves.truth.alive, band: { low: curves.truth.low, high: curves.truth.high },
-        color: token("--ink"), width: 2.25, step: true, markers: false, legend,
-      },
     ];
   }
 
@@ -113,7 +116,7 @@ class ReportFigures {
       const card = document.createElement("div");
       card.className = "group-card fig";
       const id = `group-moving-${index}`;
-      card.innerHTML = `<div class="group-card-head">${Markup.groupTag(group.group, token(group.group === "unlabeled" ? "--series-other" : "--muted"))}
+      card.innerHTML = `<div class="group-card-head">${Markup.groupTag(group.group, token(group.group === UNLABELED ? "--series-other" : "--muted"))}
       <span class="hint">${n} mite${n === 1 ? "" : "s"}${leftOut ? `, ${leftOut} never moving left out` : ""}</span>
       ${ChartDownloads.buttons(id, `Survival rate · ${group.group} (${n} mites)`, "group-legend")}</div>`;
       const plot = document.createElement("div");
@@ -283,11 +286,11 @@ class ReportFigures {
       yLabel: "Survival rate (%)",
       ...Charts.PERCENT_AXIS,
       noDirectLabels: true,
-      series: [
+      series: [  // the pokes' curve first, under the dashed ones, as survivalSeries() draws the ground truth
+        { name: "poke test", values: curves.poke.alive, band: { low: curves.poke.low, high: curves.poke.high },
+          color: token("--ink"), width: ReportFigures.TRUTH_WIDTH, step: true, markers: false },
         { name: `detector, in use ${thr(r.threshold)}`, values: curves.detector.alive, color: token("--series-1"), dashed: true, step: true, markers: false },
         ...(curves.others?.outline ? [{ name: ReportFigures.OUTLINE, values: curves.others.outline.alive, color: token("--series-2"), dashed: true, step: true, markers: false }] : []),
-        { name: "poke test", values: curves.poke.alive, band: { low: curves.poke.low, high: curves.poke.high },
-          color: token("--ink"), width: 2.25, step: true, markers: false },
       ],
       tooltipExtra: () => count("poke test", curves.poke) + count("detector", curves.detector)
         + (curves.others?.outline ? count(ReportFigures.OUTLINE, curves.others.outline) : ""),
@@ -312,7 +315,7 @@ class ReportFigures {
       onClick: (index) => cal.goToMite(mite.dataset, mite.zone_id, index, mite.mite_id),
     }));
     const overlays = [
-      { name: "ground truth", values: r.survival.truth.alive, band: { low: r.survival.truth.low, high: r.survival.truth.high }, color: token("--ink"), width: 2 },
+      { name: "ground truth", values: r.survival.truth.alive, band: { low: r.survival.truth.low, high: r.survival.truth.high }, color: token("--ink"), width: ReportFigures.TRUTH_WIDTH },
       ...(r.survival.outline ? [{ name: ReportFigures.OUTLINE, values: r.survival.outline.alive, color: token("--series-2"), dashed: true }] : []),
       ...(r.poke ? [{ name: "poke test (poked mites)", values: r.poke.poke.alive, color: token("--series-7"), dashed: true, width: 1.5 }] : []),
     ];
@@ -340,7 +343,7 @@ class ReportFigures {
       <tr data-index="${index}" tabindex="0">
         <td title="${esc(folders.get(zone.dataset))}">${esc(zone.dataset_name)}</td>
         <td><a href="#" data-index="${index}">Zone ${zone.id}</a></td>
-        <td>${zone.group === "unlabeled" ? "" : esc(zone.group)}</td>
+        <td>${zone.group === UNLABELED ? "" : esc(zone.group)}</td>
         <td class="num">${zone.n_mites}</td>
         <td class="num">${zone.n_moving}</td><td class="num">${zone.n_still}</td>
         ${wrong(zone.moving_called_still)}${wrong(zone.still_called_moving)}

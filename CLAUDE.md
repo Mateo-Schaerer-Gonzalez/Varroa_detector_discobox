@@ -16,6 +16,13 @@ takes. **App screenshots show only the 2025 test sessions** (sample_data, ground
 ground_truth_90min), taken from a copy of the app holding only them (the user's rule of
 2026-10-27): the other runs are real experiments and the page (group names, the handwriting on
 the plates, the recordings list) shows what they test. Analysis figures may use any run. The
+user manual's screenshots (`report/images/man_*.png`, the user's request of 2026-11-17: a picture
+under each part of the text, titles as on screen, progress bars and zone circles part full) are
+taken by `report/scripts/manual_screenshots.mjs` in stages, a live run included, on a simulated
+Discobox (`report/scripts/live_demo.py`, playing `recordings/demo_late_mites`) and the demos made
+from the 2025 sessions (`demo_hand_mites`, `demo_late_mites`, `demo_poke_test_added`); only two
+charts with no label on them come from real runs (the high plate shake, the fly-offs), copied
+without their labels. `report/scripts/manual_images.py` writes them into `report/images/`. The
 three reports in `report/` (manual, how it works with its worked example, performance), their scripts
 (`report/scripts/`, with an index of which draws which figure) and the images they show are in
 git; the rest of `report/` (drafts, PDFs, archive, the Fourier/Brownian-motion notes) stays on
@@ -134,15 +141,26 @@ The user's choices for live runs (2026-10-20), not to be undone:
 - **Mites never seen moving** are left out of the survival numbers by default. A tick (`include_never_moved`
   line of the recordings' `.settings.txt`, `pipeline.run_results`, the user's choice of 2026-11-10) counts them, in a
   folder's analysis and in a live run's panel and stop rule; `SurvivalAnalysis.in_study()` is per instance for this.
-- **Dead mites** (by the death rule, never-moved ones too) are no longer scored or saved;
+- **Dead mites** (by the death rule, never-moved ones too) are no longer scored or saved (unless
+  *Stop once every mite is dead* is unticked, see below);
   a correction can't revive them. Live runs require `death_minutes` > 0.
 - **Zone circles** replace the run bar. A zone is done when all mites seen moving are dead
   or gone (zones with no mite seen moving don't count); the run stops when every counting
   zone is done, so the duration is a maximum. There is no `death_reset` and no progress bar.
-- **Recordings are fixed at 3 s / 30 fps** (90 frames; `classes/live/settings.py` `FPS`,
-  `FRAME_COUNT`, `FIXED`), not settings: `scripts/recording_length.py` showed length matters
-  far more than frame rate, and a threshold only fits the length it was calibrated on.
-  Don't reintroduce fps or frame_count as settings.
+  Stopping then is optional since 2026-11-17 (the user's choice, asked by their boss): the tick
+  *Stop once every mite is dead* (`Settings.stop_when_dead`, on by default); unticked, the run
+  records for its whole duration and, since 2026-11-19 (the user's choice), follows, scores and saves every
+  mite in every recording, dead ones too (more storage; the live page says so next to the tick).
+- **Recording length and frame rate are settings again** (the user's choice of 2026-11-17, asked
+  by their boss, replacing "fixed at 3 s / 30 fps, not settings" of 2026-10-20): `recording_length`
+  (whole s, 1-60) and `fps` (1-33, the Mako's most), default 3 s / 30 fps; `frame_count` stays the
+  field the file, DataLoader and the camera read. A `settings.txt` without a `recording_length`
+  line reads as 3 s / 30 fps (this laptop's old file says fps=10). The live page notes under them
+  that a threshold only fits the length and rate it was calibrated on (`scripts/recording_length.py`:
+  length matters far more than frame rate). The recordings list shows in red each recording
+  setting that differs from the live settings now (`RecordingInfo.differences()`).
+- **Unnamed slides** are the group "unlabelled slide" (`zones.UNLABELED`, JS `UNLABELED`; "unlabeled"
+  before 2026-11-17, the user's choice), in the pages, workbook and figures alike.
 **Mites put on a folder's plates later** (the user's choice of 2026-10-30): a folder of frames is
 searched on each later recording's first frame (`classes/scoring/new_mites.py`, `pipeline/new_mites.py`,
 kept in `results/<name>/kept/new_mites.json`); a zone's new detections are taken only when at least

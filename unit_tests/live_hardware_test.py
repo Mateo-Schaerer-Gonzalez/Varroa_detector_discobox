@@ -276,24 +276,41 @@ def test_settings_read_the_discobox_file_format(tmp_path):
     assert (settings.run_minutes, settings.recording_count, settings.recording_timeout, settings.fps) == (25, 6, 5, 30)
     settings.save(tmp_path / "again.txt")
     saved = (tmp_path / "again.txt").read_text()
-    assert saved.startswith("recording_count=6\nrun_minutes=25\ndeath_minutes=0\nfollow_px=50\n")
+    assert saved.startswith("recording_count=6\nrecording_length=3\nrun_minutes=25\ndeath_minutes=0\nstop_when_dead=1\nfollow_px=50\n")
     assert Settings.from_file(tmp_path / "again.txt") == settings
     # An earlier "go on until every mite is dead" is read without it: every run ends so now.
     (tmp_path / "older.txt").write_text("run_minutes=10\ndeath_minutes=5\ndeath_reset=1\n")
     assert Settings.from_file(tmp_path / "older.txt") == Settings(run_minutes=10, death_minutes=5)
 
 
-def test_every_recording_is_three_seconds_at_30_fps(tmp_path):
-    # a file of another frame rate or length is read as the fixed one
+def test_a_file_from_before_the_burst_was_a_setting_reads_as_three_seconds_at_30_fps(tmp_path):
+    # no recording_length line: written while the burst was fixed, or by the Discobox app
     (tmp_path / "settings.txt").write_text("recording_timeout=5\nframe_count=10\nfps=10\n")
     settings = Settings.from_file(tmp_path / "settings.txt")
     assert (settings.frame_count, settings.fps, settings.recording_seconds) == (90, 30, 3.0)
-    # the fixed values pass (a saved file's as_dict() holds them), others are refused
     assert Settings.from_dict(settings.as_dict()) == settings
-    with pytest.raises(ValueError, match="90 frames at 30 fps"):
-        Settings.from_dict({"fps": 10})
-    with pytest.raises(ValueError, match="90 frames at 30 fps"):
-        Settings.from_dict({"frame_count": 30})
+
+
+def test_recording_length_and_frame_rate_are_settings(tmp_path):
+    settings = Settings.from_dict({"recording_length": 5, "fps": 20})
+    assert (settings.frame_count, settings.fps, settings.recording_length) == (100, 20, 5)
+    settings.save(tmp_path / "settings.txt")
+    assert "recording_length=5\n" in (tmp_path / "settings.txt").read_text()
+    assert Settings.from_file(tmp_path / "settings.txt") == settings
+    # a new frame rate keeps the length: the page sends one setting with the others saved
+    again = Settings.from_dict({**settings.as_dict(), "fps": 10})
+    assert (again.frame_count, again.recording_length) == (50, 5)
+    with pytest.raises(ValueError, match="Frame rate must be between 1 and 33"):
+        Settings.from_dict({"fps": 40})
+    with pytest.raises(ValueError, match="Recording length must be between 1 and 60"):
+        Settings.from_dict({"recording_length": 0})
+
+
+def test_stopping_once_every_mite_is_dead_is_on_unless_unticked(tmp_path):
+    assert Settings().stop_when_dead == 1
+    settings = Settings.from_dict({"stop_when_dead": 0})
+    settings.save(tmp_path / "settings.txt")
+    assert Settings.from_file(tmp_path / "settings.txt").stop_when_dead == 0
 
 
 def test_the_run_lasts_the_experiment_and_the_time_to_count_a_mite_dead():
@@ -639,3 +656,24 @@ def test_the_death_time_can_be_set_for_a_folder_keeping_its_other_settings(tmp_p
     assert (bare / pipeline.SETTINGS_FILENAME).read_text() == "death_minutes=60\n"
 
 
+
+
+def test_unticked_run_keeps_following_dead_mites():
+    """With `stop_when_dead` 0 the dead mites stay followed (so scored and saved) and the run goes on;
+    ticked, they are stopped and the run stops once every zone is done."""
+    from types import SimpleNamespace
+    from pipeline.live import live_capture
+
+    def run_with(stop_when_dead):
+        stopped, session = [], SimpleNamespace(state="running", stop=lambda: stopped.append("run"))
+        analysis = SimpleNamespace(mites=[SimpleNamespace(text="1.1")], stop=lambda mites, n: stopped.append(("mites", n)))
+        return SimpleNamespace(analysis=analysis, session=session, stop_reason=None, run_dir=SimpleNamespace(name="x"), zones=[],
+                               source=SimpleNamespace(settings=SimpleNamespace(stop_when_dead=stop_when_dead))), stopped
+
+    progress = SimpleNamespace(dead_ids=lambda: ["1.1"], all_done=lambda zones=None: True)
+    run, calls = run_with(0)
+    live_capture._follow_live(run, progress, 5)
+    assert calls == [] and run.stop_reason is None
+    run, calls = run_with(1)
+    live_capture._follow_live(run, progress, 5)
+    assert calls == [("mites", 5), "run"]

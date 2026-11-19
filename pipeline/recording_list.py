@@ -11,7 +11,7 @@ from classes.results import reporting
 from classes.ground_truth import calibration
 from classes.storage.data_loader import DataLoader
 from classes.storage.files import try_json
-from classes.live.settings import FIXED as FIXED_SETTINGS, RANGES as SETTING_RANGES
+from classes.live.settings import RANGES as SETTING_RANGES, Settings
 from classes.storage.recording_info import RecordingInfo
 from classes.storage.roi_recordings import open_recordings
 from classes.plate.zone_layout import ZoneLayout
@@ -21,11 +21,15 @@ from pipeline.live import live_runs
 _logger = logging.getLogger(__name__)
 
 
-def list_recordings(recordings_root=paths.RECORDINGS_ROOT, results_root=paths.RESULTS_ROOT):
+def list_recordings(recordings_root=paths.RECORDINGS_ROOT, results_root=paths.RESULTS_ROOT,
+                    settings_path=paths.LIVE_SETTINGS_FILE):
     """Every folder in `recordings_root` that holds a recording, the most recently
-    recorded first, as describe_recording() describes it, and whether it is the
-    live run being recorded now."""
+    recorded first, as describe_recording() describes it, whether it is the
+    live run being recorded now, and `differs`: the recording settings it was made
+    with that differ from the live settings now (`settings_path`), which the list
+    shows in red (RecordingInfo.differences)."""
     root = Path(recordings_root)
+    current = Settings.from_file(settings_path)
     if not root.is_dir():
         return []
     output_files.finish_files()  # a list of the results on disk: those still to be written are, first
@@ -42,7 +46,8 @@ def list_recordings(recordings_root=paths.RECORDINGS_ROOT, results_root=paths.RE
             continue
         if described is not None:
             now = folder.resolve() in recording_now
-            listed.append({**described, "recording_now": now, "state": RecordingInfo.state(described["run"], now)})
+            listed.append({**described, "recording_now": now, "state": RecordingInfo.state(described["run"], now),
+                           "differs": RecordingInfo.differences(described, current)})
     return sorted(listed, key=lambda entry: entry["started"], reverse=True)
 
 
@@ -74,7 +79,7 @@ def describe_recording(data_dir, results_root=paths.RESULTS_ROOT):
     started = DataLoader.parse_start_time(first)
     # as the Discobox app saved them; None for a folder without .settings.txt
     # the zone mask is the analysis's, told apart below
-    settings = {name: loader.settings[name] for name in ("recording_count", *SETTING_RANGES, *FIXED_SETTINGS)
+    settings = {name: loader.settings[name] for name in ("recording_count", *SETTING_RANGES, "frame_count")
                 if name in loader.settings} or None
     return {
         "name": data_dir.name,

@@ -62,25 +62,27 @@ class RecordingsList {
     ${failed ? `<p class="hint error">${esc(failed.message)}</p>`
       : !list.length ? `<p class="muted">Nothing recorded yet. A test run appears here once its first recording is saved.</p>`
         : `<div class="table-wrap"><table class="recordings">
-            <thead><tr><th>Recording</th><th>Recorded</th><th class="num">Recordings</th><th>Settings</th>
-              <th>Slides</th><th>Results</th><th></th></tr></thead>
+            <thead><tr><th></th><th>Recording</th><th>Recorded</th><th class="num">Recordings</th><th>Settings</th>
+              <th>Slides</th><th>Results</th></tr></thead>
             <tbody>${list.map((r) => this.row(r)).join("")}</tbody>
-          </table></div>`}`;
+          </table></div>
+          ${list.some((r) => r.differs && r.differs.length) ? `<p class="hint"><span class="differs">Settings in red</span> differ from the
+            live settings now (Live page): a threshold calibrated with the settings now may not fit those recordings (section 4.1 of the manual).</p>` : ""}`}`;
   }
 
   row(r) {
     const busy = r.recording_now ? ` disabled title="Being recorded: open it once the test run is over."` : "";
     return `<tr>
+    <td class="row-actions">
+      <button type="button" class="secondary small" data-open-recording="analysis" data-path="${esc(r.path)}"${busy}>Analyse</button>
+      <button type="button" class="secondary small" data-open-recording="cal" data-path="${esc(r.path)}"${busy}>Calibrate</button>
+    </td>
     <td class="name" title="${esc(r.path)}"><span class="rec-name">${esc(r.name)}</span>${this.stateBadge(r)}${this.howRecorded(r)}</td>
     <td class="nowrap">${this.recordedText(r)}</td>
     <td class="num">${this.recordingCount(r)}</td>
     <td class="settings">${this.settingsText(r)}</td>
     <td class="plates">${this.platesText(r)}</td>
     <td class="nowrap">${this.resultsText(r)}</td>
-    <td class="row-actions">
-      <button type="button" class="secondary small" data-open-recording="analysis" data-path="${esc(r.path)}"${busy}>Analyse</button>
-      <button type="button" class="secondary small" data-open-recording="cal" data-path="${esc(r.path)}"${busy}>Calibrate</button>
-    </td>
   </tr>`;
   }
 
@@ -120,14 +122,18 @@ class RecordingsList {
 
   // The Discobox settings it was recorded with: each recording, the time between
   // them, and the fan and LEDs, as the Discobox app's settings window has them.
+  // Those that differ from the live settings now (r.differs, the server's) are red.
   settingsText(r) {
+    const differs = new Set(r.differs || []);
+    const red = (text, ...names) => (names.some((name) => differs.has(name)) ? `<span class="differs">${text}</span>` : text);
     const zones = r.zone_mask !== "1" ? `, zones: ${esc(r.zone_mask_title)}` : "";
-    const burst = `${plural(r.frames, "frame")} at ${r.fps} fps (${+(r.frames / r.fps).toFixed(1)} s)${zones}`;
+    const burst = `${red(`${plural(r.frames, "frame")} at ${r.fps} fps (${+(r.frames / r.fps).toFixed(1)} s)`, "recording_length", "fps")}${zones}`;
     const s = r.settings;
     if (!s) return `${burst}<span class="sub">no settings saved with it</span>`;
-    const every = s.recording_timeout != null ? `, every ${s.recording_timeout} min` : "";
+    const every = s.recording_timeout != null ? `, ${red(`every ${s.recording_timeout} min`, "recording_timeout")}` : "";
     const death = s.death_minutes ? `, dead when still ${s.death_minutes} min${s.death_reset ? " (run until all dead)" : ""}` : "";
-    return `${burst}${every}${death}<span class="sub">${this.lightsText(r.lights)}</span>`;
+    const lights = red(this.lightsText(r.lights), "vent_time", "led1_time", "led2_time", "vent", "led1", "led2");
+    return `${burst}${every}${death}<span class="sub">${lights}</span>`;
   }
 
   // "Fan and LEDs 20 s, intensity 255" when all three are alike; each on its own otherwise.

@@ -8,7 +8,7 @@ class ZonePage extends ResultsPage {
     const zone = ctx.zone(zoneId);
     if (!zone) { location.replace(ctx.href("results")); return; }
     const groups = ctx.resultGroups();
-    const group = zone.label || "unlabeled";
+    const group = zone.label || UNLABELED;
     const color = groupColor(group, groups);
     const mites = ctx.mitesIn(zone.id);
     const { times } = results;

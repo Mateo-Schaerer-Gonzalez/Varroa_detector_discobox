@@ -3,6 +3,7 @@ what the live page offers before a run: the cameras, serial ports, settings
 with their ranges, and a run name not taken yet.
 """
 
+import threading
 from datetime import date
 
 from classes.live import camera as live_camera
@@ -14,7 +15,10 @@ from pipeline import paths
 from pipeline.live import live_runs
 
 
-LIVE_SETTINGS_FILE = paths.APP_DIR / "settings.txt"
+LIVE_SETTINGS_FILE = paths.LIVE_SETTINGS_FILE
+# One change of the settings at a time: each reads the file, changes its names and writes it
+# back, so two at once (the page saves each setting as it is typed) would lose one.
+_saving = threading.Lock()
 
 
 def _setting_ranges():
@@ -59,12 +63,16 @@ def save_live_settings(values, live_id=None, settings_path=LIVE_SETTINGS_FILE):
     """Change the saved test-run settings (only the names in `values`), checked
     against their ranges; with an open live run not started yet, it uses them
     too."""
-    settings = Settings.from_dict({**Settings.from_file(settings_path).as_dict(), **values})
     run = live_runs.open_runs.get(live_id) if live_id else None
     if run is not None and run.session.state != "ready":
         raise ValueError("The settings cannot change while the test run is going on.")
-    settings.save(settings_path)
+    with _saving:
+        settings = Settings.from_dict({**Settings.from_file(settings_path).as_dict(), **values})
+        settings.save(settings_path)
     if run is not None:
+        camera = getattr(run.source, "camera", None)
+        if settings.fps != getattr(run.source.settings, "fps", settings.fps) and hasattr(camera, "set_fps"):
+            camera.set_fps(settings.fps)
         run.source.settings = settings
         if settings.zone_mask != run.layout.mask:
             _set_live_layout(run, ZoneLayout(settings.zone_mask))

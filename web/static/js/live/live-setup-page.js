@@ -5,11 +5,17 @@
 // comes from the server (Settings.plan in classes/live/settings.py).
 
 class LiveSetupPage {
-  static FIELDS = ["run_minutes", "death_minutes", "follow_px", "recording_timeout", "vent_time", "led1_time", "led2_time"];
+  static FIELDS = ["run_minutes", "death_minutes", "stop_when_dead", "follow_px", "recording_timeout", "vent_time", "led1_time", "led2_time",
+    "recording_length", "fps"];
+  static CHECKS = new Set(["stop_when_dead"]);  // ticks (0 or 1), not numbers
+  // under the last of them: a threshold fits only the recordings it was calibrated on
+  static RECALIBRATE = "A threshold only fits recordings of the length and frame rate it was calibrated on: "
+    + "after changing either, calibrate the threshold again (section 4 of the manual).";
   static DEVICES = [["vent", "Fan"], ["led1", "LED 1"], ["led2", "LED 2"]];
 
   constructor() {
     this.settingsTimers = new Map();  // setting -> its save to come: a change of one setting never puts off another's
+    this.settingsQueue = Promise.resolve();  // the saves, one after another, so the reply shown is the newest
     this.optionsTimer = null;
     this.optionsChanged = false;  // the name or the saving of the connected run, not yet told to the server
     // Once connected, the run's name and whether it is saved are the server's to keep: told as they change.
@@ -62,10 +68,14 @@ class LiveSetupPage {
     const { settings, ranges } = live.options;
     $("live-settings").innerHTML = LiveSetupPage.FIELDS.map((name) => {
       const { label, unit, min, max } = ranges[name];
+      if (LiveSetupPage.CHECKS.has(name)) {
+        return `<label class="live-check"><input id="live-set-${name}" data-setting="${name}" type="checkbox"${settings[name] ? " checked" : ""}> ${esc(label)}
+          <span class="hint">Untick to keep recording every mite, dead ones too, for the whole experiment duration. This takes more storage: every recording of every mite is saved</span></label>`;
+      }
       return `<label for="live-set-${name}">${esc(label)}${unit ? ` <span class="muted">(${unit})</span>` : ""}</label>
       <input id="live-set-${name}" data-setting="${name}" type="number" min="${min}" max="${max}" step="1"
         value="${settings[name]}" class="number-input" title="${min} to ${max}">`;
-    }).join("");
+    }).join("") + `<p class="hint setting-note">${LiveSetupPage.RECALIBRATE}</p>`;
     $("live-lights").innerHTML = LiveSetupPage.DEVICES.map(([device, name]) => `
     <div class="light-row">
       <label for="live-set-${device}">${name}</label>
@@ -79,10 +89,11 @@ class LiveSetupPage {
   drawRecordingTime() {
     const { settings: s, plan } = live.options;
     const { recordings: count, minutes: length } = plan;
-    // The run ends once every mite is dead, which needs a time to count one as dead.
+    // The run stops following dead mites, and ends once every mite is dead unless
+    // told not to: both need a time to count one as dead.
     const whole = !s.death_minutes
-      ? `Set how long a mite must be still to count as dead: the run needs it to stop following dead mites, and ends once every mite is dead.`
-      : `The run ends once every mite of every zone is dead, at most after the experiment's ${duration(s.run_minutes * 60)} and `
+      ? `Set how long a mite must be still to count as dead: the run needs it to stop following dead mites${s.stop_when_dead ? ", and ends once every mite is dead" : ""}.`
+      : `${s.stop_when_dead ? "The run ends once every mite of every zone is dead, at most" : "The run lasts the whole time, and every mite is recorded throughout, dead ones too:"} after the experiment's ${duration(s.run_minutes * 60)} and `
         + `${duration(s.death_minutes * 60)} to tell a mite still at its end from a dead one: ${duration(length * 60)}, ${count} recordings.`;
     const follow = s.follow_px ? ` Each mite is followed up to ${s.follow_px} px from one recording to the next.` : " The mites are not followed: their boxes stay where they were found.";
     $("live-recording-time").textContent = `Each recording: ${+plan.recording_seconds.toFixed(2)} s of frames; with the fan and LEDs, ${+plan.cycle_seconds.toFixed(1)} s `
@@ -145,7 +156,12 @@ class LiveSetupPage {
     }
   }
 
-  async saveSetting(input) {
+  saveSetting(input) {
+    this.settingsQueue = this.settingsQueue.then(() => this.sendSetting(input));
+    return this.settingsQueue;
+  }
+
+  async sendSetting(input) {
     const name = input.dataset.setting;
     const value = input.type === "checkbox" ? Number(input.checked) : Number(input.value);
     const status = $("live-settings-status");

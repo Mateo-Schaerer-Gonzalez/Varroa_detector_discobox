@@ -42,7 +42,9 @@ chose on 398 frames labelled by hand (scripts/detector_optuna.py, 2026-10-30, am
 min_inertia_ratio 0.45 -> 0.087 and the new min_repeatability 3): sample_data has 31 mites
 instead of 30 (two elongated mites found, 4.3 and 7.1, one 8 px blob of debris no longer),
 11 boxes moved by a pixel, and the ids of plates 4 and 7 shift; the 17 mites with the same
-box score the same to the bit. It writes the reference of the OpenCV it runs with
+box score the same to the bit. Made again when a slide no one named became the group
+"unlabelled slide" instead of "unlabeled" (2026-11-17, the user's choice): only that name
+changed, in the results, sheets and figures. It writes the reference of the OpenCV it runs with
 (reference.py: one for OpenCV 4, one for 5), so run it in both Pythons; the
 OpenCV 5 one was first made from commit 76dba5e. Run this again only to accept a deliberate change to
 what folder mode produces, and say why in the commit.

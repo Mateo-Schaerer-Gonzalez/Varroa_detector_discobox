@@ -54,6 +54,8 @@ APP_DIR = Path(__file__).resolve().parent.parent
 RECORDINGS_ROOT = APP_DIR / "recordings"
 # results/<recording>/: the last analysis of that recording.
 RESULTS_ROOT = APP_DIR / "results"
+# The live test run's settings, as the live page saves them (classes/live/settings.py).
+LIVE_SETTINGS_FILE = APP_DIR / "settings.txt"
 # results/<recording>/calibration/: its calibration session and report.
 CALIBRATION_DIRNAME = "calibration"
 # results/pooled/<date time>/: a calibration report pooled over several recordings.

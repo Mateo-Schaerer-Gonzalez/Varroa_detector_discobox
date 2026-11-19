@@ -107,7 +107,7 @@ class MovementReport:
                            n_never_moved, overall_mean_score and rests (see zone_rests());
                            None for a zone without mites
             group_rows   [{group, zones (ids), n_mites, moving_scores}] for the groups
-                         with mites, named ones alphabetically, "unlabeled" last
+                         with mites, named ones alphabetically, "unlabelled slide" last
         """
         return {
             "mites": [{**mite, **self.mite_stats(mite)} for mite in self.results["mites"]],

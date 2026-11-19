@@ -180,7 +180,7 @@ RESULTS = results_with({
 
 def test_the_groups_alive_over_time_in_the_order_the_pages_list_them():
     report = SurvivalReport(RESULTS).describe()
-    assert [row["group"] for row in report["groups"]] == ["Buffer", "venom", "unlabeled"]
+    assert [row["group"] for row in report["groups"]] == ["Buffer", "venom", "unlabelled slide"]
     assert report["groups"][0]["alive"] == [100.0, 100.0, 50.0]
     assert report["zones"][4]["alive"] == [100.0, 100.0, 0.0]
     assert report["zones"][4]["n_alive"] == [1, 1, 0]
@@ -197,8 +197,8 @@ def test_every_group_against_the_controls():
     assert log_rank["control_groups"] == ["Buffer"]
     assert (log_rank["n_control_mites"], log_rank["n_control_dead"]) == (2, 1)
     assert log_rank["control_lt50"] == SurvivalAnalysis(TIMES).lt50([FIRST_TWO, ALWAYS])
-    # One row per group, its zones pooled; "unlabeled" last.
-    assert [(row["group"], row["zones"]) for row in log_rank["rows"]] == [("venom", [1, 4]), ("unlabeled", [2])]
+    # One row per group, its zones pooled; "unlabelled slide" last.
+    assert [(row["group"], row["zones"]) for row in log_rank["rows"]] == [("venom", [1, 4]), ("unlabelled slide", [2])]
     venom = log_rank["rows"][0]
     assert venom["n_mites"] == 2  # the mite never seen moving is left out
     assert venom["observed"] == 2

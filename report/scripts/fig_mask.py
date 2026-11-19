@@ -46,7 +46,7 @@ gs = fig.add_gridspec(2, 4, hspace=0.45, wspace=0.42, left=0.02, right=0.98)
 a = fig.add_subplot(gs[0, 0]); a.imshow(crop.mean(axis=0), cmap="gray", vmin=0, vmax=255); over(a, rim, RIM, 0.2)
 a.contour(~rim, levels=[0.5], colors=[RIM], linewidths=1.8)
 a.axhline(row, color="white", lw=0.8, ls="--")
-clean(a, f"1. mean of the frames (box + {PAD} px)\nblue rim, {_RIM} px: bare plate, its light $P_t$")
+clean(a, f"1. mean of the frames (ROI + {PAD} px)\nblue rim, {_RIM} px: bare plate, its light $P_t$")
 # b. darkness
 a = fig.add_subplot(gs[0, 1]); im = a.imshow(still, cmap="magma_r", vmin=0, vmax=still.max())
 a.contour((still > cut) & ~rim, levels=[0.5], colors=[CUT], linewidths=1.8); a.axhline(row, color=INK, lw=0.8, ls="--")

@@ -8,6 +8,9 @@ dict, or None for a folder dropped into the page) and the .settings.txt values.
 
 # The fan and the two LEDs: their duration and intensity settings, and their names.
 DEVICES = (("vent_time", "vent", "Fan"), ("led1_time", "led1", "LED 1"), ("led2_time", "led2", "LED 2"))
+# The settings that make a recording what it is, so that a threshold calibrated on one fits it:
+# compared with the live settings now by differences().
+COMPARED = ("recording_timeout", "vent_time", "led1_time", "led2_time", "vent", "led1", "led2")
 
 
 class RecordingInfo:
@@ -33,6 +36,28 @@ class RecordingInfo:
         if run:
             return run.get("recordings_planned")
         return (settings or {}).get("recording_count")
+
+    @staticmethod
+    def differences(described, current):
+        """The names of the recording settings `described` (as
+        pipeline.describe_recording() describes a recording) was made with that
+        differ from `current` (the live Settings now): "recording_length" and "fps"
+        from its frames, the others (COMPARED) from its .settings.txt when it has one.
+        The list of recordings shows these in red: a threshold calibrated with the
+        settings now may not fit it."""
+        differ = []
+        frames, fps = described.get("frames"), described.get("fps")
+        if frames and fps:
+            if round(frames / fps, 1) != round(current.frame_count / current.fps, 1):
+                differ.append("recording_length")
+            if round(fps) != current.fps:
+                differ.append("fps")
+        settings = described.get("settings") or {}
+        for name in COMPARED:
+            value = settings.get(name)
+            if value is not None and int(value) != getattr(current, name):
+                differ.append(name)
+        return differ
 
     @staticmethod
     def lights(settings):

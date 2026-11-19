@@ -3,6 +3,14 @@
 // marked "not a mite". Works on `ctx`, the workspace shown.
 
 class SessionLabels {
+  constructor() {
+    // The labels' and the controls' saves, each one after the one before, and each with
+    // the page's labels as they are when it goes: two at once could arrive the other
+    // way round, and the older would be kept.
+    this.labelsQueue = Promise.resolve();
+    this.controlsQueue = Promise.resolve();
+  }
+
   // A change after a run leaves the analysis's results out of date.
   static markChanged() {
     if (ctx.results && ctx.mode === "analysis") ctx.labelsChanged = true;
@@ -24,26 +32,33 @@ class SessionLabels {
     this.saveControls();
   }
 
-  async saveLabels() {
-    if (!ctx.sessionId) return;
-    try {
-      await post(`/api/session/${ctx.sessionId}/labels`, { labels: ctx.collectLabels() });
-    } catch (error) {
-      $("run-status").textContent = `Could not save labels: ${error.message}`;
-    }
+  saveLabels() {
+    const workspace = ctx;
+    if (!workspace.sessionId) return this.labelsQueue;
+    this.labelsQueue = this.labelsQueue.then(async () => {
+      try {
+        await post(`/api/session/${workspace.sessionId}/labels`, { labels: workspace.collectLabels() });
+      } catch (error) {
+        $("run-status").textContent = `Could not save labels: ${error.message}`;
+      }
+    });
+    return this.labelsQueue;
   }
 
-  async saveControls() {
+  saveControls() {
     const workspace = ctx;
-    const { results } = workspace;
-    if (!workspace.sessionId) return;
-    try {
-      const saved = await post(`/api/session/${workspace.sessionId}/controls`, { controls: workspace.controlIds() });
-      // Only for the results they were worked out from, not those of a run since.
-      if (saved.survival && results && workspace.results === results) results.survival = saved.survival;
-    } catch (error) {
-      $("run-status").textContent = `Could not save the negative controls: ${error.message}`;
-    }
+    if (!workspace.sessionId) return this.controlsQueue;
+    this.controlsQueue = this.controlsQueue.then(async () => {
+      const { results } = workspace;
+      try {
+        const saved = await post(`/api/session/${workspace.sessionId}/controls`, { controls: workspace.controlIds() });
+        // Only for the results they were worked out from, not those of a run since.
+        if (saved.survival && results && workspace.results === results) results.survival = saved.survival;
+      } catch (error) {
+        $("run-status").textContent = `Could not save the negative controls: ${error.message}`;
+      }
+    });
+    return this.controlsQueue;
   }
 
   // A false detection is marked "not a mite" in the session's ground truth, which

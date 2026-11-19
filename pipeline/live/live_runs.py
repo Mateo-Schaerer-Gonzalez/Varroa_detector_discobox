@@ -149,6 +149,8 @@ def live_status(live_id):
         "zone_mask": run.layout.mask,
         "stop_reason": run.stop_reason,  # why the run stopped by itself, if it did
         "pending_mites": len(run.analysis._pending),  # mites to add when the next recording begins
+        # whether the run stops once every zone is done (Settings.stop_when_dead)
+        "stop_when_dead": bool(getattr(getattr(run.source, "settings", None), "stop_when_dead", 1)),
     }
     # the zones' circles over the live result pages
     return {**status, "progress": RunProgress(status, run.zones).describe()}

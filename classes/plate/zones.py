@@ -8,7 +8,8 @@ import numpy as np
 import pandas as pd
 from pathlib import Path
 
-UNLABELED = "unlabeled"
+# a slide no one named (the user's wording of 2026-11-17; "unlabeled" before)
+UNLABELED = "unlabelled slide"
 
 # One row per (mite, recording). `moving`: the score of that recording reaches the
 # threshold. x, y is the mite's centre in image pixels. `brightness`: the mean

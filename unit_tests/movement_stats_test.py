@@ -65,7 +65,7 @@ def test_each_zone_gets_its_numbers_and_rests():
 
 def test_the_groups_in_page_order_with_the_box_of_their_moving_scores():
     rows = MovementReport(results()).describe()["group_rows"]
-    assert [(row["group"], row["zones"], row["n_mites"]) for row in rows] == [("venom", [1], 2), ("unlabeled", [2], 1)]
+    assert [(row["group"], row["zones"], row["n_mites"]) for row in rows] == [("venom", [1], 2), ("unlabelled slide", [2], 1)]
     assert rows[0]["moving_scores"] == {"n": 2, "n_mites": 1, "q1": 4.5, "median": 5.0, "q3": 5.5, "lo": 4.0, "hi": 6.0}
 
 

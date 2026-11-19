@@ -12,6 +12,7 @@ class AddMites {
     this.before = null;  // the label page's session, shown again once done
     this.busy = false;
     this.message = "";
+    this.messageAt = null;  // the recordings analysed when the message was said: it goes with the next one
     holder.addEventListener("click", (event) => {
       const button = event.target.closest("[data-add-action]");
       if (button) this[button.dataset.addAction]();
@@ -35,7 +36,7 @@ class AddMites {
     livePanel.draw();
     try {
       const found = await post(`/api/live/${live.id}/find-mites`);
-      if (!found.mites.length) this.message = "No mite found that is not followed already.";
+      if (!found.mites.length) this.say("No mite found that is not followed already.");
       else {
         const { workspace } = live;
         this.before = workspace.session;
@@ -44,7 +45,7 @@ class AddMites {
         router.go("#/live/label");
       }
     } catch (error) {
-      this.message = error.message;
+      this.say(error.message);
     } finally {
       this.busy = false;
       this.draw();
@@ -76,7 +77,7 @@ class AddMites {
       this.busy = false;  // before the panel is drawn again, or it shows the search still going on
     }
     if (added) {
-      this.message = `${plural(boxes.length, "mite")} will be followed from the next recording on.`;
+      this.say(`${plural(boxes.length, "mite")} will be followed from the next recording on.`);
       this.finish();
     } else if (this.active) labelPage.drawRunButton();
   }
@@ -97,6 +98,19 @@ class AddMites {
     router.go("#/live/results");
     this.draw();
     livePanel.draw();
+  }
+
+  say(message) {
+    this.message = message;
+    this.messageAt = live.status ? live.status.analysed : null;
+  }
+
+  // Each poll: once the next recording is analysed, what was said of the last search
+  // (mites to follow from it, none found, why it failed) no longer holds.
+  update(status) {
+    if (!this.message || this.messageAt == null || status.analysed <= this.messageAt) return;
+    Object.assign(this, { message: "", messageAt: null });
+    this.draw();
   }
 
   // On the live panel: looking for mites, what came of it, or the way back to the mites found.

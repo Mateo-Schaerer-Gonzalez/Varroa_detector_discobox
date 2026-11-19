@@ -20,7 +20,7 @@ research, for screening treatments against *Varroa destructor*, the main parasit
 The app runs a test on the Discobox from start to finish, or analyses recordings made earlier:
 
 - **Live runs.** It controls the camera, fan and LEDs, analyses each recording as it arrives, follows
-  each mite from one recording to the next, and stops once every mite is dead.
+  each mite from one recording to the next, and stops once every mite is dead (unless told not to).
 - **Motion score.** Each mite's movement is measured as the change on its outline across the frames
   of a recording, summed as vectors round the mite (so uniform noise and flicker cancel while a moving
   leg does not), in units of the recording's own noise floor.
@@ -271,7 +271,10 @@ settings it was recorded with. Those are the frames and frame rate of a recordin
 recordings, and the fan and LED durations and intensities, from its `.settings.txt`. For a live run it also
 shows the camera, dropped frames and whether the run was stopped early (from its `run.json`). It shows the
 plate labels, *not a mite* marks and ground truth kept with it, and its last results. *Analyse* and
-*Calibrate* open it in that mode.
+*Calibrate*, in the first column, open it in that mode. The recording settings that differ from the live
+settings now (recording length, frame rate, time between recordings, fan and LEDs; the live page's
+`settings.txt`) are red, with a note under the list: a threshold calibrated with the settings now may not fit
+those recordings (`RecordingInfo.differences()`, the user's choice of 2026-11-17).
 
 **What the app reports.** The camera only sees movement, so that is all the app measures. A mite is *moving*
 in a recording when its motion score in that recording reaches the threshold of the metric in use,
@@ -297,11 +300,11 @@ sequenceDiagram
     A->>D: find camera + Arduino, LEDs on
     U->>A: Label plates, Start test run
     loop every "time between recordings"
-        A->>D: fan + LEDs on, record 3 s @ 30 fps
+        A->>D: fan + LEDs on, record 3 s @ 30 fps (by default)
         D-->>A: 90 frames
         A->>A: follow each mite, score, update results
     end
-    A-->>U: stops by itself once every mite is dead
+    A-->>U: stops by itself once every mite is dead (unless unticked)
 ```
 
 1. **Camera**: name the run and *Connect*: the camera and the Discobox's Arduino are found by themselves, and
@@ -312,13 +315,19 @@ sequenceDiagram
    name, whether its recordings are saved and every setting can still be changed after connecting, until the
    test run starts. The test run's settings are the Discobox app's (time between recordings, fan and LED
    durations and intensities), but the length of the run is set as the *experiment duration, at most*, rather
-   than a number of recordings. Every recording is 3 s at 30 fps (90 frames), fixed rather than a setting: a
-   threshold only fits recordings as long and as fast as those it was calibrated on, and a longer recording
-   tells a moving mite from a still one far better than a faster one (`notebooks/poke_run_followed.ipynb`,
-   section 9). A `settings.txt` with other values is read as these. *Dead when still for* is how long a mite
+   than a number of recordings. Every recording is 3 s at 30 fps (90 frames) by default; *Recording length*
+   (whole seconds) and *Frame rate* (at most 33 fps, the camera's) are settings again since 2026-11-17 (the
+   user's choice; they were fixed from 2026-10-20), with a note under them: a threshold only fits recordings as
+   long and as fast as those it was calibrated on, so after changing either, calibrate again; a longer
+   recording tells a moving mite from a still one far better than a faster one
+   (`notebooks/poke_run_followed.ipynb`, section 9). A `settings.txt` without a `recording_length` line (from
+   before, or from the Discobox app) is read as 3 s at 30 fps, whatever its `frame_count` and `fps`; a frame
+   rate changed after connecting is sent to the camera. *Dead when still for* is how long a mite
    must go without moving to count as dead; a run cannot start without it. It is added to the end of the run,
    so a mite still at the end of the experiment can be told from a dead one, and the *Mites alive* charts use
-   it. The run ends sooner, by itself, once every mite of every zone is dead (see *Live results*). *Most a
+   it. The run ends sooner, by itself, once every mite of every zone is dead (see *Live results*), unless
+   *Stop once every mite is dead* (ticked by default) is unticked: then it records for the whole duration and keeps following,
+   scoring and saving every mite, dead ones too, in every recording, which takes more storage. *Most a
    mite moves between recordings* (50 px by default, 0 for not at all) is how far a mite is followed from one
    recording to the next (see *Following the mites* below). The settings are saved to `settings.txt` as you
    change them (an older file with a number of recordings is read as the duration they span; one with *Go on
@@ -335,7 +344,7 @@ sequenceDiagram
    has been seen moving yet is drawn hollow and does not count, unless *Count the mites never seen moving* is
    ticked (above the live results, as in a folder's analysis, and saved with the run); a zone is done once each
    of its mites that counts is dead (or marked gone). Once every zone that counts is done, the run stops by itself and the panel
-   says why. The charts' time axis covers the whole run from the start, and each recording fills in its part;
+   says why, unless *Stop once every mite is dead* was unticked. The charts' time axis covers the whole run from the start, and each recording fills in its part;
    once the run is over, the axis is what was recorded. *Follow the latest recording* shows each new recording
    as it comes; choose an older one and the page stays on it. Labels and *not a mite* marks can still change;
    the results follow them.

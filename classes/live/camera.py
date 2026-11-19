@@ -261,6 +261,13 @@ class Camera:
         finally:
             self._ready.set()
 
+    def set_fps(self, fps):
+        """Stream at `fps` from now on (a frame rate changed on the live page after
+        connecting); before open() it is only kept for when the camera opens."""
+        self.fps = fps
+        if self._thread is not None and not self._stop.is_set():
+            self._commands.put(lambda cam, camera_utils: camera_utils.set_feature(cam, "AcquisitionFrameRateAbs", fps))
+
     def stop(self, timeout=10):
         """Stop streaming and close the camera; returns once it is closed."""
         self._stop.set()

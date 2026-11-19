@@ -270,7 +270,7 @@ class LabelPage {
     const unlabeled = zones.filter((z) => !z.label.trim());
     if (unlabeled.length) {
       rows.push(`<li><i class="swatch" style="background:${token("--series-other")}"></i>
-      <span class="group-name muted">unlabeled</span>
+      <span class="group-name muted">${UNLABELED}</span>
       <span class="hint">${zoneList(unlabeled)}</span></li>`);
     }
     $("group-list").innerHTML = rows.join("");

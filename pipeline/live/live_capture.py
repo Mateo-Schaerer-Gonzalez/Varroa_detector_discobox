@@ -53,12 +53,17 @@ def publish_live(run, write_files):
 
 
 def _follow_live(run, progress, recordings):
-    """After a recording of a running live run: the mites that count as dead are
-    no longer followed from the next on, and once every zone is done the run
-    stops (classes/live/progress.py)."""
-    dead = set(progress.dead_ids())
-    run.analysis.stop([mite for mite in run.analysis.mites if mite.text in dead], recordings)
-    if progress.all_done(run.zones) and run.session.state in ("running", "paused") and run.stop_reason is None:
+    """After a recording of a running live run: with `stop_when_dead` (the default) the
+    mites that count as dead are no longer followed from the next on, and once every
+    zone is done the run stops (classes/live/progress.py). Without it (the user's choice
+    of 2026-11-19) every mite, dead ones too, is followed, scored and saved in every
+    recording for the whole duration: more storage."""
+    settings = getattr(run.source, "settings", None)
+    stop_early = settings is None or getattr(settings, "stop_when_dead", 1)
+    if stop_early:
+        dead = set(progress.dead_ids())
+        run.analysis.stop([mite for mite in run.analysis.mites if mite.text in dead], recordings)
+    if stop_early and progress.all_done(run.zones) and run.session.state in ("running", "paused") and run.stop_reason is None:
         run.stop_reason = "Every mite of every zone is dead."
         _logger.info("Stopping the test run %s: %s", run.run_dir.name, run.stop_reason)
         run.session.stop()

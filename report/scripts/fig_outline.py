@@ -42,12 +42,12 @@ ax[1].set_title("b. variance over the frames ÷ noise floor", loc="left", fontsi
 for a in ax[:2]:
     a.set_xticks([]); a.set_yticks([])
 unrolled = (variance / v["noise"]).T
-ax[2].imshow(unrolled, aspect="auto", cmap="Blues", origin="lower", extent=[0, 360, 0, unrolled.shape[0] * step],
+ax[2].imshow(unrolled, aspect="auto", cmap="Blues", origin="lower", extent=[0, 2 * np.pi, 0, unrolled.shape[0] * step],
              vmin=0, vmax=np.percentile(unrolled, 99.5))
-deg = np.arange(N) * 360 / N + 360 / (2 * N)
+deg = np.arange(N) * 2 * np.pi / N + np.pi / N
 ax[2].plot(deg, edge * step, color=ORANGE, lw=1.6, label="body edge")
 ax[2].fill_between(deg, edge * step - WIDTH, edge * step + WIDTH, color=ORANGE, alpha=0.18, label=f"outline band (±{WIDTH} px)")
-ax[2].set_xlabel("direction (degrees, clockwise from right)"); ax[2].set_ylabel("distance from centre (px)")
+ax[2].set_xlabel("direction θ (rad, clockwise from right)"); ax[2].set_ylabel("distance from centre (px)")
 ax[2].set_title(f"c. unrolled: {N} rays × {step} px steps", loc="left", fontsize=10); ax[2].legend(loc="upper right", fontsize=8, frameon=False)
 fig.colorbar(im, ax=ax[1], fraction=0.046, pad=0.03).set_label("× noise floor")
 fig.tight_layout(); fig.savefig(OUT / "outline_unrolled.png", bbox_inches="tight")
@@ -57,7 +57,7 @@ fig = plt.figure(figsize=(12, 4))
 a1 = fig.add_subplot(1, 3, 1)
 for (lab, ex, col, mk) in (("moving", moving, GREEN, "-"), ("still", still, ORANGE, "--")):
     a1.plot(deg, unit(ex[4]), mk, color=col, lw=2, label=f"{lab} (mite {ex[2]}, rec. {ex[3]})")
-a1.set_xlabel("direction (degrees)"); a1.set_ylabel("outline variance ÷ noise floor")
+a1.set_xlabel("direction θ (rad)"); a1.set_ylabel("outline variance ÷ noise floor")
 a1.set_title(f"a. outline profile, {N} values", loc="left", fontsize=10); a1.legend(frameon=False, fontsize=8)
 for idx, (lab, ex, col) in enumerate((("moving", moving, GREEN), ("still", still, ORANGE))):
     a = fig.add_subplot(1, 3, 2 + idx)

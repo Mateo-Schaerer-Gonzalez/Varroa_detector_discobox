@@ -28,7 +28,7 @@ fig, ax = plt.subplots(2, 3, figsize=(12, 8.2))
 a = ax[0, 0]; a.imshow(crop[0], cmap="gray", vmin=0, vmax=255); overlay(a, rim, RIM, 0.2)
 a.contour(~rim, levels=[0.5], colors=[RIM], linewidths=1.8)
 a.add_patch(Rectangle((PAD - 0.5, PAD - 0.5), box[2] - box[0], box[3] - box[1], fill=False, ec="white", lw=1.2, ls="--"))
-clean(a, f"a. crop: the box (dashed) + {PAD} px; rim of {_RIM} px\n(outside the blue line): the plate's light $P_t$")
+clean(a, f"a. crop: the ROI (dashed) + {PAD} px; rim of {_RIM} px\n(outside the blue line): the plate's light $P_t$")
 a = ax[0, 1]; im = a.imshow(d["still"], cmap="magma_r", vmin=0, vmax=d["still"].max())
 cs = d["dark_enough"]; other = cs & ~d["chosen"]
 a.contour(d["chosen"], levels=[0.5], colors=[BODY], linewidths=2)
@@ -78,7 +78,7 @@ fig, ax = plt.subplots(1, 3, figsize=(13, 4.6), gridspec_kw={"width_ratios": [1,
 a = ax[0]; a.imshow(mean, cmap="gray", vmin=0, vmax=255)
 overlay(a, edge_mask, RIM, 0.5); overlay(a, ign, IGN, 0.35); overlay(a, bodym, BODY, 0.3)
 a.add_patch(Rectangle((P - 0.5, P - 0.5), box[2] - box[0], box[3] - box[1], fill=False, ec="white", lw=1.2, ls="--"))
-clean(a, f"a. the score's patch: box (dashed) + {P} px")
+clean(a, f"a. the score's patch: ROI (dashed) + {P} px")
 a.legend(handles=[Patch(color=RIM, alpha=0.6, label=rf"rim, {analyzer.RIM} px: lamp light $P_t$ and noise floor $\sigma^2$"),
                   Patch(color=IGN, alpha=0.5, label=f"up to {m8} px from the edge (rim included): not searched for the body"),
                   Patch(color=BODY, alpha=0.5, label=f"body: darker than {analyzer.BODY_SHARE} of the darkest pixel, grown {analyzer.BODY_GROW} px")],

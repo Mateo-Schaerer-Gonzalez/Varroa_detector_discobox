@@ -78,7 +78,7 @@ def analyse_folder(args):
 
     labels = pipeline.load_labels(data_dir)
     if not labels:
-        print(f"No {pipeline.LABELS_FILENAME} in {data_dir}; every zone will be 'unlabeled'.")
+        print(f"No {pipeline.LABELS_FILENAME} in {data_dir}; every zone will be 'unlabelled slide'.")
 
     results = pipeline.run_analysis(data_dir, out_dir, labels)
     print_summary(results, out_dir)

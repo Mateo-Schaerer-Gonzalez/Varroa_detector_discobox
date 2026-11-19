@@ -153,7 +153,7 @@ def step_frames_and_stabilizer(dataset, data_dir, long_run_dir):
     im = axes[5].imshow(variance, cmap="magma")
     axes[5].set_title("variance over the frames\n(grey levels²)"), axes[5].set_xticks([]), axes[5].set_yticks([])
     fig.colorbar(im, ax=axes[5], fraction=0.046)
-    fig.suptitle(f"Mite {m['mite']}, recording {m['recording']}: its patch (box + {m['pad']} px) cut from every frame", y=1.04)
+    fig.suptitle(f"Mite {m['mite']}, recording {m['recording']}: its patch (ROI + {m['pad']} px) cut from every frame", y=1.04)
     save(fig, "2_frames")
 
     # 3a. how the stabilizer finds the centre: darkness, body mask, centre per frame
@@ -171,7 +171,7 @@ def step_frames_and_stabilizer(dataset, data_dir, long_run_dir):
     body = still_dark > plate_stabilizer.BODY_SHARE * np.sort(still_dark[~rim])[-plate_stabilizer.DARKEST_N:].mean()
     grown = cv2.dilate((body & ~rim).astype(np.uint8), np.ones((3, 3), np.uint8), iterations=plate_stabilizer.BODY_GROW)
     fig, axes = plt.subplots(1, 4, figsize=(15, 3.4))
-    grey_image(axes[0], patches[0], f"a. crop: box + {sp} px, frame 1\nblue: the rim (outer {plate_stabilizer._RIM} px), plate only")
+    grey_image(axes[0], patches[0], f"a. crop: ROI + {sp} px, frame 1\nblue: the rim (outer {plate_stabilizer._RIM} px), plate only")
     axes[0].imshow(np.ma.masked_where(~rim, rim), cmap="Blues", alpha=0.35, vmin=0, vmax=1)
     im = axes[1].imshow(still_dark, cmap="viridis")
     axes[1].set_title("b. darkness D = max(0, 1 − I / plate light)\nmean of the frames"), axes[1].set_xticks([]), axes[1].set_yticks([])
@@ -210,7 +210,7 @@ def step_frames_and_stabilizer(dataset, data_dir, long_run_dir):
     for row, (key, e) in zip(axes, (("shakiest still", shaky), ("moving", out["moving"]))):
         v_fixed, v_stab = e["fixed"].var(axis=0), e["roi"].var(axis=0)
         top = np.percentile(np.concatenate([v_fixed.ravel(), v_stab.ravel()]), 99.5)
-        for ax, v, title in ((row[0], v_fixed, "not stabilized: cut at the box"),
+        for ax, v, title in ((row[0], v_fixed, "not stabilized: cut at the ROI"),
                              (row[1], v_stab, f"PlateStabilizer.cut(): each frame moved back by −s_t ({INTERPOLATION})")):
             im = ax.imshow(v, cmap="magma", vmin=0, vmax=top)
             ax.set_title(f"{key} mite {e['mite']}, rec. {e['recording']}\n{title}"), ax.set_xticks([]), ax.set_yticks([])
@@ -300,20 +300,22 @@ def step_score(out):
     fig = plt.figure(figsize=(15, 4.0))
     ax = fig.add_subplot(1, 3, 1)
     for key, colour in (("moving", GREEN), ("still", ORANGE)):
-        ax.plot(np.degrees(angles), rows[key]["v"], color=colour, label=f"{key}: v_k (grey levels²)")
-    ax.set(xlabel="direction θ_k (°)", ylabel="mean variance on the outline", title="a. outline_variability_profile(): v_k")
+        ax.plot(angles, rows[key]["v"], color=colour, label=f"{key}: v_k (grey levels²)")
+    ax.set(xlabel="direction θ_k (rad)", ylabel="mean variance on the outline", title="a. outline_variability_profile(): v_k")
     ax.legend(frameon=False)
     ax = fig.add_subplot(1, 3, 2)
     for key, colour in (("moving", GREEN), ("still", ORANGE)):
-        ax.plot(np.degrees(angles), rows[key]["a"], color=colour, label=f"{key}: a_k = v_k / {rows[key]['sigma2']:.2f}")
+        ax.plot(angles, rows[key]["a"], color=colour, label=f"{key}: a_k = v_k / {rows[key]['sigma2']:.2f}")
     ax.axhline(1, color=INK, ls=":", lw=1)
-    ax.set(xlabel="direction θ_k (°)", ylabel="multiples of the noise floor", title="b. divided by plate_noise(): a_k")
+    ax.set(xlabel="direction θ_k (rad)", ylabel="multiples of the noise floor", title="b. divided by plate_noise(): a_k")
     ax.legend(frameon=False)
     ax = fig.add_subplot(1, 3, 3, projection="polar")
     for key, colour in (("moving", GREEN), ("still", ORANGE)):
         ax.plot(np.append(angles, angles[0]), np.append(rows[key]["a"], rows[key]["a"][0]), color=colour)
     ax.set_theta_direction(-1)
-    ax.set_title("c. the same round the mite\n(0° right, clockwise as in the image)")
+    ax.set_xticks(np.arange(8) * np.pi / 4)
+    ax.set_xticklabels(["0", "π/4", "π/2", "3π/4", "π", "5π/4", "3π/2", "7π/4"])
+    ax.set_title("c. the same round the mite\n(θ = 0 right, clockwise as in the image)")
     save(fig, "6_profile")
 
     fig, axes = plt.subplots(1, 3, figsize=(15, 4.2))
@@ -366,6 +368,13 @@ def step_run(dataset, data_dir, rows):
                    n_labelled=int(use.sum()), n_moving_labels=int(moving[use].sum()),
                    still_called_moving=counts["still_called_moving"], moving_called_still=counts["moving_called_still"],
                    average_precision=round(calibration.average_precision(score[use], moving[use]), 4))
+    # the death-time error of the calls at this threshold against the labels, as the calibration report gives it
+    death_rows = [dict(dataset=dataset["id"] if "id" in dataset else "run", mite_id=ids[i], recording=int(r), score=score[i, r],
+                       movement=calibration.MOVING if moving[i, r] else calibration.STILL)
+                  for i, r in zip(*np.nonzero(use))]
+    errors = calibration.death_errors(death_rows, {"detector": threshold})["detector"]
+    numbers.update(death_mae=round(errors["mae"], 3), death_bias=round(errors["bias"], 3), death_mites=errors["n_mites"],
+                   death_exact=errors["n_exact"], death_early=errors["n_early"], death_late=errors["n_late"])
 
     # 8. one mite's scores over the run against the threshold
     index = ids.index(MOVING[0])
@@ -392,14 +401,19 @@ def step_run(dataset, data_dir, rows):
     axes[0].axvline(threshold, color=INK, ls="--")
     axes[0].set(xscale="log", xlabel="score", ylabel="recordings", title="a. the labelled recordings' scores")
     axes[0].legend(frameon=False)
-    axes[1].plot(recall, precision, color=BLUE)
+    # A near-perfect curve runs along precision 1, on the frame: shade the area under it (the
+    # average precision) and leave room above it, so it can be seen.
+    axes[1].fill_between(recall, precision, step="post", color=BLUE, alpha=0.2, lw=0, label="area = average precision")
+    axes[1].plot(recall, precision, color=BLUE, lw=2.5, drawstyle="steps-post", clip_on=False)
     best = int(np.argmax(f05))
-    axes[1].plot(recall[best], precision[best], "o", color=INK)
-    axes[1].set(xlabel="recall", ylabel="precision", ylim=(0, 1.02),
+    axes[1].plot(recall[best], precision[best], "o", color=INK, clip_on=False, label=f"best {F_NAME}")
+    axes[1].plot(1, 1, "*", color=GREEN, ms=12, clip_on=False, zorder=5, label="ideal (recall 1, precision 1)")
+    axes[1].legend(frameon=False, loc="lower left")
+    axes[1].set(xlabel="recall", ylabel="precision", xlim=(0, 1.05), ylim=(0, 1.12),
                 title=f"b. calibration.precision_recall_curve(), AP = {numbers['average_precision']:.3f}")
     axes[2].plot(thresholds, f05, color=BLUE)
     axes[2].axvline(threshold, color=INK, ls="--")
-    axes[2].set(xscale="log", xlabel="threshold T", ylabel=F_NAME, title=f"c. best_f05_threshold() = {threshold:.3f}")
+    axes[2].set(xscale="log", xlabel="threshold T", ylabel=F_NAME, title=f"c. threshold with the best {F_NAME} = {threshold:.3f}")
     save(fig, "9_calibration")
 
     # 10. calls -> deaths -> Kaplan-Meier

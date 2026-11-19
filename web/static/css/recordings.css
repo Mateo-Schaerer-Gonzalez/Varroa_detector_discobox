@@ -11,8 +11,10 @@
 .recordings .plates { min-width: 180px; }
 .recordings .name { min-width: 160px; }
 .recordings td.nowrap { white-space: nowrap; }
-.recordings .row-actions { white-space: nowrap; }
+.recordings .row-actions { white-space: nowrap; text-align: left; }
 .recordings .row-actions button + button { margin-left: 4px; }
+/* a recording setting that differs from the live settings now (RecordingInfo.differences) */
+.differs, .recordings .sub .differs { color: var(--critical); }
 .rec-state { display: inline-block; margin-left: 6px; padding: 0 5px; font-size: 11px; font-weight: 600; color: #fff; background: var(--muted); border-radius: 2px; vertical-align: 1px; }
 .rec-state.now { background: var(--critical); }
 .rec-state.cut { background: var(--still); }

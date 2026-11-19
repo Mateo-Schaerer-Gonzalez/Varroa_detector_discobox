@@ -122,6 +122,7 @@ class LivePanel {
 
     this.drawNext(s);
     this.drawProgress(s);
+    this.adding.update(s);
 
     const finished = s.state === "finished";
     $("live-pause-btn").hidden = finished;
@@ -173,6 +174,6 @@ class LivePanel {
     const counting = zones.filter((zone) => zone.counts);
     const done = counting.filter((zone) => zone.done).length;
     $("run-left").textContent = s.state === "finished" ? (s.stop_reason ? `Stopped: ${s.stop_reason}` : `Finished after ${s.analysed} recordings`)
-      : counting.length ? `${done} of ${plural(counting.length, "zone")} done · the run stops once all are` : "";
+      : counting.length ? `${done} of ${plural(counting.length, "zone")} done${s.stop_when_dead === false ? " · the run goes on for its whole duration" : " · the run stops once all are"}` : "";
   }
 }

@@ -55,7 +55,9 @@ class OverviewPage extends ResultsPage {
         Zones without mites are left out. Select a zone to open it.${this.stillToCome()}</p>`)}
 
     ${section("Group summary", `<div class="table-wrap"><table id="group-table"></table></div>
-      <p class="caption"><b>Moving</b> is the share of all mite-recordings in which the mite moved.</p>`)}
+      <p class="caption"><b>Moving</b> pools every mite in every recording: the share of the group's mite-recordings (one mite in one recording)
+        called moving, e.g. 10 mites over 50 recordings are 500 mite-recordings, and 120 called moving give 24%.
+        Recordings after a mite died count as still, so this is not a survival rate; recordings in which a mite is marked gone are left out.</p>`)}
 
     <div class="block">${figure("chart-group-scores", 3, "Motion scores by group",
       `Every mite in every recording at its motion score, one row per group, pooling every zone with that label: ${movingBadge(true)} at or above the threshold (dashed line),
@@ -147,11 +149,11 @@ class OverviewPage extends ResultsPage {
     const nMovingShown = (zone) => zone.n_moving[ctx.shown];
     // A zone whose mites a live run added later is not on the map before then: nothing to open.
     ctx.zonesWithMites().filter((zone) => ctx.shown >= this.clockOf(zone).start).forEach((zone) => {
-      const color = groupColor(zone.label || "unlabeled", groups);
+      const color = groupColor(zone.label || UNLABELED, groups);
       const link = document.createElement("a");
       link.className = "zone result";
       link.href = ctx.href(`zone/${zone.id}`);
-      link.setAttribute("aria-label", `Zone ${zone.id}, ${zone.label || "unlabeled"}, ${zone.n_mites ? `${nMovingShown(zone)} of ${zone.n_mites} mites moving at ${this.shownTime()}` : "no mites"}`);
+      link.setAttribute("aria-label", `Zone ${zone.id}, ${zone.label || UNLABELED}, ${zone.n_mites ? `${nMovingShown(zone)} of ${zone.n_mites} mites moving at ${this.shownTime()}` : "no mites"}`);
       Object.assign(link.style, place(zone.x1, zone.y1, zone.x2, zone.y2));
       link.style.setProperty("--zone-color", color);
       link.innerHTML = `<span class="zone-num">${zone.id}</span>`;
@@ -165,8 +167,8 @@ class OverviewPage extends ResultsPage {
       Object.assign(text.style, place(rect.x1, rect.y1, rect.x2, rect.y2));
       text.style.setProperty("--zone-color", color);
       const count = zone.n_mites ? `${nMovingShown(zone)}/${zone.n_mites} moving at ${this.shownTime()}` : "no mites";
-      text.title = `Zone ${zone.id} · ${zone.label || "unlabeled"} · ${count}`;
-      text.innerHTML = `<span class="text-tag">${esc(zone.label || "unlabeled")}
+      text.title = `Zone ${zone.id} · ${zone.label || UNLABELED} · ${count}`;
+      text.innerHTML = `<span class="text-tag">${esc(zone.label || UNLABELED)}
       <small>${zone.n_mites ? `${nMovingShown(zone)}/${zone.n_mites}` : "–"}</small></span>`;
 
       PlateView.linkHover([link, text]);
@@ -192,7 +194,7 @@ class OverviewPage extends ResultsPage {
   drawZoneCards(groups) {
     const container = $("zone-cards");
     ctx.zonesWithMites().forEach((zone) => {
-      const color = groupColor(zone.label || "unlabeled", groups);
+      const color = groupColor(zone.label || UNLABELED, groups);
       const card = document.createElement("a");
       card.className = "zone-card";
       card.href = ctx.href(`zone/${zone.id}`);
@@ -201,7 +203,7 @@ class OverviewPage extends ResultsPage {
         <span class="zone-card-id">Zone ${zone.id}</span>
         <span class="zone-card-value" title="moving in the last recording">${zone.n_mites ? `${zone.n_moving_last}/${zone.n_mites}` : "–"}</span>
       </div>
-      <div class="zone-card-group">${Markup.groupTag(zone.label || "unlabeled", color)}</div>`;
+      <div class="zone-card-group">${Markup.groupTag(zone.label || UNLABELED, color)}</div>`;
       const plot = document.createElement("div");
       plot.className = "zone-card-plot";
       // on the zone's own clock: from when its first mites were added, for one added during a live run

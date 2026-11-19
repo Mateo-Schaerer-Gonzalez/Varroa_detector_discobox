@@ -11,7 +11,7 @@ class MitePage extends ResultsPage {
     const zone = ctx.zone(mite.zone_id);
     const siblings = ctx.mitesIn(zone.id);
     const { times } = results;
-    const color = groupColor(zone.label || "unlabeled", ctx.resultGroups());
+    const color = groupColor(zone.label || UNLABELED, ctx.resultGroups());
     const { stat, figure, section, movingBadge } = Markup;
     this.breadcrumb([["Results", ctx.href("results")], [this.zoneName(zone), ctx.href(`zone/${zone.id}`)], [`Mite ${mite.id}`, ""]]);
 
@@ -37,7 +37,7 @@ class MitePage extends ResultsPage {
     <header class="page-head">
       <div>
         <h1>Mite ${this.miteId(mite)}</h1>
-        <p class="meta">${this.callBadge(mite, ctx.lastIndex())} in the last recording · <a href="${ctx.href(`zone/${zone.id}`)}">Zone ${zone.id}</a> · ${Markup.groupTag(zone.label || "unlabeled", color)}</p>
+        <p class="meta">${this.callBadge(mite, ctx.lastIndex())} in the last recording · <a href="${ctx.href(`zone/${zone.id}`)}">Zone ${zone.id}</a> · ${Markup.groupTag(zone.label || UNLABELED, color)}</p>
         ${nNotYet ? `<p class="meta">Added during the run, at ${minutes(times[nNotYet])}: its times below count from then, its own 0.</p>` : ""}
         ${this.inStudy(mite) ? "" : `<p class="meta">Never seen moving, so left out of the survival numbers: it may have been dead from the start, or no live mite at all.</p>`}
       </div>

@@ -2,7 +2,7 @@
 
 Works on the results as pipeline describes them for the pages (plain dicts: each
 zone with its `id`, `label` and `n_mites`, each mite with its `zone_id`). A zone's
-group is its label, or "unlabeled". Only zones with a detected mite count: the
+group is its label, or "unlabelled slide" (zones.UNLABELED). Only zones with a detected mite count: the
 others have nothing to show.
 """
 
@@ -20,7 +20,7 @@ class Calls(list):
 
 
 def group_order(group):
-    """Sort key: named groups alphabetically, whatever their case, "unlabeled" last."""
+    """Sort key: named groups alphabetically, whatever their case, UNLABELED last."""
     return (group == UNLABELED, group.casefold(), group)
 
 

@@ -43,7 +43,7 @@ def test_the_workbook_has_a_sheet_per_group_and_the_settings(tmp_path):
 
     sheets = pd.read_excel(out / "results.xlsx", sheet_name=None)
     scores = sheets["scores"]
-    for group, name in [("control", "group control"), ("venom: 2x", "group venom_ 2x"), ("unlabeled", "group unlabeled")]:
+    for group, name in [("control", "group control"), ("venom: 2x", "group venom_ 2x"), ("unlabelled slide", "group unlabelled slide")]:
         table = sheets[name]
         assert list(table.columns[:3]) == ["mite_ID", "zone_id", "last_moved_min"]
         assert list(table["mite_ID"]) == list(scores.loc[scores["group"] == group, "mite_ID"])

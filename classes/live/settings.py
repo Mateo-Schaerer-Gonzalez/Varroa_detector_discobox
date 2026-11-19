@@ -7,8 +7,11 @@ A test run is a recording every `recording_timeout` minutes for at most
 `run_minutes`, then `death_minutes` more, the time a mite must be still to count
 as dead, so a mite alive at the end of the experiment can still be told from a
 dead one. It ends sooner once every mite of every zone is dead
-(pipeline/live/live_capture.py, classes/live/progress.py); `death_minutes` must
-not be 0 for that. Between two
+(pipeline/live/live_capture.py, classes/live/progress.py) unless `stop_when_dead`
+is 0 (the user's choice of 2026-11-17: optional, on by default; from 2026-11-19 a run
+without it follows, scores and saves every mite, dead ones too, in every recording for
+the whole duration: more storage); `death_minutes` must not be 0 either way, as the
+zone circles and the stop rule need it. Between two
 recordings a mite is followed at most `follow_px` pixels (0: not at all; see
 classes/scoring/motion_analysis.py). Each recording is a burst of FRAME_COUNT frames
 at FPS, with the fan (`vent`) and the two LEDs switched on at their intensity
@@ -17,13 +20,16 @@ the zone mask the plates are cut into for the analysis (classes/plate/zone_masks
 the only setting that is a name, not a number; a file of earlier versions gives
 `zones_per_plate` (1 or 2), the built-in mask of that name.
 
-The burst is fixed, not a setting: 3 s at 30 fps. A score's threshold only fits
-recordings of the length and frame rate it was calibrated on, and a longer
-recording tells moving from still far better than a faster one
-(notebooks/poke_run_followed.ipynb, section 9). `frame_count`
-and `fps` stay fields, as the file and the code read them, but no file, page or
-command line sets them: a saved file's values are read as these, and from_dict()
-refuses others.
+The burst's length (`recording_length`, whole seconds) and frame rate (`fps`)
+are settings again since 2026-11-17 (the user's choice, after they were fixed at
+3 s / 30 fps from 2026-10-20): the default stays 3 s at 30 fps, and the page says
+that a threshold only fits recordings of the length and frame rate it was
+calibrated on (a longer recording tells moving from still far better than a
+faster one, notebooks/poke_run_followed.ipynb, section 9). `frame_count` stays the
+field the file, DataLoader and the camera read: `recording_length` x `fps`. A file
+without a `recording_length` line was written while the burst was fixed (or by
+the Discobox app), so its `frame_count` and `fps` are read as 3 s at 30 fps, as
+they were then.
 
 The file is `key=value` lines, the format DataLoader reads from a session's
 .settings.txt, so a live run's settings are written next to its recordings. It
@@ -38,20 +44,23 @@ from pathlib import Path
 
 from classes.plate import zone_masks
 
-# Every recording: FRAME_COUNT frames at FPS (3 s). The camera (Mako G-319B) takes at most 33 fps.
+# Every recording by default: FRAME_COUNT frames at FPS (3 s). The camera (Mako G-319B) takes at most 33 fps.
 FPS = 30
-FRAME_COUNT = 90
-FIXED = {"frame_count": FRAME_COUNT, "fps": FPS}
+SECONDS = 3
+FRAME_COUNT = SECONDS * FPS
 
 # name: (label, unit, lowest, highest).
 RANGES = {
     "run_minutes": ("Experiment duration, at most", "min", 0, 43200),
     "death_minutes": ("Dead when still for", "min", 0, 43200),
+    "stop_when_dead": ("Stop once every mite is dead", "", 0, 1),
     "follow_px": ("Most a mite moves between recordings", "px", 0, 500),
     "recording_timeout": ("Time between recordings", "min", 1, 1440),
     "vent_time": ("Fan duration", "s", 0, 3600),
     "led1_time": ("LED 1 duration", "s", 0, 3600),
     "led2_time": ("LED 2 duration", "s", 0, 3600),
+    "recording_length": ("Recording length", "s", 1, 60),
+    "fps": ("Frame rate", "fps", 1, 33),
     "vent": ("Fan intensity", "", 0, 255),
     "led1": ("LED 1 intensity", "", 0, 255),
     "led2": ("LED 2 intensity", "", 0, 255),
@@ -64,6 +73,7 @@ OLD_MASK = "zones_per_plate"  # of earlier versions: 1 or 2
 class Settings:
     run_minutes: int = 10
     death_minutes: int = 0
+    stop_when_dead: int = 1
     follow_px: int = 50
     recording_timeout: int = 1
     vent_time: int = 10
@@ -80,28 +90,27 @@ class Settings:
     def from_dict(cls, values):
         """Settings from `values` (name -> number), each checked against RANGES,
         and the name of a zone mask there is. Names not given keep their default.
-        `frame_count` and `fps` may only be given at their fixed values (FIXED)."""
+        `recording_length` (s) sets `frame_count` to that many seconds at `fps`;
+        `frame_count` may be given instead (the tests' short bursts)."""
         checked = {}
+        length = None
         for name, value in values.items():
             if name in (MASK, OLD_MASK):
                 checked[MASK] = zone_masks.check(value)
                 continue
-            if name in FIXED:
-                if value != FIXED[name]:
-                    raise ValueError(f"Every recording is {FRAME_COUNT} frames at {FPS} fps; {name} cannot be changed.")
+            if name == "frame_count":
+                checked[name] = _whole(value, "Frames per recording", 1, 10**6)
                 continue
             if name not in RANGES:
                 raise ValueError(f"Unknown setting {name!r}.")
             label, _unit, lowest, highest = RANGES[name]
-            try:
-                number = int(value)
-            except (TypeError, ValueError):
-                raise ValueError(f"{label} must be a whole number, not {value!r}.")
-            if float(value) != number:
-                raise ValueError(f"{label} must be a whole number, not {value!r}.")
-            if not lowest <= number <= highest:
-                raise ValueError(f"{label} must be between {lowest} and {highest}.")
-            checked[name] = number
+            number = _whole(value, label, lowest, highest)
+            if name == "recording_length":
+                length = number
+            else:
+                checked[name] = number
+        if length is not None:
+            checked["frame_count"] = length * checked.get("fps", FPS)
         return cls(**checked)
 
     @classmethod
@@ -127,6 +136,9 @@ class Settings:
         for name in (MASK, OLD_MASK):
             if name in values and not zone_masks.exists(values[name]):
                 del values[name]
+        # written while the burst was fixed, or by the Discobox app: 3 s at 30 fps, as then
+        if "recording_length" not in values:
+            values.pop("fps", None)
         return cls.from_dict({key: value for key, value in values.items() if key in (*RANGES, MASK, OLD_MASK)})
 
     def save(self, path):
@@ -134,10 +146,16 @@ class Settings:
 
     def __str__(self):
         lines = [f"{field.name}={getattr(self, field.name)}\n" for field in fields(self)]
-        return f"recording_count={self.recording_count}\n" + "".join(lines)
+        return f"recording_count={self.recording_count}\nrecording_length={self.recording_length}\n" + "".join(lines)
 
     def as_dict(self):
-        return asdict(self)
+        """Every field, and `recording_length`, the burst's length in whole seconds, as the page sets it."""
+        return {**asdict(self), "recording_length": self.recording_length}
+
+    @property
+    def recording_length(self):
+        """The burst's length in whole seconds (at least 1), as the page shows and sets it."""
+        return max(1, round(self.frame_count / self.fps))
 
     def recordings_until(self, minutes):
         """How many recordings, the first at 0 and one every `recording_timeout`
@@ -186,3 +204,16 @@ class Settings:
                 f"One recording takes {self.cycle_seconds:.0f} s (the fan, the LEDs and the burst), longer than "
                 f"the {self.recording_timeout} min between recordings."
             )
+
+
+def _whole(value, label, lowest, highest):
+    """`value` as a whole number from `lowest` to `highest`; ValueError naming `label` otherwise."""
+    try:
+        number = int(value)
+    except (TypeError, ValueError):
+        raise ValueError(f"{label} must be a whole number, not {value!r}.")
+    if float(value) != number:
+        raise ValueError(f"{label} must be a whole number, not {value!r}.")
+    if not lowest <= number <= highest:
+        raise ValueError(f"{label} must be between {lowest} and {highest}.")
+    return number

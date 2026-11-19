@@ -74,7 +74,7 @@ class Workspace {
   }
 
   // The groups with a detected mite, in the server's order (named groups
-  // alphabetically, "unlabeled" last), each with its zones and mites.
+  // alphabetically, UNLABELED last), each with its zones and mites.
   groupRows() {
     return this.results.group_rows.map((row) => ({
       ...row,

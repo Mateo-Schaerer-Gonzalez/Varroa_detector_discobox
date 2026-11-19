@@ -55,7 +55,7 @@ class ActivitySection {
       <div class="block">${figure("chart-shake", first, "Plate shake per recording",
         `In each recording, how far each mite's patch moved from the recording's first frame at most, as its own shift measures it; the line is the median over the mites in their place.
         A recording or a stretch of time above the rest is one in which the plate shook more: a door, a fan, a bench knocked.
-        Each mite's patch is moved back by the plate's shift, the median of all the mites' own, before it is scored.
+        Each mite's patch is moved back by its own shift (the median of the other mites' where its own is lost) before it is scored.
         Click a time to show that recording.${this.page.stillToCome()}`)}</div>
       <div class="block">${figure("activity-movers", first + 1, `The ${movers.length} mites that drifted furthest`,
         `Each mite's path across the recordings: where its image sits against its image in the first recording (px, py, in pixels; for a mite added during a live run, the recording it was added in, and its zone from there), from light (first recording) to dark (last), starting on the mite's centre.

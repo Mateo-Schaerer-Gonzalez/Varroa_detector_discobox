@@ -90,7 +90,7 @@
      5
     ]
    },
-   "group unlabeled": {
+   "group unlabelled slide": {
     "columns": [
      "mite_ID",
      "zone_id",
@@ -458,7 +458,7 @@
       0.01697976939802583
      ],
      [
-      "unlabeled",
+      "unlabelled slide",
       6,
       36,
       0,
@@ -525,7 +525,7 @@
      [
       "time",
       "control",
-      "unlabeled",
+      "unlabelled slide",
       "venom 1x",
       "venom 2x",
       null,
@@ -2378,7 +2378,7 @@
       0.01296293396414853,
       false,
       16,
-      "unlabeled",
+      "unlabelled slide",
       "mite",
       965.5,
       1300.5,
@@ -2390,7 +2390,7 @@
       0.002920063576367771,
       false,
       16,
-      "unlabeled",
+      "unlabelled slide",
       "mite",
       965.5,
       1300.5,
@@ -2402,7 +2402,7 @@
       0.00704943289436261,
       false,
       16,
-      "unlabeled",
+      "unlabelled slide",
       "mite",
       965.5,
       1300.5,
@@ -2414,7 +2414,7 @@
       0.007421420792242174,
       false,
       16,
-      "unlabeled",
+      "unlabelled slide",
       "mite",
       965.5,
       1300.5,
@@ -2426,7 +2426,7 @@
       0.005489617462920014,
       false,
       16,
-      "unlabeled",
+      "unlabelled slide",
       "mite",
       965.5,
       1300.5,
@@ -2438,7 +2438,7 @@
       0.006768847296156948,
       false,
       16,
-      "unlabeled",
+      "unlabelled slide",
       "mite",
       965.5,
       1300.5,
@@ -2450,7 +2450,7 @@
       0.003716567792877149,
       false,
       16,
-      "unlabeled",
+      "unlabelled slide",
       "mite",
       1176.5,
       1301.0,
@@ -2462,7 +2462,7 @@
       0.008071979054896386,
       false,
       16,
-      "unlabeled",
+      "unlabelled slide",
       "mite",
       1176.5,
       1301.0,
@@ -2474,7 +2474,7 @@
       0.006678299874169701,
       false,
       16,
-      "unlabeled",
+      "unlabelled slide",
       "mite",
       1176.5,
       1301.0,
@@ -2486,7 +2486,7 @@
       0.007772800597391286,
       false,
       16,
-      "unlabeled",
+      "unlabelled slide",
       "mite",
       1176.5,
       1301.0,
@@ -2498,7 +2498,7 @@
       0.008306975091222314,
       false,
       16,
-      "unlabeled",
+      "unlabelled slide",
       "mite",
       1176.5,
       1301.0,
@@ -2510,7 +2510,7 @@
       0.004932983306227571,
       false,
       16,
-      "unlabeled",
+      "unlabelled slide",
       "mite",
       1176.5,
       1301.0,
@@ -2522,7 +2522,7 @@
       0.004487533063318999,
       false,
       16,
-      "unlabeled",
+      "unlabelled slide",
       "mite",
       1048.0,
       1295.0,
@@ -2534,7 +2534,7 @@
       0.01059838283866349,
       false,
       16,
-      "unlabeled",
+      "unlabelled slide",
       "mite",
       1048.0,
       1295.0,
@@ -2546,7 +2546,7 @@
       0.004706531609575491,
       false,
       16,
-      "unlabeled",
+      "unlabelled slide",
       "mite",
       1048.0,
       1295.0,
@@ -2558,7 +2558,7 @@
       0.01241138712144419,
       false,
       16,
-      "unlabeled",
+      "unlabelled slide",
       "mite",
       1048.0,
       1295.0,
@@ -2570,7 +2570,7 @@
       0.004312453630081937,
       false,
       16,
-      "unlabeled",
+      "unlabelled slide",
       "mite",
       1048.0,
       1295.0,
@@ -2582,7 +2582,7 @@
       0.008459452511483683,
       false,
       16,
-      "unlabeled",
+      "unlabelled slide",
       "mite",
       1048.0,
       1295.0,
@@ -2594,7 +2594,7 @@
       0.004663984394803628,
       false,
       16,
-      "unlabeled",
+      "unlabelled slide",
       "mite",
       1064.5,
       1225.5,
@@ -2606,7 +2606,7 @@
       0.006933323294475833,
       false,
       16,
-      "unlabeled",
+      "unlabelled slide",
       "mite",
       1064.5,
       1225.5,
@@ -2618,7 +2618,7 @@
       0.00930701458128721,
       false,
       16,
-      "unlabeled",
+      "unlabelled slide",
       "mite",
       1064.5,
       1225.5,
@@ -2630,7 +2630,7 @@
       0.01066428791085325,
       false,
       16,
-      "unlabeled",
+      "unlabelled slide",
       "mite",
       1064.5,
       1225.5,
@@ -2642,7 +2642,7 @@
       0.01135628983726143,
       false,
       16,
-      "unlabeled",
+      "unlabelled slide",
       "mite",
       1064.5,
       1225.5,
@@ -2654,7 +2654,7 @@
       0.003263995517299712,
       false,
       16,
-      "unlabeled",
+      "unlabelled slide",
       "mite",
       1064.5,
       1225.5,
@@ -2666,7 +2666,7 @@
       0.007208532384256108,
       false,
       16,
-      "unlabeled",
+      "unlabelled slide",
       "mite",
       956.5,
       1218.0,
@@ -2678,7 +2678,7 @@
       0.007973562203615624,
       false,
       16,
-      "unlabeled",
+      "unlabelled slide",
       "mite",
       956.5,
       1218.0,
@@ -2690,7 +2690,7 @@
       0.01085002988656626,
       false,
       16,
-      "unlabeled",
+      "unlabelled slide",
       "mite",
       956.5,
       1218.0,
@@ -2702,7 +2702,7 @@
       0.007235391652180544,
       false,
       16,
-      "unlabeled",
+      "unlabelled slide",
       "mite",
       956.5,
       1218.0,
@@ -2714,7 +2714,7 @@
       0.0113715038901862,
       false,
       16,
-      "unlabeled",
+      "unlabelled slide",
       "mite",
       956.5,
       1218.0,
@@ -2726,7 +2726,7 @@
       0.00502727147131439,
       false,
       16,
-      "unlabeled",
+      "unlabelled slide",
       "mite",
       956.5,
       1218.0,
@@ -2738,7 +2738,7 @@
       0.005721495493549331,
       false,
       16,
-      "unlabeled",
+      "unlabelled slide",
       "mite",
       1182.0,
       1225.0,
@@ -2750,7 +2750,7 @@
       0.01031665000013394,
       false,
       16,
-      "unlabeled",
+      "unlabelled slide",
       "mite",
       1182.0,
       1225.0,
@@ -2762,7 +2762,7 @@
       0.008079411191161326,
       false,
       16,
-      "unlabeled",
+      "unlabelled slide",
       "mite",
       1182.0,
       1225.0,
@@ -2774,7 +2774,7 @@
       0.00588634949859421,
       false,
       16,
-      "unlabeled",
+      "unlabelled slide",
       "mite",
       1182.0,
       1225.0,
@@ -2786,7 +2786,7 @@
       0.004386085088745713,
       false,
       16,
-      "unlabeled",
+      "unlabelled slide",
       "mite",
       1182.0,
       1225.0,
@@ -2798,7 +2798,7 @@
       0.002360373056432288,
       false,
       16,
-      "unlabeled",
+      "unlabelled slide",
       "mite",
       1182.0,
       1225.0,
@@ -3150,37 +3150,37 @@
      [
       16.1,
       16,
-      "unlabeled",
+      "unlabelled slide",
       null
      ],
      [
       16.2,
       16,
-      "unlabeled",
+      "unlabelled slide",
       null
      ],
      [
       16.3,
       16,
-      "unlabeled",
+      "unlabelled slide",
       null
      ],
      [
       16.4,
       16,
-      "unlabeled",
+      "unlabelled slide",
       null
      ],
      [
       16.5,
       16,
-      "unlabeled",
+      "unlabelled slide",
       null
      ],
      [
       16.6,
       16,
-      "unlabeled",
+      "unlabelled slide",
       null
      ]
     ],
@@ -3277,7 +3277,7 @@
      ],
      [
       "group",
-      "unlabeled",
+      "unlabelled slide",
       0,
       6,
       0,
@@ -3285,7 +3285,7 @@
      ],
      [
       "group",
-      "unlabeled",
+      "unlabelled slide",
       5,
       6,
       0,
@@ -3293,7 +3293,7 @@
      ],
      [
       "group",
-      "unlabeled",
+      "unlabelled slide",
       10,
       6,
       0,
@@ -3301,7 +3301,7 @@
      ],
      [
       "group",
-      "unlabeled",
+      "unlabelled slide",
       15,
       6,
       0,
@@ -3309,7 +3309,7 @@
      ],
      [
       "group",
-      "unlabeled",
+      "unlabelled slide",
       20,
       6,
       0,
@@ -3317,7 +3317,7 @@
      ],
      [
       "group",
-      "unlabeled",
+      "unlabelled slide",
       25,
       6,
       0,
@@ -3997,7 +3997,7 @@
      [
       16.1,
       16,
-      "unlabeled",
+      "unlabelled slide",
       0.007208532384256108,
       0.007973562203615624,
       0.01085002988656626,
@@ -4008,7 +4008,7 @@
      [
       16.2,
       16,
-      "unlabeled",
+      "unlabelled slide",
       0.004663984394803628,
       0.006933323294475833,
       0.00930701458128721,
@@ -4019,7 +4019,7 @@
      [
       16.3,
       16,
-      "unlabeled",
+      "unlabelled slide",
       0.005721495493549331,
       0.01031665000013394,
       0.008079411191161326,
@@ -4030,7 +4030,7 @@
      [
       16.4,
       16,
-      "unlabeled",
+      "unlabelled slide",
       0.01296293396414853,
       0.002920063576367771,
       0.00704943289436261,
@@ -4041,7 +4041,7 @@
      [
       16.5,
       16,
-      "unlabeled",
+      "unlabelled slide",
       0.004487533063318999,
       0.01059838283866349,
       0.004706531609575491,
@@ -4052,7 +4052,7 @@
      [
       16.6,
       16,
-      "unlabeled",
+      "unlabelled slide",
       0.003716567792877149,
       0.008071979054896386,
       0.006678299874169701,
@@ -5310,7 +5310,7 @@
      ],
      "xticklabels": [
       "control",
-      "unlabeled",
+      "unlabelled slide",
       "venom 1x",
       "venom 2x"
      ],
@@ -5333,7 +5333,7 @@
      "collections": [],
      "legend": [
       "control",
-      "unlabeled",
+      "unlabelled slide",
       "venom 1x",
       "venom 2x"
      ],
@@ -5366,7 +5366,7 @@
       {
        "alpha": null,
        "color": "#ff7f0eff",
-       "label": "unlabeled",
+       "label": "unlabelled slide",
        "marker": "o",
        "markersize": 4.0,
        "style": "-",
@@ -6573,14 +6573,14 @@
  ],
  "pixels": {
   "detections.jpg": "b543dc6a761bc909f1d87288e57a9a9611219754de51e8eae3cd7f7808b6f69a",
-  "distribution_by_group.png": "dc52fe985cf6769de5163de7e4ab168fbe65d532ccff63d6139f450cf50e31a5",
-  "moving_by_group.png": "e4dd58882129f6f15e2bd3a99ffd27d1a4738072f04d62a6b9cbb441e63f24c8",
+  "distribution_by_group.png": "fb2862a157a30de495e1b0389bf5ec3616a2c5d65ec9f1c995dcb16abc5a1ca9",
+  "moving_by_group.png": "aaf772cae77d6d4c277edfa0b6f4a07561ed9087e8709381bcfdbeb7017ba6a6",
   "preview.jpg": "a498df0ecbd5be79ecafeeb3c8b8ee0a0f7690753c1f063e5d392913bfeacda7",
   "score_distribution.png": "0e4f1043395188fb1f9bc27ff90c78d7d91412cfd391b1964e0156426caf6744",
   "score_over_time.png": "d7fee107075c18b315f58562edb0f6c9b2d11faa96890a8f0c6675d8cda4ecbb"
  },
  "rejected": {
-  "group": "unlabeled",
+  "group": "unlabelled slide",
   "id": "13.4",
   "moving": [
    false,
@@ -7032,7 +7032,7 @@
     ]
    },
    {
-    "group": "unlabeled",
+    "group": "unlabelled slide",
     "moving": [
      0.0,
      0.0,
@@ -7623,7 +7623,7 @@
     "zone_id": 13
    },
    {
-    "group": "unlabeled",
+    "group": "unlabelled slide",
     "id": "16.1",
     "moving": [
      false,
@@ -7646,7 +7646,7 @@
     "zone_id": 16
    },
    {
-    "group": "unlabeled",
+    "group": "unlabelled slide",
     "id": "16.2",
     "moving": [
      false,
@@ -7669,7 +7669,7 @@
     "zone_id": 16
    },
    {
-    "group": "unlabeled",
+    "group": "unlabelled slide",
     "id": "16.3",
     "moving": [
      false,
@@ -7692,7 +7692,7 @@
     "zone_id": 16
    },
    {
-    "group": "unlabeled",
+    "group": "unlabelled slide",
     "id": "16.4",
     "moving": [
      false,
@@ -7715,7 +7715,7 @@
     "zone_id": 16
    },
    {
-    "group": "unlabeled",
+    "group": "unlabelled slide",
     "id": "16.5",
     "moving": [
      false,
@@ -7738,7 +7738,7 @@
     "zone_id": 16
    },
    {
-    "group": "unlabeled",
+    "group": "unlabelled slide",
     "id": "16.6",
     "moving": [
      false,
@@ -7784,7 +7784,7 @@
     },
     {
      "fraction_moving": 0.0,
-     "group": "unlabeled",
+     "group": "unlabelled slide",
      "max_score": 0.013,
      "mean_score": 0.007,
      "median_score": 0.007,

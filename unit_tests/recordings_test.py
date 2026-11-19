@@ -6,6 +6,7 @@ import json
 import pytest
 
 import folder_camera
+from classes.live.settings import Settings
 from classes.storage.data_loader import DataLoader
 import pipeline
 from pipeline.live import live_runs
@@ -49,6 +50,20 @@ def test_a_folder_without_settings_is_listed_from_its_recordings(tmp_path, roots
     (folder / ".settings.txt").unlink()
     [listed] = pipeline.list_recordings(**roots)
     assert listed["settings"] is None and listed["fps"] == 30 and listed["results"] is None
+
+
+def test_the_settings_that_differ_from_the_live_settings_now_are_named(tmp_path, roots):
+    reference.make_small_session(roots["recordings_root"] / "hive 3")
+    settings_path = tmp_path / "settings.txt"
+    # as the session was recorded, but for its length: a setting is whole seconds, its recordings are 0.1 s
+    Settings(fps=30, recording_timeout=5, vent_time=20, led1_time=20, led2_time=20).save(settings_path)
+    [listed] = pipeline.list_recordings(**roots, settings_path=settings_path)
+    assert listed["differs"] == ["recording_length"]
+    # 3 s at 15 fps, every 10 min, LED 2 dimmer
+    Settings.from_dict({"recording_length": 3, "fps": 15, "recording_timeout": 10, "vent_time": 20, "led1_time": 20,
+                        "led2_time": 20, "led2": 100}).save(settings_path)
+    [listed] = pipeline.list_recordings(**roots, settings_path=settings_path)
+    assert listed["differs"] == ["recording_length", "fps", "recording_timeout", "led2"]
 
 
 @pytest.mark.parametrize("name, filename", [("..", "results.xlsx"), ("run", "../x"), ("a/b", "results.xlsx"), ("run", "")])

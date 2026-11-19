@@ -65,10 +65,13 @@ function countdown(seconds) {
 // Read colour tokens from the stylesheet so charts follow light/dark mode.
 const token = (name) => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
 
-// Groups get categorical colours in alphabetical order; "unlabeled" and any
+// The group of a slide no one named: the server's (classes/plate/zones.py UNLABELED).
+const UNLABELED = "unlabelled slide";
+
+// Groups get categorical colours in alphabetical order; UNLABELED and any
 // ninth group onwards are grey rather than an invented hue.
 function groupColor(group, groups) {
-  const named = groups.filter((g) => g !== "unlabeled");
+  const named = groups.filter((g) => g !== UNLABELED);
   const index = named.indexOf(group);
   return index >= 0 && index < 8 ? token(`--series-${index + 1}`) : token("--series-other");
 }

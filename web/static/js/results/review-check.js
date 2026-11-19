@@ -62,15 +62,12 @@ class ReviewCheck {
         ? `No motion score is close enough to the threshold of ${score(results.threshold)} to need checking by eye.`
         : `No mites are to be checked by eye. With a number below, the motion scores closest to the threshold of ${score(results.threshold)}
           that a mite's time of death depends on are listed here to check.`)
-      : `${this.hasBand() ? `To ask about ${plural(wanted.mites, "mite")} at most, a motion score from ${this.bandText()} is taken as too close to the threshold
-        of ${score(results.threshold)} to trust: the narrowest band that does. ` : ""}A weak last movement often scores below the
-        threshold${this.hasBand() ? " and the band" : ""}, but stands out on the mite's score graph as a peak: the peaks after a mite's last movement,
-        well above where its score sits when still, are asked about too${this.hasBand() ? ", beside the band's" : ""}.
-        A mite dies after its last movement, so the close calls after its last clear movement decide when it died.
-        ${mites.length
-          ? `<b>${plural(review.n_recordings, "recording")} of ${plural(review.n_mites, "mite")}</b> ${review.n_recordings === 1 ? "is" : "are"} left to check, the latest of each mite first:
-            once one shows the mite moving, the earlier ones are asked for no more.`
-          : "<b>Nothing is left to check.</b>"}`;
+      // short, the user's request of 2026-11-17; the manual (section 3.5.1) says why these are asked
+      : mites.length
+        ? `List of recordings to check by eye: <b>${plural(review.n_recordings, "recording")} of ${plural(review.n_mites, "mite")}</b>,
+          whose motion score is close to the threshold of ${score(results.threshold)}${this.hasBand() ? ` (${this.bandText()})` : ""} or a peak after
+          the mite's last movement. The latest of each mite comes first; once one shows the mite moving, its earlier ones are no longer asked.`
+        : "<b>Nothing is left to check by eye.</b>";
     const rows = mites.map((mite) => {
       const latest = mite.to_check[0];
       const zone = ctx.zone(mite.zone_id);

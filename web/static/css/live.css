@@ -21,6 +21,7 @@
 .live-heading { margin-top: 22px; padding-top: 14px; border-top: 1px solid var(--rule); }
 .live-settings { display: grid; grid-template-columns: minmax(0, 1fr) 84px; gap: 6px 10px; align-items: center; }
 .live-settings .live-check { grid-column: 1 / -1; }
+.live-settings .setting-note { grid-column: 1 / -1; margin: 0; font-size: 12px; }
 .live-lights { display: grid; gap: 6px; margin-top: 8px; }
 .light-row { display: grid; grid-template-columns: 44px minmax(0, 1fr) 28px 44px; gap: 8px; align-items: center; }
 .light-row input[type="range"] { width: 100%; accent-color: var(--ink); }

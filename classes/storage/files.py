@@ -14,6 +14,7 @@ import json
 import os
 import shutil
 import stat
+import threading
 import time
 from pathlib import Path
 
@@ -55,9 +56,12 @@ def replace(partial, path, attempts=40):
 
 
 def write_text(path, text):
-    """Write `text` to `path` whole before it takes the name (see the top of this file)."""
+    """Write `text` to `path` whole before it takes the name (see the top of this file).
+    Each writer has its own partial file (process and thread in its name, still ending
+    in .part), so two saves of one file at once don't write into the same one, which
+    Windows refuses; the last to take the name wins."""
     path = Path(path)
-    partial = path.with_name(path.name + ".part")
+    partial = path.with_name(f"{path.name}.{os.getpid()}-{threading.get_ident()}.part")
     partial.write_text(text, encoding="utf-8")
     replace(partial, path)
 
